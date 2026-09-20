@@ -1,0 +1,1 @@
+{"error":{"message":"model 'qwen3-guard-4b' sohbet uçunu desteklemiyor (görev: guard)","type":"invalid_request_error","param":null,"code":"bad_request"}}

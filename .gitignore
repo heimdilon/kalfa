@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+/target
+
+# EVREN portal ekran goruntuleri - referans amacli, bize ait degil
+Screenshot*.png
