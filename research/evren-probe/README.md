@@ -16,6 +16,7 @@ sessiz bir ayrışma oluşamaz.
 | `chat_json_schema.json` | `response_format: json_schema` desteği (vLLM arkaplanı) |
 | `error_model_not_found.json` | `error.evren.suggested_models` dizisi |
 | `error_task_mismatch.json` | Görev uyuşmazlığı hatası (`task: guard` modelini sohbet ucuna çağırma) |
+| `error_unauthorized.json` | Geçersiz anahtar → `401`, `code: "unauthorized"`; mesaj geçersiz anahtar için de "API anahtarı eksik" diyor |
 | `terms_status.json` | Şart kapısı durum şeması |
 | `terms_text.json` | Şart metni yanıt şeması |
 

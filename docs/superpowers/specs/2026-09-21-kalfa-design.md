@@ -104,6 +104,13 @@ Aşağıdaki altı nokta, hazır bir OpenAI istemci crate'i kullanmayı imkâns�
 `X-Evren-Routed-Model`, `model: "auto"` kullanıldığında isteğin gerçekte hangi
 modele düştüğünü söyler.
 
+Gateway'in `Access-Control-Expose-Headers` başlığı bunlara ek olarak şunları
+**ilan ediyor**: `X-Evren-Routing-Reason` · `X-Evren-Quota-Weight` ·
+`X-Evren-Media-Id` · `Retry-After` · `X-RateLimit-{Limit,Remaining}-{Tokens,Requests}`
+· `X-RateLimit-Reset`. Bunlar ilan edildi ama henüz bir yanıtta gözlemlenmedi.
+Hız sınırı başlıklarının varlığı `429` yanıtının olası olduğunu gösteriyor;
+istemci buna hazır olmalı (§5.4).
+
 ### 3.5 Model filosu
 
 Hesaba tanımlı 11 kayıt (`auto` dahil). Probe sırasında tüm fiyatlar `0.0 CR`.
@@ -154,10 +161,11 @@ bir işlem olduğundan, bu bir tasarım kısıtıdır (bkz. §5.3).
 ```
 Command  ::= KullanıcıMesajı | İptal | AraçOnayı(id, karar)
            | ModelDeğiştir | İzinKipiDeğiştir | OturumSıkıştır
+           | ŞartlarıKabulEt(sürüm)
 
 Event    ::= TokenParçası | DüşünceParçası | AraçÇağrısıBaşladı
            | AraçSonucu | OnayGerekiyor(işlem) | KrediGüncellendi
-           | Hata | Tamamlandı
+           | ŞartOnayıGerekiyor(sürüm, metin) | Hata | Tamamlandı
 ```
 
 Bu sınır Tauri IPC'ye, WebSocket'e, stdio'ya ve birim testine **eşit
@@ -203,10 +211,21 @@ yükümlülüğüdür.
 
 ### 5.4 Tipli hatalar
 
-`EvrenError` enum'u: `SartKabulGerekli { version }` · `ModelBulunamadi { oneriler }`
-· `GorevUyusmazligi { model, gorev }` · `KotaYetersiz` · `AgHatasi` · `Diger`.
+`EvrenError` enum'u: `AnahtarGecersiz` · `SartKabulGerekli { version }` ·
+`ModelBulunamadi { oneriler }` · `GorevUyusmazligi { model, gorev }` ·
+`KotaYetersiz` · `HizSiniri { tekrar_dene }` · `AgHatasi` · `Diger`.
 
 `suggested_models` alanı UI'da "bunu mu demek istediniz?" olarak kullanılır.
+
+`AnahtarGecersiz`, `401` + `code: "unauthorized"` yanıtından üretilir. Gateway
+geçersiz anahtar için de "API anahtarı eksik" mesajını döndürüyor
+(`error_unauthorized.json`); bu yüzden kullanıcıya sunucu mesajı değil, kendi
+metnimiz gösterilir: "Anahtar geçersiz ya da eksik."
+
+`HizSiniri`, `429` yanıtından üretilir ve varsa `Retry-After` değerini taşır.
+Ajan döngüsü bu süre kadar bekleyip bir kez yeniden dener, ardından hatayı
+kullanıcıya gösterir. `429` henüz gözlemlenmedi (§3.4); ilk gerçek yanıt
+yakalandığında fixture olarak eklenir.
 
 ---
 
@@ -514,7 +533,7 @@ Kalan bakiye (CR) · oturum maliyeti · yönlendirilen model · bağlam doluluğ
 
 Türkçe birincil, İngilizce ikincil. **Hata mesajı kuralı: ne olduğunu ve ne
 yapılacağını söyler.** `403 terms_not_accepted` ekrana "403" diye düşmez; yeni
-şart metnini gösterip onay düğmesi sunar.
+şart metnini gösterip onay düğmesi sunar (§11.8).
 
 ### 11.7 Yerleşim
 
@@ -533,6 +552,46 @@ yapılacağını söyler.** `403 terms_not_accepted` ekrana "403" diye düşmez;
 └───────────────────────────────────────────────┘
 ```
 
+### 11.8 İlk çalıştırma ve şart onayı
+
+Uygulama ilk açılışta tek bir şey ister: API anahtarı. Anahtar girildikten sonra
+akış şudur:
+
+```
+Anahtar girişi ──► GET /v1/terms/status
+                     │
+                     ├─ 401 ──────────────────────► "Anahtar geçersiz ya da eksik", anahtar saklanmaz
+                     ├─ accepted, sürüm güncel ───► ana ekran
+                     │
+                     ▼ değilse
+               GET /v1/terms/text ──► Şart ekranı
+                                        ├─ [Kabul ediyorum] ─► POST /v1/terms/accept {"version": N} ─► ana ekran
+                                        └─ [Kabul etmiyorum] ─► kilitli ekran
+```
+
+- **Kalfa şartları hiçbir zaman kullanıcı adına kabul etmez.**
+  `POST /v1/terms/accept` yalnızca şart ekranındaki açık tıklamadan doğan
+  `ŞartlarıKabulEt(sürüm)` komutuyla gönderilir. Otomatik kabul bayrağı,
+  yapılandırma anahtarı ya da CLI seçeneği yoktur. Güvence yapısaldır:
+  `Command`'lar yalnızca dışarıdan gelir, ajan döngüsü `Command` üretmez; dolayısıyla
+  model ve araçlar bu uca yol bulamaz.
+- **Metin olduğu gibi gösterilir.** Özetlenmez, kısaltılmaz. Başlıkta sürüm
+  numarası ve `is_material` bilgisi yer alır.
+- **Metin güvenli çizilir.** Şart metnindeki uzak görseller (örn. shields.io
+  rozetleri) yüklenmez, yerlerinde alt metin gösterilir. Bağlantılar sistem
+  tarayıcısında açılır. İlk ekran üçüncü taraf bir sunucuya istek atmaz.
+- **Reddetmek geri dönülebilir.** "Kabul etmiyorum" seçilirse anahtar saklanır ama
+  uygulama kilitli ekranda kalır ve sebebini söyler: EVREN, şartlar kabul
+  edilmeden hiçbir ucu açmıyor. Sonraki açılışta şart ekranı yeniden gelir.
+- **Oturum ortası yeniden kilitlenme (§3.1).** `403 terms_not_accepted` gelirse
+  `kalfa-evren` bunu tipli hataya çevirir, çekirdek `ŞartOnayıGerekiyor` olayını
+  yayar ve aynı ekran kip olarak açılır. Ajan döngüsü duraklar; kabul gelirse
+  reddedilen istek yeniden gönderilir, gelmezse tur iptal edilir. Oturum kaybolmaz.
+- **Anahtar düz metin olarak saklanmaz.** İşletim sisteminin kimlik deposuna
+  yazılır: Windows'ta Credential Manager, Linux'ta Secret Service (`keyring`
+  crate'i). Secret Service bulunamazsa kullanıcı uyarılır ve anahtar yalnızca
+  oturum boyunca bellekte tutulur.
+
 ---
 
 ## 12. Kapsam
@@ -542,7 +601,7 @@ yapılacağını söyler.** `403 terms_not_accepted` ekrana "403" diye düşmez;
 | Alan | Kapsam |
 |---|---|
 | Sağlayıcı | Chat + streaming + tools + tipli hatalar + kredi takibi |
-| İlk çalıştırma | Anahtar girişi → şart metni → onay akışı |
+| İlk çalıştırma | Anahtar girişi → şart metni → onay akışı; oturum ortası yeniden kilitlenme (§11.8) |
 | Ajan | Döngü, paralel araç yürütme, iptal, `reasoning` akışı |
 | Yerleşik araçlar | Dosya oku/yaz/düzenle, glob, grep, kabuk |
 | Güvenlik | Yetenek modeli, 3 kip, çalışma alanı sınırı, gruplanmış onay + diff |
@@ -585,6 +644,7 @@ Canlı API'ye karşı testler `#[ignore]` ile işaretlidir; anahtar varsa koşar
 | `kalfa-core` | **§4.2'nin testi:** sahte sağlayıcı + sahte araçlarla, UI'sız tam döngü |
 | İzin motoru | Yol kaçış testleri: `..`, sembolik bağlantı, Windows sürücü harfi, UNC |
 | `kalfa-plugin` | Sözleşme uyumu: manifest'te olmayan yetenek istendiğinde red |
+| Şart kapısı | `terms_not_accepted` → `ŞartOnayıGerekiyor` → kabul → yeniden deneme zinciri; kabul uca yalnızca `ŞartlarıKabulEt` ile gider |
 | UI | Duman testi: akış çiziliyor mu, onay ekranı doğru diff'i gösteriyor mu |
 
 > **Test edilmeyen güvenlik sınırı yoktur.** İzin motoru satırı bu yüzden pazarlık
@@ -597,7 +657,7 @@ Canlı API'ye karşı testler `#[ignore]` ile işaretlidir; anahtar varsa koşar
 | # | Risk | Etki | Azaltma |
 |---|---|---|---|
 | 1 | EVREN beta; fiyatlar `0.0 CR`, gerçek fiyatlandırma bilinmiyor | Maliyet göstergesi ve router varsayımları değişebilir | Kredi takibi başlıklara dayanıyor, fiyat tablosuna değil (§5.2) |
-| 2 | Şart metni "hukuk ekibince nihai gözden geçirilmemiş taslak" | Şartlar esaslı değişebilir, tüm kullanıcılar kilitlenir | Şart kapısı birinci sınıf akış (§11.6) |
+| 2 | Şart metni "hukuk ekibince nihai gözden geçirilmemiş taslak" | Şartlar esaslı değişebilir, tüm kullanıcılar kilitlenir | Şart kapısı birinci sınıf akış; oturum ortası kilitlenme oturumu kaybettirmez (§11.8) |
 | 3 | `billing_pending` davranışı belgelenmemiş | İptal sonrası kredi sızıntısı | `X-Request-Id` günlüğü (§5.3) |
 | 4 | Component Model ekosistemi hâlâ olgunlaşıyor | Plugin yazarı deneyimi pürüzlü olabilir | Sözleşme 0.x; `kalfa-plugin-sdk` pürüzü emer |
 | 5 | Tauri IPC verimi ölçülmedi | 16 ms toplama yetmeyebilir | Uygulamada erken ölçüm; pencere ayarlanabilir |
@@ -620,6 +680,9 @@ Canlı API'ye karşı testler `#[ignore]` ile işaretlidir; anahtar varsa koşar
 | MCP | v1.1 | Ekosistem değerli ama v1'i geciktirir |
 | İsim | Kalfa | Lonca geleneği; izin modelini anlatıyor; crates.io'da müsait |
 | Lisans | MIT OR Apache-2.0 | Rust standardı; plugin sınırında türev eser belirsizliği olmaz |
+| Telif sahibi | Orkun Koray Güngör | Kullanıcı seçimi |
+| Şart kabulü | Yalnızca kullanıcının açık tıklamasıyla, anahtar girişinden sonra | Hukuki bağlayıcı eylem ajana bırakılmaz |
+| Anahtar saklama | İşletim sistemi kimlik deposu (`keyring`) | Düz metin yapılandırma dosyasında anahtar olmaz |
 
 ---
 
