@@ -29,3 +29,4 @@ uuid.workspace = true
 kalfa-core = { path = ".", features = ["test-destek"] }
 serde.workspace = true
 tempfile.workspace = true
+wiremock.workspace = true
