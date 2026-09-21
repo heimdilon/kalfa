@@ -4,6 +4,14 @@
 //! yapılır: `\r` ve `\n` baytları çok baytlı bir UTF-8 dizisinin içinde yer
 //! alamaz, bu yüzden bir karakter ağ parçası sınırında bölünse de bozulmaz
 //! (spec §5.1).
+//!
+//! "Dispatch the event" adımında yalnızca veri ve olay-türü arabellekleri
+//! sıfırlanır; son-olay-kimliği arabelleği bağlantı boyunca kalıcıdır ve
+//! yalnızca sonraki bir `id:` alanıyla değiştirilir (spec §9.2.6). Burada
+//! bu, `kimlik: Option<String>` alanının dispatch'ler arasında hiç
+//! sıfırlanmamasıyla temsil edilir: `None` "henüz hiç `id:` alanı
+//! görülmedi", `Some("")` ise "`id:` alanı boş değerle görüldü" anlamına
+//! gelir.
 
 /// 4 MiB: tek bir olayın ya da tamamlanmamış satırın üst sınırı.
 pub const VARSAYILAN_AZAMI_OLAY: usize = 4 * 1024 * 1024;
@@ -31,6 +39,11 @@ pub struct SseCozucu {
     veri_var: bool,
     olay: Option<String>,
     kimlik: Option<String>,
+    /// Son dispatch'ten (ya da başlangıçtan) beri en az bir alan satırı
+    /// görüldü mü. `kimlik` dispatch'ler arasında kalıcı olduğundan
+    /// `bitir()` içinde "tamamlanmamış olay var mı" sorusunu `kimlik` yerine
+    /// bu bayrak cevaplar.
+    alan_var: bool,
 }
 
 impl SseCozucu {
@@ -44,6 +57,7 @@ impl SseCozucu {
             veri_var: false,
             olay: None,
             kimlik: None,
+            alan_var: false,
         }
     }
 
@@ -77,7 +91,7 @@ impl SseCozucu {
     /// Akış bitti. Tamamlanmamış olay WHATWG kuralı gereği atılır; dönüş
     /// değeri böyle bir artık kalıp kalmadığını söyler.
     pub fn bitir(self) -> bool {
-        !self.satir.is_empty() || self.veri_var || self.olay.is_some() || self.kimlik.is_some()
+        !self.satir.is_empty() || self.veri_var || self.olay.is_some() || self.alan_var
     }
 
     fn satiri_isle(&mut self, olaylar: &mut Vec<SseOlayi>) -> Result<(), SseHatasi> {
@@ -96,16 +110,19 @@ impl SseCozucu {
                 if veri.ends_with('\n') {
                     veri.pop();
                 }
+                // `kimlik` burada bilerek `clone`'lanır, `take()` edilmez:
+                // son-olay-kimliği arabelleği dispatch sonrasında
+                // sıfırlanmaz, sonraki olaylara da taşınır.
                 olaylar.push(SseOlayi {
                     olay: self.olay.take(),
                     veri,
-                    kimlik: self.kimlik.take(),
+                    kimlik: self.kimlik.clone(),
                 });
             } else {
                 self.olay = None;
-                self.kimlik = None;
             }
             self.veri_var = false;
+            self.alan_var = false;
             return Ok(());
         }
 
@@ -120,6 +137,7 @@ impl SseCozucu {
             }
             None => (satir.as_str(), ""),
         };
+        self.alan_var = true;
         match alan {
             "data" => {
                 self.veri.push_str(deger);

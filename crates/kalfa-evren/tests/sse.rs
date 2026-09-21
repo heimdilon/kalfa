@@ -71,6 +71,29 @@ fn event_ve_id_alanlari() {
 }
 
 #[test]
+fn id_sonraki_olaylarda_kalici_olur() {
+    let o = tek_seferde(
+        b"id: 7\ndata: ilk\n\ndata: ikinci\n\nid: 9\ndata: ucuncu\n\ndata: dorduncu\n\n",
+    );
+    assert_eq!(o[0].kimlik.as_deref(), Some("7"));
+    assert_eq!(
+        o[1].kimlik.as_deref(),
+        Some("7"),
+        "id sonraki olayda da kalıcı olmalı"
+    );
+    assert_eq!(
+        o[2].kimlik.as_deref(),
+        Some("9"),
+        "yeni id önceki değeri geçersiz kılmalı"
+    );
+    assert_eq!(
+        o[3].kimlik.as_deref(),
+        Some("9"),
+        "yeni id de kalıcı olmalı"
+    );
+}
+
+#[test]
 fn bos_data_olay_uretir_ama_hic_data_yoksa_olay_yok() {
     let o = tek_seferde(b"data:\n\nevent: yalniz\n\n");
     assert_eq!(veriler(&o), vec![""]);
