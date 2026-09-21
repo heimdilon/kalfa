@@ -2,7 +2,7 @@
 
 **Tarih:** 2026-09-21
 **Durum:** Onaylandı, uygulama planı bekliyor
-**Lisans:** MIT OR Apache-2.0
+**Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
 ---
 
@@ -410,6 +410,26 @@ uzun süren iş, ilerleme bildirimi) · EVREN'in Türkçe üstünlüğünü serg
 projenin varlık sebebi bu · ajanın kendisi için faydalı, yani her gün test
 ediliyor.
 
+### 8.7 SDK lisansı
+
+Proje Apache-2.0'dır. `kalfa-plugin-sdk` ve eklenti sözleşmesinin WIT dosyaları
+(§8.2) ise `Apache-2.0 WITH LLVM-exception` altındadır.
+
+Sebep: SDK kodu ve WIT'ten üretilen bağlamalar her eklentinin `.wasm` dosyasına
+derlenerek girer. İstisna olmasaydı her eklenti dağıtımı Apache lisansını ve
+NOTICE dosyasını taşımak zorunda kalırdı (Apache-2.0 §4(a), 4(b), 4(d)).
+İstisna bu yükü derlenmiş çıktıdan kaldırır ve GPLv2 lisanslı yazılımla
+birleştirmeyi mümkün kılar. Aynı model wasmtime, wit-bindgen ve cargo-component'te
+kullanılıyor.
+
+Eklentinin kendi lisansı yazarına aittir; Kalfa bir lisans dayatmaz.
+
+Uygulama notu: crate oluşturulduğunda `Cargo.toml`'a
+`license = "Apache-2.0 WITH LLVM-exception"` yazılır ve crate dizinine `LICENSE`,
+`LICENSE-LLVM-exception` ve `NOTICE` kopyalanır. `cargo package` yalnızca crate
+dizinindeki dosyaları paketler; kök dizindeki lisans dosyaları yayımlanan crate'e
+kendiliğinden girmez.
+
 ---
 
 ## 9. Güvenlik denetçisi
@@ -679,7 +699,8 @@ Canlı API'ye karşı testler `#[ignore]` ile işaretlidir; anahtar varsa koşar
 | Guard | Takas edilebilir kanca | Guard modeli erişilemez; tehdit zaten araç çıktısı yolunda |
 | MCP | v1.1 | Ekosistem değerli ama v1'i geciktirir |
 | İsim | Kalfa | Lonca geleneği; izin modelini anlatıyor; crates.io'da müsait |
-| Lisans | MIT OR Apache-2.0 | Rust standardı; plugin sınırında türev eser belirsizliği olmaz |
+| Lisans | Apache-2.0 | Açık patent lisansı ve misilleme maddesi, marka maddesi, NOTICE ile atıf. Kaybı GPLv2 uyumsuzluğu; masaüstü uygulaması için önemsiz |
+| SDK lisansı | Apache-2.0 WITH LLVM-exception (SDK + WIT) | Eklenti yazarı derlenmiş `.wasm`'da lisans yükü taşımaz; Bytecode Alliance modeli (§8.7) |
 | Telif sahibi | Orkun Koray Güngör | Kullanıcı seçimi |
 | Şart kabulü | Yalnızca kullanıcının açık tıklamasıyla, anahtar girişinden sonra | Hukuki bağlayıcı eylem ajana bırakılmaz |
 | Anahtar saklama | İşletim sistemi kimlik deposu (`keyring`) | Düz metin yapılandırma dosyasında anahtar olmaz |

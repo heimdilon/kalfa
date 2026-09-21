@@ -49,8 +49,14 @@ ve ayrıştırıcı testleri bunlara karşı koşacak.
 
 ## Lisans
 
-MIT ([`LICENSE-MIT`](LICENSE-MIT)) veya Apache-2.0
-([`LICENSE-APACHE`](LICENSE-APACHE)) — hangisini istersen.
+Apache-2.0 — [`LICENSE`](LICENSE). Telif: Orkun Koray Güngör ([`NOTICE`](NOTICE)).
+
+Eklenti geliştirmek için kullanılan `kalfa-plugin-sdk` ve eklenti sözleşmesinin
+WIT dosyaları buna ek olarak [LLVM istisnası](LICENSE-LLVM-exception) taşır
+(`Apache-2.0 WITH LLVM-exception`). Eklentini derleyip dağıtırken lisans ya da
+NOTICE dosyası eklemek zorunda kalmazsın; eklentinin lisansını sen seçersin.
+
+Katkılar, katkı yapılan kısmın lisansıyla kabul edilir (Apache-2.0 §5).
 
 ---
 
