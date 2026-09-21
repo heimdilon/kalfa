@@ -4,6 +4,8 @@
 
 **Goal:** EVREN LLM Gateway'e konuşan, tek başına yayımlanabilir ve kayıtlı gerçek yanıtlara karşı test edilmiş bir Rust istemcisi (`kalfa-evren`) kurmak.
 
+**Plan revizyonu:** r3.2 (2026-09-21). Sessiz SSE akışında iptal/kapatma düzeltmesi ve TCP regresyon testi eklendi. [İnceleme ve doğrulama kaydı](../specs/2026-09-21-kalfa-plan-review.md). `Expected` çıktıları henüz çalıştırılmış test sonucu değildir.
+
 **Architecture:** Dört katman: (1) bayt akışını SSE olaylarına bölen WHATWG uyumlu çerçeveleyici, (2) EVREN'in OpenAI uyumlu JSON şemasının tipleri — EVREN'e özgü alanlar dahil, (3) akış parçalarını tamamlanmış olaylara çeviren birleştirici, (4) `reqwest` üzerinde HTTP istemcisi (şart uçları, katalog, bloklu ve akışlı sohbet). Hatalar tipli `EvrenError`'a, kredi başlıkları `KrediGozlemi`'ne çevrilir.
 
 **Tech Stack:** Rust 1.98.1 (edition 2024) · tokio · reqwest 0.13 (rustls + ring) · serde / serde_json · rust_decimal · thiserror · wiremock (test)
@@ -1995,7 +1997,7 @@ git commit -m "kalfa-evren: HTTP istemcisi — şart uçları, katalog ve bloklu
 - Consumes: `EvrenIstemcisi::gonder/url` (Task 5), `SseCozucu` (Task 1), `AkisBirlestirici`, `VeriSonucu` (Task 4)
 - Produces:
   - `kalfa_evren::AkisKanali` = `Pin<Box<dyn Stream<Item = Result<AkisOlayi, EvrenError>> + Send>>`
-  - `EvrenIstemcisi::sohbet_akisi(&self, istek: &ChatRequest) -> Result<(YanitMeta, AkisKanali), EvrenError>` — `stream: true` ve `stream_options.include_usage: true` zorlanır; HTTP hatası akış başlamadan `Err` olarak döner; akış sırasındaki hatalar kanalda `Err` öğesi olarak gelir ve kanal orada biter; kanal bırakılırsa (drop) arka plan görevi durur ve bağlantı kapanır.
+  - `EvrenIstemcisi::sohbet_akisi(&self, istek: &ChatRequest) -> Result<(YanitMeta, AkisKanali), EvrenError>` — `stream: true` ve `stream_options.include_usage: true` zorlanır; HTTP hatası akış başlamadan `Err` olarak döner; akış sırasındaki hatalar kanalda `Err` öğesi olarak gelir ve kanal orada biter; kanal bırakılırsa (drop) arka plan görevi **hemen** durur ve bağlantı kapanır — sunucu sessiz kalsa ya da yalnızca `: keep-alive` gönderse bile (görev `tx.closed()`'ı da bekler; gönderim denemesini beklemez).
 
 - [ ] **Step 1: Başarısız testleri ekle**
 
@@ -2066,11 +2068,62 @@ async fn akis_oncesi_http_hatasi_err_doner() {
 }
 ```
 
-`crates/kalfa-evren/Cargo.toml`'daki `[dev-dependencies]` bölümüne `futures-util`'i de ekle:
+Aynı dosyanın sonuna, bırakılan akışın bağlantıyı kapattığını gerçek bir TCP soketinde doğrulayan testi ekle. Sunucu başlıkları ve tek bir `: keep-alive` gönderip susar; istemci akışı bırakınca sunucunun okuması 5 saniye içinde bitmelidir (`Ok(0)` ya da hata):
+
+```rust
+#[tokio::test]
+async fn akis_birakilinca_sessiz_sunucuda_da_baglanti_kapanir() {
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let adres = dinleyici.local_addr().unwrap();
+    let sunucu = tokio::spawn(async move {
+        let (mut soket, _) = dinleyici.accept().await.unwrap();
+        // TCP read bir HTTP isteğine denk gelmez. Başlık ve gövdeyi tamamen
+        // tüket; aksi halde kalan istek baytları kapanma testini yanıltır.
+        let mut istek = Vec::new();
+        let mut parca = [0u8; 1024];
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let n = soket.read(&mut parca).await.unwrap();
+                assert!(n > 0, "istek tamamlanmadan EOF");
+                istek.extend_from_slice(&parca[..n]);
+                assert!(istek.len() <= 64 * 1024, "test isteği beklenmedik kadar büyük");
+                if let Some(son) = istek.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let baslik = std::str::from_utf8(&istek[..son]).unwrap();
+                    let boyut: usize = baslik.lines().filter_map(|l| l.split_once(':'))
+                        .find(|(ad, _)| ad.eq_ignore_ascii_case("content-length"))
+                        .expect("test istemcisi Content-Length göndermeli").1.trim().parse().unwrap();
+                    if istek.len() >= son + 4 + boyut { break; }
+                }
+            }
+        }).await.expect("test HTTP isteği tamamlanmalı");
+        soket
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n")
+            .await
+            .unwrap();
+        // Tek parça: ": keep-alive\n\n" (14 = 0xe bayt). Sonra sessizlik.
+        soket.write_all(b"e\r\n: keep-alive\n\n\r\n").await.unwrap();
+        let mut tampon = [0u8; 64];
+        tokio::time::timeout(Duration::from_secs(5), soket.read(&mut tampon)).await
+    });
+
+    let i = EvrenIstemcisi::yeni(format!("http://{adres}/v1"), ApiAnahtari::yeni(ANAHTAR)).unwrap();
+    let (_, akis) = i.sohbet_akisi(&ChatRequest::new("glm-5.3", vec![])).await.unwrap();
+    drop(akis);
+
+    let okuma = sunucu.await.unwrap().expect("istemci akışı bırakınca bağlantı 5 sn içinde kapanmalı");
+    assert!(matches!(okuma, Ok(0) | Err(_)), "{okuma:?}");
+}
+```
+
+`crates/kalfa-evren/Cargo.toml`'daki `[dev-dependencies]` bölümünü şununla değiştir (testteki TCP sunucusu için `tokio`'nun `net` ve `io-util` özellikleri gerekir):
 
 ```toml
 [dev-dependencies]
 futures-util.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }
 wiremock.workspace = true
 ```
 
@@ -2127,14 +2180,21 @@ Dosyanın sonuna ekle:
 type Gonderici = mpsc::Sender<Result<AkisOlayi, EvrenError>>;
 
 /// Yanıt gövdesini okur, SSE → birleştirici hattından geçirip kanala yazar.
-/// Alıcı bırakılırsa gönderim başarısız olur, görev biter ve yanıt (bağlantı)
-/// bırakılır.
+/// Alıcı bırakılınca görev **hemen** biter ve yanıt (bağlantı) bırakılır:
+/// yalnızca gönderim denemesine güvenilseydi, sessiz ya da yalnızca
+/// `: keep-alive` gönderen bir sunucuda bağlantı açık kalırdı.
 async fn akisi_isle(yanit: reqwest::Response, tx: Gonderici) {
     let mut baytlar = yanit.bytes_stream();
     let mut cozucu = SseCozucu::yeni(VARSAYILAN_AZAMI_OLAY);
     let mut birlestirici = AkisBirlestirici::yeni();
 
-    while let Some(parca) = baytlar.next().await {
+    loop {
+        let parca = tokio::select! {
+            biased;
+            _ = tx.closed() => return,
+            parca = baytlar.next() => parca,
+        };
+        let Some(parca) = parca else { break };
         let parca = match parca {
             Ok(p) => p,
             Err(e) => {
@@ -2197,7 +2257,7 @@ pub use istemci::{AkisKanali, ApiAnahtari, EvrenIstemcisi, VARSAYILAN_TABAN};
 - [ ] **Step 4: Testlerin geçtiğini gör**
 
 Run: `cargo test -p kalfa-evren --test istemci`
-Expected: `test result: ok. 10 passed`
+Expected: `test result: ok. 11 passed`
 
 - [ ] **Step 5: Canlı testleri yaz**
 

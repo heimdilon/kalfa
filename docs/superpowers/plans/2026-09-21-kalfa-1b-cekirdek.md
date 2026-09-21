@@ -4,9 +4,11 @@
 
 **Goal:** UI olmadan, bir birim testinde baştan sona koşturulabilen ajan çekirdeğini (`kalfa-core`) ve çalışma alanı sınırını yapısal olarak koruyan yerleşik dosya araçlarını (`kalfa-tools`) kurmak.
 
+**Plan revizyonu:** r3.2 (2026-09-21). Kayıt, iptal, yürütme politikası ve bağlantı güvenliği düzeltmeleri kod örneklerine işlendi. [İnceleme ve doğrulama kaydı](../specs/2026-09-21-kalfa-plan-review.md). Uygulama görevleri henüz tamamlanmış değildir.
+
 **Architecture:** `kalfa-core` dış dünyaya yalnızca `Komut` alıp `Zarf<Olay>` gönderen tek bir tokio görevidir (oturum). Tur: model akışı → argüman doğrulama → izin kararı → işleme bağlı (mühürlü) onay → kaynak kilitli paralel yürütme → kaynak etiketli sonuç. Her önemli adım yalnızca sona eklenen bir JSONL oturum kaydına yazılır; çökmeden sonra yarım kalan yan etkili işlem **yeniden çalıştırılmaz**. `kalfa-tools` çalışma alanına `cap-std` dizin tutamacıyla erişir.
 
-**Tech Stack:** Rust 1.98.1 · tokio · async-trait · jsonschema (uzak şema çözme kapalı) · globset · sha2 · uuid · cap-std · ignore · regex · similar · kalfa-evren (plan 1a)
+**Tech Stack:** Rust 1.98.1 · tokio · async-trait · jsonschema (uzak şema çözme kapalı) · globset · sha2 · uuid · cap-std + cap-fs-ext · ignore · regex · similar · kalfa-evren (plan 1a)
 
 **Spec:** `docs/superpowers/specs/2026-09-21-kalfa-design.md` — §4 (Komut/Olay sınırı, doğruluk ölçütü), §6 (ajan döngüsü, 6.1 paralellik, 6.3 iptal, 6.6 kayıt/kurtarma, 6.8 sınırlar), §7.1–7.6 (tehdit modeli, yetkiler, çalışma alanı sınırı, korumalı yollar, gizli dosyalar, kipler, onay), §11.8 (şart akışının çekirdek tarafı), §13.
 
@@ -842,7 +844,7 @@ git commit -m "kalfa-core: izin motoru — kipler, gizli dosyalar ve git korumal
   - `kalfa_core::arac::YazmaHedefi { yol: CalismaYolu, onceki_ozet: Option<String>, baglanti_sayisi: u64 }` (`onceki_ozet`: dosyanın o anki SHA-256'sı; dosya yoksa `None`)
   - `kalfa_core::arac::Hazirlik { okunan: Vec<CalismaYolu>, yazilan: Vec<YazmaHedefi>, tum_calisma_alani: bool, aciklama: String, diff: Option<String> }` — `Default + Clone + Eq`
   - `kalfa_core::arac::AracCiktisi { icerik: String, kaynak: String }` (`kaynak` örn. `dosya:src/a.rs:1-40`)
-  - `kalfa_core::arac::AracHatasi { Gecersiz(String), Yol(YolHatasi), OnayEskidi, Iptal, GirisCikis(String) }` — `From<YolHatasi>`, `From<std::io::Error>`
+  - `kalfa_core::arac::AracHatasi { Gecersiz(String), Yol(YolHatasi), OnayEskidi, PolitikaDegisti, Iptal, GirisCikis(String) }` — `From<YolHatasi>`, `From<std::io::Error>` (`PolitikaDegisti`: izin kipi planlamadan sonra değişti, işlem yapılmadı — Task 9)
   - `#[async_trait] pub trait Arac: Send + Sync { fn ad(&self) -> &str; fn aciklama(&self) -> &str; fn parametre_semasi(&self) -> Value; fn yazar_mi(&self) -> bool; async fn hazirla(&self, argumanlar: &Value) -> Result<Hazirlik, AracHatasi>; async fn calistir(&self, argumanlar: &Value, hazirlik: &Hazirlik, iptal: CancellationToken) -> Result<AracCiktisi, AracHatasi>; }`
   - `kalfa_core::arac::AracKayitDefteri::yeni(araclar: Vec<Arc<dyn Arac>>) -> Result<Self, KayitHatasi>`; `bul(&self, ad) -> Option<Arc<dyn Arac>>`; `tanimlar(&self, kip: Kip) -> Vec<ToolDef>` (İnceleme'de yazan araçlar yok); `dogrula(&self, ad: &str, argumanlar: &str) -> Result<Value, String>`
   - `kalfa_core::arac::KayitHatasi { Yinelenen(String), GecersizSema { arac: String, hata: String } }`
@@ -975,6 +977,9 @@ fn muhur_islemin_kendisine_baglidir() {
     let mut h3 = h1.clone();
     h3.yazilan[0].onceki_ozet = None;
     assert_ne!(m, muhur_hesapla(c, "yaz", &a, &h3), "dosya yokken ve varken farklı");
+    let mut bagli = h1.clone();
+    bagli.yazilan[0].baglanti_sayisi += 1;
+    assert_ne!(m, muhur_hesapla(c, "yaz", &a, &bagli), "hard link sayısı değişince mühür değişir");
     assert_ne!(m, muhur_hesapla(c, "yaz", &json!({"yol": "b"}), &h1), "argüman");
     assert_ne!(m, muhur_hesapla(CagriId::yeni(), "yaz", &a, &h1), "başka çağrının mührü");
     assert_ne!(m, muhur_hesapla(c, "oku", &a, &h1), "araç adı");
@@ -995,6 +1000,7 @@ fn io_hatasi_arac_hatasina_donusur() {
     let h: AracHatasi = std::io::Error::other("disk dolu").into();
     assert_eq!(h, AracHatasi::GirisCikis("disk dolu".into()));
     assert_eq!(AracHatasi::OnayEskidi.to_string(), "Dosya onaydan sonra değişti; işlem yapılmadı.");
+    assert!(AracHatasi::PolitikaDegisti.to_string().contains("İzin kipi"));
 }
 ```
 
@@ -1066,6 +1072,8 @@ pub enum AracHatasi {
     Yol(#[from] YolHatasi),
     #[error("Dosya onaydan sonra değişti; işlem yapılmadı.")]
     OnayEskidi,
+    #[error("İzin kipi veya hedefin izin koşulları değişti; işlem yapılmadı. Gerekirse yeniden dene.")]
+    PolitikaDegisti,
     #[error("İptal edildi.")]
     Iptal,
     #[error("{0}")]
@@ -1197,6 +1205,7 @@ pub fn muhur_hesapla(cagri: CagriId, arac: &str, argumanlar: &Value, hazirlik: &
         alan(&mut h, b"y");
         alan(&mut h, hedef.yol.as_str().as_bytes());
         alan(&mut h, hedef.onceki_ozet.as_deref().unwrap_or("-").as_bytes());
+        alan(&mut h, &hedef.baglanti_sayisi.to_le_bytes());
     }
     alan(&mut h, if hazirlik.tum_calisma_alani { b"1" } else { b"0" });
     OnayMuhru(hex::encode(h.finalize()))
@@ -1640,7 +1649,8 @@ git commit -m "kalfa-core: yol bazında okuma/yazma kilitleri"
 - Consumes: `Zarf`, `Komut`, `AracDurumu`, `BitisNedeni` (Task 4), `Kip` (Task 2), `CagriId`, `OturumId` (Task 1), `kalfa_evren::{KrediGozlemi, tipler::{ChatMessage, Role}}`
 - Produces:
   - `kalfa_core::kayit::KayitOgesi` (JSON etiketi `"tip"`): `OturumAcildi { model, kip }` · `Komut { komut }` · `Mesaj { mesaj: ChatMessage }` · `AracBasladi { cagri: CagriId, model_cagri_id: String, arac: String }` · `AracBitti { cagri, durum: AracDurumu }` · `Istek { amac: String, istek_id: Option<String>, kredi: Option<KrediGozlemi> }` · `KipDegisti { kip }` · `ModelDegisti { model }` · `TurBitti { neden: BitisNedeni }`
-  - `kalfa_core::kayit::OturumKaydi::olustur(yol: &Path) -> io::Result<Self>` (dosya zaten varsa hata; Unix'te izin `0600`); `ac(yol) -> io::Result<Self>` (sona ekler); `yaz(&mut self, &Zarf<KayitOgesi>) -> io::Result<()>`; `yaz_kalici(...)` (+ `sync_data`); `oku(yol: &Path) -> io::Result<Vec<Zarf<KayitOgesi>>>` (yarım son satır atlanır, ortadaki bozuk satır `InvalidData`)
+  - `kalfa_core::kayit::KayitHedefi: Send` — `fn ekle(&mut self, satir: &[u8]) -> io::Result<()>`; `fn kalici_yap(&mut self) -> io::Result<()>`; `std::fs::File` için uygulanmıştır (testler hata benzeten bir hedef verebilir, Task 8)
+  - `kalfa_core::kayit::OturumKaydi::olustur(yol: &Path) -> io::Result<Self>` (dosya zaten varsa hata; Unix'te izin `0600`); `ac(yol) -> io::Result<Self>` (**onarır:** çökmede yarım kalan son satırı keser, satır sonu eksikse ekler, sonra sona ekler); `hedefle(Box<dyn KayitHedefi>) -> Self`; `yaz(&mut self, &Zarf<KayitOgesi>) -> io::Result<()>`; `yaz_kalici(...)` (+ `kalici_yap`); `oku(yol: &Path) -> io::Result<Vec<Zarf<KayitOgesi>>>` (yarım son satır atlanır, ortadaki bozuk satır `InvalidData`)
   - `kalfa_core::kurtarma::{BILINMEYEN_SONUC, CALISTIRILMADI}: &str`
   - `kalfa_core::kurtarma::BilinmeyenCagri { cagri: CagriId, arac: String }`
   - `kalfa_core::kurtarma::KurtarilmisDurum { oturum, model, kip, mesajlar: Vec<ChatMessage>, tamamlayicilar: Vec<ChatMessage>, bilinmeyenler: Vec<BilinmeyenCagri>, son_sira: u64 }`
@@ -1712,6 +1722,37 @@ fn yarim_son_satir_atlanir_ortadaki_bozuk_satir_hatadir() {
     std::fs::write(&bozuk, format!("{gecerli}\nbozuk satır\n{gecerli}\n")).unwrap();
     let hata = OturumKaydi::oku(&bozuk).unwrap_err();
     assert_eq!(hata.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn cokmus_kayit_onarilir_ve_yeniden_acilabilir() {
+    let d = tempfile::tempdir().unwrap();
+    let yol = d.path().join("o.jsonl");
+    let o = OturumId::yeni();
+    let mut k = OturumKaydi::olustur(&yol).unwrap();
+    k.yaz(&z(o, 1, acilis(Kip::Siki))).unwrap();
+    drop(k);
+
+    // Çökme: son satır yarım kaldı. Kurtar → yaz → tekrar aç.
+    let mut ham = std::fs::OpenOptions::new().append(true).open(&yol).unwrap();
+    ham.write_all(b"{\"sema\":1,\"otu").unwrap();
+    drop(ham);
+    let mut k = OturumKaydi::ac(&yol).unwrap();
+    k.yaz(&z(o, 2, KayitOgesi::KipDegisti { kip: Kip::Proje })).unwrap();
+    drop(k);
+    let okunan = OturumKaydi::oku(&yol).unwrap();
+    assert_eq!(okunan.len(), 2, "yarım satır kesildi; yeni kayıt ona yapışmadı");
+    assert_eq!(okunan[1].yuk, KayitOgesi::KipDegisti { kip: Kip::Proje });
+
+    // Tam yazılmış ama satır sonu eksik son satır da onarılır.
+    let tam = serde_json::to_vec(&z(o, 3, KayitOgesi::KipDegisti { kip: Kip::Siki })).unwrap();
+    let mut ham = std::fs::OpenOptions::new().append(true).open(&yol).unwrap();
+    ham.write_all(&tam).unwrap();
+    drop(ham);
+    let mut k = OturumKaydi::ac(&yol).unwrap();
+    k.yaz(&z(o, 4, KayitOgesi::KipDegisti { kip: Kip::Proje })).unwrap();
+    drop(k);
+    assert_eq!(OturumKaydi::oku(&yol).unwrap().len(), 4);
 }
 
 #[test]
@@ -1790,10 +1831,12 @@ pub mod kurtarma;
 //!
 //! Depo içinde değil, uygulama veri dizininde tutulur (yolu uygulama verir).
 //! Yan etkili bir araçtan önce yazılan "başladı" kaydı diske ulaşmadan
-//! dönülmez (`yaz_kalici`).
+//! dönülmez (`yaz_kalici`). Çökmede yarım kalan son satır, kayıt devam etmek
+//! üzere açılırken kesilir; yoksa yeni kayıtlar o yarım satıra yapışır ve bir
+//! sonraki açılışta kayıt ortasından bozuk görünürdü.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use kalfa_evren::KrediGozlemi;
@@ -1818,9 +1861,28 @@ pub enum KayitOgesi {
     TurBitti { neden: BitisNedeni },
 }
 
-#[derive(Debug)]
+/// Kaydın yazıldığı yer. Dosya dışındaki hedefler, testlerde yazma hatası
+/// benzetmek içindir.
+pub trait KayitHedefi: Send {
+    /// Satırı sona ekler ve işletim sistemine iletir.
+    fn ekle(&mut self, satir: &[u8]) -> io::Result<()>;
+    /// Şimdiye kadar eklenenleri kalıcı depolamaya yazar.
+    fn kalici_yap(&mut self) -> io::Result<()>;
+}
+
+impl KayitHedefi for File {
+    fn ekle(&mut self, satir: &[u8]) -> io::Result<()> {
+        self.write_all(satir)?;
+        self.flush()
+    }
+
+    fn kalici_yap(&mut self) -> io::Result<()> {
+        self.sync_data()
+    }
+}
+
 pub struct OturumKaydi {
-    dosya: File,
+    hedef: Box<dyn KayitHedefi>,
 }
 
 impl OturumKaydi {
@@ -1836,47 +1898,78 @@ impl OturumKaydi {
             use std::os::unix::fs::OpenOptionsExt;
             secenek.mode(0o600);
         }
-        Ok(Self { dosya: secenek.open(yol)? })
+        Ok(Self::hedefle(Box::new(secenek.open(yol)?)))
     }
 
-    /// Var olan kaydın sonuna ekler.
+    /// Var olan kaydı devam etmek üzere açar ve onarır: çökmede yarım kalan
+    /// son satır kesilir, son geçerli satırın satır sonu eksikse eklenir.
     pub fn ac(yol: &Path) -> io::Result<Self> {
-        Ok(Self { dosya: OpenOptions::new().append(true).open(yol)? })
+        let veri = fs::read(yol)?;
+        let (_, gecerli) = coz(&veri)?;
+        let mut dosya = OpenOptions::new().read(true).write(true).open(yol)?;
+        dosya.set_len(gecerli as u64)?;
+        dosya.seek(SeekFrom::End(0))?;
+        if gecerli > 0 && veri[gecerli - 1] != b'\n' {
+            dosya.write_all(b"\n")?;
+        }
+        dosya.sync_data()?;
+        Ok(Self::hedefle(Box::new(dosya)))
+    }
+
+    pub fn hedefle(hedef: Box<dyn KayitHedefi>) -> Self {
+        Self { hedef }
     }
 
     pub fn yaz(&mut self, zarf: &Zarf<KayitOgesi>) -> io::Result<()> {
         let mut satir = serde_json::to_vec(zarf).map_err(io::Error::other)?;
         satir.push(b'\n');
-        self.dosya.write_all(&satir)?;
-        self.dosya.flush()
+        self.hedef.ekle(&satir)
     }
 
     pub fn yaz_kalici(&mut self, zarf: &Zarf<KayitOgesi>) -> io::Result<()> {
         self.yaz(zarf)?;
-        self.dosya.sync_data()
+        self.hedef.kalici_yap()
     }
 
     /// Kaydı okur. Çökme sırasında yarım yazılmış **son** satır atlanır;
     /// ortadaki bozuk bir satır kaydın güvenilmez olduğunu gösterir ve hatadır.
     pub fn oku(yol: &Path) -> io::Result<Vec<Zarf<KayitOgesi>>> {
-        let veri = fs::read(yol)?;
-        let satirlar: Vec<&[u8]> =
-            veri.split(|b| *b == b'\n').filter(|s| !s.iter().all(u8::is_ascii_whitespace)).collect();
-        let mut kayitlar = Vec::with_capacity(satirlar.len());
-        for (i, satir) in satirlar.iter().enumerate() {
+        Ok(coz(&fs::read(yol)?)?.0)
+    }
+}
+
+/// Kaydı çözer. İkinci değer, son geçerli satırın bittiği bayttır (satır sonu
+/// dahil); `ac` dosyayı bu uzunluğa keser.
+fn coz(veri: &[u8]) -> io::Result<(Vec<Zarf<KayitOgesi>>, usize)> {
+    let mut kayitlar = Vec::new();
+    let mut gecerli = 0usize;
+    let mut bas = 0usize;
+    let mut satir_no = 0usize;
+    while bas < veri.len() {
+        let (satir, sonraki) = match veri[bas..].iter().position(|b| *b == b'\n') {
+            Some(i) => (&veri[bas..bas + i], bas + i + 1),
+            None => (&veri[bas..], veri.len()),
+        };
+        if !satir.iter().all(u8::is_ascii_whitespace) {
+            satir_no += 1;
             match serde_json::from_slice(satir) {
-                Ok(zarf) => kayitlar.push(zarf),
-                Err(_) if i + 1 == satirlar.len() => break,
+                Ok(zarf) => {
+                    kayitlar.push(zarf);
+                    gecerli = sonraki;
+                }
+                // Çökmede yarım kalan son satır: atlanır, kayıt burada biter.
+                Err(_) if veri[sonraki..].iter().all(u8::is_ascii_whitespace) => break,
                 Err(e) => {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("oturum kaydının {}. satırı bozuk: {e}", i + 1),
+                        format!("oturum kaydının {satir_no}. satırı bozuk: {e}"),
                     ));
                 }
             }
         }
-        Ok(kayitlar)
+        bas = sonraki;
     }
+    Ok((kayitlar, gecerli))
 }
 ```
 
@@ -1994,7 +2087,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
 - [ ] **Step 4: Testlerin geçtiğini gör**
 
 Run: `cargo test -p kalfa-core --test kayit_kurtarma`
-Expected: `test result: ok. 5 passed`
+Expected: `test result: ok. 6 passed`
 
 - [ ] **Step 5: Lint, biçim, commit**
 
@@ -2487,13 +2580,15 @@ git commit -m "kalfa-core: sağlayıcı soyutlaması, EVREN bağdaştırıcısı
   - `Sinirlar { azami_model_turu: u32 = 25, azami_arac_cagrisi: u32 = 50, azami_arac_ciktisi: usize = 65536, ayni_hata_esigi: u32 = 3, azami_bekleme: Duration = 60 sn }` (`Default`)
   - `OturumAyarlari { model: String, kip: Kip, sinirlar: Sinirlar, kayit_yolu: Option<PathBuf>, sistem_mesaji: String }`; `OturumAyarlari::yeni(model, calisma_alani: &Path)` (Sıkı kip, kayıtsız, varsayılan sistem mesajı)
   - `varsayilan_sistem_mesaji(calisma_alani: &Path) -> String` — araç çıktısının "veri, talimat değil" olduğunu söyler (spec §9)
-  - `OturumBaglami { saglayici: Arc<dyn Saglayici>, araclar: Arc<AracKayitDefteri>, siniflandirici: Arc<Siniflandirici> }` (`Clone`)
-  - `OturumTutamaci` (`Clone`): `oturum_id(&self) -> OturumId`; `async fn gonder(&self, komut: Komut) -> Result<(), OturumHatasi>`
-  - `OlayAlici = mpsc::Receiver<Zarf<Olay>>`
+  - `OturumBaglami { saglayici: Arc<dyn Saglayici>, araclar: Arc<AracKayitDefteri>, siniflandirici: Arc<Siniflandirici>, kilitler: Arc<KaynakKilitleri> }` (`Clone`) — `kilitler` **çalışma alanı düzeyinde ortaktır**: uygulama aynı çalışma alanındaki bütün oturumlara aynı kilit yöneticisini verir (spec §6.1)
+  - `OturumTutamaci` (`Clone`): `oturum_id(&self) -> OturumId`; `async fn gonder(&self, komut: Komut) -> Result<(), OturumHatasi>`; `fn iptal_et(&self) -> Option<TurId>` — süren turu komut kuyruğundan **bağımsız** olarak hemen iptal eder (iptal belirtecini doğrudan tetikler) ve kayıt için `Komut::Iptal`'i de kuyruğa bırakır; süren tur yoksa `None`
+  - `OlayAlici = mpsc::UnboundedReceiver<Zarf<Olay>>` — çekirdekten uygulamaya kanal **sınırsızdır**: çekirdek olay gönderirken arayüzü asla beklemez (spec §11). Birleştirme ve sınırlı IPC kuyruğu uygulama katmanının işidir (§11.1, plan 1c).
   - `baslat(ayarlar, baglam) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi>` (bir tokio çalışma zamanı içinde çağrılmalı; `kayit_yolu` varsa kayıt yeni oluşturulur)
+  - `baslat_kayitla(ayarlar, baglam, kayit: OturumKaydi) -> (OturumTutamaci, OlayAlici)` — uygulamanın verdiği bir kayıt hedefiyle başlatır (`kayit_yolu` kullanılmaz); testlerde hata benzeten hedef için
   - `OturumHatasi { Kayit(io::Error), Kurtarma(KurtarmaHatasi), Kapali }`
-  - `kalfa_core::test_destek`: `Surucu { pub tutamac, pub gecmis: Vec<Zarf<Olay>> }` — `Surucu::yeni(tutamac, olaylar)`, `.zaman_asimi(Duration)` (varsayılan 5 sn), `async gonder(Komut)`, `async sonraki() -> Zarf<Olay>`, `async bekle(kosul: impl Fn(&Olay) -> bool) -> Zarf<Olay>`, `async tur_sonu() -> BitisNedeni`, `metin() -> String` (TokenParcasi birleşimi), `hatalar() -> Vec<String>`; `sanal_siniflandirici() -> Arc<Siniflandirici>`; `test_baglami(Arc<SahteSaglayici>, Vec<Arc<dyn Arac>>, Arc<Siniflandirici>) -> OturumBaglami`; `test_oturumu(OturumBaglami, OturumAyarlari) -> Surucu`
-- Davranış: her tur `TurBasladi` ile başlar, `Tamamlandi { neden }` ile biter ve bir turun bütün olayları aynı `tur` kimliğini taşır; `sira` olaylar ve kayıt öğeleri arasında ortak ve tekdüze artar; tur sürerken gelen `KullaniciMesaji` reddedilir; boştayken gelen `AracOnayi`/`SartlariKabulEt` `Hata` olayı üretir; `IzinKipiDegistir` ve `ModelDegistir` her an uygulanır ve kaydedilir. Bu görevde model araç çağrısı üretirse çağrılar yürütülmeden yanıtlanarak kapatılır; araç aşaması Task 9'dadır.
+  - `kalfa_core::test_destek`: `Surucu { pub tutamac, pub gecmis: Vec<Zarf<Olay>> }` — `Surucu::yeni(tutamac, olaylar)`, `.zaman_asimi(Duration)` (varsayılan 5 sn), `async gonder(Komut)`, `async sonraki() -> Zarf<Olay>`, `async bekle(kosul: impl Fn(&Olay) -> bool) -> Zarf<Olay>`, `async tur_sonu() -> BitisNedeni`, `metin() -> String` (TokenParcasi birleşimi), `hatalar() -> Vec<String>`; `sanal_siniflandirici() -> Arc<Siniflandirici>`; `test_baglami(Arc<SahteSaglayici>, Vec<Arc<dyn Arac>>, Arc<Siniflandirici>) -> OturumBaglami` (yeni bir kilit yöneticisiyle); `test_oturumu(OturumBaglami, OturumAyarlari) -> Surucu`; `BozulanHedef::hep_bozuk() -> OturumKaydi` (her yazım hata), `BozulanHedef::kalicida_bozuk() -> OturumKaydi` (ekleme başarılı, kalıcılaştırma hata)
+- Davranış: her tur `TurBasladi` ile başlar, `Tamamlandi { neden }` ile biter ve bir turun bütün olayları aynı `tur` kimliğini taşır; `sira` olaylar ve kayıt öğeleri arasında ortak ve tekdüze artar; tur sürerken gelen `KullaniciMesaji` reddedilir; boştayken gelen `AracOnayi`/`SartlariKabulEt` `Hata` olayı üretir; `IzinKipiDegistir` ve `ModelDegistir` her an uygulanır ve kaydedilir (`IzinKipiDegistir` ayrıca politika sürümünü artırır, Task 9 bunu kullanır). Her bekleme noktası komut kanalının yanında iptal belirtecini de dinler. Bu görevde model araç çağrısı üretirse çağrılar yürütülmeden yanıtlanarak kapatılır; araç aşaması Task 9'dadır.
+- **Kayıt hatası (spec §6.6):** kayıtlı bir oturumda bir kayıt öğesi yazılamazsa oturum durur: `Hata` olayı yayılır, sonraki yazımlar denenmez, süren tur `Hata` ile biter, yeni `KullaniciMesaji` reddedilir. Oturum kendiliğinden kayıtsız oturuma **dönmez**. Yan etkili aracın çalışmadan önceki "başladı" kaydı yazılamazsa araç çalışmaz (Task 9).
 
 - [ ] **Step 1: Başarısız testleri yaz**
 
@@ -2508,11 +2603,27 @@ use kalfa_core::izin::Kip;
 use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
 use kalfa_core::kimlik::CagriId;
 use kalfa_core::muhur::OnayMuhru;
-use kalfa_core::oturum::OturumAyarlari;
+use kalfa_core::oturum::{OturumAyarlari, baslat_kayitla};
 use kalfa_core::protokol::{BitisNedeni, Komut, OnayKarari, Olay};
 use kalfa_core::test_destek::*;
 use kalfa_evren::tipler::Role;
 use kalfa_evren::{AkisOlayi, EvrenError};
+
+#[tokio::test]
+async fn kayit_yazilamazsa_oturum_durur_ve_kayitsiza_donmez() {
+    let s = SahteSaglayici::yeni(vec![SahteYanit::metin("olmamalı")]);
+    let (t, o) = baslat_kayitla(
+        ayarlar(),
+        test_baglami(s.clone(), vec![], sanal_siniflandirici()),
+        BozulanHedef::hep_bozuk(),
+    );
+    let mut d = Surucu::yeni(t, o);
+    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("Oturum kaydı yazılamadı"))).await;
+    d.gonder(mesaj("selam")).await;
+    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("yazılamadığı için bu oturum durduruldu")))
+        .await;
+    assert!(s.istekler().is_empty(), "kaydı yazılamayan oturumda model çağrılmaz");
+}
 
 fn ayarlar() -> OturumAyarlari {
     OturumAyarlari::yeni("glm-5.3", Path::new("calisma"))
@@ -2656,7 +2767,8 @@ mod model_turu;
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use kalfa_evren::tipler::{ChatMessage, ToolCall};
@@ -2666,12 +2778,13 @@ use tokio_util::sync::CancellationToken;
 use crate::arac::AracKayitDefteri;
 use crate::izin::{Kip, Siniflandirici};
 use crate::kayit::{KayitOgesi, OturumKaydi};
+use crate::kilit::KaynakKilitleri;
 use crate::kimlik::{OturumId, TurId};
 use crate::kurtarma::KurtarmaHatasi;
 use crate::protokol::{BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf};
 use crate::saglayici::Saglayici;
 
-const KANAL_KAPASITESI: usize = 256;
+const KOMUT_KANALI: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sinirlar {
@@ -2729,11 +2842,15 @@ pub fn varsayilan_sistem_mesaji(calisma_alani: &Path) -> String {
     )
 }
 
+/// Oturumun dış bağımlılıkları. `kilitler` çalışma alanı düzeyinde ortaktır:
+/// aynı çalışma alanındaki bütün oturumlar aynı kilit yöneticisini paylaşır
+/// (spec §6.1); yoksa iki oturum aynı dosyayı aynı anda değiştirebilirdi.
 #[derive(Clone)]
 pub struct OturumBaglami {
     pub saglayici: Arc<dyn Saglayici>,
     pub araclar: Arc<AracKayitDefteri>,
     pub siniflandirici: Arc<Siniflandirici>,
+    pub kilitler: Arc<KaynakKilitleri>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -2746,12 +2863,18 @@ pub enum OturumHatasi {
     Kapali,
 }
 
-pub type OlayAlici = mpsc::Receiver<Zarf<Olay>>;
+/// Çekirdekten uygulamaya olay kanalı. Sınırsızdır: çekirdek olay gönderirken
+/// arayüzü asla beklemez (spec §11). Birleştirme ve sınırlı IPC kuyruğu
+/// uygulama katmanının işidir (spec §11.1).
+pub type OlayAlici = mpsc::UnboundedReceiver<Zarf<Olay>>;
+
+type AktifTur = Arc<Mutex<Option<(TurId, CancellationToken)>>>;
 
 #[derive(Clone)]
 pub struct OturumTutamaci {
     oturum: OturumId,
     tx: mpsc::Sender<Komut>,
+    aktif_tur: AktifTur,
 }
 
 impl OturumTutamaci {
@@ -2762,6 +2885,16 @@ impl OturumTutamaci {
     pub async fn gonder(&self, komut: Komut) -> Result<(), OturumHatasi> {
         self.tx.send(komut).await.map_err(|_| OturumHatasi::Kapali)
     }
+
+    /// Süren turu komut kuyruğundan bağımsız olarak hemen iptal eder (spec
+    /// §6.3) ve iptalin kayda geçmesi için kuyruğa da bırakır. Kuyruk doluysa
+    /// belirteç yine de tetiklenmiştir. Süren tur yoksa `None`.
+    pub fn iptal_et(&self) -> Option<TurId> {
+        let (tur, belirtec) = self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()).clone()?;
+        belirtec.cancel();
+        let _ = self.tx.try_send(Komut::Iptal { tur });
+        Some(tur)
+    }
 }
 
 /// Yeni bir oturum başlatır. Bir tokio çalışma zamanı içinde çağrılmalıdır.
@@ -2770,13 +2903,27 @@ pub fn baslat(ayarlar: OturumAyarlari, baglam: OturumBaglami) -> Result<(OturumT
         Some(yol) => Some(OturumKaydi::olustur(yol)?),
         None => None,
     };
+    Ok(baslat_ic(ayarlar, baglam, kayit))
+}
+
+/// Uygulamanın verdiği bir kayıt hedefiyle başlatır; `ayarlar.kayit_yolu`
+/// kullanılmaz. Testlerde hata benzeten bir hedef vermek için de kullanılır.
+pub fn baslat_kayitla(
+    ayarlar: OturumAyarlari,
+    baglam: OturumBaglami,
+    kayit: OturumKaydi,
+) -> (OturumTutamaci, OlayAlici) {
+    baslat_ic(ayarlar, baglam, Some(kayit))
+}
+
+fn baslat_ic(ayarlar: OturumAyarlari, baglam: OturumBaglami, kayit: Option<OturumKaydi>) -> (OturumTutamaci, OlayAlici) {
     let (mut oturum, tutamac, alici) = Oturum::kur(OturumId::yeni(), ayarlar, baglam, kayit, Vec::new(), 0);
     tokio::spawn(async move {
         let acilis = KayitOgesi::OturumAcildi { model: oturum.ayarlar.model.clone(), kip: oturum.ayarlar.kip };
         oturum.kaydet(acilis).await;
         oturum.calis().await;
     });
-    Ok((tutamac, alici))
+    (tutamac, alici)
 }
 
 struct Oturum {
@@ -2784,12 +2931,19 @@ struct Oturum {
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
     komutlar: mpsc::Receiver<Komut>,
-    olaylar: mpsc::Sender<Zarf<Olay>>,
+    olaylar: mpsc::UnboundedSender<Zarf<Olay>>,
     kayit: Option<OturumKaydi>,
+    /// Kayıt bir kez yazılamadıysa nedeni. Oturum durur (spec §6.6).
+    kayit_hatasi: Option<String>,
     sira: u64,
     mesajlar: Vec<ChatMessage>,
     tur: Option<TurId>,
     iptal: CancellationToken,
+    /// Süren tur ve belirteci; `OturumTutamaci::iptal_et` bunu kullanır.
+    aktif_tur: AktifTur,
+    /// İzin kipi her değiştiğinde artar. Planlanan işlem, planlandığı sürümle
+    /// yürütülür; sürüm değiştiyse yürütülmez (spec §7.6, Task 9).
+    politika: Arc<AtomicU64>,
     kapandi: bool,
 }
 
@@ -2808,8 +2962,9 @@ impl Oturum {
         mesajlar: Vec<ChatMessage>,
         sira: u64,
     ) -> (Self, OturumTutamaci, OlayAlici) {
-        let (komut_tx, komut_rx) = mpsc::channel(KANAL_KAPASITESI);
-        let (olay_tx, olay_rx) = mpsc::channel(KANAL_KAPASITESI);
+        let (komut_tx, komut_rx) = mpsc::channel(KOMUT_KANALI);
+        let (olay_tx, olay_rx) = mpsc::unbounded_channel();
+        let aktif_tur: AktifTur = Arc::new(Mutex::new(None));
         let oturum = Self {
             kimlik,
             ayarlar,
@@ -2817,20 +2972,32 @@ impl Oturum {
             komutlar: komut_rx,
             olaylar: olay_tx,
             kayit,
+            kayit_hatasi: None,
             sira,
             mesajlar,
             tur: None,
             iptal: CancellationToken::new(),
+            aktif_tur: aktif_tur.clone(),
+            politika: Arc::new(AtomicU64::new(0)),
             kapandi: false,
         };
-        (oturum, OturumTutamaci { oturum: kimlik, tx: komut_tx }, olay_rx)
+        (oturum, OturumTutamaci { oturum: kimlik, tx: komut_tx, aktif_tur }, olay_rx)
     }
 
     async fn calis(mut self) {
         while !self.kapandi {
             let Some(komut) = self.komut_al().await else { break };
             match komut {
-                Komut::KullaniciMesaji { metin } => self.tur_calistir(metin).await,
+                Komut::KullaniciMesaji { metin } => {
+                    if let Some(neden) = self.kayit_hatasi.clone() {
+                        let mesaj = format!(
+                            "Oturum kaydı yazılamadığı için bu oturum durduruldu ({neden}). Yeni bir oturum aç."
+                        );
+                        self.hata(mesaj).await;
+                    } else {
+                        self.tur_calistir(metin).await;
+                    }
+                }
                 diger => {
                     self.genel_komut(diger).await;
                 }
@@ -2870,6 +3037,7 @@ impl Oturum {
             }
             Komut::IzinKipiDegistir { kip } => {
                 self.ayarlar.kip = kip;
+                self.politika.fetch_add(1, Ordering::SeqCst);
                 self.kaydet(KayitOgesi::KipDegisti { kip }).await;
             }
             Komut::ModelDegistir { model } => {
@@ -2890,17 +3058,28 @@ impl Oturum {
     }
 
     async fn tur_calistir(&mut self, metin: String) {
-        self.tur = Some(TurId::yeni());
+        let tur = TurId::yeni();
+        self.tur = Some(tur);
         self.iptal = CancellationToken::new();
+        *self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()) = Some((tur, self.iptal.clone()));
         self.yay(Olay::TurBasladi).await;
         self.mesaj_ekle(ChatMessage::user(metin)).await;
-        let neden = self.tur_dongusu().await;
-        self.kaydet(KayitOgesi::TurBitti { neden: neden.clone() }).await;
+        let mut neden = self.tur_dongusu().await;
+        *self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()) = None;
+        if self.kayit_hatasi.is_some() {
+            neden = BitisNedeni::Hata;
+        }
+        if !self.kaydet(KayitOgesi::TurBitti { neden: neden.clone() }).await {
+            neden = BitisNedeni::Hata;
+        }
         self.yay(Olay::Tamamlandi { neden }).await;
         self.tur = None;
     }
 
     async fn tur_dongusu(&mut self) -> BitisNedeni {
+        if self.kayit_hatasi.is_some() {
+            return BitisNedeni::Hata;
+        }
         let cevap = match self.model_turu().await {
             Ok(c) => c,
             Err(neden) => return neden,
@@ -2908,6 +3087,9 @@ impl Oturum {
         if !cevap.cagrilar.is_empty() {
             // Bu sürümde araç yürütülmez; çağrılar yanıtlanarak kapatılır.
             self.cagrilari_kapat(&cevap.cagrilar, "[çalıştırılmadı: araç yürütme henüz yok]").await;
+        }
+        if self.kayit_hatasi.is_some() {
+            return BitisNedeni::Hata;
         }
         BitisNedeni::Normal
     }
@@ -2923,26 +3105,42 @@ impl Oturum {
     async fn yay(&mut self, olay: Olay) {
         self.sira += 1;
         let zarf = Zarf { sema: SEMA_SURUMU, oturum: self.kimlik, tur: self.tur, sira: self.sira, yuk: olay };
-        // Alıcı yoksa olay düşer; komut kanalı kapanınca oturum da biter.
-        let _ = self.olaylar.send(zarf).await;
+        // Sınırsız kanal: çekirdek arayüzü beklemez. Alıcı yoksa olay düşer;
+        // komut kanalı kapanınca oturum da biter.
+        let _ = self.olaylar.send(zarf);
     }
 
     async fn hata(&mut self, mesaj: impl Into<String>) {
         self.yay(Olay::Hata { mesaj: mesaj.into() }).await;
     }
 
-    async fn kaydet(&mut self, oge: KayitOgesi) {
-        self.kayda_yaz(oge, false).await;
+    async fn kaydet(&mut self, oge: KayitOgesi) -> bool {
+        self.kayda_yaz(oge, false).await
     }
 
-    async fn kayda_yaz(&mut self, oge: KayitOgesi, kalici: bool) {
-        let Some(kayit) = self.kayit.as_mut() else { return };
+    /// Kaydı yazar; kayıtsız oturumda ya da yazım başarılıysa `true`. Bir kez
+    /// yazılamazsa oturum durur: sonraki yazımlar denenmez, yan etkili araç
+    /// çalıştırılmaz, yeni tur başlatılmaz (spec §6.6). Oturum kendiliğinden
+    /// kayıtsız oturuma dönmez.
+    async fn kayda_yaz(&mut self, oge: KayitOgesi, kalici: bool) -> bool {
+        if self.kayit_hatasi.is_some() {
+            return false;
+        }
+        let Some(kayit) = self.kayit.as_mut() else { return true };
         self.sira += 1;
         let zarf = Zarf { sema: SEMA_SURUMU, oturum: self.kimlik, tur: self.tur, sira: self.sira, yuk: oge };
         let sonuc = if kalici { kayit.yaz_kalici(&zarf) } else { kayit.yaz(&zarf) };
-        if let Err(e) = sonuc {
-            self.kayit = None;
-            self.hata(format!("Oturum kaydı yazılamadı; bu oturum artık kaydedilmiyor: {e}")).await;
+        match sonuc {
+            Ok(()) => true,
+            Err(e) => {
+                self.kayit_hatasi = Some(e.to_string());
+                // Kilit/hazırlık bekleyen işler dahil bütün çocuk belirteçlere
+                // yayılır. Başlamış bir yan etkiyi geri aldığımızı iddia etmeyiz.
+                self.iptal.cancel();
+                let mesaj = format!("Oturum kaydı yazılamadı: {e}. Yeni işlemler durduruldu; başlamış işlemlerin sonucu belirsiz olabilir.");
+                self.hata(mesaj).await;
+                false
+            }
         }
     }
 
@@ -2992,6 +3190,8 @@ impl Oturum {
         let sonuc = loop {
             tokio::select! {
                 biased;
+                // `OturumTutamaci::iptal_et` belirteci doğrudan tetikler; komut kuyruğunu beklemez.
+                _ = self.iptal.cancelled() => break Err(BitisNedeni::Iptal),
                 komut = self.komutlar.recv() => {
                     let Some(komut) = self.komut_geldi(komut).await else { break Err(BitisNedeni::Iptal) };
                     if self.genel_komut(komut).await == Etki::Iptal {
@@ -3066,13 +3266,14 @@ impl Oturum {
         }
     }
 
-    /// Bir geleceği beklerken komutları da dinler; iptal gelirse `Err(Iptal)`.
-    /// Gelecek `self`'i ödünç almamalıdır.
+    /// Bir geleceği beklerken komutları ve iptal belirtecini de dinler; iptal
+    /// gelirse `Err(Iptal)`. Gelecek `self`'i ödünç almamalıdır.
     pub(super) async fn iptal_edilebilir<F: Future>(&mut self, gelecek: F) -> Result<F::Output, BitisNedeni> {
         tokio::pin!(gelecek);
         loop {
             tokio::select! {
                 biased;
+                _ = self.iptal.cancelled() => return Err(BitisNedeni::Iptal),
                 komut = self.komutlar.recv() => {
                     let Some(komut) = self.komut_geldi(komut).await else { return Err(BitisNedeni::Iptal) };
                     if self.genel_komut(komut).await == Etki::Iptal {
@@ -3090,6 +3291,7 @@ impl Oturum {
 
 ```rust
 use std::collections::VecDeque;
+use std::io;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -3103,6 +3305,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, Hazirlik, YazmaHedefi};
 use crate::izin::Siniflandirici;
+use crate::kayit::{KayitHedefi, OturumKaydi};
+use crate::kilit::KaynakKilitleri;
 use crate::oturum::{OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci, baslat};
 use crate::protokol::{BitisNedeni, Komut, Olay, Zarf};
 use crate::saglayici::{Saglayici, SaglayiciAkisi};
@@ -3188,6 +3392,8 @@ pub fn sanal_siniflandirici() -> Arc<Siniflandirici> {
     )
 }
 
+/// Yeni bir kilit yöneticisiyle bağlam. Aynı çalışma alanını paylaşan iki
+/// oturum için bağlamı `clone()`'la: kilitler ortak kalır.
 pub fn test_baglami(
     saglayici: Arc<SahteSaglayici>,
     araclar: Vec<Arc<dyn Arac>>,
@@ -3197,6 +3403,46 @@ pub fn test_baglami(
         saglayici,
         araclar: Arc::new(AracKayitDefteri::yeni(araclar).expect("araç kaydı")),
         siniflandirici,
+        kilitler: Arc::new(KaynakKilitleri::yeni()),
+    }
+}
+
+/// Yazma hatası benzeten kayıt hedefi (spec §6.6 testleri).
+pub struct BozulanHedef {
+    ekleme_bozuk: bool,
+    kalan_kalici: usize,
+}
+
+impl BozulanHedef {
+    /// Her yazım başarısız olur.
+    pub fn hep_bozuk() -> OturumKaydi {
+        OturumKaydi::hedefle(Box::new(Self { ekleme_bozuk: true, kalan_kalici: 0 }))
+    }
+
+    /// Satır eklemek başarılı, kalıcılaştırmak (fsync) başarısız: yalnızca yan
+    /// etkili araçtan önceki "başladı" kaydı düşer.
+    pub fn kalicida_bozuk() -> OturumKaydi {
+        Self::kalicidan_sonra_bozuk(0)
+    }
+
+    /// İlk n kalıcılaştırma başarılı, sonraki başarısız.
+    pub fn kalicidan_sonra_bozuk(n: usize) -> OturumKaydi {
+        OturumKaydi::hedefle(Box::new(Self { ekleme_bozuk: false, kalan_kalici: n }))
+    }
+}
+
+impl KayitHedefi for BozulanHedef {
+    fn ekle(&mut self, _satir: &[u8]) -> io::Result<()> {
+        if self.ekleme_bozuk { Err(io::Error::other("disk dolu")) } else { Ok(()) }
+    }
+
+    fn kalici_yap(&mut self) -> io::Result<()> {
+        if self.kalan_kalici == 0 {
+            Err(io::Error::other("disk dolu"))
+        } else {
+            self.kalan_kalici -= 1;
+            Ok(())
+        }
     }
 }
 
@@ -3209,7 +3455,7 @@ pub fn test_oturumu(baglam: OturumBaglami, ayarlar: OturumAyarlari) -> Surucu {
 - [ ] **Step 4: Testlerin geçtiğini gör**
 
 Run: `cargo test -p kalfa-core --test oturum_metin`
-Expected: `test result: ok. 7 passed`
+Expected: `test result: ok. 8 passed`
 
 - [ ] **Step 5: Bütün crate, lint, biçim, commit**
 
@@ -3235,10 +3481,13 @@ git commit -m "kalfa-core: oturum görevi, metin turu, kayıt ve UI'sız test s�
   1. Her çağrı için: araç bulunur → İnceleme kipinde yazan araç reddedilir → argüman şemaya göre doğrulanır → `hazirla` → izin kararı (okunan yollar gizli mi, yazılan yollar korumalı mı / hard link'li mi) → mühür.
   2. `Yasak` → `Reddedildi`, içerik `[izin verilmedi] <neden>`. Planlama hatası → `Basarisiz`, içerik `[hata] <mesaj>`.
   3. `Onayli` çağrılar tek bir `OnayGerekiyor { islem, ogeler }` olayında gruplanır; her `AracOnayi` mührüyle eşleşmelidir (eşleşmezse `Hata` olayı, bekleme sürer); `Reddet` → `Reddedildi`, içerik `[kullanıcı reddetti] <gerekçe | gerekçe belirtilmedi>`.
-  4. `Serbest` ve onaylanan çağrılar için önce `AracBasladi` kaydı (yazan araçta `yaz_kalici`) ve `AracCagrisiBasladi` olayı; sonra `FuturesUnordered` ile paralel yürütme. Her çağrı kilidini alır, **kilit altında `hazirla`'yı yeniden çalıştırıp mührü yeniden hesaplar** (tutmazsa `OnayEskidi`), sonra `calistir`.
+  4. `Serbest` ve onaylanan çağrılar için önce `AracBasladi` kaydı (yazan araçta `yaz_kalici`) ve `AracCagrisiBasladi` olayı. **Kayıt yazılamazsa çağrı yürütülmez** (`[çalıştırılmadı: oturum kaydı yazılamadı]`) ve tur `Hata` ile biter (spec §6.6). Sonra `FuturesUnordered` ile paralel yürütme. Her çağrı **çalışma alanının ortak** kilit yöneticisinden (`baglam.kilitler`) kilidini alır; kilit altında (a) politika sürümü planlandığı sürümle aynı mı bakar (değilse `PolitikaDegisti`), (b) `hazirla`'yı yeniden çalıştırıp mührü yeniden hesaplar (tutmazsa `OnayEskidi`), sonra `calistir`.
   5. Her sonuç, tamamlandığı anda: `tool` mesajı (başarıda `[kaynak: <etiket>]\n<içerik>`, `azami_arac_ciktisi` baytta kırpılır) → `AracBitti` kaydı → `AracSonucu` olayı. Mesaj, `AracBitti`'den önce yazılır (kurtarma sırası, Task 6).
   6. Aynı araç + aynı ham argüman üst üste `ayni_hata_esigi` kez `Basarisiz` olursa tur `Sinir` ile biter; başarı sayacı sıfırlar.
   7. Tur sınırları: `azami_model_turu` ve `azami_arac_cagrisi` (aşılırsa çağrılar yürütülmeden kapatılır).
+  8. **Kip değişimi (spec §7.6):** onay beklenirken `IzinKipiDegistir` gelirse bekleyen onaylar geçersizleşir; o aşamanın hiçbir çağrısı yürütülmez (`[çalıştırılmadı: izin kipi değişti; gerekirse yeniden dene]`), bir `Hata` olayı bunu bildirir ve tur sürer — model yeni kipte yeniden planlayabilir.
+
+**Yürütme ayrıntısı (r3.2):** Grubun herhangi bir başlangıç kaydı bozulursa kaydı daha önce yazılmış fakat başlamamış çağrılar da durdurulur. Sonuç kaydı hatası da iptal belirtecine yayılır. Politika sürümü hazırlıktan sonra tekrar kontrol edilir; güncel git koruması/izin kararı eski kararla karşılaştırılır. Başlamış yan etki geri alınmış sayılmaz.
 
 - [ ] **Step 1: Başarısız testleri yaz**
 
@@ -3252,16 +3501,185 @@ use std::time::Duration;
 use kalfa_core::arac::Arac;
 use kalfa_core::izin::{GIZLI_UYARISI, Kip};
 use kalfa_core::muhur::OnayMuhru;
-use kalfa_core::oturum::OturumAyarlari;
+use kalfa_core::oturum::{OturumAyarlari, baslat_kayitla};
 use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, OnayKarari, OnayOgesi, Olay};
 use kalfa_core::test_destek::*;
 use kalfa_evren::tipler::{ChatMessage, Role};
 use serde_json::{Value, json};
 
+#[tokio::test]
+async fn ayni_calisma_alanindaki_iki_oturum_ayni_dosyaya_seri_yazar() {
+    let yaz = Arc::new(SahteArac::yazan("yaz").gecikme(Duration::from_millis(200)));
+    let s1 = SahteSaglayici::yeni(vec![SahteYanit::arac("yaz", yol("a.txt")), SahteYanit::metin("bir")]);
+    let s2 = SahteSaglayici::yeni(vec![SahteYanit::arac("yaz", yol("a.txt")), SahteYanit::metin("iki")]);
+    let b1 = test_baglami(s1.clone(), vec![a(&yaz)], sanal_siniflandirici());
+    let mut b2 = b1.clone();
+    b2.saglayici = s2.clone();
+    let mut d1 = test_oturumu(b1, ayarlar(Kip::Proje));
+    let mut d2 = test_oturumu(b2, ayarlar(Kip::Proje));
+    d1.gonder(mesaj("yaz")).await;
+    d2.gonder(mesaj("yaz")).await;
+    assert_eq!(d1.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(d2.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(yaz.cagri_sayisi(), 2);
+    assert_eq!(yaz.azami_eszamanli(), 1, "kilitler çalışma alanı düzeyinde ortak");
+}
+
+#[tokio::test]
+async fn kip_degisince_bekleyen_onaylar_gecersizlesir() {
+    let yaz = Arc::new(SahteArac::yazan("yaz"));
+    let s = SahteSaglayici::yeni(vec![SahteYanit::arac("yaz", yol("b.txt")), SahteYanit::metin("peki")]);
+    let mut d = oturum(&s, vec![a(&yaz)], ayarlar(Kip::Siki));
+    d.gonder(mesaj("yaz")).await;
+    let ogeler = onay_bekle(&mut d).await;
+    d.gonder(Komut::IzinKipiDegistir { kip: Kip::Inceleme }).await;
+    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("İzin kipi değişti"))).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal, "tur sürer; model yeni kipte yeniden planlar");
+    assert!(arac_mesajlari(&s.istekler()[1].messages)[0].contains("izin kipi değişti"));
+
+    d.gonder(onayla(&ogeler[0])).await;
+    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("artık geçerli değil"))).await;
+    assert_eq!(yaz.cagri_sayisi(), 0, "eski kipte verilen onayla yazılmaz");
+}
+
+#[tokio::test]
+async fn kip_degisimi_kilit_bekleyen_yurutmeyi_durdurur() {
+    let yaz = Arc::new(SahteArac::yazan("yaz").gecikme(Duration::from_millis(300)));
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::araclar(vec![("yaz", yol("a.txt")), ("yaz", yol("a.txt"))]),
+        SahteYanit::metin("peki"),
+    ]);
+    let mut d = oturum(&s, vec![a(&yaz)], ayarlar(Kip::Proje));
+    d.gonder(mesaj("iki kez yaz")).await;
+    d.bekle(|o| matches!(o, Olay::AracCagrisiBasladi { .. })).await;
+    d.bekle(|o| matches!(o, Olay::AracCagrisiBasladi { .. })).await;
+    d.gonder(Komut::IzinKipiDegistir { kip: Kip::Inceleme }).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    assert!(yaz.cagri_sayisi() < 2, "kilit bekleyen yazma, kip değişince yürütülmez");
+    assert!(arac_mesajlari(&s.istekler()[1].messages).iter().any(|m| m.contains("İzin kipi veya hedefin izin koşulları değişti")));
+}
+
+#[tokio::test]
+async fn baslangic_kaydi_yazilamazsa_yan_etkili_arac_calismaz() {
+    let yaz = Arc::new(SahteArac::yazan("yaz"));
+    let s = SahteSaglayici::yeni(vec![SahteYanit::arac("yaz", yol("b.txt")), SahteYanit::metin("olmamalı")]);
+    let (t, o) = baslat_kayitla(
+        ayarlar(Kip::Proje),
+        test_baglami(s.clone(), vec![a(&yaz)], sanal_siniflandirici()),
+        BozulanHedef::kalicida_bozuk(),
+    );
+    let mut d = Surucu::yeni(t, o);
+    d.gonder(mesaj("yaz")).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);
+    assert!(d.hatalar().iter().any(|h| h.contains("Oturum kaydı yazılamadı")));
+    assert_eq!(yaz.cagri_sayisi(), 0, "başladı kaydı diske ulaşmadan yan etkili araç çalışmaz");
+    assert_eq!(s.istekler().len(), 1, "kayıt bozulunca tur ilerlemez");
+    d.gonder(mesaj("tekrar")).await;
+    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("durduruldu"))).await;
+}
+
+#[tokio::test]
+async fn grubun_ikinci_kaydi_bozulursa_ilk_arac_da_baslamaz() {
+    let yaz = Arc::new(SahteArac::yazan("yaz"));
+    let s = SahteSaglayici::yeni(vec![SahteYanit::araclar(vec![
+        ("yaz", yol("a.txt")), ("yaz", yol("b.txt")),
+    ])]);
+    let (t, o) = baslat_kayitla(
+        ayarlar(Kip::Proje),
+        test_baglami(s.clone(), vec![a(&yaz)], sanal_siniflandirici()),
+        BozulanHedef::kalicidan_sonra_bozuk(1),
+    );
+    let mut d = Surucu::yeni(t, o);
+    d.gonder(mesaj("iki dosyaya yaz")).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);
+    assert_eq!(yaz.cagri_sayisi(), 0);
+    assert_eq!(sonuc_durumlari(&d), vec![AracDurumu::IptalEdildi; 2]);
+    assert_eq!(s.istekler().len(), 1);
+}
+
+#[tokio::test]
+async fn sonuc_kaydi_bozulursa_kilit_bekleyen_arac_baslamaz() {
+    use kalfa_core::kayit::{KayitHedefi, KayitOgesi, OturumKaydi};
+    use kalfa_core::protokol::Zarf;
+    struct SonuctaBoz;
+    impl KayitHedefi for SonuctaBoz {
+        fn ekle(&mut self, satir: &[u8]) -> std::io::Result<()> {
+            let z: Zarf<KayitOgesi> = serde_json::from_slice(satir).unwrap();
+            if matches!(z.yuk, KayitOgesi::AracBitti { .. }) {
+                Err(std::io::Error::other("disk dolu"))
+            } else { Ok(()) }
+        }
+        fn kalici_yap(&mut self) -> std::io::Result<()> { Ok(()) }
+    }
+    let yaz = Arc::new(SahteArac::yazan("yaz"));
+    let s = SahteSaglayici::yeni(vec![SahteYanit::araclar(vec![
+        ("yaz", yol("a.txt")), ("yaz", yol("a.txt")),
+    ])]);
+    let (t, o) = baslat_kayitla(
+        ayarlar(Kip::Proje),
+        test_baglami(s, vec![a(&yaz)], sanal_siniflandirici()),
+        OturumKaydi::hedefle(Box::new(SonuctaBoz)),
+    );
+    let mut d = Surucu::yeni(t, o);
+    d.gonder(mesaj("iki kez yaz")).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);
+    assert_eq!(yaz.cagri_sayisi(), 1, "ilk yan etki geri alınmaz; bekleyen ikinci işlem başlamaz");
+}
+
 fn ayarlar(kip: Kip) -> OturumAyarlari {
     let mut a = OturumAyarlari::yeni("glm-5.3", Path::new("calisma"));
     a.kip = kip;
     a
+}
+
+#[tokio::test]
+async fn ikinci_hazirlik_beklerken_kip_degisirse_calistirilmaz() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use kalfa_core::arac::{AracCiktisi, AracHatasi, Hazirlik};
+    use tokio::sync::Notify;
+    use tokio_util::sync::CancellationToken;
+
+    struct Bekleyen {
+        arac: Arc<SahteArac>,
+        sayac: AtomicUsize,
+        basladi: Notify,
+        devam: Notify,
+    }
+    #[async_trait::async_trait]
+    impl Arac for Bekleyen {
+        fn ad(&self) -> &str { self.arac.ad() }
+        fn aciklama(&self) -> &str { self.arac.aciklama() }
+        fn parametre_semasi(&self) -> Value { self.arac.parametre_semasi() }
+        fn yazar_mi(&self) -> bool { true }
+        async fn hazirla(&self, a: &Value) -> Result<Hazirlik, AracHatasi> {
+            if self.sayac.fetch_add(1, Ordering::SeqCst) == 1 {
+                self.basladi.notify_one();
+                self.devam.notified().await;
+            }
+            self.arac.hazirla(a).await
+        }
+        async fn calistir(&self, a: &Value, h: &Hazirlik, iptal: CancellationToken) -> Result<AracCiktisi, AracHatasi> {
+            self.arac.calistir(a, h, iptal).await
+        }
+    }
+    let yaz = Arc::new(SahteArac::yazan("yaz"));
+    let bekleyen = Arc::new(Bekleyen {
+        arac: yaz.clone(), sayac: AtomicUsize::new(0), basladi: Notify::new(), devam: Notify::new(),
+    });
+    let s = SahteSaglayici::yeni(vec![SahteYanit::arac("yaz", yol("a.txt")), SahteYanit::metin("peki")]);
+    let mut d = oturum(&s, vec![bekleyen.clone()], ayarlar(Kip::Proje));
+    d.gonder(mesaj("yaz")).await;
+    tokio::time::timeout(Duration::from_secs(5), bekleyen.basladi.notified()).await.unwrap();
+    d.gonder(Komut::IzinKipiDegistir { kip: Kip::Inceleme }).await;
+    // FIFO komut kuyruğundaki sonraki komutun yanıtı, kipin işlendiğine bariyer.
+    d.gonder(Komut::AracOnayi {
+        cagri: CagriId::yeni(), karar: OnayKarari::Onayla, muhur: OnayMuhru("eski".into()),
+    }).await;
+    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("artık geçerli değil"))).await;
+    bekleyen.devam.notify_one();
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(yaz.cagri_sayisi(), 0);
+    assert_eq!(sonuc_durumlari(&d), vec![AracDurumu::IptalEdildi]);
 }
 
 fn a(arac: &Arc<SahteArac>) -> Arc<dyn Arac> {
@@ -3480,6 +3898,7 @@ Expected: testler derlenir ama çoğu başarısız — örneğin `serbest_okuma_
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
@@ -3489,7 +3908,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{Etki, Oturum};
 use crate::arac::{Arac, AracCiktisi, AracHatasi, Hazirlik};
-use crate::izin::{Islem, Karar, Kip, YolSinifi, karar_ver};
+use crate::izin::{Islem, Karar, Kip, Siniflandirici, YolSinifi, karar_ver};
 use crate::kayit::KayitOgesi;
 use crate::kilit::KaynakKilitleri;
 use crate::kimlik::{CagriId, IslemId};
@@ -3505,6 +3924,10 @@ struct Planlanan {
     argumanlar: Value,
     hazirlik: Hazirlik,
     muhur: OnayMuhru,
+    /// Planlandığı andaki politika sürümü (spec §7.6).
+    politika: u64,
+    kip: Kip,
+    karar: Karar,
 }
 
 struct CagriSonucu {
@@ -3535,6 +3958,8 @@ struct OnayToplama {
     reddedilen: Vec<CagriSonucu>,
     yanitsiz: Vec<Planlanan>,
     iptal: Option<BitisNedeni>,
+    /// Onay beklenirken izin kipi değişti: bu aşamanın hiçbir çağrısı yürütülmez.
+    politika_degisti: bool,
 }
 
 pub(super) enum AsamaSonucu {
@@ -3589,6 +4014,16 @@ impl Oturum {
                 }
                 return AsamaSonucu::Bitir(neden);
             }
+            if toplama.politika_degisti {
+                self.hata("İzin kipi değişti; bekleyen onaylar geçersiz sayıldı ve bu adımdaki işlemler yapılmadı.")
+                    .await;
+                for p in serbest.iter().chain(&toplama.onaylanan).chain(&toplama.yanitsiz) {
+                    let icerik = "[çalıştırılmadı: izin kipi değişti; gerekirse yeniden dene]".to_string();
+                    let s = CagriSonucu::plandan(p, AracDurumu::IptalEdildi, icerik);
+                    self.sonuc_isle(s, hata_sayaci).await;
+                }
+                return AsamaSonucu::Devam;
+            }
             serbest.extend(toplama.onaylanan);
         }
 
@@ -3611,8 +4046,12 @@ impl Oturum {
             return Err("İnceleme kipinde bu araç kullanılamaz; bu kip yalnızca okur.".into());
         }
         let argumanlar = self.baglam.araclar.dogrula(ad, &tc.function.arguments)?;
-        let hazirlik = arac.hazirla(&argumanlar).await.map_err(|e| e.to_string())?;
-        let karar = self.karar(&hazirlik);
+        let hazirlik = tokio::select! {
+            biased;
+            _ = self.iptal.cancelled() => return Err("tur iptal edildi".into()),
+            h = arac.hazirla(&argumanlar) => h.map_err(|e| e.to_string())?,
+        };
+        let karar = Self::karar(self.ayarlar.kip, &self.baglam.siniflandirici, &hazirlik);
         let muhur = muhur_hesapla(cagri, ad, &argumanlar, &hazirlik);
         let plan = Planlanan {
             cagri,
@@ -3622,13 +4061,14 @@ impl Oturum {
             argumanlar,
             hazirlik,
             muhur,
+            politika: self.politika.load(Ordering::SeqCst),
+            kip: self.ayarlar.kip,
+            karar: karar.clone(),
         };
         Ok((plan, karar))
     }
 
-    fn karar(&self, hazirlik: &Hazirlik) -> Karar {
-        let s = &self.baglam.siniflandirici;
-        let kip = self.ayarlar.kip;
+    fn karar(kip: Kip, s: &Siniflandirici, hazirlik: &Hazirlik) -> Karar {
         let mut karar = Karar::Serbest;
         for yol in &hazirlik.okunan {
             let sinif = if s.gizli_mi(yol) { YolSinifi::Gizli } else { YolSinifi::Normal };
@@ -3655,11 +4095,18 @@ impl Oturum {
             })
             .collect();
         let mut kalan: HashMap<CagriId, Planlanan> = bekleyen.into_iter().map(|(p, _)| (p.cagri, p)).collect();
-        let mut t = OnayToplama { onaylanan: Vec::new(), reddedilen: Vec::new(), yanitsiz: Vec::new(), iptal: None };
+        let mut t = OnayToplama {
+            onaylanan: Vec::new(),
+            reddedilen: Vec::new(),
+            yanitsiz: Vec::new(),
+            iptal: None,
+            politika_degisti: false,
+        };
+        let baslangic_politikasi = self.politika.load(Ordering::SeqCst);
         self.yay(Olay::OnayGerekiyor { islem: IslemId::yeni(), ogeler }).await;
 
         while !kalan.is_empty() {
-            let Some(komut) = self.komut_al().await else {
+            let Some(komut) = self.tur_komutu_al().await else {
                 t.iptal = Some(BitisNedeni::Iptal);
                 break;
             };
@@ -3687,6 +4134,10 @@ impl Oturum {
                         t.iptal = Some(BitisNedeni::Iptal);
                         break;
                     }
+                    if self.politika.load(Ordering::SeqCst) != baslangic_politikasi {
+                        t.politika_degisti = true;
+                        break;
+                    }
                 }
             }
         }
@@ -3694,19 +4145,23 @@ impl Oturum {
         t
     }
 
-    /// Planları paralel yürütür; iptal geldiyse nedeni döner (sonuçlar yine
-    /// toplanır: araçlar iptal belirtecini görüp kendileri durur).
+    /// Planları paralel yürütür; iptal geldiyse ya da kayıt yazılamadıysa
+    /// nedeni döner (sonuçlar yine toplanır: araçlar iptal belirtecini görüp
+    /// kendileri durur).
     async fn yurut(&mut self, planlar: Vec<Planlanan>, hata_sayaci: &mut HashMap<String, u32>) -> Option<BitisNedeni> {
-        for p in &planlar {
+        let mut calisacak = Vec::with_capacity(planlar.len());
+        let mut kaydi_yazilamayan = Vec::new();
+        for p in planlar {
             let oge = KayitOgesi::AracBasladi {
                 cagri: p.cagri,
                 model_cagri_id: p.model_id.clone(),
                 arac: p.arac.ad().to_string(),
             };
-            if p.arac.yazar_mi() {
-                self.kaydet_kalici(oge).await;
-            } else {
-                self.kaydet(oge).await;
+            // Yan etkili aracın "başladı" kaydı diske ulaşmadan araç çalışmaz (spec §6.6).
+            let yazildi = if p.arac.yazar_mi() { self.kaydet_kalici(oge).await } else { self.kaydet(oge).await };
+            if !yazildi {
+                kaydi_yazilamayan.push(p);
+                continue;
             }
             let olay = Olay::AracCagrisiBasladi {
                 cagri: p.cagri,
@@ -3714,15 +4169,28 @@ impl Oturum {
                 aciklama: p.hazirlik.aciklama.clone(),
             };
             self.yay(olay).await;
+            calisacak.push(p);
+        }
+        // Henüz hiçbir future poll edilmedi. Grubun sonraki kaydı bozulduysa
+        // önceki başarılı başlangıç kayıtları da yürütmeye izin vermez.
+        if self.kayit_hatasi.is_some() {
+            kaydi_yazilamayan.append(&mut calisacak);
+        }
+        for p in &kaydi_yazilamayan {
+            let icerik = "[çalıştırılmadı: oturum kaydı yazılamadı]".to_string();
+            self.sonuc_isle(CagriSonucu::plandan(p, AracDurumu::IptalEdildi, icerik), hata_sayaci).await;
         }
 
         let azami = self.ayarlar.sinirlar.azami_arac_ciktisi;
         let mut isler = FuturesUnordered::new();
-        for p in planlar {
-            let kilitler = self.kilitler.clone();
+        for p in calisacak {
+            // Kilitler çalışma alanı düzeyinde ortaktır (spec §6.1).
+            let kilitler = self.baglam.kilitler.clone();
+            let politika = self.politika.clone();
+            let siniflandirici = self.baglam.siniflandirici.clone();
             let iptal = self.iptal.child_token();
             isler.push(async move {
-                let sonuc = tek_calistir(&p, &kilitler, iptal).await;
+                let sonuc = tek_calistir(&p, &kilitler, &politika, &siniflandirici, iptal).await;
                 (p, sonuc)
             });
         }
@@ -3731,6 +4199,7 @@ impl Oturum {
         loop {
             tokio::select! {
                 biased;
+                _ = self.iptal.cancelled(), if iptal_nedeni.is_none() => iptal_nedeni = Some(BitisNedeni::Iptal),
                 komut = self.komutlar.recv(), if iptal_nedeni.is_none() => {
                     match self.komut_geldi(komut).await {
                         Some(k) => {
@@ -3750,7 +4219,7 @@ impl Oturum {
                 },
             }
         }
-        iptal_nedeni
+        if self.kayit_hatasi.is_some() { Some(BitisNedeni::Hata) } else { iptal_nedeni }
     }
 
     /// Sonucu bağlama, kayda ve arayüze işler. Mesaj `AracBitti`'den önce
@@ -3774,6 +4243,8 @@ fn hedefler(h: &Hazirlik) -> Vec<String> {
 async fn tek_calistir(
     p: &Planlanan,
     kilitler: &KaynakKilitleri,
+    politika: &AtomicU64,
+    siniflandirici: &Siniflandirici,
     iptal: CancellationToken,
 ) -> Result<AracCiktisi, AracHatasi> {
     let yazilan: Vec<CalismaYolu> = p.hazirlik.yazilan.iter().map(|h| h.yol.clone()).collect();
@@ -3781,14 +4252,32 @@ async fn tek_calistir(
         k = kilitler.al(&p.hazirlik.okunan, &yazilan, p.hazirlik.tum_calisma_alani) => k,
         _ = iptal.cancelled() => return Err(AracHatasi::Iptal),
     };
+    // İzin kipi planlamadan sonra değiştiyse (örneğin kilit beklenirken) işlem
+    // yeni kipte yeniden yetkilendirilmeden yapılmaz (spec §7.6).
+    if politika.load(Ordering::SeqCst) != p.politika {
+        return Err(AracHatasi::PolitikaDegisti);
+    }
     // Kilit altında hedef yeniden hazırlanır: onaydan (ya da planlamadan) sonra
     // değiştiyse mühür tutmaz ve işlem yapılmaz (spec §7.6).
-    let taze = p.arac.hazirla(&p.argumanlar).await?;
+    let taze = tokio::select! {
+        biased;
+        _ = iptal.cancelled() => return Err(AracHatasi::Iptal),
+        h = p.arac.hazirla(&p.argumanlar) => h?,
+    };
     if muhur_hesapla(p.cagri, p.arac.ad(), &p.argumanlar, &taze) != p.muhur {
         return Err(AracHatasi::OnayEskidi);
     }
+    // `.git/config` / etkin hooksPath değişimi kip sayacını artırmayabilir.
+    // Güncel sınıflandırmayı da doğrula; yeni bir risk eski onayla geçemez.
+    if Oturum::karar(p.kip, siniflandirici, &taze) != p.karar {
+        return Err(AracHatasi::PolitikaDegisti);
+    }
     if iptal.is_cancelled() {
         return Err(AracHatasi::Iptal);
+    }
+    // `hazirla` await içerir; bu sırada kip değişmiş olabilir.
+    if politika.load(Ordering::SeqCst) != p.politika {
+        return Err(AracHatasi::PolitikaDegisti);
     }
     p.arac.calistir(&p.argumanlar, &taze, iptal).await
 }
@@ -3800,6 +4289,9 @@ fn sonuc_olustur(p: &Planlanan, sonuc: Result<AracCiktisi, AracHatasi>, azami: u
             CagriSonucu::plandan(p, AracDurumu::Basarili, icerik)
         }
         Err(AracHatasi::Iptal) => CagriSonucu::plandan(p, AracDurumu::IptalEdildi, "[iptal edildi]".into()),
+        Err(e @ AracHatasi::PolitikaDegisti) => {
+            CagriSonucu::plandan(p, AracDurumu::IptalEdildi, format!("[çalıştırılmadı] {e}"))
+        }
         Err(e) => CagriSonucu::plandan(p, AracDurumu::Basarisiz, format!("[hata] {e}")),
     }
 }
@@ -3824,21 +4316,23 @@ fn kirp(metin: String, azami: usize) -> String {
 ```rust
 use std::collections::HashMap;
 
-use crate::kilit::KaynakKilitleri;
-
 use arac_asamasi::AsamaSonucu;
 ```
 
-3. `struct Oturum` alanlarına `mesajlar`'ın altına ekle:
+3. `komut_geldi` yönteminin altına ekle (onay ve şart beklemeleri bunu kullanır):
 
 ```rust
-    kilitler: Arc<KaynakKilitleri>,
-```
-
-ve `Oturum::kur` içindeki `mesajlar,` satırının altına ekle:
-
-```rust
-            kilitler: Arc::new(KaynakKilitleri::yeni()),
+    /// Tur içindeki bekleme noktaları (onay, şart) için komut bekler. İptal
+    /// belirteci tetiklenirse (örneğin `OturumTutamaci::iptal_et` ile, kuyruk
+    /// boşken ya da doluyken) bir `Iptal` komutu üretir.
+    async fn tur_komutu_al(&mut self) -> Option<Komut> {
+        let tur = self.tur?;
+        tokio::select! {
+            biased;
+            _ = self.iptal.cancelled() => Some(Komut::Iptal { tur }),
+            komut = self.komutlar.recv() => self.komut_geldi(komut).await,
+        }
+    }
 ```
 
 4. `tur_dongusu` yöntemini tümüyle şununla değiştir:
@@ -3849,10 +4343,17 @@ ve `Oturum::kur` içindeki `mesajlar,` satırının altına ekle:
         let mut arac_sayisi: u32 = 0;
         let mut hata_sayaci: HashMap<String, u32> = HashMap::new();
         for _ in 0..sinirlar.azami_model_turu {
+            if self.kayit_hatasi.is_some() {
+                return BitisNedeni::Hata;
+            }
             let cevap = match self.model_turu().await {
                 Ok(c) => c,
                 Err(neden) => return neden,
             };
+            if self.kayit_hatasi.is_some() {
+                self.cagrilari_kapat(&cevap.cagrilar, "[çalıştırılmadı: oturum kaydı yazılamadı]").await;
+                return BitisNedeni::Hata;
+            }
             if cevap.cagrilar.is_empty() {
                 return BitisNedeni::Normal;
             }
@@ -3874,15 +4375,15 @@ ve `Oturum::kur` içindeki `mesajlar,` satırının altına ekle:
 5. `kaydet` yönteminin altına ekle:
 
 ```rust
-    async fn kaydet_kalici(&mut self, oge: KayitOgesi) {
-        self.kayda_yaz(oge, true).await;
+    async fn kaydet_kalici(&mut self, oge: KayitOgesi) -> bool {
+        self.kayda_yaz(oge, true).await
     }
 ```
 
 - [ ] **Step 4: Testlerin geçtiğini gör**
 
 Run: `cargo test -p kalfa-core --test oturum_arac && cargo test -p kalfa-core --test oturum_metin`
-Expected: `oturum_arac`: `test result: ok. 10 passed`; `oturum_metin` hâlâ `7 passed`.
+Expected: `oturum_arac`: `test result: ok. 17 passed`; `oturum_metin` hâlâ `8 passed`.
 
 - [ ] **Step 5: Lint, biçim, commit**
 
@@ -3981,6 +4482,45 @@ async fn akis_sirasinda_iptal_yarim_metni_korur() {
     d.gonder(mesaj("kısa anlat")).await;
     d.tur_sonu().await;
     assert_eq!(s.istekler()[1].messages[2].content.as_deref(), Some("yarım"));
+}
+
+#[tokio::test]
+async fn arayuz_olaylari_okumazken_de_iptal_isler() {
+    // Çekirdek arayüzü beklemez: binlerce olay okunmadan birikirken iptal işler.
+    let s = SahteSaglayici::yeni(vec![SahteYanit::Askida(
+        (0..10_000).map(|i| AkisOlayi::Metin(format!("{i} "))).collect(),
+    )]);
+    let mut d = oturum(&s, vec![], ayarlar());
+    d.gonder(mesaj("çok uzun anlat")).await;
+    let tur = tur_basladi(&mut d).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    d.gonder(Komut::Iptal { tur }).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);
+}
+
+#[tokio::test]
+async fn iptal_et_komut_kuyrugundan_bagimsiz_iptal_eder() {
+    let yaz = Arc::new(SahteArac::yazan("yaz"));
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::Askida(vec![AkisOlayi::Metin("uzun".into())]),
+        SahteYanit::arac("yaz", yol("a")),
+    ]);
+    let mut d = oturum(&s, vec![a(&yaz)], ayarlar());
+    assert_eq!(d.tutamac.iptal_et(), None, "süren tur yokken iptal edilecek bir şey yok");
+
+    // Akış sırasında
+    d.gonder(mesaj("anlat")).await;
+    let tur = tur_basladi(&mut d).await;
+    d.bekle(|o| matches!(o, Olay::TokenParcasi { .. })).await;
+    assert_eq!(d.tutamac.iptal_et(), Some(tur));
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);
+
+    // Onay beklerken
+    d.gonder(mesaj("yaz")).await;
+    onay_bekle(&mut d).await;
+    assert!(d.tutamac.iptal_et().is_some());
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);
+    assert_eq!(yaz.cagri_sayisi(), 0);
 }
 
 #[tokio::test]
@@ -4191,7 +4731,7 @@ use crate::saglayici::SaglayiciAkisi;
 - [ ] **Step 4: Testlerin geçtiğini gör**
 
 Run: `cargo test -p kalfa-core`
-Expected: bütün test dosyaları yeşil; `oturum_iptal_sinir`: `test result: ok. 11 passed`.
+Expected: bütün test dosyaları yeşil; `oturum_iptal_sinir`: `test result: ok. 13 passed`.
 
 - [ ] **Step 5: Lint, biçim, commit**
 
@@ -4356,7 +4896,7 @@ use crate::protokol::{BitisNedeni, Komut, Olay};
             self.yay(Olay::SartOnayiGerekiyor { surum: gosterilen, metin: metin.content }).await;
 
             let surum = loop {
-                let Some(komut) = self.komut_al().await else { return Err(BitisNedeni::Iptal) };
+                let Some(komut) = self.tur_komutu_al().await else { return Err(BitisNedeni::Iptal) };
                 match komut {
                     Komut::SartlariKabulEt { surum } => break surum,
                     diger => {
@@ -4492,6 +5032,27 @@ async fn yarim_kalan_yazma_yeniden_calistirilmaz() {
 }
 
 #[tokio::test]
+async fn cokmus_kayittan_devam_edilir_ve_kayit_yeniden_acilabilir() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (yol, _) = yarim_kayit(dizin.path());
+    // Çökme: son satır yarım kaldı.
+    let mut ham = std::fs::OpenOptions::new().append(true).open(&yol).unwrap();
+    std::io::Write::write_all(&mut ham, b"{\"sema\":1,\"oturum\":\"").unwrap();
+    drop(ham);
+
+    let s = SahteSaglayici::yeni(vec![SahteYanit::metin("tamam")]);
+    let araclar: Vec<Arc<dyn Arac>> = vec![Arc::new(SahteArac::yazan("yaz"))];
+    let (t, o, _) = devam_et(&yol, ayarlar(), test_baglami(s, araclar, sanal_siniflandirici())).unwrap();
+    let mut d = Surucu::yeni(t, o);
+    d.gonder(Komut::KullaniciMesaji { metin: "devam".into() }).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+
+    // Yarım satır kesildiği için yeni kayıtlar ona yapışmadı; kayıt yeniden okunur.
+    let ikinci = kurtar(&OturumKaydi::oku(&yol).expect("onarılmış kayıt okunabilmeli")).unwrap();
+    assert!(ikinci.mesajlar.iter().any(|m| m.content.as_deref() == Some("tamam")));
+}
+
+#[tokio::test]
 async fn olmayan_kayittan_devam_edilemez() {
     let dizin = tempfile::tempdir().unwrap();
     let s = SahteSaglayici::yeni(vec![]);
@@ -4573,7 +5134,7 @@ pub fn devam_et(
 - [ ] **Step 4: Testlerin geçtiğini gör**
 
 Run: `cargo test -p kalfa-core`
-Expected: bütün test dosyaları yeşil; `oturum_kurtarma`: `test result: ok. 2 passed`.
+Expected: bütün test dosyaları yeşil; `oturum_kurtarma`: `test result: ok. 3 passed`.
 
 - [ ] **Step 5: Lint, biçim, commit**
 
@@ -4613,6 +5174,7 @@ members = ["crates/kalfa-evren", "crates/kalfa-core", "crates/kalfa-tools"]
 
 ```toml
 cap-std = "4.0.3"
+cap-fs-ext = "4.0.3"
 ignore = "0.4.33"
 regex = "1.13"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
@@ -4633,6 +5195,7 @@ authors.workspace = true
 [dependencies]
 async-trait.workspace = true
 cap-std.workspace = true
+cap-fs-ext.workspace = true
 globset.workspace = true
 ignore.workspace = true
 kalfa-core = { path = "../kalfa-core" }
@@ -4728,15 +5291,45 @@ async fn calisma_alani_disina_metinle_cikilamaz() {
     assert!(matches!(oku.hazirla(&json!({"yol": "/etc/passwd"})).await, Err(AracHatasi::Yol(YolHatasi::Mutlak(_)))));
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn sembolik_baglanti_ile_disari_cikilamaz() {
     let (d, a) = alan();
     let dis = tempfile::tempdir().unwrap();
     std::fs::write(dis.path().join("sir.txt"), "gizli").unwrap();
-    std::os::unix::fs::symlink(dis.path().join("sir.txt"), d.path().join("kacis.txt")).unwrap();
+    dosya_bagla(&dis.path().join("sir.txt"), &d.path().join("kacis.txt"));
     let sonuc = calistir(&DosyaOku::yeni(a), json!({"yol": "kacis.txt"})).await;
     assert!(sonuc.is_err(), "cap-std çalışma alanı dışını açmamalı: {sonuc:?}");
+}
+
+fn dosya_bagla(hedef: &std::path::Path, ad: &std::path::Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(hedef, ad).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(hedef, ad).expect("Windows test ajanında symlink yetkisi gerekir");
+}
+
+#[tokio::test]
+async fn ic_baglanti_gizli_dosyayi_okutamaz_ve_aramaya_sokamaz() {
+    let (d, a) = alan();
+    dosya(&d, ".env", b"OZEL_SIR=123");
+    dosya_bagla(std::path::Path::new(".env"), &d.path().join("normal.txt"));
+    assert!(calistir(&DosyaOku::yeni(a.clone()), json!({"yol": "normal.txt"})).await.is_err());
+    let sonuc = calistir(&IcerikAra::yeni(a), json!({"desen": "OZEL_SIR"})).await.unwrap();
+    assert!(!sonuc.icerik.contains("123"));
+    assert!(!sonuc.icerik.contains("normal.txt:"));
+}
+
+#[tokio::test]
+async fn okuma_hazirligindan_sonra_baglanti_konursa_acilmaz() {
+    let (d, a) = alan();
+    dosya(&d, "normal.txt", b"normal");
+    dosya(&d, ".env", b"OZEL_SIR=123");
+    let oku = DosyaOku::yeni(a);
+    let arg = json!({"yol": "normal.txt"});
+    let h = oku.hazirla(&arg).await.unwrap();
+    std::fs::remove_file(d.path().join("normal.txt")).unwrap();
+    dosya_bagla(std::path::Path::new(".env"), &d.path().join("normal.txt"));
+    assert!(oku.calistir(&arg, &h, CancellationToken::new()).await.is_err());
 }
 
 #[tokio::test]
@@ -4817,17 +5410,17 @@ pub use oku::DosyaOku;
 ```rust
 //! Çalışma alanı: `cap-std` dizin tutamacı (spec §7.3).
 //!
-//! Yol önce metin olarak kanonikleştirilip sonra açılmaz; her erişim tutamaca
-//! göreli yapılır. Sembolik bağlantı ya da junction ile dışarı çıkma — kontrol
-//! ile kullanım arasında hedef değiştirilse bile — `cap-std` tarafından
-//! reddedilir.
+//! v1: bağlantı izlenmez; çalışma alanı İÇİNDE kalan bağlantılar da reddedilir.
+//! Her üst bileşen tek adla no-follow açılır; son dosya da no-follow açılır.
+//! Yalnızca önceden `canonicalize`/`symlink_metadata` yapmak yeterli değildir.
 
-use std::io;
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
-use cap_std::fs::Dir;
+use cap_std::fs::{Dir, File, OpenOptions};
 use ignore::WalkBuilder;
 use kalfa_core::arac::AracHatasi;
 use kalfa_core::izin::Siniflandirici;
@@ -4860,7 +5453,47 @@ impl CalismaAlani {
     }
 
     pub fn oku(&self, yol: &CalismaYolu) -> io::Result<Vec<u8>> {
-        self.dizin.read(yol.std_yolu())
+        let mut dosya = self.dosya_ac(yol)?;
+        let mut veri = Vec::new();
+        dosya.read_to_end(&mut veri)?;
+        Ok(veri)
+    }
+
+    /// Yalnızca tek bileşen açılır: no-follow son bileşene uygulandığından
+    /// `open_dir_nofollow("a/b")` kullanmak üstteki `a`yı korumaz.
+    fn ust_dizin(&self, yol: &CalismaYolu, olustur: bool) -> io::Result<(Dir, String)> {
+        let mut dizin = self.dizin.try_clone()?;
+        let mut parcalar = yol.as_str().split('/').peekable();
+        while let Some(ad) = parcalar.next() {
+            if parcalar.peek().is_none() {
+                return Ok((dizin, ad.to_string()));
+            }
+            dizin = match dizin.open_dir_nofollow(ad) {
+                Ok(d) => d,
+                Err(e) if olustur && e.kind() == io::ErrorKind::NotFound => {
+                    match dizin.create_dir(ad) {
+                        Ok(()) => (),
+                        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (),
+                        Err(e) => return Err(e),
+                    }
+                    // Başkası arada bağlantı koysa da takip edilmez.
+                    dizin.open_dir_nofollow(ad)?
+                }
+                Err(e) => return Err(e),
+            };
+        }
+        Err(io::Error::new(io::ErrorKind::InvalidInput, "Dosya yolu boş"))
+    }
+
+    fn dosya_ac(&self, yol: &CalismaYolu) -> io::Result<File> {
+        let (ust, ad) = self.ust_dizin(yol, false)?;
+        let mut secenek = OpenOptions::new();
+        secenek.read(true).follow(FollowSymlinks::No);
+        let dosya = ust.open_with(ad, &secenek)?;
+        if !dosya.metadata()?.is_file() {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Yalnızca normal dosyalar açılabilir"));
+        }
+        Ok(dosya)
     }
 
     pub fn oku_varsa(&self, yol: &CalismaYolu) -> io::Result<Option<Vec<u8>>> {
@@ -4878,7 +5511,7 @@ impl CalismaAlani {
 
     /// Hard link sayısı; dosya yoksa 1.
     pub fn baglanti_sayisi(&self, yol: &CalismaYolu) -> io::Result<u64> {
-        match self.dizin.open(yol.std_yolu()) {
+        match self.dosya_ac(yol) {
             Ok(dosya) => baglanti::sayi(&dosya.into_std()),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(1),
             Err(e) => Err(e),
@@ -4886,10 +5519,17 @@ impl CalismaAlani {
     }
 
     pub fn yaz(&self, yol: &CalismaYolu, icerik: &[u8]) -> io::Result<()> {
-        if let Some(ust) = yol.ust() {
-            self.dizin.create_dir_all(ust.std_yolu())?;
+        let (ust, ad) = self.ust_dizin(yol, true)?;
+        let mut secenek = OpenOptions::new();
+        // truncate ancak açılmış nesne doğrulandıktan sonra. Son bileşen
+        // son anda symlink/junction yapılırsa open_with hata verir.
+        secenek.write(true).create(true).follow(FollowSymlinks::No);
+        let mut dosya = ust.open_with(ad, &secenek)?;
+        if !dosya.metadata()?.is_file() {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "Yalnızca normal dosyalara yazılabilir"));
         }
-        self.dizin.write(yol.std_yolu(), icerik)
+        dosya.set_len(0)?;
+        dosya.write_all(icerik)
     }
 
     /// Çalışma alanındaki dosyalar: depodaki `.gitignore` uygulanır, `.git`
@@ -5326,7 +5966,7 @@ fn kisalt(satir: &str) -> String {
 - [ ] **Step 5: Testlerin geçtiğini gör**
 
 Run: `cargo test -p kalfa-tools --test okuma_araclari`
-Expected: `test result: ok. 8 passed` (Windows'ta `sembolik_baglanti_ile_disari_cikilamaz` derlenmez: `7 passed`).
+Expected: Linux ve Windows'ta `test result: ok. 10 passed`. Windows test ajanında symlink oluşturma yetkisi/Developer Mode gerekir; bağlantı testini sessizce atlayıp yeşil sayma.
 
 - [ ] **Step 6: Lint, biçim, commit**
 
@@ -5439,6 +6079,61 @@ async fn dosya_yaz_onaydan_sonra_degisirse_yazmaz() {
     std::fs::write(d.path().join("x.txt"), "başkası\n").unwrap();
     assert_eq!(calistir(&yaz, &arg, &h).await, Err(AracHatasi::OnayEskidi));
     assert_eq!(oku(&d, "x.txt"), "başkası\n");
+}
+
+#[tokio::test]
+async fn yazma_hazirligindan_sonra_konulan_baglanti_izlenmez() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("x.txt"), "eski").unwrap();
+    std::fs::write(d.path().join(".env"), "eski").unwrap();
+    let yaz = DosyaYaz::yeni(a.clone());
+    let arg = json!({"yol": "x.txt", "icerik": "yeni"});
+    let h = yaz.hazirla(&arg).await.unwrap();
+    std::fs::remove_file(d.path().join("x.txt")).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(".env", d.path().join("x.txt")).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(".env", d.path().join("x.txt")).unwrap();
+    // İçerik özeti AYNI; yalnızca hash denetimi bu testi korumaz.
+    assert!(calistir(&yaz, &arg, &h).await.is_err());
+    assert!(a.yaz(&kalfa_core::yol::CalismaYolu::coz("x.txt").unwrap(), b"yeni").is_err());
+    assert_eq!(oku(&d, ".env"), "eski");
+}
+
+#[tokio::test]
+async fn baglantili_ust_dizinden_git_hook_yazilamaz() {
+    let (d, a) = alan();
+    std::fs::create_dir_all(d.path().join(".git/hooks")).unwrap();
+    std::fs::write(d.path().join(".git/hooks/pre-commit"), "eski").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(".git", d.path().join("normal")).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(".git", d.path().join("normal")).unwrap();
+    let yol = kalfa_core::yol::CalismaYolu::coz("normal/hooks/pre-commit").unwrap();
+    assert!(a.yaz(&yol, b"yeni").is_err());
+    assert!(DosyaYaz::yeni(a.clone()).hazirla(&json!({"yol": yol.as_str(), "icerik": "yeni"})).await.is_err());
+    assert!(DosyaDuzenle::yeni(a).hazirla(&json!({
+        "yol": yol.as_str(), "eski_metin": "eski", "yeni_metin": "yeni",
+    })).await.is_err());
+    assert_eq!(oku(&d, ".git/hooks/pre-commit"), "eski");
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn junction_uzerinden_git_hook_yazilamaz() {
+    let (d, a) = alan();
+    let hedef = d.path().join(".git");
+    let takma_ad = d.path().join("normal");
+    std::fs::create_dir_all(hedef.join("hooks")).unwrap();
+    std::fs::write(hedef.join("hooks/pre-commit"), "eski").unwrap();
+    // Yalnızca bu testin geçici dizinindeki iki yol; kullanıcı girdisi yok.
+    let cikti = std::process::Command::new("cmd.exe")
+        .args(["/D", "/C", "mklink", "/J"]).arg(&takma_ad).arg(&hedef).output().unwrap();
+    assert!(cikti.status.success(), "junction kurulamadı: {cikti:?}");
+    let yol = kalfa_core::yol::CalismaYolu::coz("normal/hooks/pre-commit").unwrap();
+    assert!(a.oku(&yol).is_err());
+    assert!(a.yaz(&yol, b"yeni").is_err());
+    assert_eq!(oku(&d, ".git/hooks/pre-commit"), "eski");
 }
 
 #[tokio::test]
@@ -5797,7 +6492,7 @@ impl Arac for DosyaDuzenle {
 - [ ] **Step 4: Testlerin geçtiğini gör**
 
 Run: `cargo test -p kalfa-tools`
-Expected: `okuma_araclari` yeşil kalır; `yazma_araclari`: `test result: ok. 9 passed`.
+Expected: `okuma_araclari` yeşil kalır; `yazma_araclari`: Linux'ta `11 passed`, Windows'ta junction testi dahil `12 passed`.
 
 > `similar` 3.x'te `unified_diff()` kendi başlığını da basıyorsa diff'te iki başlık görünür; o durumda `birlesik_diff` içinde `.unified_diff().header(&format!("a/{yol}"), &format!("b/{yol}")).to_string()` kullan ve elle eklenen başlığı kaldır.
 
@@ -5956,6 +6651,36 @@ async fn disari_cikma_ve_gizli_dosya_uctan_uca() {
 }
 
 #[tokio::test]
+async fn baglanti_takma_adlari_serbest_kipte_bile_yetki_atlatamaz() {
+    let o = ortam();
+    std::fs::write(o.alan.path().join(".env"), "BENZERSIZ_SIR=123").unwrap();
+    std::fs::create_dir_all(o.alan.path().join(".git/hooks")).unwrap();
+    std::fs::write(o.alan.path().join(".git/hooks/pre-commit"), "eski").unwrap();
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(".env", o.alan.path().join("normal.txt")).unwrap();
+        std::os::unix::fs::symlink(".git", o.alan.path().join("normal")).unwrap();
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_file(".env", o.alan.path().join("normal.txt")).unwrap();
+        std::os::windows::fs::symlink_dir(".git", o.alan.path().join("normal")).unwrap();
+    }
+    let s = SahteSaglayici::yeni(vec![SahteYanit::araclar(vec![
+        ("dosya_oku", json!({"yol": "normal.txt"})),
+        ("dosya_yaz", json!({"yol": "normal/hooks/pre-commit", "icerik": "yeni"})),
+    ]), SahteYanit::metin("anlaşıldı")]);
+    let mut d = gercek_araclarla(&o, &s, Kip::Serbest, false);
+    d.gonder(mesaj("dene")).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    let yanitlar = arac_yanitlari(&s, 1);
+    assert_eq!(yanitlar.len(), 2);
+    assert!(yanitlar.iter().all(|y| y.contains("[hata]")));
+    assert!(!yanitlar.iter().any(|y| y.contains("BENZERSIZ_SIR")));
+    assert_eq!(std::fs::read_to_string(o.alan.path().join(".git/hooks/pre-commit")).unwrap(), "eski");
+}
+
+#[tokio::test]
 #[ignore = "canlı EVREN API; EVREN_API_KEY gerekir"]
 async fn canli_evren_ile_dosya_okuyup_yanitlar() {
     let o = ortam();
@@ -5968,6 +6693,7 @@ async fn canli_evren_ile_dosya_okuyup_yanitlar() {
         saglayici: Arc::new(EvrenSaglayici::yeni(istemci)),
         araclar: Arc::new(AracKayitDefteri::yeni(varsayilan_araclar(calisma_alani)).unwrap()),
         siniflandirici: o.siniflandirici.clone(),
+        kilitler: Arc::new(kalfa_core::kilit::KaynakKilitleri::yeni()),
     };
     let mut ayar = OturumAyarlari::yeni("qwen3.8-flash-next", o.alan.path());
     ayar.kip = Kip::Proje;
@@ -5985,7 +6711,7 @@ async fn canli_evren_ile_dosya_okuyup_yanitlar() {
 - [ ] **Step 2: Testleri koştur**
 
 Run: `cargo test -p kalfa-tools --test uctan_uca`
-Expected: `test result: ok. 2 passed; 0 failed; 1 ignored`.
+Expected: `test result: ok. 3 passed; 0 failed; 1 ignored` (Linux ve Windows).
 
 Bu görev üretim kodu eklemez; testler ilk koşuda geçmelidir. Geçmeyen bir test, önceki görevlerde bir sözleşmenin tutmadığını gösterir: o görevin koduna dönüp düzelt, testi gevşetme.
 
@@ -6008,9 +6734,11 @@ git commit -m "Uçtan uca: gerçek araçlarla UI'sız tam döngü ve canlı EVRE
 
 ## Plan sonu kontrol listesi
 
+- [ ] Bu dokümandaki `Expected` satırları uygulama sırasında doğrulanacak beklentilerdir; plan revizyonu sırasında testler çalıştırılmış sayılmaz. r3.2 inceleme kaydı: [plan incelemesi](../specs/2026-09-21-kalfa-plan-review.md).
+- [ ] Linux ve Windows'ta bağlantı testleri çalışır: iç/dış symlink, onaydan sonra bağlantı değişimi, bağlantılı üst dizin ve Windows junction. `canonicalize` + normal open ya da yalnızca son bileşende no-follow ile bu kontroller değiştirilmez.
+- [ ] 1c'ye devir: çalışma alanı kimliğine göre tek kilit yöneticisi, kayıt dosyası başına tek yazıcı ve olay aktarımında sert bayt/olay bütçesi. 1b'nin sınırsız olay kanalı bellek sınırı sağlamaz; üretim UI'sı bu kontrol olmadan tamamlanmış sayılmaz (§11.1).
 - [ ] `cargo test --workspace` yeşil; canlı testler (`--ignored`) koşturulduysa sonuçları raporda.
 - [ ] `kalfa-core`'un bağımlılıklarında `kalfa-tools` ya da bir UI kütüphanesi yok: `cargo tree -p kalfa-core -e normal | grep -E "kalfa-tools|tauri"` boş döner.
 - [ ] `research/evren-probe/fixtures/` değişmedi: `git status research/` temiz.
 - [ ] Kütüphane kodunda `unwrap`/`expect` yok: `git grep -nE "\.unwrap\(\)|\.expect\(" -- 'crates/*/src/*.rs' 'crates/*/src/**/*.rs' ':!crates/kalfa-core/src/test_destek.rs'` yalnızca yorum ya da `unwrap_or*` kalıpları dışında sonuç vermez.
 - [ ] Spec kapsamı (bu plan): §4.1 zarf ve sınır · §4.2 UI'sız döngü testi · §5 sağlayıcı soyutlaması üzerinden · §6.1 kilitler · §6.3 iptal · §6.6 kayıt ve kurtarma · §6.8 tur sınırları ve tekrar koruması · §7.2–§7.6 izin motoru, çalışma alanı sınırı, korumalı yollar, gizli dosyalar, dört kip, mühürlü tek kullanımlık onay · §11.8 şart akışının çekirdek tarafı.
-

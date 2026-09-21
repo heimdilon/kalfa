@@ -1,7 +1,7 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Revizyon:** r3 — Codex'in iki inceleme turu işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md)); değişiklik özeti §17'de
+**Revizyon:** r3.2 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); değişiklik özeti §17'de
 **Durum:** Kullanıcı okuması bekliyor; onaydan sonra uygulama planı
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
@@ -344,6 +344,14 @@ yürütülmeden önce okuyacağı ve yazacağı kanonik yolları bildirir.
 - Kısmi başarısızlıkta her çağrının sonucu ayrı döner. Reddedilen çağrı modele
   "kullanıcı reddetti: <gerekçe>" olarak gider; başarılı gibi kaydedilmez.
 
+Kilit yöneticisi **oturum değil çalışma alanı** kapsamındadır. Aynı çalışma
+alanını açan bütün oturumlara aynı yönetici verilir; uygulama kök dizinin
+dosya sistemi kimliğiyle eşleştirir (farklı yazılmış yol aynı alanı ayırmaz).
+Bu kilitler aynı süreçteki Kalfa işlemlerini koordine eder; başka süreçteki
+editör/yazıcıları kilitlediği iddia edilmez. Plan 1b'de `Arac::hazirla` kaynak
+bildiriminin somut karşılığıdır. Listeleme/arama o planda kilitsiz, tutarlı bir
+anlık görüntü garantisi vermeyen okumalardır; içerik erişimi yine §7.3'e tabidir.
+
 ### 6.2 `reasoning` akışı
 
 `Event::DüşünceParçası` olarak ayrı akar; UI'da varsayılan kapalı katlanabilir
@@ -360,6 +368,13 @@ Her araç bir `CancellationToken` alır. İptal: akışı kapatır · kabuk sür
 ağacını sonlandırır (§7.7) · bekleyen onayları geçersiz kılar · §5.3'teki
 kaydı yazar. İptal, o ana kadar gerçekleşmiş dosya ve ağ etkilerini geri almaz;
 tur özeti (§6.7) neyin yapıldığını gösterir.
+
+İptal belirteci komut kuyruğundan ve UI olay tüketiminden bağımsız tetiklenir.
+Akış alıcısı bırakılınca sağlayıcı görevi `Sender::closed()` üzerinden uyanır;
+sunucu sessizken veya yalnızca keep-alive gönderirken de bağlantı kapatılır.
+Kilit ve yan etkisiz hazırlık beklemeleri iptal edilebilir; başlamış yan etkili
+araç kendi belirtecini işleyip sonucu bildirir, future'ı düşürmek tek başına
+yan etkinin durduğunun kanıtı sayılmaz.
 
 ### 6.4 Model seçimi
 
@@ -402,10 +417,19 @@ günlüğüne ve bütçeye girer.
   kullanıcıya açıktır.
 - Yan etkili bir araç çalışmadan **önce** "başladı" kaydı diske yazılır, bitince
   "bitti" kaydı.
+- Kayıt ekleme veya kalıcılaştırma başarısız olursa oturum kendiliğinden
+  kayıtsız moda geçmez: yeni tur/istek ve başlamamış araçlar durdurulur,
+  yürüyen araçlara iptal iletilir, tur `Hata` ile sonuçlanır. Başlamış yan
+  etkiler geri alınmış sayılmaz. Paralel grubun sonraki başlangıç kaydı
+  bozulursa daha önce kaydı yazılmış fakat başlamamış çağrılar da yürütülmez.
 - **Kurtarma:** çökmeden sonra açılışta konuşma ve tamamlanan araç sonuçları geri
   gelir. "Başladı" kaydı olup "bitti" kaydı olmayan çağrı **sonucu bilinmiyor**
   olarak gösterilir ve **asla otomatik yeniden çalıştırılmaz.** Kullanıcı durumu
   görür; isterse modele yeniden yaptırır.
+- Devam için açılırken yarım son JSONL satırı son geçerli bayt sınırına kadar
+  kesilir; geçerli son kaydın satır sonu eksikse tamamlanır ve onarım diske
+  kalıcılaştırılır. Ortadaki bozuk kayıt hata verir. Aynı kayıt dosyasına
+  eşzamanlı iki yazıcı açılmaz; uygulama kayıt sahipliğini tekilleştirir.
 - Bekleyen onaylar ve "bu oturumda izin ver" kısayolları geri yüklenmez. Serbest
   kipteki oturum Sıkı kipte açılır (§7.5).
 - **Kayıtsız oturum** seçeneği: kayıt diske yazılmaz; o oturumda kurtarma ve geri
@@ -519,9 +543,18 @@ Değişmezler:
 Yerleşik dosya araçları ve eklentilerin dosya host çağrıları çalışma alanına
 **dizin tutamacı üzerinden** erişir: `cap-std` (Bytecode Alliance'ın yetenek
 tabanlı dosya sistemi kütüphanesi; wasmtime'ın WASI katmanı da bunu kullanır).
-Yol önce metin olarak kanonikleştirilip sonra açılmaz. Bu yüzden kontrol ile
-kullanım arasında sembolik bağlantı ya da junction değiştirilerek yapılan kaçış
-işe yaramaz.
+Yol önce metin olarak kanonikleştirilip sonra açılmaz. **v1 dosya araçları
+sembolik bağlantı ve junction izlemeyi reddeder; hedef çalışma alanının içinde
+olsa da.** Kullanıcı gerçek dosya yolunu kullanır. Böylece `normal.txt → .env`
+ve `normal/ → .git/` takma adları izin sınıflandırmasını atlatamaz.
+Üst dizinler tek bileşenlik `open_dir_nofollow`, son dosya
+`OpenOptionsFollowExt::follow(FollowSymlinks::No)` ile açılır (`cap-fs-ext`).
+Son bileşende no-follow kullanıp üst zinciri normal açmak yeterli değildir.
+Yeni dosya, okuma, içerik özeti, bağlantı sayısı ve yazma aynı erişim yolunu
+kullanır; yalnızca `symlink_metadata` ön kontrolüne güvenilmez.
+Windows symlink/junction ve Linux symlink testleri geçmeden bu güvence
+uygulanmış kabul edilmez. Bağlantıları güvenle izleme desteği sonraki bir
+tasarım gerektirir: çözülen hedef kimliği, izin, mühür ve erişim birlikte bağlanmalıdır.
 
 Reddedilenler: `..` ile ya da sembolik bağlantıyla dışarı çıkma · mutlak yol ·
 Windows'ta UNC ve aygıt yolları, sürücü göreli yollar, alternatif veri akışı adı
@@ -617,6 +650,11 @@ hesaplar:
   **geçersizdir**; yeni diff'le yeni onay istenir.
 - Onay tek kullanımlıktır. İptal, tur sonu ya da oturum değişikliği bekleyen
   onayları düşürür.
+- İzin kipi değişikliği de bekleyen onayları ve henüz yürütülmemiş planları
+  geçersizleştirir. Politika sürümü hem kilit alındıktan sonra hem asenkron
+  hazırlık tamamlandıktan sonra denetlenir. Etkin git koruması yeniden
+  sınıflandırılır; karar/uyarı değişmişse eski onay yetmez. Yazma hedefinin
+  hard link sayısı mühre dahildir. Yeni koşullarda yeniden planlama gerekir.
 - Yazma araçları yazmadan hemen önce dosyanın beklenen önceki içeriğini bir kez
   daha denetler; dosya son anda değiştiyse yazmaz.
 
@@ -1078,7 +1116,7 @@ Her token için bir `emit` çağırmak uygulamayı öldürür: her olay bir JSON
 serileştirme + webview mesajı + dinleyici + bileşen güncellemesi demektir.
 
 Karar: metin akışı Tauri v2'nin `Channel<T>` primitifiyle taşınır (`emit` değil) —
-daha az ek yük, sıralama garantisi. Çekirdek, metin parçalarını kısa bir
+daha az ek yük, sıralama garantisi. Uygulamanın aktarım katmanı, metin parçalarını kısa bir
 pencerede (başlangıç değeri 16 ms) birleştirir.
 
 Bu pencere olay sayısını **yalnızca parçalar pencereden sık geldiğinde** azaltır.
@@ -1090,6 +1128,14 @@ pencere **ölçümle** belirlenir. Hedefler: token'ın ekrana düşme gecikmesi 
 
 **Arka basınç:** metin parçaları birleştirilebilir; onay, hata, tamamlanma ve
 araç olayları asla birleştirilmez ve düşürülmez.
+
+Plan 1b çekirdek → uygulama sınırında beklemeyen `UnboundedReceiver` kullanır;
+bu **sınırlı bellek garantisi değildir**. 1c'nin zorunlu kabul kapısı: alıcı
+durakladığında olay/bayt birikimi ölçülür, birleştirme ve sert bellek bütçesi
+uygulanır; bütçe aşılırsa iptal yolu çalışır ve sonuç kullanıcıya bildirilir.
+Sınırsız kuyruğu tek başına üretim arka basınç çözümü saymak yasaktır.
+UI kopması ve uzun süre okumayan UI testleri hem iptali hem bellek üst sınırını
+kanıtlamadan arayüz aşaması tamamlanmaz.
 
 ### 11.2 Uzun oturumda sabit maliyet
 
@@ -1532,3 +1578,12 @@ gözlenmemiş `GorevUyusmazligi` ve `KotaYetersiz` ayrı hata varyantı değil (
 · oturum kaydının biçimi netleşti (§6.6) · `TurBasladi` ve `TokenKullanimi`
 olayları eklendi (§4.1) · birinci aşama 1a/1b/1c planlarına bölündü; temel
 arayüz (1c) daha önce hiçbir aşamaya atanmamıştı (§12.3).
+
+**r3.2 (2026-09-21):** [Plan incelemesi](2026-09-21-kalfa-plan-review.md)
+sonrası 1a/1b düzeltmeleri: sessiz SSE'de alıcı bırakılınca bağlantının
+kapanması · komut kuyruğundan bağımsız iptal · kayıt hatasında güvenli duruş
+ve yarım JSONL sonunun onarımı · çalışma alanı ortak kilitleri · kip değişiminde
+onay iptali ve yürütme anında yeniden yetkilendirme · dosya araçlarında bütün
+yol bileşenleri için no-follow · bağlantı ve kayıt hatası regresyon örnekleri.
+Bu revizyon plan ve kod örneği düzeyindedir; uygulama testlerinin çalıştırıldığı
+anlamına gelmez. Sınırsız olay kanalının bellek riski 1c kabul kapısında açıktır.
