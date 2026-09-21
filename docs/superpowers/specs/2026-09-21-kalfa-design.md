@@ -1,7 +1,7 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Revizyon:** r2 — Codex incelemesi işlendi ([inceleme](2026-09-21-kalfa-design-review.md)); değişiklik özeti §17'de
+**Revizyon:** r3 — Codex'in iki inceleme turu işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md)); değişiklik özeti §17'de
 **Durum:** Kullanıcı okuması bekliyor; onaydan sonra uygulama planı
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
@@ -409,9 +409,17 @@ günlüğüne ve bütçeye girer.
 
 - Her tur bir `TurÖzeti` ile biter: dosya araçlarıyla değişen dosyalar (diff'leriyle),
   kabukla değişen dosyalar, çalıştırılan komutlar ve yapılan EVREN çağrıları.
-  Kabukla değişen dosyalar, çalışma alanı bir git deposuysa kabuk çağrısından
-  önceki ve sonraki `git status` karşılaştırmasından çıkarılır; değilse özette
-  "kabuk değişiklikleri izlenemedi" yazar.
+- **Kabukla değişen dosyalar**, kabuk çağrısından önce ve sonra alınan çalışma
+  alanı anlık görüntüsünün karşılaştırmasından çıkarılır. Görüntü her dosyanın
+  yolunu, boyutunu, değişiklik zamanını ve dosya kimliğini tutar; meta verisi
+  değişen dosyaların içerik özeti (hash) alınır. `.gitignore` kapsamındaki
+  dosyalar dahildir. `git status` bunun için yetmez: önceden değişmiş bir dosya
+  yeniden değiştiğinde durumu yine `M` kalır ve yok sayılan dosyalar hiç
+  görünmez.
+  - Bilinen sınır: aynı zaman damgası içinde, boyutu değişmeden yapılan bir
+    değişiklik kaçabilir.
+  - Tarama maliyeti büyük çalışma alanlarında ölçülür. Tarama sınırı aşılırsa
+    özet bunu açıkça "eksik olabilir" diye işaretler; sessizce eksik kalmaz.
 - **Geri alma:** dosya araçları her yazmadan önce dosyanın önceki hâlini (yoksa
   "yoktu" bilgisini) oturum kaydına saklar; yazdıktan sonra yeni hâlin özetini
   (hash) kaydeder.
@@ -519,6 +527,22 @@ ayırt edemez. Azaltma: bağlantı sayısı birden büyük bir dosyaya yazmak on
 ister. Git hard link saklamadığı için klonlanan bir depoda bu durum kendiliğinden
 oluşmaz.
 
+**Korumalı yollar.** Git'in kendiliğinden kod çalıştırdığı yollar korumalıdır:
+`.git/hooks/`, `.git/config` ve `core.hooksPath`'in gösterdiği dizin (örneğin
+`.husky/`). Kural ortak izin motorundadır, bu yüzden **bütün yazma yollarına**
+uygulanır:
+
+- Dosya araçları korumalı bir yola yazmak için her kipte (Serbest dahil) onay
+  ister. Onay kartı "Bu dosyayı git kendiliğinden çalıştırır" der; kısayol
+  sunulmaz. Kullanıcının istediği meşru bir hook kurulumu böylece yine mümkündür.
+- Kabuk için korumalı yollar salt okunurdur (§7.7).
+- `core.hooksPath`'in etkin değeri (depo ve kullanıcı yapılandırmasıyla birlikte)
+  her yazma kararında yeniden çözülür. `.git/config` korumalı olduğu için bu
+  değer onaysız değişemez.
+- Çalışma alanındaki `.git` bir dosyaysa (worktree ya da submodule, `gitdir:`
+  satırı) gerçek git dizini çözülür ve koruma oraya uygulanır. O dizin çalışma
+  alanı dışındaysa çalışma alanı dışı kuralı zaten işler.
+
 Kabuk bu bölümün kapsamı dışındadır; onun sınırı §7.7'dir.
 
 ### 7.4 Gizli dosyalar ve veri çıkışı
@@ -539,9 +563,13 @@ Kabuk bu bölümün kapsamı dışındadır; onun sınırı §7.7'dir.
   bağlam özetleme, güvenlik denetçisi ve eklentilerin dosya çağrıları. Denetçi
   ayrı bir alıcı değildir (o da EVREN'dir), ama gizli içeriği "güvenli mi" diye
   sormak için göndermek de göndermektir; kural bu yüzden denetçiden önce çalışır.
-- Kabuk: yalıtım profili çalışma alanındaki gizli dosyaları kabuk için okunamaz
-  kılar (§7.7). Yalıtımsız çalıştırmada bu koruma yoktur ve onay kartı bunu
-  söyler.
+- Kabuk: yalıtım profili çalışma alanındaki gizli dosyaları okunamaz kılar;
+  çalışma alanı dışındaki kimlik bilgisi dosyaları ise yalıtımın içinde hiç yer
+  almaz (§7.7). Bu önemlidir, çünkü ağı kapalı bir komut bile okuduğu sırrı
+  standart çıktıya yazarak modele, yani EVREN'e taşıyabilir. Yalıtımsız
+  çalıştırmada bu koruma yoktur ve onay kartı bunu söyler.
+- Eklentilerin EVREN çağrıları, "göndermeden önce göster" açıkken gönderimden
+  **önce** durdurulur (§11.10).
 - **Gönderim günlüğü ve önizleme** (§11.10): her EVREN isteğine hangi içeriğin,
   hangi kaynaktan ve hangi amaçla girdiği kayıtlıdır ve arayüzde görünür.
 
@@ -554,8 +582,9 @@ Kabuk bu bölümün kapsamı dışındadır; onun sınırı §7.7'dir.
 | **Proje** | Serbest | Çalışma alanı içinde serbest | Onaylı |
 | **Serbest** | Serbest | Çalışma alanı içinde serbest | Yalıtımlı ve ağsız olan otomatik |
 
-Her kipte geçerli olanlar: çalışma alanı dışı yol onay ister (§7.3) · gizli dosya
-onay ister (§7.4) · ağlı kabuk onay ister · yalıtımsız kabuk onay ister (§7.7).
+Her kipte geçerli olanlar: çalışma alanı dışı yol onay ister (§7.3) · korumalı
+yola yazmak onay ister (§7.3) · gizli dosya onay ister (§7.4) · ağlı kabuk onay
+ister · yalıtımsız kabuk onay ister (§7.7).
 
 - **İnceleme kipinde** yazma araçları ve kabuk modele **hiç sunulmaz**; araç
   listesinde yer almazlar. Ajan depoyu okur, plan ve öneri üretir. Reddetmek
@@ -587,7 +616,8 @@ hesaplar:
 - "Bu oturumda izin ver" kısayolu **araç + dizin** kapsamındadır: *"Bu oturumda
   `src/` altındaki dosyaları düzenleyebilir."* Araç adına genel izin yoktur; bir
   kısayol aracın sonraki bütün argümanlarına izin anlamına gelmez. Gizli dosya,
-  çalışma alanı dışı yol, ağlı ya da yalıtımsız kabuk için kısayol sunulmaz.
+  korumalı yol, çalışma alanı dışı yol, ağlı ya da yalıtımsız kabuk için kısayol
+  sunulmaz.
 
 Onay kartının içeriği ("neden izin gerekiyor") §11.4'te.
 
@@ -601,27 +631,43 @@ iki arka uç onu uygular.
 
 | | |
 |---|---|
-| **Okunabilir** | Sistem dizinleri · ev dizininden yalnızca izinli araç zinciri dizinleri (örn. `~/.cargo`, `~/.rustup`, `~/.gitconfig`) · çalışma alanı |
-| **Okunamaz** | Ev dizininin geri kalanı (`~/.ssh`, `~/.gnupg`, tarayıcı profilleri, kimlik depoları, Kalfa'nın kendi veri dizini) · çalışma alanındaki gizli dosyalar (§7.4) |
-| **Yazılabilir** | Çalışma alanı · oturuma özel geçici dizin |
-| **Çalışma alanı içinde salt okunur** | `.git/hooks`, `.git/config` |
+| **Okunabilir** | Seçilmiş sistem yolları (Linux: `/usr`, `/bin`, `/sbin`, `/lib*`, `/etc`; Windows: sistem ve program dizinleri) · izinli araç zincirlerinin yalnızca çalıştırılabilir ve kütüphane alt dizinleri (örn. `~/.cargo/bin`, `~/.cargo/registry`, `~/.rustup/toolchains`) · çalışma alanı |
+| **Okunamaz** | Açıkça seçilmeyen her şey: ev dizininin geri kalanı (`~/.ssh`, `~/.gnupg`, tarayıcı profilleri, kimlik depoları), `/srv`, `/mnt`, `/media`, başka kullanıcıların dizinleri, **diğer çalışma alanları**, Kalfa'nın kendi veri dizini · nerede olursa olsun kimlik bilgisi dosyaları (§7.4 kalıpları ve `credentials.toml`, `hosts.yml`, `.docker/config.json` gibi bilinen adlar) |
+| **Yazılabilir** | Çalışma alanı · bu çalışma alanına özel geçici ve önbellek dizini |
+| **Salt okunur** | Korumalı yollar (§7.3): `.git/hooks`, `.git/config`, `core.hooksPath` hedefi |
 | **Ağ** | Kapalı |
 
-**İlke: yalıtılmış süreç, yalıtım dışında sonradan çalışacak hiçbir şeye
-yazamaz.** `.git/hooks` bu yüzden salt okunurdur; `.git/config` de öyledir,
-çünkü `core.hooksPath` ve `core.fsmonitor` üzerinden kod çalıştırabilir. Ev
-dizinindeki araç zincirleri ve paket önbellekleri de salt okunurdur. Ağlı
-çalıştırmada paket yöneticileri Kalfa'ya ait ayrı bir önbellek dizinine
-yönlendirilir; araç başına ayrıntı uygulama planındadır.
+Dört ilke:
+
+1. **Okuma izin listesiyle çalışır.** Açıkça seçilmeyen bir yol yalıtımın içinde
+   *yoktur*. Kök dosya sistemini salt okunur bağlayıp yalnızca ev dizinini örtmek
+   yetmez: `/srv` ya da `/mnt` altındaki başka proje verileri görünür kalır.
+2. **Ev dizinindeki yapılandırma dosyaları açılmaz.** `~/.gitconfig`,
+   `~/.cargo/config.toml` ve `~/.npmrc` kimlik bilgisi taşıyabilir. Bir araç
+   yapılandırma gerektiriyorsa Kalfa yalıtıma özel en küçük yapılandırmayı üretir:
+   git için yalnızca `user.name` ve `user.email`. Cargo, yalıtım içinde Kalfa'nın
+   kurduğu ayrı bir `CARGO_HOME` ile çalışır. Bu dizinde kullanıcının `bin` ve
+   `registry` önbelleği salt okunur görünür, `credentials.toml` ise hiç yoktur.
+   Diğer araçlar için ayrıntı uygulama planındadır.
+3. **Yalıtılmış süreç, yalıtım dışında sonradan çalışacak hiçbir şeye yazamaz.**
+   Korumalı yollar bu yüzden salt okunurdur. `.git/config` de bu kapsamdadır,
+   çünkü `core.hooksPath` ve `core.fsmonitor` üzerinden kod çalıştırabilir. Ev
+   dizinindeki araç zincirleri ve paket önbellekleri de salt okunurdur.
+4. **Çalışma alanları arasında ortak yazılabilir durum yoktur.** Geçici dizin ve
+   paket önbelleği çalışma alanına özeldir. Ağlı çalıştırmada indirilen paketler
+   bu önbelleğe yazılır. Böylece bir projedeki kötü niyetli bir derleme betiği,
+   başka bir projenin sonradan okuyacağı ortak bir önbelleği zehirleyemez.
 
 **Ağ:** ağlı çalıştırma ayrı bir yetenektir (`kabuk:ağ`) ve her kipte onay
 ister. Ağlı çalıştırmada dosya yalıtımı aynen sürer.
 
-**Linux arka ucu — `bubblewrap` + `seccomp`.** Kök dosya sistemi salt okunur
-bağlanır, `$HOME` boş bir tmpfs ile örtülür ve yalnızca izinli dizinler geri
-bağlanır; çalışma alanı yazılabilir bağlanır; gizli dosyaların ve korumalı
-yolların üstüne `/dev/null` ya da salt okunur bağlama yapılır. Kullanıcı ve PID
-ad alanı her zaman ayrılır. Ağsız profilde ağ ad alanı da ayrılır ve seccomp, IP
+**Linux arka ucu — `bubblewrap` + `seccomp`.** Yalıtım boş bir kökten
+(tmpfs) başlar. Seçilmiş sistem yolları ve izinli araç zinciri alt dizinleri
+salt okunur, çalışma alanı ile ona özel geçici ve önbellek dizini yazılabilir
+bağlanır. `/proc` ve `/dev` yeniden oluşturulur, `/tmp` yalıtıma özeldir; `/run`
+bağlanmaz. Gizli dosyaların ve kimlik bilgisi dosyalarının üstüne `/dev/null`,
+korumalı yolların üstüne salt okunur bağlama yapılır. Kullanıcı ve PID ad alanı
+her zaman ayrılır. Ağsız profilde ağ ad alanı da ayrılır ve seccomp, IP
 ve Unix soketi açmayı engeller; böylece `docker.sock` ya da `ssh-agent` gibi
 yerel ayrıcalıklı soketlere de ulaşılamaz (`socketpair` serbesttir).
 `PR_SET_NO_NEW_PRIVS` her zaman açıktır.
@@ -642,17 +688,47 @@ yerel ayrıcalıklı soketlere de ulaşılamaz (`socketpair` serbesttir).
   engellenir. Parolalar geliştiricinin hesabına bağlı olarak DPAPI ile saklanır.
   Windows yükleyicisi makine geneli kurulum yaptığı için zaten yönetici
   yetkisiyle çalışır; yalıtım altyapısı o sırada hazırlanır.
-- Komutlar bu kullanıcılardan biri olarak çalışır. Yalıtım kullanıcı sınırından
-  gelir: yalıtım kullanıcısı geliştiricinin profilini — `~/.ssh`, Credential
-  Manager ve dolayısıyla EVREN anahtarı — okuyamaz. Çalışma alanına okuma-yazma,
-  araç zinciri dizinlerine okuma izni ACL ile verilir. Gizli dosyalara ve
-  korumalı yollara açık **deny** kaydı (ACE) konur.
-- *Neden kısıtlı belirteç (restricted token) değil:* yalnızca yazmayı sınırlar,
-  ağı kesemez; ağı kesmek için gereken güvenlik duvarı kuralı zaten yönetici
-  ister. *Neden AppContainer değil:* ağı keser, ama kullanıcı profilindeki araç
-  zincirleri (cargo, rustup, npm) ancak tek tek ACL verilerek okunabilir ve
-  geliştirici araçlarıyla uyumluluğu zayıftır. Bu model OpenAI'nin Codex CLI'da
-  vardığı sonuçla aynıdır.
+- Komutlar bu kullanıcılardan biri olarak çalışır. Kullanıcı sınırı
+  geliştiricinin profilini korur: yalıtım kullanıcısı `~/.ssh`'ı ve Credential
+  Manager'ı — dolayısıyla EVREN anahtarını — okuyamaz.
+- **Çalışma alanlarını birbirinden belirteç ayırır, kullanıcı değil.** Yalıtım
+  kullanıcıları bütün çalışma alanları için ortaktır. İzinler yalnızca bu
+  kullanıcılara verilseydi, A projesi için çalışan bir süreç, aynı anda açık
+  olan B projesine verilen izinleri de kullanabilirdi. Bu yüzden:
+  - Her çalışma alanına özel bir güvenlik tanımlayıcısı (SID) üretilir.
+  - Komut, bu SID'i *kısıtlayıcı SID* olarak taşıyan kısıtlı bir belirteçle
+    (restricted token) çalışır. Windows böyle bir belirteçte erişimi iki kez
+    denetler: hem kullanıcının hem kısıtlayıcı SID'lerin izni gerekir.
+  - Çalışma alanının ACL'i okuma-yazma iznini yalnızca o çalışma alanının SID'ine
+    verir. A için çalışan süreç, aynı yalıtım kullanıcısıyla çalışsa bile B'ye
+    erişemez.
+- **Okuma sınırı Linux'takiyle aynı hedefi taşır:** sistem + izinli araç zinciri
+  + kendi çalışma alanı. Sistem ve program dizinlerini okuyabilmek için
+  kısıtlayıcı SID listesine `ALL APPLICATION PACKAGES` grubu eklenir; Windows bu
+  dizinlerde bu gruba okuma izni verir, kullanıcıların oluşturduğu klasörler
+  (örn. `C:\projeler\`) ise bu izni taşımaz. **Bu mekanizma bir varsayımdır.**
+  Windows aşamasının ilk adımı onu bir prototiple doğrular (§12.3). Doğrulanamazsa
+  kalan sınır — "yalıtılmış süreç, bilgisayardaki her yerel kullanıcının
+  okuyabildiği dosyaları okuyabilir" — belgeye ve arayüze açıkça yazılır ve geniş
+  izinli bir klasördeki çalışma alanı açılırken uyarı verilir.
+- **İzinlerin yaşam döngüsü:** çalışma alanının ACL kaydı, çalışma alanı Kalfa'ya
+  ilk eklendiğinde bir kez verilir; büyük ağaçlarda bu zaman alır ve ilerleme
+  gösterilir. Çalışma alanı Kalfa'dan kaldırıldığında ya da Kalfa kaldırılırken
+  geri alınır. Verilen her ACE uygulama veri dizininde kayıtlıdır ve geri alma bu
+  kayda göre yapılır.
+- **Ortak durum yok:** yalıtım kullanıcısının kendi profili kısıtlı belirteç için
+  salt okunurdur. `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` ve `TEMP`
+  çalışma alanına özel dizinleri gösterir.
+- Gizli dosyalara ve korumalı yollara açık **deny** kaydı (ACE) konur.
+- *Neden tek başına kısıtlı belirteç değil:* geliştiricinin kendi hesabından
+  türetilen kısıtlı belirteç, geliştiricinin okuyabildiği her şeyi okur
+  (`~/.ssh` dahil) ve ağı kesemez; ağı kesmek için gereken güvenlik duvarı kuralı
+  zaten yönetici ister. Kalfa kısıtlı belirteci yalıtım kullanıcısının üzerine,
+  çalışma alanlarını ayırmak için kullanır. *Neden AppContainer değil:* ağı keser,
+  ama kullanıcı profilindeki araç zincirleri (cargo, rustup, npm) ancak tek tek
+  ACL verilerek okunabilir ve geliştirici araçlarıyla uyumluluğu zayıftır. Ayrı
+  kullanıcı + kısıtlayıcı SID modeli OpenAI'nin Codex CLI'da vardığı sonuca
+  dayanır.
 - *Kısıt:* kurulum bir kez yönetici yetkisi ister. Yönetici olmayan kullanıcılar
   için kurum BT'si yalıtım kullanıcılarını önceden oluşturabilir.
 
@@ -755,7 +831,8 @@ world eklenti {
   ve yöntemi host üretir, kimlik doğrulamayı host ekler. Eklenti anahtarı hiç
   görmez. Şart kabulü, hesap ve anahtar işlemleri eklentiye açık değildir. TLS
   doğrulaması kapatılamaz; yönlendirme başka bir hedefe anahtar taşımaz. Gövde
-  kullanılmadan önce doğrulanır.
+  kullanılmadan önce doğrulanır. "Göndermeden önce göster" açıksa istek, ağa
+  çıkmadan önce kullanıcıya gösterilir (§11.10).
 - **`depo-*`:** eklentiye ve çalışma alanına özel anahtar-değer deposu. Host
   yönetir, uygulama veri dizininde tutulur; boyut üst sınırı manifest'te beyan
   edilir. Genel dosya yazma yetkisi açmadan RAG indeksinin saklanmasını sağlar.
@@ -1162,10 +1239,20 @@ kendi araç çağrısını onaylayabilir. Bu yüzden:
   `kabuk:cargo test`, `kullanıcı mesajı`. Önceki turlardan yeniden gönderilen
   geçmiş tek tek değil, sayı olarak gösterilir ("+34 önceki mesaj"). Bir öğeye
   tıklanınca gönderilen metnin tamamı görünür.
-- **Göndermeden önce göster** (oturum ayarı, varsayılan kapalı): açıkken yeni dış
-  içerik — araç sonuçları — modele gitmeden önce bir kartta bekler; kullanıcı
-  öğeleri tek tek çıkarabilir. Çıkarılan öğenin yerine modele "[kullanıcı bu
-  içeriği göndermedi]" gider; böylece model eksik bilgiyle çalıştığını bilir.
+- **Göndermeden önce göster** (oturum ayarı, varsayılan kapalı). Karar, içerik
+  ağa çıkmadan **önce** alınır; bu yüzden iki noktada devreye girer:
+  - **Araç sonuçları:** yeni dış içerik modele gitmeden önce bir kartta bekler;
+    kullanıcı öğeleri tek tek çıkarabilir. Çıkarılan öğenin yerine modele
+    "[kullanıcı bu içeriği göndermedi]" gider; böylece model eksik bilgiyle
+    çalıştığını bilir.
+  - **Eklentilerin EVREN çağrıları:** bir eklenti araç çalışırken de gönderim
+    yapabilir. RAG indekslemesi `evren-cagir` ile dosya parçalarını gömme için
+    yollar. Önizleme sonuç kartında yapılsaydı veri çoktan çıkmış olurdu. Bu
+    yüzden host, `evren-cagir` isteğini göndermeden önce durdurur ve gövdeyi,
+    eklentinin o çağrıda okuduğu dosyaların listesiyle birlikte gösterir. Onay
+    gelirse istek gider; ret gelirse eklenti `izin-yok` hatası alır. Kullanıcı
+    "bu araç çağrısının geri kalanı için izin ver" diyebilir; kapsam o tek araç
+    çağrısıdır ve sonraki gönderimler günlükte tek tek görünmeye devam eder.
 - Gizli dosya kuralı (§7.4) bu ayardan bağımsız olarak her zaman çalışır.
 
 ---
@@ -1210,7 +1297,8 @@ teslim edilir:
    döngüsü, dosya araçları (`cap-std`), bağlı onay + diff, iptal, oturum kaydı ve
    kurtarma. UI'sız döngü testi (§4.2) ilk günden.
 2. **Kabuk ve yalıtım:** süreç sınırları, Linux arka ucu, ardından Windows arka
-   ucu. Yalıtım hazır olana kadar kabuk yalnızca yalıtımsız ve onaylı çalışır.
+   ucu. Windows arka ucu, çalışma alanına özel kısıtlı belirteç ve okuma sınırı
+   prototipiyle başlar (§7.7). Yalıtım hazır olana kadar kabuk yalnızca yalıtımsız ve onaylı çalışır.
 3. **Görünürlük:** tur özeti ve geri alma, gönderim günlüğü ve önizleme, "neden
    izin gerekiyor" kartı, İnceleme kipi, güvenlik denetçisi.
 4. **Eklenti ve RAG:** WIT 0.1, kaynak sınırları, `kalfa-rag`.
@@ -1248,7 +1336,7 @@ Canlı API'ye karşı testler `#[ignore]` ile işaretlidir; anahtar varsa koşar
 | `kalfa-evren` | Fixture tabanlı ayrıştırıcı + hata eşleme; bayt sınırı testleri |
 | `kalfa-core` | **§4.2'nin testi:** sahte sağlayıcı + sahte araçlarla, UI'sız tam döngü |
 | İzin motoru | Yol kaçış testleri: `..`, sembolik bağlantı ve junction (kontrol ile kullanım arasında değiştirilen dahil), sürücü harfi, UNC, aygıt yolu, alternatif veri akışı, hard link |
-| `kalfa-sandbox` | Linux ve Windows CI'da: `~/.ssh` okunamaz · çalışma alanı dışına yazılamaz · `.git/hooks` ve `.git/config` yazılamaz · gizli dosya okunamaz · ağsız profilde bağlantı kurulamaz · iptal süreç ağacını öldürür |
+| `kalfa-sandbox` | Linux ve Windows CI'da: `~/.ssh` ve `~/.cargo/credentials.toml` okunamaz · seçilmeyen yollar (`/srv`, `/mnt`, başka çalışma alanı) görünmez ya da okunamaz · aynı anda açık iki çalışma alanı birbirine erişemez · çalışma alanı dışına yazılamaz · korumalı yollar yazılamaz · gizli dosya okunamaz · ağsız profilde bağlantı kurulamaz · iptal süreç ağacını öldürür · kaldırılan çalışma alanının ACE'leri geri alınır (Windows) |
 | Araç zinciri uyumluluğu | Yalıtım içinde `git`, `cargo`, `npm`, `python` — hedef dağıtımlarda (Ubuntu 24.04, Debian 12, Pardus, Fedora) ve Windows 11'de |
 | Oturum | Kurtarma (yarım kalmış yan etki yeniden çalışmaz), geri alma çakışması |
 | `kalfa-plugin` | Sözleşme uyumu: manifest'te olmayan yetenek istendiğinde red; CPU/bellek sınırı; izin verilmeyen import'lu bileşen yüklenmez |
@@ -1271,6 +1359,12 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | Kabuk alt süreç doğuruyor ve tur iptal ediliyor | Süreç ağacı durur; gerçekleşmiş etkiler tur özetinde raporlanır |
 | Yalıtılmış komut `.git/hooks/pre-commit` yazmaya çalışıyor | Yazma reddedilir |
 | Yalıtılmış komut `~/.ssh/id_rsa` okumaya çalışıyor | Okuma reddedilir |
+| Kötü niyetli bir derleme betiği `~/.cargo/credentials.toml`'u okuyup standart çıktıya yazmaya çalışıyor | Dosya yalıtımın içinde yok; token modele gitmez |
+| İki çalışma alanı aynı anda açık; A'daki komut B'yi okumaya ya da yazmaya çalışıyor | Erişim reddedilir (Linux ve Windows) |
+| A'daki komut ortak bir önbelleğe dosya bırakmaya çalışıyor | Ortak yazılabilir önbellek yok; B etkilenmez |
+| Serbest kipte dosya aracı `.git/hooks/pre-commit`'i ya da `core.hooksPath` dizinindeki bir betiği yazmak istiyor | Onay ister; kısayol sunulmaz |
+| Önizleme açıkken RAG eklentisi gömme isteği gönderiyor | İstek kullanıcı onayı gelmeden ağa çıkmaz |
+| Kabuk, önceden değişmiş (`M`) bir dosyayı ve `.gitignore` kapsamındaki bir dosyayı yeniden değiştiriyor | İkisi de tur özetinde görünür |
 | Yalıtım kullanılamıyor | Kabuk sessizce yalıtımsız çalışmaz; her çağrı yerel iletişim kutusunda onay ister |
 | Eklenti sonsuz döngüye giriyor ya da çıktıyı şişiriyor | Sınır devreye girer; arayüz ve diğer oturumlar yanıt vermeye devam eder |
 | Eklenti şart kabul ucunu istiyor | Host reddeder; anahtar ya da genel HTTP erişimi verilmez |
@@ -1301,6 +1395,8 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | 9 | Ubuntu 24.04 bubblewrap'ı AppArmor ile kısıtlıyor | `.deb` dışı kurulumda yalıtım çalışmayabilir | `.deb` profili yükler; diğer kurulumlarda uyarı ve talimat |
 | 10 | v1 kapsamı büyüdü (yalıtım, kurtarma, geri alma, gönderim günlüğü) | Teslim gecikir; en büyük tek kalem Windows yalıtımı | Dört aşamalı teslim (§12.3); her aşama kendi başına kullanılabilir |
 | 11 | Denetçi modeli reasoning'e çok token harcıyor | Denetim gecikmesi ve maliyeti yüksek | Ölçüm; gerekirse reasoning'i kapatma seçeneği araştırılır |
+| 12 | Windows'ta okuma sınırı (`ALL APPLICATION PACKAGES` ile kısıtlı belirteç) bir varsayım | Doğrulanamazsa yalıtılmış süreç yerel kullanıcıların okuyabildiği her şeyi okur | Windows aşamasının ilk adımı prototip (§12.3); olmazsa sınır belgeye ve arayüze yazılır, geniş izinli klasörde uyarı verilir |
+| 13 | Kısıtlı belirteç ve çalışma alanına özel `HOME`/`APPDATA` bazı araçları bozabilir | Bilinen klasör yolunu ortam değişkeni yerine sistemden okuyan araçlar yazamaz | Uyumluluk matrisi (§13.2); risk 7 ile aynı azaltma |
 
 ---
 
@@ -1336,6 +1432,13 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | Oturum özellikleri | Kurtarma, geri alma, gönderim önizlemesi v1'de | Kullanıcı seçimi |
 | Denetçi başarısızlığı | "Bilinmiyor"; katı kipte içerik gitmez | Sessizce kapalıya düşmek bir güvenlik açığıdır |
 | Teslim | Dört aşama (§12.3) | Kapsam büyüdü; her aşama kendi başına kullanılabilir |
+| Yalıtımda okuma | İzin listesi; seçilmeyen yol yalıtımda yok | Kökü salt okunur bağlamak ev dışındaki verileri açık bırakır |
+| Ev dizini yapılandırmaları | Açılmaz; gerekirse en küçük kopya üretilir; Cargo için ayrı `CARGO_HOME` | Yapılandırma dosyaları kimlik bilgisi taşır (`credentials.toml`); ağsız komut bile sırrı çıktıya yazarak modele taşır |
+| Windows'ta çalışma alanı ayrımı | Ortak yalıtım kullanıcısı + çalışma alanına özel kısıtlayıcı SID | Kullanıcı bazlı izin projeleri birbirinden ayırmıyordu; çalışma alanı başına ayrı kullanıcı her seferinde yönetici yetkisi ister |
+| Ortak durum | Geçici dizin ve önbellek çalışma alanına özel | Ortak önbellek projeler arası zehirleme kanalıdır |
+| Korumalı yollar | Ortak izin motorunda, bütün yazma yollarına | Yalnızca kabuk profilinde olsaydı dosya aracıyla aşılırdı |
+| Eklenti gönderim önizlemesi | Host çağrısında, ağa çıkmadan önce | Sonuç kartında gösterim veri çıktıktan sonra olur |
+| Tur özeti | Meta veri + hash anlık görüntüsü | `git status` yeniden değişen ve yok sayılan dosyaları kaçırır |
 
 ---
 
@@ -1375,3 +1478,33 @@ canlı istekle desteklendi.
 - **Değişen:** Serbest kipte kabuk artık yalnızca yalıtımlı ve ağsızsa otomatik
   çalışır · paralellik okuma/yazma kilidiyle (§6.1) · yetenek tablosu model
   bazında (§3.2).
+
+**r3 (2026-09-21):** Codex'in ikinci inceleme turu
+([2026-09-21-kalfa-design-review-2.md](2026-09-21-kalfa-design-review-2.md))
+işlendi. Altı maddenin altısı da geçerliydi; hepsi yalıtım ve veri çıkışı
+tasarımındaki boşluklardı, çalışan kodda açık değil.
+
+- **Kimlik bilgisi sızıntısı (§7.7):** `~/.cargo` bütünüyle okunabiliyordu;
+  `credentials.toml` token'ı ağsız bir komutla bile standart çıktı üzerinden
+  modele taşınabilirdi. Artık araç zincirlerinin yalnızca çalıştırılabilir ve
+  kütüphane alt dizinleri açılıyor, ev dizinindeki yapılandırma dosyaları hiç
+  açılmıyor, Cargo ayrı bir `CARGO_HOME` ile çalışıyor.
+- **Windows'ta projeler arası erişim (§7.7):** iki ortak yalıtım kullanıcısı,
+  aynı anda açık projeleri birbirinden ayırmıyordu. Artık çalışma alanına özel
+  kısıtlayıcı SID ile kısıtlı belirteç kullanılıyor; ACE'lerin yaşam döngüsü
+  tanımlı; okuma sınırı mekanizması prototiple doğrulanacak bir varsayım olarak
+  açıkça işaretli (risk 12).
+- **Linux'ta görünür kalan dış veriler (§7.7):** kök salt okunur bağlandığı için
+  `/srv` ve `/mnt` gibi yollar görünüyordu. Artık yalıtım boş bir kökten başlıyor
+  ve okuma izin listesiyle çalışıyor.
+- **`.git` korumasının dosya araçlarıyla aşılması (§7.3):** koruma yalnızca kabuk
+  profilindeydi. Artık ortak izin motorunda; `core.hooksPath` hedefi ve `gitdir:`
+  ile gösterilen gerçek git dizini dahil.
+- **Eklenti gönderim önizlemesinin zamanı (§11.10):** önizleme sonuç kartına
+  bağlıydı; RAG'ın gönderdiği veri o sırada çoktan çıkmış olurdu. Artık host,
+  `evren-cagir` isteğini ağa çıkmadan önce durduruyor.
+- **Tur özeti (§6.7):** `git status` yeniden değişen ve yok sayılan dosyaları
+  kaçırıyordu. Artık meta veri + hash anlık görüntüsü kullanılıyor.
+- **Ek (incelemede yoktu):** çalışma alanları arasında ortak yazılabilir önbellek
+  ve geçici dizin kaldırıldı; ortak önbellek projeler arası bir zehirleme
+  kanalıydı (§7.7 ilke 4).
