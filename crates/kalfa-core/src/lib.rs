@@ -8,4 +8,5 @@ pub mod git_koruma;
 pub mod izin;
 pub mod kimlik;
 pub mod muhur;
+pub mod protokol;
 pub mod yol;
