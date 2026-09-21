@@ -1,7 +1,8 @@
-//! Test desteği: sahte sağlayıcı ve sahte araç (oturum sürücüsü Task 8'de).
+//! Test desteği: sahte sağlayıcı, sahte araç ve oturum sürücüsü.
 //! Yalnızca `test-destek` özelliğiyle derlenir; burada `expect`/`panic` serbesttir.
 
 use std::collections::VecDeque;
+use std::io;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -13,7 +14,12 @@ use kalfa_evren::{AkisOlayi, EvrenError, YanitMeta};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use crate::arac::{Arac, AracCiktisi, AracHatasi, Hazirlik, YazmaHedefi};
+use crate::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, Hazirlik, YazmaHedefi};
+use crate::izin::Siniflandirici;
+use crate::kayit::{KayitHedefi, OturumKaydi};
+use crate::kilit::KaynakKilitleri;
+use crate::oturum::{OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci, baslat};
+use crate::protokol::{BitisNedeni, Komut, Olay, Zarf};
 use crate::saglayici::{Saglayici, SaglayiciAkisi};
 use crate::yol::CalismaYolu;
 
@@ -285,4 +291,162 @@ impl Arac for SahteArac {
         self.aktif.fetch_sub(1, Ordering::SeqCst);
         sonuc
     }
+}
+
+/// Oturumu bir test içinden süren yardımcı: komut gönderir, olayları zaman
+/// aşımıyla bekler ve gelen her olayı `gecmis`'e yazar.
+pub struct Surucu {
+    pub tutamac: OturumTutamaci,
+    olaylar: OlayAlici,
+    pub gecmis: Vec<Zarf<Olay>>,
+    zaman_asimi: Duration,
+}
+
+impl Surucu {
+    pub fn yeni(tutamac: OturumTutamaci, olaylar: OlayAlici) -> Self {
+        Self {
+            tutamac,
+            olaylar,
+            gecmis: Vec::new(),
+            zaman_asimi: Duration::from_secs(5),
+        }
+    }
+
+    pub fn zaman_asimi(mut self, sure: Duration) -> Self {
+        self.zaman_asimi = sure;
+        self
+    }
+
+    pub async fn gonder(&self, komut: Komut) {
+        self.tutamac
+            .gonder(komut)
+            .await
+            .expect("oturum açık olmalı");
+    }
+
+    pub async fn sonraki(&mut self) -> Zarf<Olay> {
+        let zarf = tokio::time::timeout(self.zaman_asimi, self.olaylar.recv())
+            .await
+            .expect("olay beklerken zaman aşımı")
+            .expect("olay kanalı kapandı");
+        self.gecmis.push(zarf.clone());
+        zarf
+    }
+
+    pub async fn bekle(&mut self, kosul: impl Fn(&Olay) -> bool) -> Zarf<Olay> {
+        loop {
+            let zarf = self.sonraki().await;
+            if kosul(&zarf.yuk) {
+                return zarf;
+            }
+        }
+    }
+
+    pub async fn tur_sonu(&mut self) -> BitisNedeni {
+        match self
+            .bekle(|o| matches!(o, Olay::Tamamlandi { .. }))
+            .await
+            .yuk
+        {
+            Olay::Tamamlandi { neden } => neden,
+            diger => unreachable!("{diger:?}"),
+        }
+    }
+
+    pub fn metin(&self) -> String {
+        self.gecmis
+            .iter()
+            .filter_map(|z| match &z.yuk {
+                Olay::TokenParcasi { metin } => Some(metin.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn hatalar(&self) -> Vec<String> {
+        self.gecmis
+            .iter()
+            .filter_map(|z| match &z.yuk {
+                Olay::Hata { mesaj } => Some(mesaj.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+/// Var olmayan bir kök: git koruması yoktur, yalnızca gizli kalıplar çalışır.
+pub fn sanal_siniflandirici() -> Arc<Siniflandirici> {
+    Arc::new(
+        Siniflandirici::yeni(std::env::temp_dir().join("kalfa-sanal-calisma-alani"), &[])
+            .expect("sınıflandırıcı"),
+    )
+}
+
+/// Yeni bir kilit yöneticisiyle bağlam. Aynı çalışma alanını paylaşan iki
+/// oturum için bağlamı `clone()`'la: kilitler ortak kalır.
+pub fn test_baglami(
+    saglayici: Arc<SahteSaglayici>,
+    araclar: Vec<Arc<dyn Arac>>,
+    siniflandirici: Arc<Siniflandirici>,
+) -> OturumBaglami {
+    OturumBaglami {
+        saglayici,
+        araclar: Arc::new(AracKayitDefteri::yeni(araclar).expect("araç kaydı")),
+        siniflandirici,
+        kilitler: Arc::new(KaynakKilitleri::yeni()),
+    }
+}
+
+/// Yazma hatası benzeten kayıt hedefi (spec §6.6 testleri).
+pub struct BozulanHedef {
+    ekleme_bozuk: bool,
+    kalan_kalici: usize,
+}
+
+impl BozulanHedef {
+    /// Her yazım başarısız olur.
+    pub fn hep_bozuk() -> OturumKaydi {
+        OturumKaydi::hedefle(Box::new(Self {
+            ekleme_bozuk: true,
+            kalan_kalici: 0,
+        }))
+    }
+
+    /// Satır eklemek başarılı, kalıcılaştırmak (fsync) başarısız: yalnızca yan
+    /// etkili araçtan önceki "başladı" kaydı düşer.
+    pub fn kalicida_bozuk() -> OturumKaydi {
+        Self::kalicidan_sonra_bozuk(0)
+    }
+
+    /// İlk n kalıcılaştırma başarılı, sonraki başarısız.
+    pub fn kalicidan_sonra_bozuk(n: usize) -> OturumKaydi {
+        OturumKaydi::hedefle(Box::new(Self {
+            ekleme_bozuk: false,
+            kalan_kalici: n,
+        }))
+    }
+}
+
+impl KayitHedefi for BozulanHedef {
+    fn ekle(&mut self, _satir: &[u8]) -> io::Result<()> {
+        if self.ekleme_bozuk {
+            Err(io::Error::other("disk dolu"))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn kalici_yap(&mut self) -> io::Result<()> {
+        if self.kalan_kalici == 0 {
+            Err(io::Error::other("disk dolu"))
+        } else {
+            self.kalan_kalici -= 1;
+            Ok(())
+        }
+    }
+}
+
+pub fn test_oturumu(baglam: OturumBaglami, ayarlar: OturumAyarlari) -> Surucu {
+    let (tutamac, olaylar) = baslat(ayarlar, baglam).expect("oturum başlatılamadı");
+    Surucu::yeni(tutamac, olaylar)
 }
