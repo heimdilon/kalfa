@@ -161,9 +161,11 @@ Hesaba tanımlı 11 kayıt (`auto` dahil). Probe sırasında tüm fiyatlar `0.0 
 | `qwen3-asr-1.7b` | audio_transcription | audio, text |
 | `auto` | chat | text |
 
-**`qwen3-guard-4b` erişilemez.** Katalogda `task: guard` olarak var ama sohbet
-ucunu desteklemiyor ve ayrı bir ucu yok (`/v1/moderations`, `/v1/guard`,
-`/v1/safety`, `/v1/classify` → 404). Şartlar §2'ye göre gateway içinde sunucu
+**`qwen3-guard-4b` erişilemez.** Hesabın `/v1/models` kataloğunda listelenmiyor
+(`models.json`: 11 kayıt), ama sunucu onu tanıyor: bilinmeyen `guard` adı
+sorulunca `suggested_models` olarak öneriliyor, sohbet ucuna çağrılınca
+`görev: guard` hatası dönüyor (`error_task_mismatch.json`). Ayrı bir ucu da yok
+(`/v1/moderations`, `/v1/guard`, `/v1/safety`, `/v1/classify` → 404). Şartlar §2'ye göre gateway içinde sunucu
 tarafında koşuyor. Bkz. §9.
 
 ### 3.6 Kredi ve faturalama kısıtı
@@ -200,7 +202,8 @@ Command  ::= KullanıcıMesajı | İptal(tur) | AraçOnayı(çağrı, karar, ona
            | GönderimKararı(öğeler) | TuruGeriAl(tur)
            | ŞartlarıKabulEt(sürüm)
 
-Event    ::= TokenParçası | DüşünceParçası | AraçÇağrısıBaşladı(çağrı)
+Event    ::= TurBaşladı | TokenParçası | DüşünceParçası | TokenKullanımı
+           | AraçÇağrısıBaşladı(çağrı)
            | AraçSonucu(çağrı) | OnayGerekiyor(işlem, onay_mührü)
            | GönderimÖnizlemesi(öğeler) | KrediGözlemi | TurÖzeti(tur)
            | ŞartOnayıGerekiyor(sürüm, metin) | Hata | Tamamlandı
@@ -280,12 +283,18 @@ yükümlülüğüdür.
 
 ### 5.4 Tipli hatalar
 
-`EvrenError` enum'u: `AnahtarGecersiz` · `SartKabulGerekli { version }` ·
-`ModelBulunamadi { oneriler }` · `GorevUyusmazligi { model, gorev }` ·
-`KotaYetersiz` · `HizSiniri { tekrar_dene }` · `AkisYarimKaldi` · `AgHatasi` ·
-`Diger`.
+`EvrenError` enum'u: `AnahtarGecersiz` · `SartKabulGerekli { surum }` ·
+`ModelBulunamadi { mesaj, oneriler }` · `HizSiniri { tekrar_dene }` ·
+`AkisYarimKaldi` · `GecersizYanit` · `Ag` · `Sunucu { durum, kod, mesaj }`.
 
 `suggested_models` alanı UI'da "bunu mu demek istediniz?" olarak kullanılır.
+
+Gözlenmemiş hatalar için ayrı varyant açılmaz. Görev uyuşmazlığı EVREN'den
+`code: "bad_request"` genel koduyla geliyor (`error_task_mismatch.json`); kota
+yetersizliği için hiç yanıt gözlenmedi. İkisi de `Sunucu { durum, kod, mesaj }`
+altında taşınır; gerçek yanıt yakalandığında kendi varyantını alır. Görev
+uyuşmazlığı ayrıca kaynağında önlenir: arayüzün model seçicisi yalnızca katalogda
+`task: chat` olan modelleri sunar.
 
 `AnahtarGecersiz`, `401` + `code: "unauthorized"` yanıtından üretilir. Gateway
 geçersiz anahtar için de "API anahtarı eksik" mesajını döndürüyor
@@ -385,8 +394,10 @@ günlüğüne ve bütçeye girer.
 
 ### 6.6 Oturum kaydı ve kurtarma
 
-- **Oturum kaydı**, §4.1 zarflarının yalnızca sona ekleme yapılan günlüğüdür.
-  Uygulama veri dizininde tutulur (Windows `%APPDATA%\Kalfa`, Linux
+- **Oturum kaydı**, §4.1 zarfıyla aynı biçimde tutulan kayıt öğelerinin yalnızca
+  sona ekleme yapılan günlüğüdür (JSONL): komutlar, bağlam mesajları, araç
+  başladı/bitti kayıtları, istek kimlikleri, kip ve model değişiklikleri. Token
+  parçaları tek tek değil, birleşmiş mesaj olarak yazılır. Uygulama veri dizininde tutulur (Windows `%APPDATA%\Kalfa`, Linux
   `$XDG_DATA_HOME/kalfa`), **depo içinde değil**; dosya izinleri yalnızca
   kullanıcıya açıktır.
 - Yan etkili bir araç çalışmadan **önce** "başladı" kaydı diske yazılır, bitince
@@ -1295,7 +1306,11 @@ teslim edilir:
 
 1. **Çekirdek uçtan uca:** `kalfa-evren` (fixture testleriyle), şart akışı, ajan
    döngüsü, dosya araçları (`cap-std`), bağlı onay + diff, iptal, oturum kaydı ve
-   kurtarma. UI'sız döngü testi (§4.2) ilk günden.
+   kurtarma. UI'sız döngü testi (§4.2) ilk günden. Üç plana bölünür:
+   **1a** EVREN istemcisi · **1b** çekirdek ve dosya araçları · **1c** Tauri
+   kabuğu (anahtar girişi ve kimlik deposu, şart penceresi, akış, onay kartı,
+   durum çubuğu, model seçici, sıkı CSP ve pencere bazlı komut yetkileri —
+   §11.1–§11.9'un temel kısmı).
 2. **Kabuk ve yalıtım:** süreç sınırları, Linux arka ucu, ardından Windows arka
    ucu. Windows arka ucu, çalışma alanına özel kısıtlı belirteç ve okuma sınırı
    prototipiyle başlar (§7.7). Yalıtım hazır olana kadar kabuk yalnızca yalıtımsız ve onaylı çalışır.
@@ -1508,3 +1523,12 @@ tasarımındaki boşluklardı, çalışan kodda açık değil.
 - **Ek (incelemede yoktu):** çalışma alanları arasında ortak yazılabilir önbellek
   ve geçici dizin kaldırıldı; ortak önbellek projeler arası bir zehirleme
   kanalıydı (§7.7 ilke 4).
+
+**r3.1 (2026-09-21):** Birinci aşamanın uygulama planları
+(`docs/superpowers/plans/2026-09-21-kalfa-1a-evren-istemcisi.md`,
+`...-1b-cekirdek.md`) yazılırken bulunan tutarsızlıklar düzeltildi:
+`qwen3-guard-4b` katalogda listelenmiyor, yalnızca sunucu tanıyor (§3.5) ·
+gözlenmemiş `GorevUyusmazligi` ve `KotaYetersiz` ayrı hata varyantı değil (§5.4)
+· oturum kaydının biçimi netleşti (§6.6) · `TurBasladi` ve `TokenKullanimi`
+olayları eklendi (§4.1) · birinci aşama 1a/1b/1c planlarına bölündü; temel
+arayüz (1c) daha önce hiçbir aşamaya atanmamıştı (§12.3).
