@@ -3,7 +3,9 @@
 //! Dış dünyaya tek açıklığı `Komut`/`Olay` sınırıdır (§4.1); arayüzden
 //! bağımsızdır ve bir birim testinde baştan sona koşturulabilir (§4.2).
 
+pub mod arac;
 pub mod git_koruma;
 pub mod izin;
 pub mod kimlik;
+pub mod muhur;
 pub mod yol;
