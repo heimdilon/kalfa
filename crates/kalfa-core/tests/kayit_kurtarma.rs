@@ -1,0 +1,258 @@
+use std::io::Write;
+
+use kalfa_core::izin::Kip;
+use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
+use kalfa_core::kimlik::{CagriId, OturumId};
+use kalfa_core::kurtarma::*;
+use kalfa_core::protokol::{AracDurumu, Komut, SEMA_SURUMU, Zarf};
+use kalfa_evren::tipler::{ChatMessage, FunctionCall, Role, ToolCall};
+
+fn z(oturum: OturumId, sira: u64, yuk: KayitOgesi) -> Zarf<KayitOgesi> {
+    Zarf {
+        sema: SEMA_SURUMU,
+        oturum,
+        tur: None,
+        sira,
+        yuk,
+    }
+}
+
+fn cagri(id: &str, ad: &str) -> ToolCall {
+    ToolCall {
+        id: id.into(),
+        kind: "function".into(),
+        function: FunctionCall {
+            name: ad.into(),
+            arguments: "{}".into(),
+        },
+    }
+}
+
+fn acilis(kip: Kip) -> KayitOgesi {
+    KayitOgesi::OturumAcildi {
+        model: "glm-5.3".into(),
+        kip,
+    }
+}
+
+#[test]
+fn kayit_yazilir_okunur_ve_ikinci_olusturma_reddedilir() {
+    let d = tempfile::tempdir().unwrap();
+    let yol = d.path().join("alt/oturum.jsonl");
+    let o = OturumId::yeni();
+    let mut k = OturumKaydi::olustur(&yol).unwrap();
+    k.yaz(&z(o, 1, acilis(Kip::Siki))).unwrap();
+    k.yaz_kalici(&z(
+        o,
+        2,
+        KayitOgesi::Komut {
+            komut: Komut::KullaniciMesaji {
+                metin: "selam".into(),
+            },
+        },
+    ))
+    .unwrap();
+    drop(k);
+    let okunan = OturumKaydi::oku(&yol).unwrap();
+    assert_eq!(okunan.len(), 2);
+    assert_eq!(
+        okunan[1].yuk,
+        KayitOgesi::Komut {
+            komut: Komut::KullaniciMesaji {
+                metin: "selam".into()
+            }
+        }
+    );
+    assert!(
+        OturumKaydi::olustur(&yol).is_err(),
+        "var olan kaydın üzerine yazılmaz"
+    );
+
+    let mut k = OturumKaydi::ac(&yol).unwrap();
+    k.yaz(&z(o, 3, KayitOgesi::KipDegisti { kip: Kip::Proje }))
+        .unwrap();
+    assert_eq!(OturumKaydi::oku(&yol).unwrap().len(), 3);
+}
+
+#[test]
+fn yarim_son_satir_atlanir_ortadaki_bozuk_satir_hatadir() {
+    let d = tempfile::tempdir().unwrap();
+    let yol = d.path().join("o.jsonl");
+    let o = OturumId::yeni();
+    let mut k = OturumKaydi::olustur(&yol).unwrap();
+    k.yaz(&z(o, 1, acilis(Kip::Siki))).unwrap();
+    k.yaz(&z(o, 2, KayitOgesi::KipDegisti { kip: Kip::Proje }))
+        .unwrap();
+    drop(k);
+    let mut ham = std::fs::OpenOptions::new().append(true).open(&yol).unwrap();
+    ham.write_all(b"{\"sema\":1,\"otu").unwrap();
+    drop(ham);
+    assert_eq!(
+        OturumKaydi::oku(&yol).unwrap().len(),
+        2,
+        "çökmede yarım kalan son satır atlanır"
+    );
+
+    let bozuk = d.path().join("bozuk.jsonl");
+    let gecerli = serde_json::to_string(&z(o, 1, acilis(Kip::Siki))).unwrap();
+    std::fs::write(&bozuk, format!("{gecerli}\nbozuk satır\n{gecerli}\n")).unwrap();
+    let hata = OturumKaydi::oku(&bozuk).unwrap_err();
+    assert_eq!(hata.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn cokmus_kayit_onarilir_ve_yeniden_acilabilir() {
+    let d = tempfile::tempdir().unwrap();
+    let yol = d.path().join("o.jsonl");
+    let o = OturumId::yeni();
+    let mut k = OturumKaydi::olustur(&yol).unwrap();
+    k.yaz(&z(o, 1, acilis(Kip::Siki))).unwrap();
+    drop(k);
+
+    // Çökme: son satır yarım kaldı. Kurtar → yaz → tekrar aç.
+    let mut ham = std::fs::OpenOptions::new().append(true).open(&yol).unwrap();
+    ham.write_all(b"{\"sema\":1,\"otu").unwrap();
+    drop(ham);
+    let mut k = OturumKaydi::ac(&yol).unwrap();
+    k.yaz(&z(o, 2, KayitOgesi::KipDegisti { kip: Kip::Proje }))
+        .unwrap();
+    drop(k);
+    let okunan = OturumKaydi::oku(&yol).unwrap();
+    assert_eq!(
+        okunan.len(),
+        2,
+        "yarım satır kesildi; yeni kayıt ona yapışmadı"
+    );
+    assert_eq!(okunan[1].yuk, KayitOgesi::KipDegisti { kip: Kip::Proje });
+
+    // Tam yazılmış ama satır sonu eksik son satır da onarılır.
+    let tam = serde_json::to_vec(&z(o, 3, KayitOgesi::KipDegisti { kip: Kip::Siki })).unwrap();
+    let mut ham = std::fs::OpenOptions::new().append(true).open(&yol).unwrap();
+    ham.write_all(&tam).unwrap();
+    drop(ham);
+    let mut k = OturumKaydi::ac(&yol).unwrap();
+    k.yaz(&z(o, 4, KayitOgesi::KipDegisti { kip: Kip::Proje }))
+        .unwrap();
+    drop(k);
+    assert_eq!(OturumKaydi::oku(&yol).unwrap().len(), 4);
+}
+
+#[test]
+fn kurtarma_kip_model_ve_sira() {
+    let o = OturumId::yeni();
+    let kayitlar = vec![
+        z(o, 1, acilis(Kip::Serbest)),
+        z(
+            o,
+            2,
+            KayitOgesi::ModelDegisti {
+                model: "deepseek-v4-flash".into(),
+            },
+        ),
+        z(o, 3, KayitOgesi::KipDegisti { kip: Kip::Proje }),
+        z(o, 4, KayitOgesi::KipDegisti { kip: Kip::Serbest }),
+        z(
+            o,
+            9,
+            KayitOgesi::Mesaj {
+                mesaj: ChatMessage::user("a"),
+            },
+        ),
+    ];
+    let d = kurtar(&kayitlar).unwrap();
+    assert_eq!(d.oturum, o);
+    assert_eq!(d.model, "deepseek-v4-flash");
+    assert_eq!(d.kip, Kip::Siki, "Serbest kip kurtarmada geri gelmez");
+    assert_eq!(d.son_sira, 9);
+    assert_eq!(d.mesajlar, vec![ChatMessage::user("a")]);
+    assert!(d.tamamlayicilar.is_empty() && d.bilinmeyenler.is_empty());
+
+    let d = kurtar(&[z(o, 1, acilis(Kip::Proje))]).unwrap();
+    assert_eq!(d.kip, Kip::Proje, "Proje kipi korunur");
+}
+
+#[test]
+fn eksik_arac_yanitlari_tamamlanir() {
+    let o = OturumId::yeni();
+    let (c1, c3) = (CagriId::yeni(), CagriId::yeni());
+    let kayitlar = vec![
+        z(o, 1, acilis(Kip::Siki)),
+        z(
+            o,
+            2,
+            KayitOgesi::Mesaj {
+                mesaj: ChatMessage::user("üçünü yap"),
+            },
+        ),
+        z(
+            o,
+            3,
+            KayitOgesi::Mesaj {
+                mesaj: ChatMessage::assistant(
+                    None,
+                    vec![cagri("m1", "yaz"), cagri("m2", "oku"), cagri("m3", "oku")],
+                ),
+            },
+        ),
+        z(
+            o,
+            4,
+            KayitOgesi::AracBasladi {
+                cagri: c1,
+                model_cagri_id: "m1".into(),
+                arac: "yaz".into(),
+            },
+        ),
+        z(
+            o,
+            5,
+            KayitOgesi::AracBasladi {
+                cagri: c3,
+                model_cagri_id: "m3".into(),
+                arac: "oku".into(),
+            },
+        ),
+        z(
+            o,
+            6,
+            KayitOgesi::Mesaj {
+                mesaj: ChatMessage::tool("m3", "içerik"),
+            },
+        ),
+        z(
+            o,
+            7,
+            KayitOgesi::AracBitti {
+                cagri: c3,
+                durum: AracDurumu::Basarili,
+            },
+        ),
+    ];
+    let d = kurtar(&kayitlar).unwrap();
+    assert_eq!(d.mesajlar.len(), 3);
+    assert_eq!(
+        d.tamamlayicilar,
+        vec![
+            ChatMessage::tool("m1", BILINMEYEN_SONUC),
+            ChatMessage::tool("m2", CALISTIRILMADI)
+        ]
+    );
+    assert_eq!(
+        d.bilinmeyenler,
+        vec![BilinmeyenCagri {
+            cagri: c1,
+            arac: "yaz".into()
+        }]
+    );
+    assert!(d.tamamlayicilar.iter().all(|m| m.role == Role::Tool));
+}
+
+#[test]
+fn bos_ve_acilissiz_kayit() {
+    assert_eq!(kurtar(&[]), Err(KurtarmaHatasi::Bos));
+    let o = OturumId::yeni();
+    assert_eq!(
+        kurtar(&[z(o, 1, KayitOgesi::KipDegisti { kip: Kip::Siki })]),
+        Err(KurtarmaHatasi::AcilisYok)
+    );
+}

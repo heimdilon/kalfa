@@ -6,8 +6,10 @@
 pub mod arac;
 pub mod git_koruma;
 pub mod izin;
+pub mod kayit;
 pub mod kilit;
 pub mod kimlik;
+pub mod kurtarma;
 pub mod muhur;
 pub mod protokol;
 pub mod yol;
