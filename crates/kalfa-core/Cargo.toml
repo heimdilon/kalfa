@@ -1,0 +1,30 @@
+[package]
+name = "kalfa-core"
+description = "Kalfa ajan çekirdeği: ajan döngüsü, izinler, oturum kaydı"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+test-destek = []
+
+[dependencies]
+async-trait.workspace = true
+futures-util.workspace = true
+globset.workspace = true
+hex.workspace = true
+jsonschema.workspace = true
+kalfa-evren = { path = "../kalfa-evren" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+kalfa-core = { path = ".", features = ["test-destek"] }
+tempfile.workspace = true
