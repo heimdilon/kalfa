@@ -4,10 +4,12 @@
 
 pub mod akis;
 pub mod hata;
+pub mod istemci;
 pub mod kredi;
 pub mod sse;
 pub mod tipler;
 
 pub use akis::{AkisBirlestirici, AkisOlayi};
 pub use hata::EvrenError;
+pub use istemci::{ApiAnahtari, EvrenIstemcisi, VARSAYILAN_TABAN};
 pub use kredi::{KrediGozlemi, YanitMeta};
