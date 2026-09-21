@@ -2,8 +2,9 @@ mod ortak;
 
 use std::str::FromStr;
 
+use futures_util::StreamExt;
 use kalfa_evren::tipler::{ChatMessage, ChatRequest};
-use kalfa_evren::{ApiAnahtari, EvrenError, EvrenIstemcisi};
+use kalfa_evren::{AkisOlayi, ApiAnahtari, EvrenError, EvrenIstemcisi};
 use rust_decimal::Decimal;
 use serde_json::json;
 use wiremock::matchers::{body_json, header, method, path};
@@ -149,4 +150,146 @@ fn anahtar_hicbir_ciktida_gorunmez() {
     assert_eq!(format!("{a:?}"), "ApiAnahtari(***)");
     let i = EvrenIstemcisi::yeni("https://ornek/v1/", a).unwrap();
     assert!(!format!("{i:?}").contains(ANAHTAR));
+}
+
+fn akis_yaniti(govde: Vec<u8>) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .set_body_raw(govde, "text/event-stream")
+        .insert_header("x-request-id", "akis-1")
+        .insert_header("x-evren-credits-remaining", "1000.0000")
+}
+
+#[tokio::test]
+async fn akisli_sohbet_fixture_uzerinden() {
+    let (s, i) = sunucu_ve_istemci().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(akis_yaniti(ortak::fixture_bayt(
+            "chat_tool_calls_stream.sse",
+        )))
+        .mount(&s)
+        .await;
+    let istek = ChatRequest::new("glm-5.3", vec![ChatMessage::user("İstanbul'da hava?")]);
+    let (meta, akis) = i.sohbet_akisi(&istek).await.unwrap();
+    assert_eq!(meta.istek_id.as_deref(), Some("akis-1"));
+
+    let olaylar: Vec<_> = akis.collect().await;
+    assert!(olaylar.iter().all(|o| o.is_ok()), "{olaylar:?}");
+    let olaylar: Vec<AkisOlayi> = olaylar.into_iter().map(Result::unwrap).collect();
+    assert!(olaylar.iter().any(|o| matches!(o, AkisOlayi::AracCagrilari(v) if v[0].function.arguments == "{\"sehir\": \"Istanbul\"}")));
+    assert_eq!(
+        olaylar.last(),
+        Some(&AkisOlayi::Bitti {
+            neden: "tool_calls".into()
+        })
+    );
+
+    let gonderilen: serde_json::Value =
+        serde_json::from_slice(&s.received_requests().await.unwrap()[0].body).unwrap();
+    assert_eq!(gonderilen["stream"], true);
+    assert_eq!(gonderilen["stream_options"]["include_usage"], true);
+}
+
+#[tokio::test]
+async fn yarim_kalan_akis_kanalda_hata_olarak_biter() {
+    let (s, i) = sunucu_ve_istemci().await;
+    let metin = ortak::fixture_metin("chat_tool_calls_stream.sse");
+    let bitis = metin.find("\"finish_reason\": \"tool_calls\"").unwrap();
+    let kes = metin[..bitis].rfind("data:").unwrap();
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(akis_yaniti(metin.as_bytes()[..kes].to_vec()))
+        .mount(&s)
+        .await;
+    let (_, akis) = i
+        .sohbet_akisi(&ChatRequest::new("glm-5.3", vec![]))
+        .await
+        .unwrap();
+    let olaylar: Vec<_> = akis.collect().await;
+    assert_eq!(olaylar.last(), Some(&Err(EvrenError::AkisYarimKaldi)));
+    assert!(
+        !olaylar
+            .iter()
+            .any(|o| matches!(o, Ok(AkisOlayi::AracCagrilari(_))))
+    );
+}
+
+#[tokio::test]
+async fn akis_oncesi_http_hatasi_err_doner() {
+    let (s, i) = sunucu_ve_istemci().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(json_yanit(
+            401,
+            ortak::fixture_bayt("error_unauthorized.json"),
+        ))
+        .mount(&s)
+        .await;
+    let sonuc = i.sohbet_akisi(&ChatRequest::new("glm-5.3", vec![])).await;
+    assert_eq!(sonuc.err(), Some(EvrenError::AnahtarGecersiz));
+}
+
+#[tokio::test]
+async fn akis_birakilinca_sessiz_sunucuda_da_baglanti_kapanir() {
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let adres = dinleyici.local_addr().unwrap();
+    let sunucu = tokio::spawn(async move {
+        let (mut soket, _) = dinleyici.accept().await.unwrap();
+        // TCP read bir HTTP isteğine denk gelmez. Başlık ve gövdeyi tamamen
+        // tüket; aksi halde kalan istek baytları kapanma testini yanıltır.
+        let mut istek = Vec::new();
+        let mut parca = [0u8; 1024];
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let n = soket.read(&mut parca).await.unwrap();
+                assert!(n > 0, "istek tamamlanmadan EOF");
+                istek.extend_from_slice(&parca[..n]);
+                assert!(
+                    istek.len() <= 64 * 1024,
+                    "test isteği beklenmedik kadar büyük"
+                );
+                if let Some(son) = istek.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let baslik = std::str::from_utf8(&istek[..son]).unwrap();
+                    let boyut: usize = baslik
+                        .lines()
+                        .filter_map(|l| l.split_once(':'))
+                        .find(|(ad, _)| ad.eq_ignore_ascii_case("content-length"))
+                        .expect("test istemcisi Content-Length göndermeli")
+                        .1
+                        .trim()
+                        .parse()
+                        .unwrap();
+                    if istek.len() >= son + 4 + boyut {
+                        break;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("test HTTP isteği tamamlanmalı");
+        soket
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n")
+            .await
+            .unwrap();
+        // Tek parça: ": keep-alive\n\n" (14 = 0xe bayt). Sonra sessizlik.
+        soket.write_all(b"e\r\n: keep-alive\n\n\r\n").await.unwrap();
+        let mut tampon = [0u8; 64];
+        tokio::time::timeout(Duration::from_secs(5), soket.read(&mut tampon)).await
+    });
+
+    let i = EvrenIstemcisi::yeni(format!("http://{adres}/v1"), ApiAnahtari::yeni(ANAHTAR)).unwrap();
+    let (_, akis) = i
+        .sohbet_akisi(&ChatRequest::new("glm-5.3", vec![]))
+        .await
+        .unwrap();
+    drop(akis);
+
+    let okuma = sunucu
+        .await
+        .unwrap()
+        .expect("istemci akışı bırakınca bağlantı 5 sn içinde kapanmalı");
+    assert!(matches!(okuma, Ok(0) | Err(_)), "{okuma:?}");
 }

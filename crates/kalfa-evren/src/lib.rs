@@ -11,5 +11,5 @@ pub mod tipler;
 
 pub use akis::{AkisBirlestirici, AkisOlayi};
 pub use hata::EvrenError;
-pub use istemci::{ApiAnahtari, EvrenIstemcisi, VARSAYILAN_TABAN};
+pub use istemci::{AkisKanali, ApiAnahtari, EvrenIstemcisi, VARSAYILAN_TABAN};
 pub use kredi::{KrediGozlemi, YanitMeta};

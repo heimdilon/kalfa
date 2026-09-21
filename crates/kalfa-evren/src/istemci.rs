@@ -1,17 +1,28 @@
 //! EVREN LLM Gateway HTTP istemcisi (spec §3, §5).
 
 use std::fmt;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use futures_util::{Stream, StreamExt};
 use reqwest::header::RETRY_AFTER;
 use serde::de::DeserializeOwned;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
+use crate::akis::{AkisBirlestirici, AkisOlayi, VeriSonucu};
 use crate::hata::{EvrenError, hata_esle};
 use crate::kredi::{YanitMeta, basliklardan};
-use crate::tipler::{ChatRequest, ChatResponse, ModelInfo, ModelList, TermsStatus, TermsText};
+use crate::sse::{SseCozucu, VARSAYILAN_AZAMI_OLAY};
+use crate::tipler::{
+    ChatRequest, ChatResponse, ModelInfo, ModelList, StreamOptions, TermsStatus, TermsText,
+};
 
 pub const VARSAYILAN_TABAN: &str = "https://evren-llmapi.ssyz.org.tr/v1";
+
+/// Akış olayları kanalı. Bırakılırsa (drop) bağlantı kapanır.
+pub type AkisKanali = Pin<Box<dyn Stream<Item = Result<AkisOlayi, EvrenError>> + Send>>;
 
 /// API anahtarı. Hiçbir `Debug`/`Display` çıktısında görünmez.
 pub struct ApiAnahtari(String);
@@ -129,6 +140,95 @@ impl EvrenIstemcisi {
             .gonder(self.http.post(self.url("chat/completions")).json(&govde))
             .await?;
         Ok((json_coz(yanit).await?, meta))
+    }
+
+    /// Akışlı sohbet. HTTP hatası akış başlamadan `Err` döner; akış sırasındaki
+    /// hata kanalda son öğe olarak gelir.
+    pub async fn sohbet_akisi(
+        &self,
+        istek: &ChatRequest,
+    ) -> Result<(YanitMeta, AkisKanali), EvrenError> {
+        let mut govde = istek.clone();
+        govde.stream = true;
+        govde.stream_options = Some(StreamOptions {
+            include_usage: true,
+        });
+        let (yanit, meta) = self
+            .gonder(self.http.post(self.url("chat/completions")).json(&govde))
+            .await?;
+        let (tx, rx) = mpsc::channel(64);
+        tokio::spawn(akisi_isle(yanit, tx));
+        Ok((meta, Box::pin(ReceiverStream::new(rx))))
+    }
+}
+
+type Gonderici = mpsc::Sender<Result<AkisOlayi, EvrenError>>;
+
+/// Yanıt gövdesini okur, SSE → birleştirici hattından geçirip kanala yazar.
+/// Alıcı bırakılınca görev **hemen** biter ve yanıt (bağlantı) bırakılır:
+/// yalnızca gönderim denemesine güvenilseydi, sessiz ya da yalnızca
+/// `: keep-alive` gönderen bir sunucuda bağlantı açık kalırdı.
+async fn akisi_isle(yanit: reqwest::Response, tx: Gonderici) {
+    let mut baytlar = yanit.bytes_stream();
+    let mut cozucu = SseCozucu::yeni(VARSAYILAN_AZAMI_OLAY);
+    let mut birlestirici = AkisBirlestirici::yeni();
+
+    loop {
+        let parca = tokio::select! {
+            biased;
+            _ = tx.closed() => return,
+            parca = baytlar.next() => parca,
+        };
+        let Some(parca) = parca else { break };
+        let parca = match parca {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = tx.send(Err(ag_hatasi(e))).await;
+                return;
+            }
+        };
+        let sse_olaylari = match cozucu.besle(&parca) {
+            Ok(o) => o,
+            Err(e) => {
+                let _ = tx.send(Err(EvrenError::GecersizYanit(e.to_string()))).await;
+                return;
+            }
+        };
+        for sse in sse_olaylari {
+            match birlestirici.veri_isle(&sse.veri) {
+                Ok(VeriSonucu::Olaylar(olaylar)) => {
+                    for o in olaylar {
+                        if tx.send(Ok(o)).await.is_err() {
+                            return;
+                        }
+                    }
+                }
+                Ok(VeriSonucu::Bitti) => {
+                    son_olaylari_gonder(&mut birlestirici, &tx).await;
+                    return;
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e)).await;
+                    return;
+                }
+            }
+        }
+    }
+    // Bağlantı `[DONE]` gelmeden kapandı: finish_reason görüldüyse akış tamamdır,
+    // görülmediyse yarıda kalmıştır.
+    son_olaylari_gonder(&mut birlestirici, &tx).await;
+}
+
+async fn son_olaylari_gonder(birlestirici: &mut AkisBirlestirici, tx: &Gonderici) {
+    match birlestirici.bitir() {
+        Ok(son) => {
+            for o in son {
+                let _ = tx.send(Ok(o)).await;
+            }
+        }
+        Err(e) => {
+            let _ = tx.send(Err(e)).await;
+        }
     }
 }
 
