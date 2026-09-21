@@ -1,0 +1,3 @@
+# EVREN probe fixture'ları sunucunun ham baytlarıdır; satır sonu dönüşümü yapılmaz.
+# SSE ayrıştırıcı testleri gerçek satır sonlarına karşı koşar.
+research/evren-probe/fixtures/** -text
