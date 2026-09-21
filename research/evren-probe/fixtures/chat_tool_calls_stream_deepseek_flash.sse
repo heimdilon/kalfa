@@ -1,0 +1,28 @@
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}],"prompt_token_ids":null,"prompt_text":null}
+
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"reasoning":"The"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"reasoning":" user is"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"reasoning":" asking about the weather in Iz"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"reasoning":"mir. I"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"reasoning":" should use the ha"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"reasoning":"va_durumu tool."},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"tool_calls":[{"id":"chatcmpl-tool-9e3a428baf7e171d","type":"function","index":0,"function":{"name":"hava_durumu"}}]},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"sehir\": \""}}]},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"İzmir"}}]},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-b555f04c7366e5a6","object":"chat.completion.chunk","created":1789980583,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"}"}}]},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id": "chatcmpl-b555f04c7366e5a6", "object": "chat.completion.chunk", "created": 1789980583, "model": "deepseek/deepseek-v4-flash", "choices": [{"index": 0, "delta": {}, "logprobs": null, "finish_reason": "tool_calls", "stop_reason": null, "token_ids": null}]}
+
+data: {"id": "chatcmpl-b555f04c7366e5a6", "object": "chat.completion.chunk", "created": 1789980583, "model": "deepseek/deepseek-v4-flash", "choices": [], "usage": {"prompt_tokens": 376, "total_tokens": 449, "completion_tokens": 73, "completion_tokens_details": {"reasoning_tokens": 22}}, "system_fingerprint": "vllm-0.28.0-tp4-ep-bcff477d"}
+
+data: [DONE]
+

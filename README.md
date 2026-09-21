@@ -38,8 +38,10 @@ ama son söz senin.
 | **Çekirdek** | Rust; UI'dan bağımsız, serileştirilebilir `Command`/`Event` sınırı |
 | **Arayüz** | Tauri v2 + Svelte 5 — Windows ve Linux |
 | **Eklentiler** | WebAssembly Component Model (WIT), yalıtılmış çalışır |
-| **İzinler** | Yetenek tabanlı; çalışma alanı sınırı aşılmaz, kalıcı "her şeye izin ver" yoktur |
-| **Sağlayıcı** | EVREN LLM Gateway — native tool calling, streaming, `reasoning`, kredi takibi |
+| **İzinler** | Yetenek tabanlı; dört kip; onay gösterilen işleme bağlı; kalıcı "her şeye izin ver" yoktur |
+| **Kabuk** | İşletim sistemi düzeyinde yalıtım — Linux'ta bubblewrap, Windows'ta ayrı kullanıcı; varsayılan olarak ağsız |
+| **Şeffaflık** | EVREN'e giden her içerik gönderim günlüğünde; turlar geri alınabilir |
+| **Sağlayıcı** | EVREN LLM Gateway — native tool calling, streaming, `reasoning`, kredi gözlemi |
 
 ## Doğrulanmış API gerçekleri
 

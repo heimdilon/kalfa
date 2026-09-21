@@ -11,9 +11,14 @@ sessiz bir ayrışma oluşamaz.
 | Dosya | Ne kanıtlıyor |
 |---|---|
 | `models.json` | Katalog şeması: OpenAI'da olmayan `task`, `modalities`, `pricing` alanları |
-| `chat_tool_calls_blocking.json` | Native tool calling + **paralel çağrı** + `message.reasoning` + `usage.evren` |
-| `chat_tool_calls_stream.sse` | `: keep-alive` yorum satırları, parçalı argüman akışı, `delta.reasoning`, son parçada `usage.evren`'in **olmayışı** |
-| `chat_json_schema.json` | `response_format: json_schema` desteği (vLLM arkaplanı) |
+| `chat_tool_calls_blocking.json` | `glm-5.3`: native tool calling + **paralel çağrı** + `message.reasoning` + `usage.evren` |
+| `chat_tool_calls_stream.sse` | `glm-5.3`: `: keep-alive` yorum satırları, parçalı argüman akışı (`I` + `stanbul` — düz ASCII, token sınırı), `delta.reasoning`, son parçada `usage.evren`'in **olmayışı** |
+| `chat_json_schema.json` | `glm-5.3`: `response_format: json_schema` desteği (vLLM arkaplanı) |
+| `chat_tool_calls_qwen_flash.json` | `qwen3.8-flash-next`: native tool calling + paralel çağrı + `reasoning` |
+| `chat_tool_calls_stream_qwen_flash.sse` | `qwen3.8-flash-next`: akışta araç çağrısı; argüman parçaları `İ` → `z` → `mir` (token sınırı Türkçe karaktere denk geliyor) |
+| `chat_json_schema_qwen_flash.json` | `qwen3.8-flash-next`: `json_schema` ile güvenlik denetçisi şeması; örnek enjeksiyonu `talimat_enjeksiyonu` olarak işaretledi |
+| `chat_tool_calls_deepseek_flash.json` | `deepseek-v4-flash`: native tool calling + paralel çağrı + `reasoning` |
+| `chat_tool_calls_stream_deepseek_flash.sse` | `deepseek-v4-flash`: akışta araç çağrısı |
 | `error_model_not_found.json` | `error.evren.suggested_models` dizisi |
 | `error_task_mismatch.json` | Görev uyuşmazlığı hatası (`task: guard` modelini sohbet ucuna çağırma) |
 | `error_unauthorized.json` | Geçersiz anahtar → `401`, `code: "unauthorized"`; mesaj geçersiz anahtar için de "API anahtarı eksik" diyor |
@@ -30,5 +35,5 @@ sessiz bir ayrışma oluşamaz.
   dayanmalıdır.
 - Yanıt başlıkları dosyalara kaydedilmedi; gözlemlenen başlıklar:
   `X-Evren-Credits-Held`, `X-Evren-Credits-Remaining`, `X-Evren-Routed-Model`,
-  `X-Request-Id`.
+  `X-Request-Id`, `X-Evren-Quota-Weight`.
 - Hiçbir dosyada API anahtarı yoktur.

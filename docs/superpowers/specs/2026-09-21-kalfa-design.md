@@ -1,7 +1,8 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Durum:** Onaylandı, uygulama planı bekliyor
+**Revizyon:** r2 — Codex incelemesi işlendi ([inceleme](2026-09-21-kalfa-design-review.md)); değişiklik özeti §17'de
+**Durum:** Kullanıcı okuması bekliyor; onaydan sonra uygulama planı
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
 ---
@@ -19,6 +20,10 @@ yetenekli, ama son söz kullanıcınındır.
 
 **v1'in birincil senaryosu kod ajanıdır**, ancak çekirdek ve araç sözleşmesi
 belge/bilgi ajanını da taşıyacak şekilde jeneriktir.
+
+Ürünün ayırt edici vaadi, Türkçe çalışmanın ötesinde şudur: **kullanıcı, ajanın
+hangi veriyi EVREN'e gönderdiğini, neyi değiştirdiğini ve hangi yetkiyle
+çalıştığını her an görebilir** (§6.7, §7, §11.4, §11.10).
 
 ---
 
@@ -46,7 +51,8 @@ Kalfa bu boşluğu doldurur.
 
 Bu bölümdeki her madde 2026-09-21'de canlı API'ye atılan isteklerle
 **doğrulanmıştır**. Ham yanıtlar `research/evren-probe/fixtures/` altındadır.
-Varsayım değildirler.
+Varsayım değildirler. Model davranışı **model bazında** doğrulanır: bir modelde
+gözlenen davranış, katalogdaki diğer modeller için kanıt sayılmaz.
 
 **Taban:** `https://evren-llmapi.ssyz.org.tr/v1`
 **Kimlik:** `X-API-Key: evren_llm_...` (veya `Authorization: Bearer`)
@@ -63,53 +69,79 @@ kilitler. Bu, oturum ortasında da gerçekleşebilir.
 
 ### 3.2 Doğrulanan yetenekler
 
-| Yetenek | Durum | Kanıt |
-|---|---|---|
-| Native tool calling | ✅ | `chat_tool_calls_blocking.json` |
-| Paralel araç çağrısı | ✅ Tek mesajda 2 çağrı | aynı dosya |
-| Streaming + tool calling | ✅ | `chat_tool_calls_stream.sse` |
-| `message.reasoning` / `delta.reasoning` | ✅ 50 delta parçası | aynı dosya |
-| `response_format: json_schema` | ✅ Şemaya birebir uydu | `chat_json_schema.json` |
-| `stream_options.include_usage` | ✅ | stream fixture'ı |
+| Yetenek | `glm-5.3` | `qwen3.8-flash-next` | `deepseek-v4-flash` |
+|---|:--:|:--:|:--:|
+| Native tool calling | ✅ | ✅ | ✅ |
+| Paralel araç çağrısı (tek mesajda 2) | ✅ | ✅ | ✅ |
+| Streaming + tool calling | ✅ | ✅ | ✅ |
+| `reasoning` alanı | ✅ | ✅ | ✅ |
+| `response_format: json_schema` | ✅ | ✅ | — |
+| `stream_options.include_usage` | ✅ | ✅ | ✅ |
+
+`—` denenmedi demektir. Denenmemiş yetenek desteklenmiyor sayılmaz, ama
+**desteklendiği de varsayılmaz** (§6.4).
+
+Kanıtlar: `glm-5.3` → `chat_tool_calls_blocking.json`,
+`chat_tool_calls_stream.sse`, `chat_json_schema.json` · `qwen3.8-flash-next` →
+`chat_tool_calls_qwen_flash.json`, `chat_tool_calls_stream_qwen_flash.sse`,
+`chat_json_schema_qwen_flash.json` · `deepseek-v4-flash` →
+`chat_tool_calls_deepseek_flash.json`, `chat_tool_calls_stream_deepseek_flash.sse`.
 
 Arkaplan **vLLM** (`system_fingerprint: vllm-0.28.1rc1...-tp8`). `json_schema`
 desteği buradan geliyor.
 
-### 3.3 OpenAI sözleşmesinden sapmalar — `kalfa-evren`'in varlık sebebi
+### 3.3 OpenAI sözleşmesinden farklar — `kalfa-evren`'in varlık sebebi
 
-Aşağıdaki altı nokta, hazır bir OpenAI istemci crate'i kullanmayı imkânsız kılar:
+Hazır, tipli bir OpenAI istemci crate'i EVREN'e bağlanabilir; ama bilinmeyen
+alanları düşürür. Kalfa'nın ihtiyaç duyduğu bilginin önemli kısmı tam da o
+alanlardadır:
 
-1. **`: keep-alive` yorum satırları.** SSE akışında yorum satırları geliyor.
-   `:` ile başlayan satırları atlamayan ayrıştırıcı patlar.
-2. **Parçalı araç argümanı akışı.** `{"sehir": "` → `I` → `stanbul` → `"}`.
-   İlk parçada `id` + `name`, sonrakilerde yalnızca `index` ve argüman kırıntısı.
-   `index` bazlı **String** birleştirme şart — Türkçe karakterin parça sınırında
-   bölünmesi bunun canlı kanıtı.
-3. **`usage.evren` akışta yok.** Bloklu çağrıda `usage.evren`
-   (`credits_held_cr`, `credits_remaining_cr`, `routed_model`) gelir; akışın son
-   `usage` parçasında **gelmez**. Kredi muhasebesi iki kaynaklı olmak zorunda.
-4. **`reasoning` alanı.** OpenAI şemasında yoktur.
-   `usage.completion_tokens_details.reasoning_tokens` ile ayrıca sayılır ve
-   **faturalanır**.
-5. **`error.evren` koşulludur.** Her hatada yoktur. Gözlemlenenler:
+1. **`reasoning` alanı.** `message.reasoning` / `delta.reasoning` OpenAI
+   şemasında yoktur. `usage.completion_tokens_details.reasoning_tokens`,
+   `completion_tokens`'ın **içindedir**, ayrı bir kalem değil dökümüdür
+   (gözlenen değerler bununla tutarlı: `glm-5.3` bloklu çağrıda 78 completion'ın
+   32'si reasoning).
+2. **`usage.evren`.** Bloklu yanıtta `credits_held_cr`, `credits_remaining_cr`,
+   `routed_model` gelir; akışın son `usage` parçasında **gelmez** (üç modelde de
+   gözlendi). Kesinleşmiş harcamayı gösteren bir alan yoktur (§5.2).
+3. **`error.evren` koşulludur.** Her hatada yoktur. Gözlemlenenler:
    `required_terms_version` (şart kapısı), `suggested_models` (model bulunamadı).
-6. **Katalog uzantıları.** `/v1/models` OpenAI'da olmayan `task`, `modalities`,
+4. **Katalog uzantıları.** `/v1/models` OpenAI'da olmayan `task`, `modalities`,
    `pricing` alanlarını döner.
+5. **Yanıt başlıkları** (§3.4).
+
+EVREN'e özgü **olmayan**, ama ayrıştırıcının yine de doğru işlemesi gereken iki
+standart davranış:
+
+- **`:` yorum satırları.** SSE standardının (WHATWG) parçasıdır; standarda uyan
+  bir ayrıştırıcı zaten atlar.
+- **Parçalı araç argümanı akışı.** OpenAI'nin akış biçimiyle aynıdır: ilk parçada
+  `id` + `name`, argüman sonraki parçalarda `index` ile gelir. Kayıtlarda
+  parçalar **token** sınırlarıdır: `glm-5.3` akışında `{"sehir": "` → `I` →
+  `stanbul` → `"}` (metin düz ASCII `Istanbul`), `qwen3.8-flash-next` akışında
+  `İ` → `z` → `mir`. Yani parça sınırı Türkçe karaktere denk gelebiliyor, ama
+  her parça tam karakter taşıyan geçerli JSON metnidir. Çok baytlı bir
+  karakterin **TCP bayt sınırında** bölünmesi bu kayıtlarla kanıtlanmış değildir;
+  ayrıştırıcı buna sentetik testlerle hazırlanır (§13.1).
+
+Kendi istemcimizi yazma kararının gerekçesi SSE'nin farklı olması değil, tipli
+istemcilerin EVREN alanlarını düşürmesidir. SSE çerçeveleme ayrı bir katmandır
+(§5.1).
 
 ### 3.4 Yanıt başlıkları
 
-`X-Evren-Credits-Held` · `X-Evren-Credits-Remaining` · `X-Evren-Routed-Model` ·
-`X-Request-Id`
+**Gözlenen:** `X-Evren-Credits-Held` · `X-Evren-Credits-Remaining` ·
+`X-Evren-Routed-Model` · `X-Request-Id` · `X-Evren-Quota-Weight`
+(`qwen3.8-flash-next` çağrısında `1`).
 
 `X-Evren-Routed-Model`, `model: "auto"` kullanıldığında isteğin gerçekte hangi
 modele düştüğünü söyler.
 
-Gateway'in `Access-Control-Expose-Headers` başlığı bunlara ek olarak şunları
-**ilan ediyor**: `X-Evren-Routing-Reason` · `X-Evren-Quota-Weight` ·
-`X-Evren-Media-Id` · `Retry-After` · `X-RateLimit-{Limit,Remaining}-{Tokens,Requests}`
-· `X-RateLimit-Reset`. Bunlar ilan edildi ama henüz bir yanıtta gözlemlenmedi.
-Hız sınırı başlıklarının varlığı `429` yanıtının olası olduğunu gösteriyor;
-istemci buna hazır olmalı (§5.4).
+**İlan edilen ama henüz gözlenmeyen:** Gateway'in `Access-Control-Expose-Headers`
+başlığı ayrıca `X-Evren-Routing-Reason` · `X-Evren-Media-Id` · `Retry-After` ·
+`X-RateLimit-{Limit,Remaining}-{Tokens,Requests}` · `X-RateLimit-Reset`
+başlıklarını ilan ediyor. Hız sınırı başlıklarının varlığı `429` yanıtının olası
+olduğunu gösteriyor; istemci buna hazır olmalı (§5.4).
 
 ### 3.5 Model filosu
 
@@ -147,8 +179,9 @@ bir işlem olduğundan, bu bir tasarım kısıtıdır (bkz. §5.3).
 | Crate | Sorumluluk | v1 |
 |---|---|:--:|
 | `kalfa-evren` | EVREN HTTP istemcisi. Ayrı yayımlanabilir. | ✅ |
-| `kalfa-core` | Ajan döngüsü, oturum, `Command`/`Event` sınırı | ✅ |
+| `kalfa-core` | Ajan döngüsü, oturum ve oturum kaydı, izin motoru, `Command`/`Event` sınırı | ✅ |
 | `kalfa-tools` | Yerleşik araçlar (dosya, arama, kabuk) | ✅ |
+| `kalfa-sandbox` | Kabuk alt süreçleri için işletim sistemi yalıtımı (§7.7) | ✅ |
 | `kalfa-plugin` | wasmtime host'u | ✅ |
 | `kalfa-plugin-sdk` | Plugin yazarları için misafir tarafı | ✅ |
 | `kalfa` | Tauri uygulaması + binary | ✅ |
@@ -156,21 +189,34 @@ bir işlem olduğundan, bu bir tasarım kısıtıdır (bkz. §5.3).
 
 ### 4.1 `Command` / `Event` sınırı
 
-`kalfa-core`'un dış dünyaya tek açıklığı iki `serde` serileştirilebilir enum'dur:
+`kalfa-core`'un dış dünyaya tek açıklığı iki `serde` serileştirilebilir enum'dur.
+Her ikisi de bir **zarf** içinde taşınır:
 
 ```
-Command  ::= KullanıcıMesajı | İptal | AraçOnayı(id, karar)
+Zarf<T>  ::= { şema: 1, oturum: OturumId, tur: Option<TurId>, sıra: u64, yük: T }
+
+Command  ::= KullanıcıMesajı | İptal(tur) | AraçOnayı(çağrı, karar, onay_mührü)
            | ModelDeğiştir | İzinKipiDeğiştir | OturumSıkıştır
+           | GönderimKararı(öğeler) | TuruGeriAl(tur)
            | ŞartlarıKabulEt(sürüm)
 
-Event    ::= TokenParçası | DüşünceParçası | AraçÇağrısıBaşladı
-           | AraçSonucu | OnayGerekiyor(işlem) | KrediGüncellendi
+Event    ::= TokenParçası | DüşünceParçası | AraçÇağrısıBaşladı(çağrı)
+           | AraçSonucu(çağrı) | OnayGerekiyor(işlem, onay_mührü)
+           | GönderimÖnizlemesi(öğeler) | KrediGözlemi | TurÖzeti(tur)
            | ŞartOnayıGerekiyor(sürüm, metin) | Hata | Tamamlandı
 ```
+
+`sıra` oturum başına tekdüze artar; arayüz boşluk görürse durumu yeniden ister.
+`şema` sürümü, sınırın ileride daemon'a taşınmasında ve eski oturum kayıtlarının
+okunmasında uyumluluğu sağlar. Oturum kaydı (§6.6) bu zarfların kendisidir.
 
 Bu sınır Tauri IPC'ye, WebSocket'e, stdio'ya ve birim testine **eşit
 uzaklıktadır**. Bugün monolit çalışıyoruz; ileride arka plan daemon'una bölmek
 istenirse taşıma mekanik olur, yeniden yazım değil.
+
+Ajan döngüsü `Command` üretmez; `Command`'lar yalnızca dışarıdan gelir. Bu,
+modelin kendi eylemlerini onaylayamamasının ilk katmanıdır. Tek başına yeterli
+değildir: arayüz katmanındaki ikinci katman §11.9'da.
 
 ### 4.2 Mimarinin doğruluk ölçütü
 
@@ -183,29 +229,52 @@ Bu test kırmızıya döndüğü gün mimari sınır sızmış demektir. §13'te
 
 ## 5. Sağlayıcı katmanı (`kalfa-evren`)
 
-### 5.1 SSE ayrıştırıcısı
+### 5.1 SSE ayrıştırıcısı — üç katman
 
-El yapımı. §3.3'teki altı sapma nedeniyle hazır crate kullanılmıyor. Zorunlu
-davranışlar: `:` yorum satırlarını atla · `data: [DONE]` ile sonlan ·
-`delta.tool_calls` parçalarını `index` bazlı String olarak biriktir ·
-`delta.reasoning`'i ayrı akış olarak yay.
+1. **Çerçeveleme:** bayt akışı → SSE olayları, WHATWG kurallarına göre. Elle
+   yazılır: bu iş için yaygın tek crate (`eventsource-stream`) 2022'den beri
+   güncellenmiyor, iş yaklaşık yüz satır ve testleri bizde. UTF-8 çözümü satır
+   ayrıldıktan **sonra** yapılır; böylece çok baytlı bir karakter TCP parçası
+   sınırında bölünse de bozulmaz. Kapsam: `\n`, `\r\n`, `\r` satır sonları · çok
+   satırlı `data:` · `:` yorum satırları · eksik son olay · olay boyutu üst sınırı
+   (aşılırsa tipli hata).
+2. **Olay ayrıştırma:** `data:` yükü → sohbet parçası; `data: [DONE]` akışı
+   bitirir.
+3. **EVREN eşlemesi:** `delta.content`, `delta.reasoning` (ayrı akış olarak
+   yayılır), `delta.tool_calls` (`index` bazlı biriktirme), `usage`.
 
-### 5.2 Kredi muhasebesi
+Kural: bir araç çağrısı, akışta o çağrı **tamamlanmadan** ve argümanı JSON
+Schema'ya karşı **doğrulanmadan** çalıştırılmaz. Bağlantı yarıda koparsa eksik
+çağrılar atılır ve tipli `AkisYarimKaldi` hatası üretilir.
 
-`CreditSnapshot` iki varyantlı:
+### 5.2 Kredi — gözlem, kesinlik değil
 
-- **`Held`** — her yanıtın `X-Evren-Credits-*` başlığından. İstek anındaki HOLD.
-- **`Settled`** — yalnızca bloklu çağrının `usage.evren` bloğundan.
+Sağlayıcı kesinleşmiş harcamayı gösteren bir alan döndürmüyor: bloklu yanıttaki
+`usage.evren` alanları `credits_held_cr` ve `credits_remaining_cr`'dir, yani
+tutulan kredi ve o anki bakiye. HOLD → SETTLE zincirinin (§3.6) ne zaman
+kapandığı dışarıdan gözlenemiyor. Bu yüzden Kalfa kredi hakkında **yalnızca
+gözlem** bildirir:
 
-Akışta `Settled` gelmediği için UI "son bilinen bakiye" gösterir ve her yeni
-istekte tazelenir — bir sonraki isteğin `X-Evren-Credits-Remaining` başlığı,
-önceki isteğin mutabakatını zaten yansıtır. Ek bakiye sorgusu gerekmez.
+- `KrediGözlemi { kalan, tutulan, istek_id, zaman }` — her yanıtın
+  `X-Evren-Credits-*` başlıklarından ve bloklu çağrılarda `usage.evren`'den.
+- Arayüz "son gözlenen bakiye"yi gözlem zamanıyla gösterir. Bakiye farkından
+  oturum maliyeti türetilmez: paralel istekler, eklentilerin EVREN çağrıları ve
+  aynı hesabı kullanan başka istemciler farkı bozar.
+- Kesin olan token sayılarıdır; oturum kullanımı token olarak gösterilir.
+  Katalog fiyatı sıfırdan büyükse yanında **tahmini** maliyet yer alır.
+- `reasoning_tokens`, completion'ın dökümü olarak gösterilir; maliyete ikinci kez
+  eklenmez.
+- CR değerleri ondalık tipte tutulur (`rust_decimal`), asla `f64` değil.
+- Her EVREN çağrısı — ana model, bağlam özetleme, güvenlik denetçisi,
+  eklentilerin gömme ve yeniden sıralama çağrıları — amaç etiketi ve istek
+  kimliğiyle kaydedilir. Bütçe (§6.8) ve gönderim günlüğü (§11.10) bu kayda
+  dayanır.
 
 ### 5.3 İptal ve `billing_pending`
 
 HOLD→SETTLE zinciri yarıda kesilince kredi tutulu kalabilir (§3.6). HTTP
 seviyesinde yapabileceğimiz tek şey akışı kapatmaktır. Karar: **her yanıtın
-`X-Request-Id`'si oturum günlüğüne yazılır.** Bir tutarsızlıkta kullanıcı EVREN
+`X-Request-Id`'si oturum kaydına yazılır.** Bir tutarsızlıkta kullanıcı EVREN
 desteğine somut bir kimlikle gidebilir. Bu bir özellik değil, şeffaflık
 yükümlülüğüdür.
 
@@ -213,7 +282,8 @@ yükümlülüğüdür.
 
 `EvrenError` enum'u: `AnahtarGecersiz` · `SartKabulGerekli { version }` ·
 `ModelBulunamadi { oneriler }` · `GorevUyusmazligi { model, gorev }` ·
-`KotaYetersiz` · `HizSiniri { tekrar_dene }` · `AgHatasi` · `Diger`.
+`KotaYetersiz` · `HizSiniri { tekrar_dene }` · `AkisYarimKaldi` · `AgHatasi` ·
+`Diger`.
 
 `suggested_models` alanı UI'da "bunu mu demek istediniz?" olarak kullanılır.
 
@@ -224,8 +294,9 @@ metnimiz gösterilir: "Anahtar geçersiz ya da eksik."
 
 `HizSiniri`, `429` yanıtından üretilir ve varsa `Retry-After` değerini taşır.
 Ajan döngüsü bu süre kadar bekleyip bir kez yeniden dener, ardından hatayı
-kullanıcıya gösterir. `429` henüz gözlemlenmedi (§3.4); ilk gerçek yanıt
-yakalandığında fixture olarak eklenir.
+kullanıcıya gösterir. Bekleme süresinin üst sınırı 60 saniyedir ve bekleme iptal
+edilebilir. `429` henüz gözlemlenmedi (§3.4); ilk gerçek yanıt yakalandığında
+fixture olarak eklenir.
 
 ---
 
@@ -234,33 +305,52 @@ yakalandığında fixture olarak eklenir.
 ```
 KullanıcıMesajı → model → { content ⊕ reasoning ⊕ tool_calls }
                               ↓
-                         izin kapısı  (§7)
+                   argüman doğrulama (JSON Schema)
                               ↓
-                   paralel araç yürütme
+                   izin kapısı + onay  (§7)
+                              ↓
+                   araç yürütme  (kaynak kilitleri §6.1, kabuk yalıtımı §7.7)
+                              ↓
+                   çıkış kapısı: gizli içerik + gönderim önizlemesi  (§7.4, §11.10)
                               ↓
                    güvenlik denetçisi  (§9)
                               ↓
-                   sonuçlar → geri besle → tekrar
+                   sonuçlar → kaynak etiketiyle geri besle → tekrar
 ```
 
 ### 6.1 Güvenli paralellik
 
 Model paralel araç çağrısı üretebiliyor (§3.2), ama doğruluğu garanti etmek
-bizim işimiz. `Tool` trait'inde **`conflict_domain()`** vardır:
+bizim işimiz. `Tool` trait'inde **`kaynaklar(argümanlar)`** vardır: çağrı
+yürütülmeden önce okuyacağı ve yazacağı kanonik yolları bildirir.
 
-- Okuma araçları (grep, dosya oku, glob) → serbest paralel
-- Yazma araçları → çakışma alanı başına **seri**
+- Aynı yola okuma + okuma → paralel. Okuma + yazma veya yazma + yazma → seri
+  (yol bazında okuma/yazma kilidi). Böylece bir araç dosyayı okurken bir
+  başkası onu yarım değiştiremez.
+- Kaynak kümesi önceden bilinemeyen çağrılar — kabuk — tüm çalışma alanında
+  **özel kilit** alır.
+- Bir eklenti örneği aynı anda tek çağrı işler (wasmtime `Store`'u tek iş
+  parçacıklıdır); eklentinin dosya okumaları host üzerinden geçtiği için aynı
+  kilitlere tabidir.
+- Kısmi başarısızlıkta her çağrının sonucu ayrı döner. Reddedilen çağrı modele
+  "kullanıcı reddetti: <gerekçe>" olarak gider; başarılı gibi kaydedilmez.
 
 ### 6.2 `reasoning` akışı
 
 `Event::DüşünceParçası` olarak ayrı akar; UI'da varsayılan kapalı katlanabilir
-panelde görünür. `reasoning_tokens` faturalandığı için maliyet göstergesinde
-**ayrı satır** olarak yer alır.
+panelde görünür. `reasoning_tokens`, completion token'larının dökümü olarak
+gösterilir (§5.2).
+
+Düşünce paneli **modelin sunduğu metindir**: doğrulanmış bir açıklama ya da
+işlemlerin denetim kaydı değildir ve izin kararlarında kullanılmaz. Hassas metin
+içerebilir; oturum kaydında diğer içerikle aynı korumaya tabidir (§6.6).
 
 ### 6.3 İptal
 
-Her araç bir `CancellationToken` alır. İptal, döngüyü temiz durdurur ve §5.3'teki
-günlük kaydını yazar.
+Her araç bir `CancellationToken` alır. İptal: akışı kapatır · kabuk süreç
+ağacını sonlandırır (§7.7) · bekleyen onayları geçersiz kılar · §5.3'teki
+kaydı yazar. İptal, o ana kadar gerçekleşmiş dosya ve ağ etkilerini geri almaz;
+tur özeti (§6.7) neyin yapıldığını gösterir.
 
 ### 6.4 Model seçimi
 
@@ -276,50 +366,321 @@ Artı `auto`. **Yönlendirilen model her zaman gösterilir** — `auto` seçiliy
 kullanıcı ne aldığını bilmelidir. Akıllı router, gerçek kullanım verisi
 biriktikten sonra değerlendirilir.
 
+Her model için bir **yetenek profili** tutulur: tools, streaming + tools,
+`json_schema`, `reasoning` — gözlem tarihi ve kanıt dosyasıyla (§3.2).
+Doğrulanmamış bir yetenek kullanılmaz. Katalogdan kaldırılan model anlaşılır bir
+hata verir. Özellikle güvenlik denetçisinin modeli sessizce değiştirilmez (§9.3).
+Yeni modellerin doğrulanması ayrı ve açıkça başlatılan bir iştir: canlı testler
+`#[ignore]` ile işaretlidir (§13.1).
+
 ### 6.5 Bağlam yönetimi
 
 Bağlam eşiği aşıldığında en eski araç çıktıları özetlenir. Özetleme **ucuz
 modelle** yapılır (`qwen3.8-flash-next`), ana modelle değil.
 
+Özet, özetlediği içeriğin **güven etiketini taşır**: dış kaynaklı araç çıktısının
+özeti yine araç rolünde ve "dış kaynak" etiketiyle modele gider; sistem
+talimatına ya da kullanıcı mesajına dönüşmez. Özetleme çağrısı da gönderim
+günlüğüne ve bütçeye girer.
+
+### 6.6 Oturum kaydı ve kurtarma
+
+- **Oturum kaydı**, §4.1 zarflarının yalnızca sona ekleme yapılan günlüğüdür.
+  Uygulama veri dizininde tutulur (Windows `%APPDATA%\Kalfa`, Linux
+  `$XDG_DATA_HOME/kalfa`), **depo içinde değil**; dosya izinleri yalnızca
+  kullanıcıya açıktır.
+- Yan etkili bir araç çalışmadan **önce** "başladı" kaydı diske yazılır, bitince
+  "bitti" kaydı.
+- **Kurtarma:** çökmeden sonra açılışta konuşma ve tamamlanan araç sonuçları geri
+  gelir. "Başladı" kaydı olup "bitti" kaydı olmayan çağrı **sonucu bilinmiyor**
+  olarak gösterilir ve **asla otomatik yeniden çalıştırılmaz.** Kullanıcı durumu
+  görür; isterse modele yeniden yaptırır.
+- Bekleyen onaylar ve "bu oturumda izin ver" kısayolları geri yüklenmez. Serbest
+  kipteki oturum Sıkı kipte açılır (§7.5).
+- **Kayıtsız oturum** seçeneği: kayıt diske yazılmaz; o oturumda kurtarma ve geri
+  alma çalışmaz, arayüz bunu söyler. Yerelde kayıt tutmamanın EVREN'in kayıt
+  politikasını değiştirmediği de ekranda yazar.
+- Oturum silinince kaydı ve geri alma verisi de silinir.
+- **Tanılama günlüğü** oturum kaydından ayrıdır: olay kimliği, araç adı, karar,
+  hata türü ve istek kimliği içerir; ham prompt, dosya içeriği ve sır içermez.
+  Hata raporu paylaşılmadan önce kullanıcıya temizlenmiş bir önizleme gösterilir.
+
+### 6.7 Tur özeti ve geri alma
+
+- Her tur bir `TurÖzeti` ile biter: dosya araçlarıyla değişen dosyalar (diff'leriyle),
+  kabukla değişen dosyalar, çalıştırılan komutlar ve yapılan EVREN çağrıları.
+  Kabukla değişen dosyalar, çalışma alanı bir git deposuysa kabuk çağrısından
+  önceki ve sonraki `git status` karşılaştırmasından çıkarılır; değilse özette
+  "kabuk değişiklikleri izlenemedi" yazar.
+- **Geri alma:** dosya araçları her yazmadan önce dosyanın önceki hâlini (yoksa
+  "yoktu" bilgisini) oturum kaydına saklar; yazdıktan sonra yeni hâlin özetini
+  (hash) kaydeder.
+- **"Turu geri al"**, turun dosya aracı değişikliklerini ters sırada geri
+  yükler — **yalnızca dosyanın şu anki hâli Kalfa'nın yazdığı hâlle aynıysa.**
+  Arada kullanıcı ya da başka bir tur dosyayı değiştirdiyse o dosyaya
+  dokunulmaz, çakışma olarak listelenir.
+- Kabukla yapılan değişiklikler ve ağ etkileri **geri alınamaz**; tur özeti ve
+  onay kartı bunu açıkça söyler.
+- Geri alma da bir işlemdir: tur özetine ve oturum kaydına girer.
+- Önceki hâli belirli bir boyutun üzerindeki dosyalar için değişiklik "geri
+  alınamaz" olarak işaretlenir ve onay kartında bu yazar. Sınır değeri uygulama
+  planında belirlenir.
+
+### 6.8 Döngü ve bütçe sınırları
+
+- **Tur başına:** azami model turu, azami araç çağrısı, toplam süre ve araç
+  çıktısı bayt sınırı. Sınırı aşan çıktı kırpılır ve kırpıldığı modele söylenir.
+- **Tekrar koruması:** aynı araç aynı argümanlarla art arda üç kez başarısız
+  olursa döngü durur ve kullanıcıya sorulur.
+- **Oturum bütçesi:** istek ve token sınırı. Denetçi, özetleme ve eklentilerin
+  EVREN çağrıları dahildir. Aşılınca döngü durur ve sorar.
+- **Sonucu bilinmeyen yan etki** — zaman aşımına uğramış bir yazma ya da komut —
+  otomatik tekrarlanmaz. Zaman aşımı, işlemin hiç gerçekleşmediği anlamına
+  gelmez.
+- Varsayılan değerler uygulama planında belirlenir ve ölçümle ayarlanır;
+  kullanıcı değiştirebilir.
+
 ---
 
-## 7. İzin ve güvenlik modeli
+## 7. Güvenlik modeli
 
 **Temel ilke: yerleşik araç ile plugin aracı arasında izin açısından hiçbir fark
 yoktur.** İki ayrı güvenlik sistemi kurulursa biri mutlaka diğerinden zayıf kalır.
+İzinler tek bir yerde, `kalfa-core` içindeki izin motorunda uygulanır; her araç
+yürütmesi ve her eklenti host çağrısı bu kapıdan geçer.
 
-### 7.1 Yetenekler
+### 7.1 Tehdit modeli
+
+**Korunan varlıklar:** EVREN API anahtarı · çalışma alanı dışındaki dosyalar
+(özellikle `~/.ssh`, kimlik bilgileri) · çalışma alanındaki gizli dosyalar ·
+kullanıcının onay kararları · EVREN kredisi · oturum kayıtları.
+
+**Güvenilmeyen girdiler:** klonlanmış depo ve içindeki yapılandırma dosyaları ·
+dosya ve terminal çıktısı · eklenti paketi ve araç açıklamaları · model yanıtı
+(`reasoning` dahil) · RAG parçaları · önceki içeriğin özeti.
+
+**Kapsamdaki saldırgan:** kötü niyetli bir depo, kötü niyetli bir eklenti, araç
+çıktısıyla gelen talimat enjeksiyonu.
+
+**Kapsam dışı:** işletim sisteminin ya da kullanıcı hesabının ele geçirilmiş
+olması · yönetici yetkisine sahip bir saldırgan · EVREN'in kendisi. Sağlayıcı
+güvenilir kabul edilir, ama ona giden veri yine de görünür ve denetlenebilir
+tutulur (§7.4).
+
+**Veri notu:** "Yurt içinde işleniyor" bilgisi, projedeki her verinin
+gönderilmesinin uygun olduğu anlamına gelmez. Kurumsal kullanımda veri
+sınıflandırması kurumun kararıdır; Kalfa'nın işi neyin gönderildiğini görünür ve
+denetlenebilir kılmaktır.
+
+### 7.2 Yetenekler ve etkin yetki
 
 | Yetenek | Kapsam |
 |---|---|
 | `dosya:oku` | Glob listesi |
 | `dosya:yaz` | Glob listesi |
-| `kabuk:çalıştır` | Komut allowlist'i (boş = her komut, onaylı) |
-| `ağ:istek` | Host allowlist'i |
-| `evren:<uç>` | `chat`, `embeddings`, `rerank`, `ocr`, `asr` |
+| `kabuk:çalıştır` | Yalıtım profiliyle (§7.7) |
+| `kabuk:ağ` | Kabuk çalıştırmasına ağ erişimi — her kipte onaylı |
+| `ağ:istek` | Host allowlist'i (v1'de bu yeteneği kullanan araç yok) |
+| `evren:<uç>` | `chat`, `embeddings`, `rerank` (v1); `ocr`, `asr` sonra |
 
-### 7.2 Değişmez kural: çalışma alanı sınırı
+**Etkin yetki = uygulamanın sunduğu ∩ eklenti manifestinin talebi ∩ kullanıcının
+verdiği izin.** Manifest yetki talebidir; tek başına yetki vermez.
 
-Kip ne olursa olsun, çalışma alanı kökünün dışına çıkan her yol onay ister.
-Kontrol, **sembolik bağlantılar çözüldükten ve `..` kanonikleştirildikten sonra**
-yapılır. Aksi hâlde `proje/../../.ssh/id_rsa` kapıdan geçer.
+Değişmezler:
 
-### 7.3 Üç kip
+- Model çıktısı, eklentiler ve depo içindeki hiçbir dosya izin kipini, gizli
+  dosya kalıplarını ya da yalıtım profilini gevşetemez. Bu ayarlar yalnızca
+  uygulama arayüzünden değişir.
+- Kabuk için "şu komut kalıbı hep onaylı" listesi bir **kolaylıktır, güvenlik
+  sınırı değildir**: `cargo`'ya izin vermek, `build.rs` üzerinden her kodu
+  çalıştırmaya izin vermektir. Kabuğun güvenlik sınırı yalıtımdır (§7.7).
 
-| Kip | Davranış |
+### 7.3 Çalışma alanı sınırı (dosya araçları)
+
+Yerleşik dosya araçları ve eklentilerin dosya host çağrıları çalışma alanına
+**dizin tutamacı üzerinden** erişir: `cap-std` (Bytecode Alliance'ın yetenek
+tabanlı dosya sistemi kütüphanesi; wasmtime'ın WASI katmanı da bunu kullanır).
+Yol önce metin olarak kanonikleştirilip sonra açılmaz. Bu yüzden kontrol ile
+kullanım arasında sembolik bağlantı ya da junction değiştirilerek yapılan kaçış
+işe yaramaz.
+
+Reddedilenler: `..` ile ya da sembolik bağlantıyla dışarı çıkma · mutlak yol ·
+Windows'ta UNC ve aygıt yolları, sürücü göreli yollar, alternatif veri akışı adı
+(`dosya.txt:gizli`). Yeni dosya oluşturulurken üst dizin zinciri de tutamaç
+üzerinden yürünür.
+
+Kullanıcı açıkça isterse çalışma alanı dışındaki bir yol, o yola özel bir onayla
+ayrı bir tutamaç açılarak kullanılır; onay kartında "çalışma alanı dışı" uyarısı
+yer alır.
+
+**Bilinen sınır — hard link:** çalışma alanındaki bir dosya, dışarıdaki bir
+dosyayla aynı dosya nesnesine işaret edebilir; yol tabanlı hiçbir kontrol bunu
+ayırt edemez. Azaltma: bağlantı sayısı birden büyük bir dosyaya yazmak onay
+ister. Git hard link saklamadığı için klonlanan bir depoda bu durum kendiliğinden
+oluşmaz.
+
+Kabuk bu bölümün kapsamı dışındadır; onun sınırı §7.7'dir.
+
+### 7.4 Gizli dosyalar ve veri çıkışı
+
+**Okumak, göndermektir.** Ajanın okuduğu her içerik modele, yani EVREN'e gider.
+"Çalışma alanı içinde okuma serbest" kuralının bu yüzden bir istisnası vardır:
+
+- **Gizli dosya kalıpları** (varsayılan): `.env`, `.env.*`, `*.pem`, `*.key`,
+  `*.p12`, `*.pfx`, `*.keystore`, `*.kdbx`, `id_rsa*`, `id_ed25519*`, `.netrc`,
+  `.npmrc`, `.pypirc`, `.git-credentials`, `credentials*`. Kullanıcı kalıp
+  ekleyebilir; varsayılanları yalnızca uygulama ayarlarından kapatabilir, depo
+  içindeki bir dosyadan kapatamaz.
+- Eşleşen bir dosyayı okumak **her kipte** (Serbest dahil) onay ister ve onay
+  kartı açıkça söyler: *"Bu dosyanın içeriği EVREN'e gönderilecek."*
+- `grep` ve `glob` gizli dosyaların içeriğini döndürmez; adlarını listeler ve
+  içeriğin okunmasının onay gerektirdiğini belirtir.
+- Kural, içerik süreçten çıkmadan **önce**, her yolda uygulanır: ana model,
+  bağlam özetleme, güvenlik denetçisi ve eklentilerin dosya çağrıları. Denetçi
+  ayrı bir alıcı değildir (o da EVREN'dir), ama gizli içeriği "güvenli mi" diye
+  sormak için göndermek de göndermektir; kural bu yüzden denetçiden önce çalışır.
+- Kabuk: yalıtım profili çalışma alanındaki gizli dosyaları kabuk için okunamaz
+  kılar (§7.7). Yalıtımsız çalıştırmada bu koruma yoktur ve onay kartı bunu
+  söyler.
+- **Gönderim günlüğü ve önizleme** (§11.10): her EVREN isteğine hangi içeriğin,
+  hangi kaynaktan ve hangi amaçla girdiği kayıtlıdır ve arayüzde görünür.
+
+### 7.5 Kipler
+
+| Kip | Okuma | Dosya yazma | Kabuk |
+|---|---|---|---|
+| **İnceleme** | Serbest | Yok | Yok |
+| **Sıkı** (varsayılan) | Serbest | Onaylı | Onaylı |
+| **Proje** | Serbest | Çalışma alanı içinde serbest | Onaylı |
+| **Serbest** | Serbest | Çalışma alanı içinde serbest | Yalıtımlı ve ağsız olan otomatik |
+
+Her kipte geçerli olanlar: çalışma alanı dışı yol onay ister (§7.3) · gizli dosya
+onay ister (§7.4) · ağlı kabuk onay ister · yalıtımsız kabuk onay ister (§7.7).
+
+- **İnceleme kipinde** yazma araçları ve kabuk modele **hiç sunulmaz**; araç
+  listesinde yer almazlar. Ajan depoyu okur, plan ve öneri üretir. Reddetmek
+  yerine önermemek hem daha dürüst hem daha ucuzdur.
+- **Serbest** yalnızca oturum boyunca geçerlidir, diske yazılmaz ve oturum
+  kurtarıldığında geri gelmez (§6.6).
+- Kalıcı "her şeye izin ver" ayarı **bilerek yoktur.** Unutulmuş bir onay,
+  alınmamış bir onaydan tehlikelidir.
+
+### 7.6 Onay
+
+**Onay, gösterilen işleme bağlıdır.** `OnayGerekiyor` olayı bir `onay_mührü`
+taşır: araç çağrısının kimliği, argümanların özeti (hash), hedef dosyaların **o
+anki içeriğinin özeti** ve kabuk için tam komut, çalışma dizini ve yalıtım
+profili. `AraçOnayı` bu mührü geri getirir. Çekirdek yürütme anında mührü yeniden
+hesaplar:
+
+- Eşleşmezse (kullanıcı diff'e bakarken dosya değişti, argüman farklı) onay
+  **geçersizdir**; yeni diff'le yeni onay istenir.
+- Onay tek kullanımlıktır. İptal, tur sonu ya da oturum değişikliği bekleyen
+  onayları düşürür.
+- Yazma araçları yazmadan hemen önce dosyanın beklenen önceki içeriğini bir kez
+  daha denetler; dosya son anda değiştiyse yazmaz.
+
+**Onay yorgunluğuna karşı:**
+
+- Onaylar işlem bazlı gruplanır: beş dosya düzenlemesi tek kartta, her biri
+  katlanabilir diff olarak.
+- "Bu oturumda izin ver" kısayolu **araç + dizin** kapsamındadır: *"Bu oturumda
+  `src/` altındaki dosyaları düzenleyebilir."* Araç adına genel izin yoktur; bir
+  kısayol aracın sonraki bütün argümanlarına izin anlamına gelmez. Gizli dosya,
+  çalışma alanı dışı yol, ağlı ya da yalıtımsız kabuk için kısayol sunulmaz.
+
+Onay kartının içeriği ("neden izin gerekiyor") §11.4'te.
+
+### 7.7 Kabuk yalıtımı
+
+Kabuk komutları işletim sistemi düzeyinde yalıtılmış çalışır. Yalıtım
+`kalfa-sandbox` crate'indedir: profil işletim sisteminden bağımsız tanımlanır,
+iki arka uç onu uygular.
+
+**Varsayılan profil:**
+
+| | |
 |---|---|
-| **Sıkı** (varsayılan) | Her yazma ve her kabuk çağrısı onay ister |
-| **Proje** | Çalışma alanı içinde okuma-yazma serbest, kabuk onaylı |
-| **Serbest** | Hepsi otomatik — **yalnızca oturum boyunca, diske yazılmaz** |
+| **Okunabilir** | Sistem dizinleri · ev dizininden yalnızca izinli araç zinciri dizinleri (örn. `~/.cargo`, `~/.rustup`, `~/.gitconfig`) · çalışma alanı |
+| **Okunamaz** | Ev dizininin geri kalanı (`~/.ssh`, `~/.gnupg`, tarayıcı profilleri, kimlik depoları, Kalfa'nın kendi veri dizini) · çalışma alanındaki gizli dosyalar (§7.4) |
+| **Yazılabilir** | Çalışma alanı · oturuma özel geçici dizin |
+| **Çalışma alanı içinde salt okunur** | `.git/hooks`, `.git/config` |
+| **Ağ** | Kapalı |
 
-Kalıcı "her şeye izin ver" ayarı **bilerek yoktur.** Unutulmuş bir onay,
-alınmamış bir onaydan tehlikelidir.
+**İlke: yalıtılmış süreç, yalıtım dışında sonradan çalışacak hiçbir şeye
+yazamaz.** `.git/hooks` bu yüzden salt okunurdur; `.git/config` de öyledir,
+çünkü `core.hooksPath` ve `core.fsmonitor` üzerinden kod çalıştırabilir. Ev
+dizinindeki araç zincirleri ve paket önbellekleri de salt okunurdur. Ağlı
+çalıştırmada paket yöneticileri Kalfa'ya ait ayrı bir önbellek dizinine
+yönlendirilir; araç başına ayrıntı uygulama planındadır.
 
-### 7.4 Onay yorgunluğuna karşı
+**Ağ:** ağlı çalıştırma ayrı bir yetenektir (`kabuk:ağ`) ve her kipte onay
+ister. Ağlı çalıştırmada dosya yalıtımı aynen sürer.
 
-- **Onaylar işlem bazlı gruplanır, araç bazlı değil.** Beş dosya düzenlemesi tek
-  onay kartında, her biri katlanabilir diff olarak.
-- **"Bu oturumda bu araca hep izin ver"** kısayolu — kapsamı daraltılmış hâliyle.
+**Linux arka ucu — `bubblewrap` + `seccomp`.** Kök dosya sistemi salt okunur
+bağlanır, `$HOME` boş bir tmpfs ile örtülür ve yalnızca izinli dizinler geri
+bağlanır; çalışma alanı yazılabilir bağlanır; gizli dosyaların ve korumalı
+yolların üstüne `/dev/null` ya da salt okunur bağlama yapılır. Kullanıcı ve PID
+ad alanı her zaman ayrılır. Ağsız profilde ağ ad alanı da ayrılır ve seccomp, IP
+ve Unix soketi açmayı engeller; böylece `docker.sock` ya da `ssh-agent` gibi
+yerel ayrıcalıklı soketlere de ulaşılamaz (`socketpair` serbesttir).
+`PR_SET_NO_NEW_PRIVS` her zaman açıktır.
+
+- *Neden Landlock değil:* Landlock yalnızca izin listesiyle çalışır; yazılabilir
+  bir dizinin içinde salt okunur ya da okunamaz alt yol (`.git/hooks`, `.env`)
+  tanımlanamaz.
+- *Kısıt:* bubblewrap ayrıcalıksız kullanıcı ad alanı ister. Ubuntu 24.04 bunu
+  AppArmor ile varsayılan olarak kısıtlıyor; Kalfa'nın `.deb` paketi kurulumda
+  bubblewrap için bir AppArmor profili yükler. Debian (ve Pardus) ile Fedora'da
+  varsayılan olarak açık; hedef dağıtımların her biri uyumluluk matrisinde
+  doğrulanır (§13.2).
+
+**Windows arka ucu — ayrı yerel kullanıcı + ACL + güvenlik duvarı.**
+
+- Kurulumda iki gizli, yetkisiz yerel kullanıcı oluşturulur: ağsız ve ağlı.
+  Ağsız kullanıcının bütün giden trafiği Windows Güvenlik Duvarı kuralıyla
+  engellenir. Parolalar geliştiricinin hesabına bağlı olarak DPAPI ile saklanır.
+  Windows yükleyicisi makine geneli kurulum yaptığı için zaten yönetici
+  yetkisiyle çalışır; yalıtım altyapısı o sırada hazırlanır.
+- Komutlar bu kullanıcılardan biri olarak çalışır. Yalıtım kullanıcı sınırından
+  gelir: yalıtım kullanıcısı geliştiricinin profilini — `~/.ssh`, Credential
+  Manager ve dolayısıyla EVREN anahtarı — okuyamaz. Çalışma alanına okuma-yazma,
+  araç zinciri dizinlerine okuma izni ACL ile verilir. Gizli dosyalara ve
+  korumalı yollara açık **deny** kaydı (ACE) konur.
+- *Neden kısıtlı belirteç (restricted token) değil:* yalnızca yazmayı sınırlar,
+  ağı kesemez; ağı kesmek için gereken güvenlik duvarı kuralı zaten yönetici
+  ister. *Neden AppContainer değil:* ağı keser, ama kullanıcı profilindeki araç
+  zincirleri (cargo, rustup, npm) ancak tek tek ACL verilerek okunabilir ve
+  geliştirici araçlarıyla uyumluluğu zayıftır. Bu model OpenAI'nin Codex CLI'da
+  vardığı sonuçla aynıdır.
+- *Kısıt:* kurulum bir kez yönetici yetkisi ister. Yönetici olmayan kullanıcılar
+  için kurum BT'si yalıtım kullanıcılarını önceden oluşturabilir.
+
+**Yalıtım yoksa** — Linux'ta bubblewrap çalışmıyorsa, Windows'ta kurulum
+yapılmamışsa — Kalfa **sessizce yalıtımsız çalışmaz.** Kabuk *yalıtımsız*
+durumuna geçer: her çağrı her kipte (Serbest dahil) onay ister; onay yerel bir
+iletişim kutusunda sorulur (§11.9) ve "Yalıtımsız — komut senin bütün
+yetkilerinle çalışacak" uyarısıyla yalıtımın nasıl açılacağını söyler. Durum
+çubuğu yalıtım durumunu sürekli gösterir.
+
+**Süreç sınırları** (yalıtımdan bağımsız, her çalıştırmada):
+
+- Ortam değişkenleri izin listesiyle aktarılır: `PATH`, dil ayarları, geçici
+  dizin, araç zinciri değişkenleri. EVREN anahtarı, token'lar ve `SSH_AUTH_SOCK`
+  gibi ajan soketleri aktarılmaz.
+- Süre sınırı, çıktı boyutu sınırı (aşan çıktı kırpılır ve modele söylenir),
+  alt süreç sayısı sınırı.
+- İptal bütün süreç ağacını sonlandırır: Linux'ta PID ad alanı
+  (`--die-with-parent`), Windows'ta Job Object.
+- Mümkün olduğunda komut kabuk metni yerine program + argüman dizisi olarak
+  çalıştırılır. Genel kabuk gerektiğinde onay kartı tam komutu gösterir.
+
+**Yalıtımın korumadığı şey: çalışma alanının içindeki kod.** Yalıtılmış bir
+komut `build.rs`'i, `Makefile`'ı ya da `package.json` betiklerini
+değiştirebilir; bunlar kullanıcı projeyi yalıtım dışında derlediğinde çalışır.
+Bu değişiklikler tur özetinde listelenir (§6.7). Proje betiği çalıştırmak
+projeye kod olarak güvenmek demektir; yeni bir çalışma alanındaki ilk kabuk
+çağrısı bunu açıkça söyler.
 
 ---
 
@@ -328,36 +689,80 @@ alınmamış bir onaydan tehlikelidir.
 ### 8.1 Çalışma zamanı seçimi
 
 **wasmtime + WebAssembly Component Model (WIT).** Extism değil: Extism tipsizdir
-(bayt girer, bayt çıkar). Component Model'de WIT dosyasının kendisi sözleşmedir,
-`wasm32-wasip2` hedefi Rust/Go/TinyGo/JS'den derlenir, ve tip uyuşmazlığı çalışma
-zamanında değil derleme zamanında yakalanır.
+(bayt girer, bayt çıkar). Component Model'de WIT dosyasının kendisi sözleşmedir
+ve `wasm32-wasip2` hedefi Rust/Go/TinyGo/JS'den derlenir.
+
+WIT fonksiyon sınırını tiplendirir: yanlış imzayla derlenmiş bir eklenti
+yükleme anında bağlanamaz ve reddedilir. **JSON taşıyan alanlar** (araç
+argümanları, parametre şeması, EVREN istek gövdesi) ise derleme zamanında
+denetlenemez; host bunları kullanmadan önce doğrular.
 
 ### 8.2 Sözleşme
 
 ```wit
 package kalfa:plugin@0.1.0;
 
-interface arac {
-  record arac-tanimi {
-    ad: string,
-    aciklama: string,
-    parametre-semasi: string,      // JSON Schema
-    catisma-alani: option<string>, // §6.1
-  }
-  record sonuc { basarili: bool, icerik: string, ek-veri: option<string> }
+interface tipler {
+  enum evren-ucu { chat, embeddings, rerank }
+  enum seviye { hata, uyari, bilgi, ayrinti }
 
-  araclari-listele: func() -> list<arac-tanimi>;
-  calistir: func(ad: string, argumanlar: string) -> sonuc;
+  variant hata {
+    izin-yok(string),      // manifest'te olmayan yetenek
+    bulunamadi(string),
+    iptal-edildi,
+    sinir-asildi(string),  // süre, boyut, bütçe
+    evren(string),         // sağlayıcı hatası
+    diger(string),
+  }
+
+  record ilerleme { tamamlanan: u64, toplam: option<u64>, mesaj: option<string> }
 }
 
-interface host {                   // plugin → host
-  dosya-oku:   func(yol: string) -> result<string, string>;
-  evren-cagir: func(uc: string, govde: string) -> result<string, string>;
-  gunluk:      func(seviye: string, mesaj: string);
+interface host {                       // plugin → host
+  use tipler.{evren-ucu, seviye, hata, ilerleme};
+
+  dosya-listele:   func(desen: string) -> result<list<string>, hata>;
+  dosya-oku:       func(yol: string) -> result<string, hata>;
+  evren-cagir:     func(uc: evren-ucu, govde: string) -> result<string, hata>;
+  depo-oku:        func(anahtar: string) -> result<option<list<u8>>, hata>;
+  depo-yaz:        func(anahtar: string, deger: list<u8>) -> result<_, hata>;
+  depo-sil:        func(anahtar: string) -> result<_, hata>;
+  ilerleme-bildir: func(durum: ilerleme);
+  iptal-istendi:   func() -> bool;
+  gunluk:          func(duzey: seviye, mesaj: string);
+}
+
+interface arac {                       // host → plugin
+  use tipler.{hata};
+
+  record arac-tanimi { ad: string, aciklama: string, parametre-semasi: string }
+  record sonuc { icerik: string, ek-veri: option<string> }
+
+  araclari-listele: func() -> list<arac-tanimi>;
+  calistir:         func(ad: string, argumanlar: string) -> result<sonuc, hata>;
+}
+
+world eklenti {
+  import host;
+  export arac;
 }
 ```
 
-**v1'de `host` arayüzü, §7.1'deki yetenek sözlüğünün yalnızca bir alt kümesini
+- **`dosya-listele` / `dosya-oku`:** yalnızca manifest'teki `dosya-oku`
+  globlarıyla çalışma alanının kesişimi. Gizli dosyalar listelenmez (§7.4).
+  Erişim `cap-std` üzerinden (§7.3).
+- **`evren-cagir`:** `uc` serbest bir URL değil, sabit bir listedir; hedef adresi
+  ve yöntemi host üretir, kimlik doğrulamayı host ekler. Eklenti anahtarı hiç
+  görmez. Şart kabulü, hesap ve anahtar işlemleri eklentiye açık değildir. TLS
+  doğrulaması kapatılamaz; yönlendirme başka bir hedefe anahtar taşımaz. Gövde
+  kullanılmadan önce doğrulanır.
+- **`depo-*`:** eklentiye ve çalışma alanına özel anahtar-değer deposu. Host
+  yönetir, uygulama veri dizininde tutulur; boyut üst sınırı manifest'te beyan
+  edilir. Genel dosya yazma yetkisi açmadan RAG indeksinin saklanmasını sağlar.
+- **`ilerleme-bildir` / `iptal-istendi`:** uzun işler ilerleme bildirir ve iptali
+  yoklar. İptal edilmiş bir çağrıda host fonksiyonları `iptal-edildi` döndürür.
+
+**v1'de `host` arayüzü, §7.2'deki yetenek sözlüğünün yalnızca bir alt kümesini
 açar.** `dosya:yaz`, `kabuk:çalıştır` ve `ağ:istek` yetenekleri v1'de sadece
 yerleşik araçlar için geçerlidir; plugin tarafında karşılık gelen host fonksiyonu
 yoktur, dolayısıyla bir plugin bunları manifest'inde talep etse bile
@@ -370,7 +775,20 @@ sözleşmenin olgunlaşmasını bekliyoruz. Genişletme 0.2 sözleşmesinin konu
 **WASI'nin dosya ve soket yetenekleri tamamen kapatılır.** Plugin doğrudan ağa
 çıkamaz, doğrudan dosya açamaz. Her şey `host` arayüzünden geçer; host da her
 çağrıyı manifest'teki yeteneklerle karşılaştırır. Yetenek modeli böylece kâğıt
-üzerinde değil, çalışma zamanında zorlanır.
+üzerinde değil, çalışma zamanında zorlanır. İzin verilmeyen bir import (örneğin
+WASI dosya sistemi) taşıyan bileşen bağlanamaz ve yüklenmez.
+
+Dosya ve soketi kapatmak CPU, bellek ya da kredi tüketimini sınırlamaz. Bu
+yüzden ayrıca:
+
+- **CPU:** wasmtime epoch kesmesi; her çağrının süre sınırı vardır, aşılırsa
+  örnek sonlandırılır.
+- **Bellek:** `ResourceLimiter` ile bellek, tablo ve örnek sınırları.
+- **Host çağrılarının kendi maliyeti:** WASM sınırları host fonksiyonunun
+  maliyetini kapsamaz. Host çağrılarına ayrı zaman aşımı, yanıt boyutu, günlük
+  boyutu, eşzamanlılık sınırı ve EVREN çağrı bütçesi (§6.8) uygulanır.
+- Eklentinin çökmesi ya da bir sınırı aşması yalnızca o çağrıyı başarısız kılar;
+  uygulama ve diğer oturumlar etkilenmez, örnek yeniden oluşturulur.
 
 ### 8.4 Manifest
 
@@ -383,16 +801,24 @@ sozlesme = "0.1"
 [yetenekler]
 dosya-oku = ["**/*.md", "**/*.txt"]
 evren = ["embeddings", "rerank"]
+depo = "200MB"
 ag = []
 ```
 
 Kurulumda kullanıcı bunu Türkçe cümle olarak görür:
 
-> *"Bu eklenti `.md` ve `.txt` dosyalarını okuyacak, EVREN'in gömme ve yeniden
-> sıralama uçlarını kullanacak. Ağ erişimi istemiyor."*
+> *"Bu eklenti `.md` ve `.txt` dosyalarını okuyacak ve bu dosyalardan seçtiği
+> parçaları gömme ve yeniden sıralama için EVREN'e gönderecek. Doğrudan internet
+> erişimi yok. Kendi indeksi için en fazla 200 MB yer kullanacak."*
 
 Manifest'te olmayan bir yetenek çalışma zamanında istenirse çağrı **reddedilir**,
 sessizce başarısız olmaz.
+
+**Kurulum ve güncelleme:** v1'de bir eklenti, `kalfa.toml` ve tek bir `.wasm`
+dosyasından oluşan bir dizindir; arşiv açma yoktur. Kurulumda paket özeti
+(SHA-256), sürüm, kaynak yolu ve yetenekler gösterilir. Güncelleme yeni bir
+yetenek istiyorsa yeniden onay alınır. İmza v1 dışıdır; imza yayıncıyı
+doğrular, eklentinin davranışının güvenli olduğunu değil.
 
 ### 8.5 Sürüm politikası
 
@@ -405,10 +831,16 @@ yüklenmez ve **ne yapılacağını söyleyen** Türkçe bir hata verir. 1.0'da 
 doğrulamanın başka yolu yoktur. `qwen3-embedding-8b` (TR-TEB birincisi) +
 `qwen3-reranker-8b` ile proje dosyalarında Türkçe anlamsal arama.
 
-Seçim gerekçesi: sözleşmenin her köşesini zorluyor (dosya okuma, EVREN çağrısı,
-uzun süren iş, ilerleme bildirimi) · EVREN'in Türkçe üstünlüğünü sergiliyor —
-projenin varlık sebebi bu · ajanın kendisi için faydalı, yani her gün test
-ediliyor.
+Seçim gerekçesi: sözleşmenin her köşesini zorluyor (dosya listeleme ve okuma,
+EVREN çağrısı, kalıcı depo, uzun süren iş, ilerleme ve iptal) · EVREN'in Türkçe
+üstünlüğünü sergiliyor — projenin varlık sebebi bu · ajanın kendisi için
+faydalı, yani her gün test ediliyor.
+
+- **Kaynaklı yanıt:** her sonuç dosya yolu, satır aralığı ve içerik özetiyle
+  döner; ajan cevabın dayanağını gösterebilir.
+- **İndeks türetilmiş hassas veridir:** eklentinin deposunda, çalışma alanına
+  özel tutulur. Kaynak dosya değişince ya da silinince ilgili kayıt geçersiz
+  olur. Gizli dosyalar hiç indekslenmez (§7.4).
 
 ### 8.7 SDK lisansı
 
@@ -447,10 +879,18 @@ sınırını** bilmez. Dosya içeriği, ağ çıktısı ve kabuk çıktısı aja
 girer ama model onu *talimat* olarak okuyabilir. Savunulacak yer **araç çıktısı
 yoludur.**
 
+**Denetçi ek bir savunma katmanıdır; izinlerin yerine geçmez.** İzin kapısı,
+çalışma alanı sınırı, gizli dosya kuralı ve kabuk yalıtımı denetçi kapalıyken de
+çalışır. Yukarıdaki örnekte `~/.ssh/id_rsa`'yı okumayı zaten §7.3 ve §7.7
+engeller. Denetçi yanlış negatif de yanlış pozitif de üretebilir.
+
+Dış içerik modele **kaynak etiketiyle** girer (`dosya:yol`, `kabuk:komut`,
+`eklenti:ad`, `rag`); etiket özetlendiğinde de korunur (§6.5).
+
 ### 9.1 Kanca
 
-`kalfa-core` içinde `GüvenlikDenetçisi` trait'i. Araç sonucu modele geri
-beslenmeden **önce** çalışır.
+`kalfa-core` içinde `GüvenlikDenetçisi` trait'i. Sıra: araç çıktısı → gizli
+içerik kuralı (§7.4) → denetçi → model.
 
 | Uygulama | Karşılık geldiği kip | Durum |
 |---|---|---|
@@ -462,16 +902,45 @@ Kip, denetçi uygulamasından ayrı bir ayar değildir: `Yok` seçmek "kapalı" 
 `uyar` ile `katı` arasındaki fark ise sınıflandırıcı `güvenli: false` döndüğünde
 akışın durup durmamasıdır.
 
-### 9.2 Kapsam ve maliyet
+`YapılandırılmışSınıflandırıcı` **canlı doğrulandı** (§3.2): örnek enjeksiyon
+metnini `güvenli: false`, `kategori: talimat_enjeksiyonu` olarak şemaya birebir
+uyan bir yanıtla işaretledi (`chat_json_schema_qwen_flash.json`). O çağrıda 326
+completion token'ının 192'si reasoning'di; denetçinin gecikmesi ve maliyeti
+bununla birlikte ölçülmelidir.
 
-Bu katman **kredi harcar ve gecikme ekler.** Bu yüzden:
+Kapsam: dış kaynaklı her içerik — dosya, kabuk çıktısı, eklenti çıktısı ve araç
+açıklamaları, RAG parçaları; v1.1'de MCP çıktısı.
 
-- Yalnızca **dış kaynaklı** içeriğe uygulanır (dosya, ağ, kabuk çıktısı) —
-  ajanın kendi ürettiğine değil.
-- Araç çıktısıyla **eşzamanlı** koşar.
+### 9.2 Zamanlama
 
-Üç kip: **kapalı** (geliştirici varsayılanı) · **uyar** (işaretlenir, akış
-durmaz) · **katı** (şüpheli içerik modele hiç gitmez, kullanıcıya sorulur).
+Denetim, aynı turdaki **diğer araçların yürütülmesiyle** eşzamanlı koşar; ama
+denetlenen içerik, karar gelmeden modele **gitmez**. Bu iki kipte de böyledir:
+
+- **uyar:** şüpheli içerik, "talimat olarak uygulama" uyarısıyla sarılarak modele
+  gider ve arayüzde işaretlenir.
+- **katı:** şüpheli içerik modele gitmez; kullanıcıya gösterilir ve karar
+  kullanıcıya bırakılır.
+
+Bekleme gecikme ekler; durum çubuğunda görünür.
+
+### 9.3 Başarısızlık
+
+- Zaman aşımı, bozuk JSON, şemaya uymayan yanıt ya da EVREN hatası → karar
+  **bilinmiyor**. Başarılı sınıflandırma sayılmaz.
+- **katı** + bilinmiyor → içerik modele gitmez; kullanıcıya "denetlenemedi"
+  olarak sorulur.
+- **uyar** + bilinmiyor → içerik "denetlenemedi" işaretiyle gider; arayüzde
+  görünür.
+- Denetçinin modeli katalogdan kalkarsa sessizce başka modele geçilmez; denetçi
+  "kullanılamıyor" durumuna düşer ve yukarıdaki kurallar uygulanır.
+- Denetçi hiçbir durumda **sessizce kapalı kipe düşmez.**
+
+### 9.4 Kapsam ve maliyet
+
+Bu katman **kredi harcar ve gecikme ekler.** Bu yüzden yalnızca **dış kaynaklı**
+içeriğe uygulanır, ajanın kendi ürettiğine değil.
+
+Üç kip: **kapalı** (geliştirici varsayılanı) · **uyar** · **katı**.
 Savunma/kurumsal dağıtımda *katı*, günlük kodlamada *kapalı* mantıklıdır.
 
 ---
@@ -480,9 +949,10 @@ Savunma/kurumsal dağıtımda *katı*, günlük kodlamada *kapalı* mantıklıd�
 
 MCP desteği tasarımda yerini alır ama **v1'de yazılmaz.**
 
-Teknik taraf kolay: `kalfa-mcp` crate'i `rmcp` (resmî Rust SDK, v3.4.0) üzerine
-oturur, stdio taşıması yeter. Sunucunun araçları aynı `Tool` trait'ine sarılır,
-**ajan döngüsü hiç değişmez.**
+Araç soyutlaması kolay kısımdır: `kalfa-mcp` crate'i `rmcp` (resmî Rust SDK,
+v3.4.0) üzerine oturur, stdio taşıması yeter. Sunucunun araçları aynı `Tool`
+trait'ine sarılır, **ajan döngüsü hiç değişmez.** Süreç yaşam döngüsü ve güvenlik
+ise mekanik değildir (§10.1).
 
 ### 10.1 Gizlenmeyecek gerilim
 
@@ -501,32 +971,48 @@ v1.1'e taşınan kararlar:
 - **Güvenlik denetçisi (§9) MCP çıktılarına da uygulanır** — oraya daha çok gerek
   vardır, çünkü MCP çıktısı tanımı gereği dış kaynaklıdır.
 - v1.1'de yalnızca `tools`. MCP'nin `resources` ve `prompts` yetenekleri sonraya.
+- **Değerlendirilecek:** kabuk yalıtımı (§7.7) v1'de geldiği için MCP sunucuları
+  v1.1'de aynı yalıtım profiliyle (gerekirse ağlı) çalıştırılabilir. Bu, *Tam
+  sistem erişimi* uyarısını *Yalıtılmış süreç* düzeyine indirebilir.
 
 ---
 
 ## 11. Arayüz
 
 **Yığın:** Tauri v2 + Svelte 5 (runes).
-**Kural:** Çekirdek asla UI'ı beklemez, UI asla çekirdeği bloklamaz.
+**Kural:** Çekirdek asla UI'ı beklemez, UI asla çekirdeği bloklamaz. Bu,
+onay bekleyen bir işlemin beklemeden devam etmesi demek değildir: onay bekleyen
+tur bekler, ama diğer oturumlar, iptal komutu ve arayüz yanıt vermeye devam eder.
 
-### 11.1 IPC'de olay toplama
+### 11.1 IPC'de olay akışı
 
 Her token için bir `emit` çağırmak uygulamayı öldürür: her olay bir JSON
 serileştirme + webview mesajı + dinleyici + bileşen güncellemesi demektir.
 
-Karar: **çekirdek tarafında 16 ms'lik pencerede biriktir, tek olayda gönder.**
-60 fps'e sabitlenir, serileştirme sayısı ~50/sn'den ~3/sn'ye düşer. Tamamen
-`kalfa-core` içinde olur; frontend'in haberi olmaz. Metin akışı için Tauri v2'nin
-`Channel<T>` primitifi kullanılır (`emit` değil) — daha az ek yük, sıralama
-garantisi.
+Karar: metin akışı Tauri v2'nin `Channel<T>` primitifiyle taşınır (`emit` değil) —
+daha az ek yük, sıralama garantisi. Çekirdek, metin parçalarını kısa bir
+pencerede (başlangıç değeri 16 ms) birleştirir.
+
+Bu pencere olay sayısını **yalnızca parçalar pencereden sık geldiğinde** azaltır.
+Saniyede 50 parça düzenli aralıkla (20 ms'de bir) gelirse çoğu pencere tek parça
+taşır ve olay sayısı değişmez. Kazanç ağdan yığın hâlinde gelen parçalarda ve
+paralel akışlarda (düşünce + metin + araç çıktısı) ortaya çıkar. Bu yüzden
+pencere **ölçümle** belirlenir. Hedefler: token'ın ekrana düşme gecikmesi p95
+< 50 ms; IPC kuyruğu sınırlı.
+
+**Arka basınç:** metin parçaları birleştirilebilir; onay, hata, tamamlanma ve
+araç olayları asla birleştirilmez ve düşürülmez.
 
 ### 11.2 Uzun oturumda sabit maliyet
 
 - **Mesaj listesi sanallaştırılır.** Akan mesaj bu mekanizmanın dışındadır.
 - **Tamamlanan mesaj bir kez render edilip dondurulur.** Markdown→HTML dönüşümü
   mesaj başına bir kez. Her karede yeniden render edilen tek şey akan mesajdır.
+- **Sanallaştırma DOM'u sınırlar, belleği değil.** Mesajların kalıcı kopyası
+  oturum kaydındadır (§6.6); bellekte görünür pencere ve son mesajlar tutulur,
+  eskiler kaydırıldıkça diskten sayfalanır.
 
-Bu ikisi olmadan oturum uzadıkça uygulama lineer yavaşlar; bunlarla maliyet sabit
+Bunlar olmadan oturum uzadıkça uygulama lineer yavaşlar; bunlarla maliyet sabit
 kalır.
 
 ### 11.3 Akış hâlindeki markdown
@@ -536,18 +1022,35 @@ düzeni bozar. Çözüm: **tamamlanmamış blok toleranslı** render — açık 
 bloğu, liste veya tablo kapanmış gibi çizilir, kapanış gelince yerine oturur.
 
 Sözdizimi renklendirme: **akarken hafif, mesaj tamamlanınca Shiki ile yeniden
-boyama.** Kullanıcı geçişi fark etmez.
+boyama.** Kullanıcı geçişi fark etmez. Güvenli çizim kuralları §11.9'da.
 
-### 11.4 Onay ekranı
+### 11.4 Onay ekranı — "neden izin gerekiyor?"
 
-Ürünün algılanan kalitesini belirleyen tek ekran. §7.4'teki gruplanmış onay
+Ürünün algılanan kalitesini belirleyen tek ekran. §7.6'daki gruplanmış onay
 burada görselleşir: tek kart, her dosya katlanabilir diff, üstte **Tümünü onayla /
 Seçilenleri onayla / Reddet**, ve reddederken modele gerekçe yazma alanı.
 
+Kart araç adını değil, **işlemin kendisini** anlatır:
+
+| Alan | İçerik |
+|---|---|
+| **Ne** | İşlem: "3 dosyayı düzenle", "komut çalıştır" |
+| **Nerede** | Kanonik hedef yollar; çalışma alanı dışıysa uyarı |
+| **Etki** | Diff; kabuk için tam komut ve çalışma dizini |
+| **Veri çıkışı** | Sonucunda EVREN'e ne gideceği ("komut çıktısı", "dosya içeriği"); gizli dosyaysa açık uyarı |
+| **Yalıtım** | Kabuk için: yalıtımlı-ağsız · yalıtımlı-ağlı · yalıtımsız |
+| **Geri alınabilir mi** | Dosya aracı değişikliği: evet (§6.7). Kabuk etkileri: hayır |
+| **Kapsam** | Yalnızca bu çağrı · bu oturumda bu dizin (§7.6) |
+
+Metin sade Türkçe bir cümleyle başlar: *"Kalfa `src/main.rs` dosyasında 12 satır
+değiştirmek istiyor. Bu değişiklik geri alınabilir."*
+
 ### 11.5 Durum çubuğu
 
-Kalan bakiye (CR) · oturum maliyeti · yönlendirilen model · bağlam doluluğu.
-`reasoning_tokens` ayrı satır (§6.2).
+Son gözlenen bakiye (CR, gözlem zamanıyla) · oturum token kullanımı (reasoning
+dökümüyle) · tahmini maliyet (yalnızca katalog fiyatı sıfırdan büyükse, "tahmini"
+etiketiyle) · yönlendirilen model · bağlam doluluğu · izin kipi · kabuk yalıtım
+durumu.
 
 ### 11.6 Dil
 
@@ -555,21 +1058,27 @@ Türkçe birincil, İngilizce ikincil. **Hata mesajı kuralı: ne olduğunu ve n
 yapılacağını söyler.** `403 terms_not_accepted` ekrana "403" diye düşmez; yeni
 şart metnini gösterip onay düğmesi sunar (§11.8).
 
+Çeviri tek başına Türkçe deneyim değildir: anlaşılır hata dili, klavyeyle tam
+kullanım, ekran okuyucu desteği, okunabilir diff ve izin gerekçeleri ürün
+kalitesinin parçasıdır.
+
 ### 11.7 Yerleşim
 
 ```
-┌────────────┬──────────────────────────────────┐
-│ Oturumlar  │  Konuşma akışı                   │
-│ Çalışma    │  (sanallaştırılmış)              │
-│  alanı     │  ├ mesaj                         │
-│            │  ├ araç çağrısı kartı            │
-│ Eklentiler │  ├ düşünce paneli (katlı)        │
-│            │  └ onay kartı (diff)             │
-│            ├──────────────────────────────────┤
-│            │  Girdi · model · izin kipi       │
-├────────────┴──────────────────────────────────┤
-│ 1000 CR · oturum 12 CR · glm-5.3 · %18 bağlam │
-└───────────────────────────────────────────────┘
+┌─────────────────┬──────────────────────────────────┐
+│ Oturumlar       │  Konuşma akışı                   │
+│ Çalışma alanı   │  (sanallaştırılmış)              │
+│ Eklentiler      │  ├ mesaj                         │
+│ Gönderim        │  ├ araç çağrısı kartı            │
+│  günlüğü        │  ├ düşünce paneli (katlı)        │
+│                 │  ├ onay kartı (diff)             │
+│                 │  └ tur özeti (geri al)           │
+│                 ├──────────────────────────────────┤
+│                 │  Girdi · model · izin kipi       │
+├─────────────────┴──────────────────────────────────┤
+│ 1000 CR (14:02) · 12,4k token · glm-5.3 · %18 bağlam │
+│ Sıkı · kabuk yalıtımlı                              │
+└────────────────────────────────────────────────────┘
 ```
 
 ### 11.8 İlk çalıştırma ve şart onayı
@@ -584,33 +1093,80 @@ Anahtar girişi ──► GET /v1/terms/status
                      ├─ accepted, sürüm güncel ───► ana ekran
                      │
                      ▼ değilse
-               GET /v1/terms/text ──► Şart ekranı
+               GET /v1/terms/text ──► Şart penceresi
                                         ├─ [Kabul ediyorum] ─► POST /v1/terms/accept {"version": N} ─► ana ekran
                                         └─ [Kabul etmiyorum] ─► kilitli ekran
 ```
 
 - **Kalfa şartları hiçbir zaman kullanıcı adına kabul etmez.**
-  `POST /v1/terms/accept` yalnızca şart ekranındaki açık tıklamadan doğan
+  `POST /v1/terms/accept` yalnızca şart penceresindeki açık tıklamadan doğan
   `ŞartlarıKabulEt(sürüm)` komutuyla gönderilir. Otomatik kabul bayrağı,
-  yapılandırma anahtarı ya da CLI seçeneği yoktur. Güvence yapısaldır:
-  `Command`'lar yalnızca dışarıdan gelir, ajan döngüsü `Command` üretmez; dolayısıyla
-  model ve araçlar bu uca yol bulamaz.
+  yapılandırma anahtarı ya da CLI seçeneği yoktur. Güvence iki katmanlıdır:
+  1. Ajan döngüsü `Command` üretmez; model ve araçların bu uca yolu yoktur (§4.1).
+  2. Bu komut yalnızca ayrı **şart penceresine** açıktır. Model çıktısının
+     çizildiği ana pencere onu çağıramaz (§11.9).
+
+  Backend ayrıca gelen sürümün, kendi gösterdiği son `ŞartOnayıGerekiyor`
+  sürümüyle aynı olduğunu doğrular. Kullanıcı okurken sürüm değiştiyse eski
+  sürüm kabul edilmez, güncel metin gösterilir.
 - **Metin olduğu gibi gösterilir.** Özetlenmez, kısaltılmaz. Başlıkta sürüm
   numarası ve `is_material` bilgisi yer alır.
-- **Metin güvenli çizilir.** Şart metnindeki uzak görseller (örn. shields.io
-  rozetleri) yüklenmez, yerlerinde alt metin gösterilir. Bağlantılar sistem
-  tarayıcısında açılır. İlk ekran üçüncü taraf bir sunucuya istek atmaz.
+- **Metin güvenli çizilir** (§11.9). Şart metnindeki uzak görseller (örn.
+  shields.io rozetleri) yüklenmez, yerlerinde alt metin gösterilir. İlk ekran
+  üçüncü taraf bir sunucuya istek atmaz.
 - **Reddetmek geri dönülebilir.** "Kabul etmiyorum" seçilirse anahtar saklanır ama
   uygulama kilitli ekranda kalır ve sebebini söyler: EVREN, şartlar kabul
-  edilmeden hiçbir ucu açmıyor. Sonraki açılışta şart ekranı yeniden gelir.
+  edilmeden hiçbir ucu açmıyor. Sonraki açılışta şart penceresi yeniden gelir.
 - **Oturum ortası yeniden kilitlenme (§3.1).** `403 terms_not_accepted` gelirse
   `kalfa-evren` bunu tipli hataya çevirir, çekirdek `ŞartOnayıGerekiyor` olayını
-  yayar ve aynı ekran kip olarak açılır. Ajan döngüsü duraklar; kabul gelirse
+  yayar ve şart penceresi açılır. Ajan döngüsü duraklar; kabul gelirse
   reddedilen istek yeniden gönderilir, gelmezse tur iptal edilir. Oturum kaybolmaz.
 - **Anahtar düz metin olarak saklanmaz.** İşletim sisteminin kimlik deposuna
   yazılır: Windows'ta Credential Manager, Linux'ta Secret Service (`keyring`
   crate'i). Secret Service bulunamazsa kullanıcı uyarılır ve anahtar yalnızca
-  oturum boyunca bellekte tutulur.
+  oturum boyunca bellekte tutulur. Anahtar yalnızca sağlayıcı katmanında durur:
+  modele, eklentiye, arayüz durumuna, günlüklere ve alt süreçlere taşınmaz.
+
+### 11.9 Web görünümü güvenliği
+
+Model çıktısı, `reasoning`, araç çıktısı, eklenti açıklamaları ve şart metni
+güvenilmeyen içeriktir ve hepsi webview'da çizilir. Bu içerikten bir script
+çalışabilirse, script Tauri IPC üzerinden komut çağırabilir — örneğin ajanın
+kendi araç çağrısını onaylayabilir. Bu yüzden:
+
+- **CSP açıkça ve sıkı yapılandırılır:** yalnızca uygulamanın kendi kaynakları;
+  satır içi script yok; uzak script, stil, font ve görsel yok. Tauri'de CSP
+  koruması ancak yapılandırıldığında etkindir.
+- **Markdown güvenli çizilir:** ham HTML kapalıdır. `javascript:`, `file:` ve
+  özel protokollü bağlantılar düz metne çevrilir. Uzak görseller yüklenmez, alt
+  metin gösterilir. Bağlantılar yalnızca kullanıcı tıklayınca sistem
+  tarayıcısında açılır. Bu kural sohbet, düşünce paneli, araç çıktısı, eklenti
+  açıklaması ve şart metni için aynıdır.
+- **Komut yetkileri pencere bazındadır.** Tauri'de `invoke_handler` ile
+  kaydedilen komutlar, ayrıca sınırlanmazsa bütün pencerelere açıktır. Kalfa'nın
+  komutları uygulama manifest'inde tanımlanır ve Tauri capability'leriyle
+  pencerelere dağıtılır: `ŞartlarıKabulEt` yalnızca şart penceresine açıktır. Şart
+  penceresi yalnızca şart metnini çizer; model çıktısı çizmez.
+- **En yüksek riskli iki onay yerel iletişim kutusunda sorulur:** izin kipini
+  yükseltmek ve yalıtımsız kabuk çalıştırmak. Bunlar webview'da değil, işletim
+  sisteminin kendi iletişim kutusunda sorulur; webview'daki bir script o kutuya
+  tıklayamaz.
+- **Backend her komutu doğrular:** `AraçOnayı`'nın taşıdığı `onay_mührü`,
+  çekirdeğin ürettiği bekleyen bir onayla eşleşmek zorundadır (§7.6).
+
+### 11.10 Gönderim günlüğü ve önizleme
+
+- **Günlük:** her EVREN isteği için bir satır — zaman, amaç (ana model, özet,
+  denetçi, `eklenti:ad`), model, `X-Request-Id`, token'lar ve bu istekte **ilk
+  kez gönderilen** içerik öğeleri, kaynak etiketiyle: `dosya:src/main.rs:1-120`,
+  `kabuk:cargo test`, `kullanıcı mesajı`. Önceki turlardan yeniden gönderilen
+  geçmiş tek tek değil, sayı olarak gösterilir ("+34 önceki mesaj"). Bir öğeye
+  tıklanınca gönderilen metnin tamamı görünür.
+- **Göndermeden önce göster** (oturum ayarı, varsayılan kapalı): açıkken yeni dış
+  içerik — araç sonuçları — modele gitmeden önce bir kartta bekler; kullanıcı
+  öğeleri tek tek çıkarabilir. Çıkarılan öğenin yerine modele "[kullanıcı bu
+  içeriği göndermedi]" gider; böylece model eksik bilgiyle çalıştığını bilir.
+- Gizli dosya kuralı (§7.4) bu ayardan bağımsız olarak her zaman çalışır.
 
 ---
 
@@ -620,27 +1176,46 @@ Anahtar girişi ──► GET /v1/terms/status
 
 | Alan | Kapsam |
 |---|---|
-| Sağlayıcı | Chat + streaming + tools + tipli hatalar + kredi takibi |
-| İlk çalıştırma | Anahtar girişi → şart metni → onay akışı; oturum ortası yeniden kilitlenme (§11.8) |
-| Ajan | Döngü, paralel araç yürütme, iptal, `reasoning` akışı |
-| Yerleşik araçlar | Dosya oku/yaz/düzenle, glob, grep, kabuk |
-| Güvenlik | Yetenek modeli, 3 kip, çalışma alanı sınırı, gruplanmış onay + diff |
-| Denetçi | `GüvenlikDenetçisi` kancası + `YapılandırılmışSınıflandırıcı` |
-| Plugin | wasmtime + WIT + SDK + manifest zorlaması |
-| Örnek plugin | `kalfa-rag` |
-| UI | Svelte 5 + Tauri; akış, düşünce paneli, durum çubuğu, oturum kaydı |
-| Dağıtım | Windows + Linux, imzasız sürüm |
+| Sağlayıcı | Chat + streaming + tools + tipli hatalar + kredi gözlemi; katmanlı SSE ayrıştırıcı |
+| İlk çalıştırma | Anahtar girişi → şart penceresi → onay; oturum ortası yeniden kilitlenme (§11.8) |
+| Ajan | Döngü, kaynak kilitli paralel yürütme, iptal, `reasoning` akışı, döngü ve bütçe sınırları |
+| Oturum | Kayıt ve kurtarma (§6.6), tur özeti ve geri alma (§6.7), kayıtsız oturum |
+| Yerleşik araçlar | Dosya oku/yaz/düzenle, glob, grep (`cap-std` ile), kabuk |
+| Güvenlik | Tehdit modeli, 4 kip (İnceleme dahil), bağlı ve tek kullanımlık onay, gizli dosya kuralı, kabuk yalıtımı (Linux + Windows) |
+| Denetçi | `GüvenlikDenetçisi` kancası + `YapılandırılmışSınıflandırıcı` + başarısızlık kuralları |
+| Plugin | wasmtime + WIT 0.1 (`world`, listeleme, depo, ilerleme, iptal) + SDK + manifest zorlaması + kaynak sınırları |
+| Örnek plugin | `kalfa-rag` (kaynaklı yanıtlar) |
+| UI | Svelte 5 + Tauri; akış, düşünce paneli, durum çubuğu, "neden izin gerekiyor" onay kartı, gönderim günlüğü ve önizleme, sıkı CSP |
+| Dağıtım | Windows (MSI, yalıtım kurulumu dahil) + Linux (`.deb`/`.rpm`, AppArmor profili dahil); imzasız sürüm; `SHA256SUMS`, CI'da `cargo-audit`, `SECURITY.md` |
 
 Git için ayrı araç yazılmaz — kabuk aracı yeterlidir.
 
 ### 12.2 v1'in dışında
 
 MCP desteği (v1.1) · otomatik model router · `EvrenGuard` uygulaması ·
-alt-ajanlar · plugin registry'si · macOS · kod imzalama ve otomatik güncelleme ·
-ASR/OCR pluginleri · takım ve paylaşım özellikleri · MCP `resources`/`prompts`.
+alt-ajanlar · plugin registry'si ve eklenti imzası · macOS · kod imzalama ve
+otomatik güncelleme · ASR/OCR pluginleri · takım ve paylaşım özellikleri · MCP
+`resources`/`prompts` · kurumsal politika profili · güvenli destek paketi ·
+yerel proje profilleri.
 
 > **Yazılmamış kapsam dışı, kapsam dışı değildir.** Üçüncü ayda "şunu da eklesek
 > mi" sorusu geldiğinde cevabın nerede olduğu belli olsun diye buradadır.
+
+### 12.3 Teslim sırası
+
+v1 kapsamı tek seferde değil, her biri kendi başına çalışan dört aşamada
+teslim edilir:
+
+1. **Çekirdek uçtan uca:** `kalfa-evren` (fixture testleriyle), şart akışı, ajan
+   döngüsü, dosya araçları (`cap-std`), bağlı onay + diff, iptal, oturum kaydı ve
+   kurtarma. UI'sız döngü testi (§4.2) ilk günden.
+2. **Kabuk ve yalıtım:** süreç sınırları, Linux arka ucu, ardından Windows arka
+   ucu. Yalıtım hazır olana kadar kabuk yalnızca yalıtımsız ve onaylı çalışır.
+3. **Görünürlük:** tur özeti ve geri alma, gönderim günlüğü ve önizleme, "neden
+   izin gerekiyor" kartı, İnceleme kipi, güvenlik denetçisi.
+4. **Eklenti ve RAG:** WIT 0.1, kaynak sınırları, `kalfa-rag`.
+
+MCP (v1.1) bunlardan sonra gelir.
 
 ---
 
@@ -652,7 +1227,17 @@ Uygulama TDD ile yürür: her adımda önce başarısız test, sonra kod.
 
 `research/evren-probe/fixtures/` altındaki dosyalar **gerçek EVREN çıktısıdır**.
 `kalfa-evren`'in ayrıştırıcı testleri uydurma veriye değil bunlara karşı koşar.
-§3.3'teki altı sapmanın her biri bir regresyon testi olarak donar.
+§3.3'teki EVREN alanlarının her biri (`reasoning`, `usage.evren`, `error.evren`,
+katalog uzantıları, başlıklar) bir regresyon testi olarak donar.
+
+Gerçek kayıt mutlu yolu kanıtlar; henüz gözlenmemiş sınır koşulları için
+**sentetik** test verisi gerekir:
+
+- SSE akışını **her olası bayt sınırından** bölmek (çok baytlı Türkçe karakter
+  dahil) aynı sonucu vermeli ya da tipli bir eksik-akış hatası üretmeli; yarım
+  araç çağrısı çalışmamalı.
+- CRLF, çok satırlı `data:`, eksik son olay, aşırı büyük olay, bağlantı kopması.
+- SSE çerçeveleyici ve yol kontrolü ayrıca fuzz edilir (`cargo-fuzz`).
 
 Canlı API'ye karşı testler `#[ignore]` ile işaretlidir; anahtar varsa koşar.
 
@@ -660,15 +1245,44 @@ Canlı API'ye karşı testler `#[ignore]` ile işaretlidir; anahtar varsa koşar
 
 | Katman | Test |
 |---|---|
-| `kalfa-evren` | Fixture tabanlı ayrıştırıcı + hata eşleme testleri |
+| `kalfa-evren` | Fixture tabanlı ayrıştırıcı + hata eşleme; bayt sınırı testleri |
 | `kalfa-core` | **§4.2'nin testi:** sahte sağlayıcı + sahte araçlarla, UI'sız tam döngü |
-| İzin motoru | Yol kaçış testleri: `..`, sembolik bağlantı, Windows sürücü harfi, UNC |
-| `kalfa-plugin` | Sözleşme uyumu: manifest'te olmayan yetenek istendiğinde red |
-| Şart kapısı | `terms_not_accepted` → `ŞartOnayıGerekiyor` → kabul → yeniden deneme zinciri; kabul uca yalnızca `ŞartlarıKabulEt` ile gider |
-| UI | Duman testi: akış çiziliyor mu, onay ekranı doğru diff'i gösteriyor mu |
+| İzin motoru | Yol kaçış testleri: `..`, sembolik bağlantı ve junction (kontrol ile kullanım arasında değiştirilen dahil), sürücü harfi, UNC, aygıt yolu, alternatif veri akışı, hard link |
+| `kalfa-sandbox` | Linux ve Windows CI'da: `~/.ssh` okunamaz · çalışma alanı dışına yazılamaz · `.git/hooks` ve `.git/config` yazılamaz · gizli dosya okunamaz · ağsız profilde bağlantı kurulamaz · iptal süreç ağacını öldürür |
+| Araç zinciri uyumluluğu | Yalıtım içinde `git`, `cargo`, `npm`, `python` — hedef dağıtımlarda (Ubuntu 24.04, Debian 12, Pardus, Fedora) ve Windows 11'de |
+| Oturum | Kurtarma (yarım kalmış yan etki yeniden çalışmaz), geri alma çakışması |
+| `kalfa-plugin` | Sözleşme uyumu: manifest'te olmayan yetenek istendiğinde red; CPU/bellek sınırı; izin verilmeyen import'lu bileşen yüklenmez |
+| Şart kapısı | `terms_not_accepted` → `ŞartOnayıGerekiyor` → kabul → yeniden deneme zinciri; kabul uca yalnızca şart penceresinden `ŞartlarıKabulEt` ile gidilir |
+| UI | Duman testi: akış çiziliyor mu, onay ekranı doğru diff'i gösteriyor mu; CSP ve markdown temizleme |
 
-> **Test edilmeyen güvenlik sınırı yoktur.** İzin motoru satırı bu yüzden pazarlık
-> konusu değildir.
+> **Test edilmeyen güvenlik sınırı yoktur.** İzin motoru ve `kalfa-sandbox`
+> satırları bu yüzden pazarlık konusu değildir.
+
+### 13.3 Kabul senaryoları
+
+Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
+
+| Senaryo | Beklenen sonuç |
+|---|---|
+| Proje dosyası, başka bir dosyadaki sırrı göndermeyi telkin ediyor | Gizli dosya kuralı engeller; denetçi kapalıyken de |
+| Gizli içerik denetçiye gönderilmek üzere | Gizli dosya kuralı denetçi çağrısından önce çalışır |
+| Kullanıcı diff'i onayladıktan sonra dosya değişiyor | Eski onayla yazılmaz; çakışma ve yeni diff gösterilir |
+| Yol kontrolünden sonra sembolik bağlantının hedefi değişiyor | Onay dışı dosyaya erişilemez |
+| Kabuk alt süreç doğuruyor ve tur iptal ediliyor | Süreç ağacı durur; gerçekleşmiş etkiler tur özetinde raporlanır |
+| Yalıtılmış komut `.git/hooks/pre-commit` yazmaya çalışıyor | Yazma reddedilir |
+| Yalıtılmış komut `~/.ssh/id_rsa` okumaya çalışıyor | Okuma reddedilir |
+| Yalıtım kullanılamıyor | Kabuk sessizce yalıtımsız çalışmaz; her çağrı yerel iletişim kutusunda onay ister |
+| Eklenti sonsuz döngüye giriyor ya da çıktıyı şişiriyor | Sınır devreye girer; arayüz ve diğer oturumlar yanıt vermeye devam eder |
+| Eklenti şart kabul ucunu istiyor | Host reddeder; anahtar ya da genel HTTP erişimi verilmez |
+| Katı denetçi zaman aşımına uğruyor ya da bozuk JSON üretiyor | İncelenmemiş içerik modele gitmez; durum görünür kalır |
+| Markdown script, uzak görsel ya da tehlikeli URL içeriyor | Script çalışmaz, otomatik ağ isteği ve IPC çağrısı oluşmaz |
+| Aynı dosyaya okuma ve yazma aynı anda geliyor | Okuma/yazma kilidi korunur |
+| Yazma tamamlandı, "bitti" kaydından önce süreç çöktü | Yeniden açılışta işlem tekrarlanmaz; "sonucu bilinmiyor" gösterilir |
+| Şart sürümü kullanıcı okurken değişiyor | Eski sürüm kabul edilmiş sayılmaz; güncel metin gösterilir |
+| Serbest kipteki oturum kapatılıp yeniden açılıyor | Serbest kip ve geçici izinler geri gelmez; bekleyen onaylar kullanılamaz |
+| Kullanıcı turu geri alıyor ama bir dosyayı arada kendisi değiştirmiş | O dosyaya dokunulmaz, çakışma olarak listelenir |
+| Paralel model ve eklenti çağrıları farklı bakiye gözlemleri döndürüyor | İstekler ilişkilendirilir; toplam maliyet kesinmiş gibi türetilmez |
+| Denetçi modeli beklenen şemayı üretmiyor | Başarılı sınıflandırma sayılmaz; "bilinmiyor" kuralı işler |
 
 ---
 
@@ -676,12 +1290,17 @@ Canlı API'ye karşı testler `#[ignore]` ile işaretlidir; anahtar varsa koşar
 
 | # | Risk | Etki | Azaltma |
 |---|---|---|---|
-| 1 | EVREN beta; fiyatlar `0.0 CR`, gerçek fiyatlandırma bilinmiyor | Maliyet göstergesi ve router varsayımları değişebilir | Kredi takibi başlıklara dayanıyor, fiyat tablosuna değil (§5.2) |
+| 1 | EVREN beta; fiyatlar `0.0 CR`, gerçek fiyatlandırma bilinmiyor | Maliyet göstergesi ve router varsayımları değişebilir | Kredi gözlem olarak gösterilir; maliyet yalnızca "tahmini" (§5.2) |
 | 2 | Şart metni "hukuk ekibince nihai gözden geçirilmemiş taslak" | Şartlar esaslı değişebilir, tüm kullanıcılar kilitlenir | Şart kapısı birinci sınıf akış; oturum ortası kilitlenme oturumu kaybettirmez (§11.8) |
-| 3 | `billing_pending` davranışı belgelenmemiş | İptal sonrası kredi sızıntısı | `X-Request-Id` günlüğü (§5.3) |
+| 3 | `billing_pending` davranışı belgelenmemiş | İptal sonrası kredi sızıntısı | `X-Request-Id` kaydı (§5.3) |
 | 4 | Component Model ekosistemi hâlâ olgunlaşıyor | Plugin yazarı deneyimi pürüzlü olabilir | Sözleşme 0.x; `kalfa-plugin-sdk` pürüzü emer |
-| 5 | Tauri IPC verimi ölçülmedi | 16 ms toplama yetmeyebilir | Uygulamada erken ölçüm; pencere ayarlanabilir |
-| 6 | KVKK: prompt/completion metinleri işleniyor | Savunma bağlamında hassas | Hangi dosya içeriğinin modele gittiği UI'da görünür olmalı |
+| 5 | Tauri IPC verimi ölçülmedi | Toplama penceresi yetmeyebilir | Pencere ölçümle belirlenir; gecikme hedefi p95 < 50 ms (§11.1) |
+| 6 | KVKK: prompt/completion metinleri işleniyor | Savunma bağlamında hassas | Gizli dosya kuralı (§7.4), gönderim günlüğü ve önizleme (§11.10) |
+| 7 | Kabuk yalıtımı araç zincirleriyle uyumsuz olabilir | `cargo`/`npm`/`pip` yalıtım içinde bozulabilir | Uyumluluk matrisi (§13.2); izinli dizin listesi ayarlanabilir; son çare onaylı yalıtımsız çalıştırma |
+| 8 | Windows yalıtımı yönetici yetkisi ister | Yöneticisi olmayan kullanıcıda yalıtım yok | MSI kurulumu zaten yönetici ister; BT önceden kurabilir; yoksa yalıtımsız ve her çağrıda onaylı |
+| 9 | Ubuntu 24.04 bubblewrap'ı AppArmor ile kısıtlıyor | `.deb` dışı kurulumda yalıtım çalışmayabilir | `.deb` profili yükler; diğer kurulumlarda uyarı ve talimat |
+| 10 | v1 kapsamı büyüdü (yalıtım, kurtarma, geri alma, gönderim günlüğü) | Teslim gecikir; en büyük tek kalem Windows yalıtımı | Dört aşamalı teslim (§12.3); her aşama kendi başına kullanılabilir |
+| 11 | Denetçi modeli reasoning'e çok token harcıyor | Denetim gecikmesi ve maliyeti yüksek | Ölçüm; gerekirse reasoning'i kapatma seçeneği araştırılır |
 
 ---
 
@@ -695,19 +1314,64 @@ Canlı API'ye karşı testler `#[ignore]` ile işaretlidir; anahtar varsa koşar
 | Mimari şekil | Tauri monolit, çekirdek ayrı crate | En kısa v1; daemon kapısı `Command`/`Event` ile açık |
 | Frontend | Svelte 5 | Akışta en düşük ek yük |
 | WASM ABI | Component Model (WIT) | Tipli sözleşme; Extism tipsiz |
-| Tool protokolü | Native `tools` | **Probe ile doğrulandı** (§3.2) |
+| Tool protokolü | Native `tools` | **Probe ile doğrulandı**, üç profil modelinde (§3.2) |
 | Guard | Takas edilebilir kanca | Guard modeli erişilemez; tehdit zaten araç çıktısı yolunda |
 | MCP | v1.1 | Ekosistem değerli ama v1'i geciktirir |
 | İsim | Kalfa | Lonca geleneği; izin modelini anlatıyor; crates.io'da müsait |
 | Lisans | Apache-2.0 | Açık patent lisansı ve misilleme maddesi, marka maddesi, NOTICE ile atıf. Kaybı GPLv2 uyumsuzluğu; masaüstü uygulaması için önemsiz |
 | SDK lisansı | Apache-2.0 WITH LLVM-exception (SDK + WIT) | Eklenti yazarı derlenmiş `.wasm`'da lisans yükü taşımaz; Bytecode Alliance modeli (§8.7) |
 | Telif sahibi | Orkun Koray Güngör | Kullanıcı seçimi |
-| Şart kabulü | Yalnızca kullanıcının açık tıklamasıyla, anahtar girişinden sonra | Hukuki bağlayıcı eylem ajana bırakılmaz |
+| Şart kabulü | Yalnızca kullanıcının açık tıklamasıyla, ayrı şart penceresinden | Hukuki bağlayıcı eylem ajana bırakılmaz |
 | Anahtar saklama | İşletim sistemi kimlik deposu (`keyring`) | Düz metin yapılandırma dosyasında anahtar olmaz |
+| SSE | Katmanlı; çerçeveleme elle (WHATWG) | Tek yaygın crate 2022'den beri güncellenmiyor; iş küçük, testler bizde |
+| Kredi | Gözlem olarak gösterilir | Kesinleşme API'den gözlenemiyor (§5.2) |
+| Dosya erişimi | `cap-std` dizin tutamacı | Kontrol ile kullanım arasındaki yarışı yapısal olarak kapatır |
+| Veri çıkışı | Gizli dosya kuralı her kipte + gönderim günlüğü | Okumak göndermektir |
+| Onay | İşleme bağlı (mühür), tek kullanımlık | Diff incelenirken dosya değişebilir |
+| Kabuk yalıtımı | v1'de, Linux ve Windows | Kullanıcı seçimi; çalışma alanı sınırı kabukta ancak böyle gerçek olur |
+| Linux yalıtım arka ucu | bubblewrap + seccomp | Landlock yazılabilir dizinde salt okunur/okunamaz alt yol tanımlayamaz |
+| Windows yalıtım arka ucu | Ayrı yerel kullanıcı + ACL + güvenlik duvarı | Kısıtlı belirteç ağı kesemez; AppContainer araç zincirleriyle uyumsuz |
+| Webview | Sıkı CSP, ham HTML yok, pencere bazlı komut yetkisi, yüksek riskli onaylar yerel iletişim kutusunda | Model çıktısı güvenilmeyen içeriktir; XSS, ajanın kendini onaylaması demektir |
+| İzin kipleri | İnceleme + Sıkı + Proje + Serbest | İnceleme kipi kullanıcı seçimi |
+| Oturum özellikleri | Kurtarma, geri alma, gönderim önizlemesi v1'de | Kullanıcı seçimi |
+| Denetçi başarısızlığı | "Bilinmiyor"; katı kipte içerik gitmez | Sessizce kapalıya düşmek bir güvenlik açığıdır |
+| Teslim | Dört aşama (§12.3) | Kapsam büyüdü; her aşama kendi başına kullanılabilir |
 
 ---
 
 ## 16. Sonraki adım
 
-Uygulama planı (`writing-plans` becerisi) — bu tasarımı TDD adımlarına bölen
-ayrıntılı plan belgesi.
+Kullanıcı bu revizyonu okuyup onayladıktan sonra: uygulama planı
+(`writing-plans` becerisi) — bu tasarımı §12.3'teki teslim sırasına göre TDD
+adımlarına bölen ayrıntılı plan belgesi.
+
+---
+
+## 17. Revizyonlar
+
+**r1 (2026-09-21):** İlk tasarım.
+
+**r2 (2026-09-21):** Codex'in tasarım incelemesi
+([2026-09-21-kalfa-design-review.md](2026-09-21-kalfa-design-review.md)) işlendi.
+İncelemenin olgusal iddiaları kayıtlı yanıtlara karşı doğrulandı ve beş yeni
+canlı istekle desteklendi.
+
+- **Düzeltilen yanlış iddialar:** `I` + `stanbul` parçalanması Türkçe karakter
+  bölünmesinin kanıtı değildi (§3.3) · `usage.evren` kesinleşmiş harcama
+  değildir (§5.2) · denetçi modelinin `json_schema` desteği doğrulanmamıştı,
+  şimdi doğrulandı (§3.2, §9.1) · 16 ms penceresinin olay sayısını düşürme
+  hesabı yanlıştı (§11.1) · WIT JSON alanlarını derleme zamanında denetlemez
+  (§8.1) · SSE yorum satırları ve parçalı argümanlar EVREN'e özgü değildir
+  (§3.3) · "ajan Command üretmez" şart kabulünü tek başına güvenceye almıyordu
+  (§11.8, §11.9).
+- **Yeni:** tehdit modeli (§7.1) · gizli dosya kuralı (§7.4) · işleme bağlı ve
+  tek kullanımlık onay (§7.6) · kabuk yalıtımı (§7.7) · webview güvenliği (§11.9)
+  · denetçi başarısızlık kuralları (§9.3) · genişletilmiş WIT (§8.2) ve eklenti
+  kaynak sınırları (§8.3) · `Command`/`Event` zarfı (§4.1) · oturum kurtarma
+  (§6.6) · tur özeti ve geri alma (§6.7) · döngü ve bütçe sınırları (§6.8) ·
+  İnceleme kipi (§7.5) · "neden izin gerekiyor" onay kartı (§11.4) · gönderim
+  günlüğü ve önizleme (§11.10) · teslim sırası (§12.3) · kabul senaryoları
+  (§13.3).
+- **Değişen:** Serbest kipte kabuk artık yalnızca yalıtımlı ve ağsızsa otomatik
+  çalışır · paralellik okuma/yazma kilidiyle (§6.1) · yetenek tablosu model
+  bazında (§3.2).
