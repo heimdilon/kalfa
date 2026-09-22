@@ -6,9 +6,24 @@ Kalfa, Rust ile yazılmış bir masaüstü ajan uygulamasıdır. EVREN'in model 
 kullanarak dosya okur, yazar, arama yapar ve komut çalıştırır — tamamı senin
 onayınla. Araçlarını WebAssembly eklentileriyle genişletebilirsin.
 
-> ⚠️ **Durum: tasarım aşaması.** Henüz kod yok. Tasarım belgesi
-> [`docs/superpowers/specs/2026-09-21-kalfa-design.md`](docs/superpowers/specs/2026-09-21-kalfa-design.md)
-> altındadır.
+> **Durum: çekirdek ve dosya araçları geliştiriliyor.** Rust workspace içinde
+> EVREN istemcisi (`kalfa-evren`), arayüzden bağımsız oturum çekirdeği
+> (`kalfa-core`) ve beş yerleşik dosya aracı (`kalfa-tools`) bulunuyor.
+> Masaüstü arayüzü henüz uygulanmadı. [Geliştirme durumu ve devam noktası](docs/GELISTIRME_DURUMU.md).
+
+## Geliştirme
+
+Rust araç zinciri `rust-toolchain.toml` ile sabitlenmiştir. Depo kökünde:
+
+```sh
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all -- --check
+```
+
+Varsayılan testler sahte sağlayıcılar ve yerel HTTP sunucuları kullanır;
+EVREN anahtarı gerektirmez. Canlı API testleri `#[ignore]` ile ayrıdır.
+Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni gerektirir.
 
 ---
 

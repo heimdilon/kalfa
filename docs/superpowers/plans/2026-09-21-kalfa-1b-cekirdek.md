@@ -6,6 +6,8 @@
 
 **Plan revizyonu:** r3.2 (2026-09-21). Kayıt, iptal, yürütme politikası ve bağlantı güvenliği düzeltmeleri kod örneklerine işlendi. [İnceleme ve doğrulama kaydı](../specs/2026-09-21-kalfa-plan-review.md). Uygulama görevleri henüz tamamlanmış değildir.
 
+**Uygulama notu (2026-09-22):** Görev 1–15'in kodu ve çevrimdışı testleri workspace içinde bulunuyor; Windows doğrulaması yapıldı. Güncel sonuçlar ve 1c'ye devir [geliştirme durumu](../../GELISTIRME_DURUMU.md) dosyasındadır. Aşağıdaki kutular tarihsel uygulama adımlarıdır; canlı API ve Linux doğrulaması tamamlanmış sayılmaz.
+
 **Architecture:** `kalfa-core` dış dünyaya yalnızca `Komut` alıp `Zarf<Olay>` gönderen tek bir tokio görevidir (oturum). Tur: model akışı → argüman doğrulama → izin kararı → işleme bağlı (mühürlü) onay → kaynak kilitli paralel yürütme → kaynak etiketli sonuç. Her önemli adım yalnızca sona eklenen bir JSONL oturum kaydına yazılır; çökmeden sonra yarım kalan yan etkili işlem **yeniden çalıştırılmaz**. `kalfa-tools` çalışma alanına `cap-std` dizin tutamacıyla erişir.
 
 **Tech Stack:** Rust 1.98.1 · tokio · async-trait · jsonschema (uzak şema çözme kapalı) · globset · sha2 · uuid · cap-std + cap-fs-ext · ignore · regex · similar · kalfa-evren (plan 1a)
