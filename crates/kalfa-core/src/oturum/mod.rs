@@ -4,7 +4,10 @@
 //! `Komut` alıp `Zarf<Olay>` gönderir. Bir tur sürerken beklenen her noktada
 //! (akış, onay, araç, şart) komut kanalı da dinlenir: iptal her an işler.
 
+mod arac_asamasi;
 mod model_turu;
+
+use std::collections::HashMap;
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -24,6 +27,7 @@ use crate::kimlik::{OturumId, TurId};
 use crate::kurtarma::KurtarmaHatasi;
 use crate::protokol::{BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf};
 use crate::saglayici::Saglayici;
+use arac_asamasi::AsamaSonucu;
 
 const KOMUT_KANALI: usize = 256;
 
@@ -292,6 +296,18 @@ impl Oturum {
         }
     }
 
+    /// Tur içindeki bekleme noktaları (onay, şart) için komut bekler. İptal
+    /// belirteci tetiklenirse (kuyruk boşken ya da doluyken) bir `Iptal`
+    /// komutu üretir.
+    async fn tur_komutu_al(&mut self) -> Option<Komut> {
+        let tur = self.tur?;
+        tokio::select! {
+            biased;
+            _ = self.iptal.cancelled() => Some(Komut::Iptal { tur }),
+            komut = self.komutlar.recv() => self.komut_geldi(komut).await,
+        }
+    }
+
     /// Bekleme noktalarının özel olarak ele almadığı komutlar.
     async fn genel_komut(&mut self, komut: Komut) -> Etki {
         match komut {
@@ -350,22 +366,52 @@ impl Oturum {
     }
 
     async fn tur_dongusu(&mut self) -> BitisNedeni {
-        if self.kayit_hatasi.is_some() {
-            return BitisNedeni::Hata;
-        }
-        let cevap = match self.model_turu().await {
-            Ok(c) => c,
-            Err(neden) => return neden,
-        };
-        if !cevap.cagrilar.is_empty() {
-            // Bu sürümde araç yürütülmez; çağrılar yanıtlanarak kapatılır.
-            self.cagrilari_kapat(&cevap.cagrilar, "[çalıştırılmadı: araç yürütme henüz yok]")
+        let sinirlar = self.ayarlar.sinirlar.clone();
+        let mut arac_sayisi: u32 = 0;
+        let mut hata_sayaci: HashMap<String, u32> = HashMap::new();
+        for _ in 0..sinirlar.azami_model_turu {
+            if self.kayit_hatasi.is_some() {
+                return BitisNedeni::Hata;
+            }
+            let cevap = match self.model_turu().await {
+                Ok(c) => c,
+                Err(neden) => return neden,
+            };
+            if self.kayit_hatasi.is_some() {
+                self.cagrilari_kapat(&cevap.cagrilar, "[çalıştırılmadı: oturum kaydı yazılamadı]")
+                    .await;
+                return BitisNedeni::Hata;
+            }
+            if cevap.cagrilar.is_empty() {
+                return BitisNedeni::Normal;
+            }
+            arac_sayisi =
+                arac_sayisi.saturating_add(u32::try_from(cevap.cagrilar.len()).unwrap_or(u32::MAX));
+            if arac_sayisi > sinirlar.azami_arac_cagrisi {
+                self.cagrilari_kapat(
+                    &cevap.cagrilar,
+                    "[çalıştırılmadı: bu turdaki araç çağrısı sınırı aşıldı]",
+                )
                 .await;
+                return BitisNedeni::Sinir {
+                    aciklama: format!(
+                        "Bu turda en çok {} araç çağrısı yapılabilir.",
+                        sinirlar.azami_arac_cagrisi
+                    ),
+                };
+            }
+            if let AsamaSonucu::Bitir(neden) =
+                self.arac_asamasi(cevap.cagrilar, &mut hata_sayaci).await
+            {
+                return neden;
+            }
         }
-        if self.kayit_hatasi.is_some() {
-            return BitisNedeni::Hata;
+        BitisNedeni::Sinir {
+            aciklama: format!(
+                "Bu turda en çok {} model yanıtı alınabilir.",
+                sinirlar.azami_model_turu
+            ),
         }
-        BitisNedeni::Normal
     }
 
     /// Her araç çağrısının bağlamda tam bir yanıtı olmalıdır; çalıştırılmayan
@@ -400,6 +446,10 @@ impl Oturum {
 
     async fn kaydet(&mut self, oge: KayitOgesi) -> bool {
         self.kayda_yaz(oge, false).await
+    }
+
+    async fn kaydet_kalici(&mut self, oge: KayitOgesi) -> bool {
+        self.kayda_yaz(oge, true).await
     }
 
     /// Kaydı yazar; kayıtsız oturumda ya da yazım başarılıysa `true`. Bir kez
