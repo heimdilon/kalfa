@@ -1,0 +1,299 @@
+use std::sync::Arc;
+
+use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, Hazirlik};
+use kalfa_core::izin::Siniflandirici;
+use kalfa_core::muhur::ozet_hex;
+use kalfa_tools::{CalismaAlani, DosyaDuzenle, DosyaYaz, varsayilan_araclar};
+use serde_json::{Value, json};
+use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
+
+fn alan() -> (TempDir, Arc<CalismaAlani>) {
+    let d = tempfile::tempdir().unwrap();
+    let s = Arc::new(Siniflandirici::yeni(d.path(), &[]).unwrap());
+    let a = CalismaAlani::ac(s).unwrap();
+    (d, a)
+}
+
+fn oku(d: &TempDir, yol: &str) -> String {
+    std::fs::read_to_string(d.path().join(yol)).unwrap()
+}
+
+async fn calistir(arac: &dyn Arac, a: &Value, h: &Hazirlik) -> Result<AracCiktisi, AracHatasi> {
+    arac.calistir(a, h, CancellationToken::new()).await
+}
+
+#[tokio::test]
+async fn dosya_yaz_yeni_dosya_ve_ust_dizinler() {
+    let (d, a) = alan();
+    let yaz = DosyaYaz::yeni(a);
+    let arg = json!({"yol": "yeni/alt/d.txt", "icerik": "a\nb\n"});
+    let h = yaz.hazirla(&arg).await.unwrap();
+    assert!(h.aciklama.contains("oluşturmak"), "{}", h.aciklama);
+    assert_eq!(h.yazilan[0].onceki_ozet, None);
+    assert_eq!(h.yazilan[0].baglanti_sayisi, 1);
+    let diff = h.diff.as_deref().unwrap();
+    assert!(
+        diff.contains("+++ b/yeni/alt/d.txt") && diff.contains("+a") && diff.contains("+b"),
+        "{diff}"
+    );
+    let c = calistir(&yaz, &arg, &h).await.unwrap();
+    assert!(c.icerik.contains("yazıldı"));
+    assert_eq!(c.kaynak, "dosya:yeni/alt/d.txt");
+    assert_eq!(oku(&d, "yeni/alt/d.txt"), "a\nb\n");
+}
+
+#[tokio::test]
+async fn dosya_yaz_var_olani_yeniden_yazar() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("x.txt"), "eski\n").unwrap();
+    let yaz = DosyaYaz::yeni(a);
+    let arg = json!({"yol": "x.txt", "icerik": "yeni\n"});
+    let h = yaz.hazirla(&arg).await.unwrap();
+    assert!(h.aciklama.contains("yeniden yazmak"));
+    assert_eq!(
+        h.yazilan[0].onceki_ozet.as_deref(),
+        Some(ozet_hex(b"eski\n").as_str())
+    );
+    let diff = h.diff.as_deref().unwrap();
+    assert!(diff.contains("-eski") && diff.contains("+yeni"), "{diff}");
+    calistir(&yaz, &arg, &h).await.unwrap();
+    assert_eq!(oku(&d, "x.txt"), "yeni\n");
+}
+
+#[tokio::test]
+async fn dosya_yaz_onaydan_sonra_degisirse_yazmaz() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("x.txt"), "eski\n").unwrap();
+    let yaz = DosyaYaz::yeni(a);
+    let arg = json!({"yol": "x.txt", "icerik": "yeni\n"});
+    let h = yaz.hazirla(&arg).await.unwrap();
+    std::fs::write(d.path().join("x.txt"), "başkası\n").unwrap();
+    assert_eq!(calistir(&yaz, &arg, &h).await, Err(AracHatasi::OnayEskidi));
+    assert_eq!(oku(&d, "x.txt"), "başkası\n");
+}
+
+#[tokio::test]
+async fn yazma_hazirligindan_sonra_konulan_baglanti_izlenmez() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("x.txt"), "eski").unwrap();
+    std::fs::write(d.path().join(".env"), "eski").unwrap();
+    let yaz = DosyaYaz::yeni(a.clone());
+    let arg = json!({"yol": "x.txt", "icerik": "yeni"});
+    let h = yaz.hazirla(&arg).await.unwrap();
+    std::fs::remove_file(d.path().join("x.txt")).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(".env", d.path().join("x.txt")).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(".env", d.path().join("x.txt")).unwrap();
+    // İçerik özeti aynı; yalnızca hash denetimi bu değişikliği yakalamaz.
+    assert!(calistir(&yaz, &arg, &h).await.is_err());
+    assert!(
+        a.yaz(
+            &kalfa_core::yol::CalismaYolu::coz("x.txt").unwrap(),
+            b"yeni"
+        )
+        .is_err()
+    );
+    assert_eq!(oku(&d, ".env"), "eski");
+}
+
+#[tokio::test]
+async fn baglantili_ust_dizinden_git_hook_yazilamaz() {
+    let (d, a) = alan();
+    std::fs::create_dir_all(d.path().join(".git/hooks")).unwrap();
+    std::fs::write(d.path().join(".git/hooks/pre-commit"), "eski").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(".git", d.path().join("normal")).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(".git", d.path().join("normal")).unwrap();
+    let yol = kalfa_core::yol::CalismaYolu::coz("normal/hooks/pre-commit").unwrap();
+    assert!(a.yaz(&yol, b"yeni").is_err());
+    assert!(
+        DosyaYaz::yeni(a.clone())
+            .hazirla(&json!({"yol": yol.as_str(), "icerik": "yeni"}))
+            .await
+            .is_err()
+    );
+    assert!(
+        DosyaDuzenle::yeni(a)
+            .hazirla(&json!({
+                "yol": yol.as_str(),
+                "eski_metin": "eski",
+                "yeni_metin": "yeni",
+            }))
+            .await
+            .is_err()
+    );
+    assert_eq!(oku(&d, ".git/hooks/pre-commit"), "eski");
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn junction_uzerinden_git_hook_yazilamaz() {
+    let (d, a) = alan();
+    let hedef = d.path().join(".git");
+    let takma_ad = d.path().join("normal");
+    std::fs::create_dir_all(hedef.join("hooks")).unwrap();
+    std::fs::write(hedef.join("hooks/pre-commit"), "eski").unwrap();
+    // Yalnızca bu testin geçici dizinindeki iki yol; kullanıcı girdisi yok.
+    let cikti = std::process::Command::new("cmd.exe")
+        .args(["/D", "/C", "mklink", "/J"])
+        .arg(&takma_ad)
+        .arg(&hedef)
+        .output()
+        .unwrap();
+    assert!(cikti.status.success(), "junction kurulamadı: {cikti:?}");
+    let yol = kalfa_core::yol::CalismaYolu::coz("normal/hooks/pre-commit").unwrap();
+    assert!(a.oku(&yol).is_err());
+    assert!(a.yaz(&yol, b"yeni").is_err());
+    assert_eq!(oku(&d, ".git/hooks/pre-commit"), "eski");
+}
+
+#[tokio::test]
+async fn dosya_duzenle_tek_eslesme() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("s.txt"), "merhaba\ndünya\n").unwrap();
+    let duzenle = DosyaDuzenle::yeni(a);
+    let arg = json!({"yol": "s.txt", "eski_metin": "merhaba", "yeni_metin": "selam"});
+    let h = duzenle.hazirla(&arg).await.unwrap();
+    assert!(h.aciklama.contains("1 değişiklik"));
+    let diff = h.diff.as_deref().unwrap();
+    assert!(
+        diff.contains("-merhaba") && diff.contains("+selam"),
+        "{diff}"
+    );
+    calistir(&duzenle, &arg, &h).await.unwrap();
+    assert_eq!(oku(&d, "s.txt"), "selam\ndünya\n");
+}
+
+#[tokio::test]
+async fn dosya_duzenle_coklu_eslesme_ve_tumu() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("s.txt"), "x x x").unwrap();
+    let duzenle = DosyaDuzenle::yeni(a);
+    let hata = duzenle
+        .hazirla(&json!({"yol": "s.txt", "eski_metin": "x", "yeni_metin": "y"}))
+        .await
+        .unwrap_err();
+    assert!(hata.to_string().contains("3 kez"), "{hata}");
+    let arg = json!({"yol": "s.txt", "eski_metin": "x", "yeni_metin": "y", "tumu": true});
+    let h = duzenle.hazirla(&arg).await.unwrap();
+    assert!(h.aciklama.contains("3 değişiklik"));
+    calistir(&duzenle, &arg, &h).await.unwrap();
+    assert_eq!(oku(&d, "s.txt"), "y y y");
+}
+
+#[tokio::test]
+async fn dosya_duzenle_gecersiz_durumlar() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("s.txt"), "merhaba").unwrap();
+    std::fs::write(d.path().join("b.bin"), [0u8, 1, 2]).unwrap();
+    let duzenle = DosyaDuzenle::yeni(a);
+    let dene = |arg: Value| {
+        let duzenle = &duzenle;
+        async move { duzenle.hazirla(&arg).await.unwrap_err().to_string() }
+    };
+    assert!(
+        dene(json!({"yol": "s.txt", "eski_metin": "yok", "yeni_metin": "x"}))
+            .await
+            .contains("bulunamadı")
+    );
+    assert!(
+        dene(json!({"yol": "s.txt", "eski_metin": "", "yeni_metin": "x"}))
+            .await
+            .contains("boş olamaz")
+    );
+    assert!(
+        dene(json!({"yol": "olmayan.txt", "eski_metin": "a", "yeni_metin": "b"}))
+            .await
+            .contains("dosya_yaz")
+    );
+    assert!(
+        dene(json!({"yol": "b.bin", "eski_metin": "a", "yeni_metin": "b"}))
+            .await
+            .contains("ikili")
+    );
+}
+
+#[tokio::test]
+async fn dosya_duzenle_onaydan_sonra_degisirse_yazmaz() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("s.txt"), "merhaba\n").unwrap();
+    let duzenle = DosyaDuzenle::yeni(a);
+    let arg = json!({"yol": "s.txt", "eski_metin": "merhaba", "yeni_metin": "selam"});
+    let h = duzenle.hazirla(&arg).await.unwrap();
+    std::fs::write(d.path().join("s.txt"), "merhaba\nekleme\n").unwrap();
+    assert_eq!(
+        calistir(&duzenle, &arg, &h).await,
+        Err(AracHatasi::OnayEskidi)
+    );
+    assert_eq!(oku(&d, "s.txt"), "merhaba\nekleme\n");
+}
+
+#[tokio::test]
+async fn hard_link_hedefi_hazirlikta_bildirilir() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("a.txt"), "x").unwrap();
+    std::fs::hard_link(d.path().join("a.txt"), d.path().join("b.txt")).unwrap();
+    let h = DosyaYaz::yeni(a)
+        .hazirla(&json!({"yol": "a.txt", "icerik": "y"}))
+        .await
+        .unwrap();
+    assert_eq!(h.yazilan[0].baglanti_sayisi, 2);
+}
+
+#[tokio::test]
+async fn hard_link_onaydan_sonra_eklenirse_dosya_yazilmaz() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("x.txt"), "eski").unwrap();
+    let yaz = DosyaYaz::yeni(a);
+    let arg = json!({"yol": "x.txt", "icerik": "yeni"});
+    let h = yaz.hazirla(&arg).await.unwrap();
+    std::fs::hard_link(d.path().join("x.txt"), d.path().join("alias.txt")).unwrap();
+
+    assert_eq!(calistir(&yaz, &arg, &h).await, Err(AracHatasi::OnayEskidi));
+    assert_eq!(oku(&d, "x.txt"), "eski");
+    assert_eq!(oku(&d, "alias.txt"), "eski");
+}
+
+#[tokio::test]
+async fn hard_link_onaydan_sonra_eklenirse_duzenleme_yapilmaz() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("x.txt"), "eski").unwrap();
+    let duzenle = DosyaDuzenle::yeni(a);
+    let arg = json!({"yol": "x.txt", "eski_metin": "eski", "yeni_metin": "yeni"});
+    let h = duzenle.hazirla(&arg).await.unwrap();
+    std::fs::hard_link(d.path().join("x.txt"), d.path().join("alias.txt")).unwrap();
+
+    assert_eq!(
+        calistir(&duzenle, &arg, &h).await,
+        Err(AracHatasi::OnayEskidi)
+    );
+    assert_eq!(oku(&d, "x.txt"), "eski");
+    assert_eq!(oku(&d, "alias.txt"), "eski");
+}
+
+#[test]
+fn varsayilan_araclar_kaydedilebilir() {
+    let (_d, a) = alan();
+    let araclar = varsayilan_araclar(a);
+    let adlar: Vec<&str> = araclar.iter().map(|x| x.ad()).collect();
+    assert_eq!(
+        adlar,
+        vec![
+            "dosya_oku",
+            "dosya_listele",
+            "icerik_ara",
+            "dosya_yaz",
+            "dosya_duzenle"
+        ]
+    );
+    let yazanlar: Vec<&str> = araclar
+        .iter()
+        .filter(|x| x.yazar_mi())
+        .map(|x| x.ad())
+        .collect();
+    assert_eq!(yazanlar, vec!["dosya_yaz", "dosya_duzenle"]);
+    AracKayitDefteri::yeni(araclar).expect("bütün şemalar geçerli olmalı");
+}
