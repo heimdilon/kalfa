@@ -1,0 +1,28 @@
+[package]
+name = "kalfa-tools"
+description = "Kalfa'nın yerleşik araçları: dosya okuma, yazma, düzenleme, listeleme, arama"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+cap-std.workspace = true
+cap-fs-ext.workspace = true
+globset.workspace = true
+ignore.workspace = true
+kalfa-core = { path = "../kalfa-core" }
+regex.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[dev-dependencies]
+kalfa-core = { path = "../kalfa-core", features = ["test-destek"] }
+kalfa-evren = { path = "../kalfa-evren" }
+tempfile.workspace = true
