@@ -50,24 +50,42 @@ atlanmadan geçti (`baglantili_ust_dizinden_git_hook_yazilamaz`,
 `junction_uzerinden_git_hook_yazilamaz`, `hard_link_onaydan_sonra_eklenirse_*`,
 `baglanti_takma_adlari_serbest_kipte_bile_yetki_atlatamaz` dahil).
 
-**Linux doğrulaması yapılamadı.** Bu makinede WSL kurulu ama tek dağıtım
-`docker-desktop` — Docker Desktop'ın Alpine tabanlı, 127 MB'lık iç yönetim
-VM'i (`PRETTY_NAME="Docker Desktop"`), genel amaçlı bir geliştirme ortamı
-değil. Kök dosya sisteminde yalnızca ~54 MB boş yer var; bir Rust
-toolchain kurulumu (rustup ile tipik olarak 600 MB–1,5 GB) bu alana
-sığmaz ve denemek diski doldurup Docker Desktop'ın kendi motorunu
-bozma riski taşır, bu yüzden denenmedi. Alternatif olarak konteyner
-tabanlı bir doğrulama da değerlendirildi: `docker` CLI'si kurulu
-(v29.7.2) ama `docker ps`, `dockerDesktopLinuxEngine` adlı pipe'a
-bağlanamadı (motor çalışmıyor) ve `Docker Desktop.exe` ne standart kurulum
-yolunda ne de Windows programlar kaydında bulundu — yani uygulamanın
-kendisi bu makinede kurulu görünmüyor. Başka bir WSL dağıtımı (ör. Ubuntu)
-kurmak indirme + olası yeniden başlatma gerektirir; bu, "birkaç dakika"
-kapsamının dışında kaldığı ve kullanıcıdan ayrı bir onay gerektirebileceği
-için denenmedi. Sonuç: plan sonu kontrol listesindeki "Linux ve Windows'ta
-bağlantı testleri çalışır" maddesi yalnızca Windows için işaretlenebilir;
-Linux tarafı gerçek bir Linux/WSL ortamı elde edildiğinde ayrıca
-doğrulanmalı.
+**Linux doğrulaması yapıldı.** Ubuntu 24.04.5 LTS (WSL2, `Ubuntu-24.04`
+dağıtımı, native ext4 — Docker Desktop'ın iç VM'i değil), Rust 1.98.1
+(`rustc 1.98.1 (48a229cea 2026-09-01)`, workspace'in `rust-toolchain.toml`
+pinini karşılıyor), repo `/root/kalfa`'ya `git clone` ile kopyalanarak:
+
+| Kontrol (Linux) | Sonuç |
+| --- | --- |
+| `cargo test --workspace` | 172 geçti, 0 başarısız, 4 canlı test atlandı |
+| `kalfa-tools` | 26 geçti, 1 canlı test atlandı |
+
+Windows'a göre tek fark: toplam 173 yerine 172 — `junction_uzerinden_git_hook_yazilamaz`
+`#[cfg(windows)]` ile işaretli olduğu için Linux derlemesine hiç girmiyor
+(beklenen davranış, eksik/başarısız değil). Diğer bütün testler, canlı
+EVREN testleri hariç, atlanmadan koştu ve geçti. Unix'e özgü bağlantı
+senaryoları ada göre doğrulandı (`cargo test -p kalfa-tools`, `--quiet`
+olmadan, tek tek test adlarıyla):
+
+- `sembolik_baglanti_ile_disari_cikilamaz` — dış symlink ile çalışma
+  alanından çıkılamıyor
+- `ic_baglanti_gizli_dosyayi_okutamaz_ve_aramaya_sokamaz` — iç symlink
+  gizli dosyayı okutmuyor/aratmıyor
+- `okuma_hazirligindan_sonra_baglanti_konursa_acilmaz`,
+  `yazma_hazirligindan_sonra_konulan_baglanti_izlenmez` — onay/hazırlıktan
+  sonra konan bağlantı izlenmiyor
+- `baglantili_ust_dizinden_git_hook_yazilamaz` — bağlantılı üst dizin
+  üzerinden `.git/hooks`'a yazılamıyor
+- `hard_link_onaydan_sonra_eklenirse_dosya_yazilmaz`,
+  `hard_link_onaydan_sonra_eklenirse_duzenleme_yapilmaz` — onaydan sonra
+  eklenen hard link, yazma/düzenlemeyi `OnayEskidi` ile durduruyor
+- `baglanti_takma_adlari_serbest_kipte_bile_yetki_atlatamaz` — uçtan uca,
+  Serbest kipte bile bağlantı takma adlarıyla izin atlatılamıyor
+- `disari_cikma_ve_gizli_dosya_uctan_uca` — dışarı çıkan yol ve gizli
+  dosya reddi uçtan uca
+
+Sonuç: plan sonu kontrol listesindeki "Linux ve Windows'ta bağlantı
+testleri çalışır" maddesi artık her iki platformda da karşılanıyor.
 
 Canlı EVREN testleri (`#[ignore]`) bu geçişte de çalıştırılmadı — depo
 politikası gereği ajan bu testleri hiç koşturmaz (`.env` var olsa da).
@@ -88,9 +106,6 @@ noktalar (1c planına girdi olacak):
 4. Olay birleştirme ve sert bayt/olay bütçeli IPC. Mevcut çekirdeğin sınırsız
    olay kanalı üretim arayüzü için bellek sınırı sağlamaz.
 5. Pencereye göre komut yetkileri, sıkı CSP ve güvenli Markdown gösterimi.
-6. Yukarıdaki "Linux doğrulaması yapılamadı" notundaki bağlantı testlerinin
-   gerçek bir Linux/WSL ortamında doğrulanması (Tauri kabuğundan bağımsız,
-   1b'yi tam kapatmak için ayrıca yapılmalı).
 
 Kabuk yalıtımı, bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi,
 güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Henüz çalışır
