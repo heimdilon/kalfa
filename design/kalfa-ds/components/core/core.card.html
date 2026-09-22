@@ -1,0 +1,42 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Core" subtitle="Button, IconButton, Badge, Card, Icon, IconTile, SourceTag" -->
+<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>html,body{margin:0}body{background:var(--bg-app);padding:18px}.row{display:flex;flex-wrap:wrap;align-items:center;gap:12px}.col{display:flex;flex-direction:column;gap:12px}.lbl{font:var(--type-label);letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--text-muted)}</style>
+</head><body class="kalfa-root"><div id="root"></div>
+<script type="text/babel">
+const K=window.KalfaDesignSystem_c5b903;
+const {Button,IconButton,Badge,Card,Icon,IconTile,SourceTag}=K;
+function Demo(){return <div className="col" style={{gap:16}}>
+<div className="row">
+ <Button variant="primary" size="lg">Kabul ediyorum</Button>
+ <Button iconLeft="rotate-ccw">Geri al</Button>
+ <Button variant="ghost" iconLeft="chevron-down">Detaylar</Button>
+ <Button variant="approve" iconLeft="check">Tümünü onayla</Button>
+ <Button variant="caution" iconLeft="check">Seçilenleri onayla</Button>
+ <Button variant="danger" iconLeft="x">Reddet</Button>
+ <Button disabled>Devre dışı</Button>
+ <Button size="sm">Küçük</Button>
+</div>
+<div className="row">
+ <IconButton icon="paperclip" label="Dosya ekle"/>
+ <IconButton icon="send" label="Gönder" variant="primary"/>
+ <IconButton icon="x" label="Kapat" size="sm"/>
+ <span style={{width:1,height:24,background:'var(--border-default)'}}/>
+ <IconTile icon="user"/><IconTile icon="message-square" tone="accent"/><IconTile icon="shield-check" tone="warn"/>
+ <span style={{width:1,height:24,background:'var(--border-default)'}}/>
+ <Icon name="folder" size={18} color="var(--text-accent)"/><Icon name="scroll-text" size={18} color="var(--text-muted)"/><Icon name="shield-check" size={18} color="var(--status-ok)"/>
+</div>
+<div className="row">
+ <Badge tone="ok" dot>Tamamlandı</Badge><Badge tone="accent">Sürüm 3</Badge><Badge tone="warn" icon="shield-alert">Yalıtımsız</Badge><Badge tone="danger">Başarısız</Badge><Badge>Bilinmiyor</Badge>
+ <SourceTag kind="dosya" value="src/main.rs:1–120"/><SourceTag kind="kabuk" value="cargo test" live/><SourceTag kind="gecmis" value="+34 önceki mesaj" muted/>
+</div>
+<Card icon="file-text" title="Dosya okundu" subtitle="src/middleware/auth.ts" actions={<Badge tone="ok" dot>Tamam</Badge>}>
+ <div style={{font:'var(--type-small)',color:'var(--text-secondary)'}}>412 satır okundu, 18 KB.</div>
+</Card>
+</div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script></body></html>

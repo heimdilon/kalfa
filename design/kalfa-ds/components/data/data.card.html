@@ -1,0 +1,27 @@
+<!-- @dsCard group="Components" viewport="700x400" name="Data" subtitle="CodeBlock, DiffView, FileTree, LogTable, MetaList, TokenMeter, Pagination" -->
+<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>html,body{margin:0}body{background:var(--bg-app);padding:18px}.row{display:flex;flex-wrap:wrap;align-items:center;gap:12px}.col{display:flex;flex-direction:column;gap:12px}.lbl{font:var(--type-label);letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--text-muted)}</style>
+</head><body class="kalfa-root"><div id="root"></div>
+<script type="text/babel">
+const K=window.KalfaDesignSystem_c5b903;
+const {CodeBlock,DiffView,FileTree,LogTable,MetaList,TokenMeter,Pagination}=K;
+function Demo(){const [p,setP]=React.useState(1);return <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+<div className="col">
+ <CodeBlock startLine={1} truncated code={"import { verify } from 'jsonwebtoken'\nexport async function requireAuth(req) {\n  const t = req.headers.authorization"}/>
+ <DiffView hunkHeader="@@ -42,10 +42,18 @@" lines={[{old:44,neu:44,text:'let app = App::new();'},{kind:'del',old:45,text:'app.fs = Fs::new();'},{kind:'add',neu:45,text:'app.fs = Fs::with_permission_manager(pm);'}]}/>
+ <MetaList items={[{label:'Tür',value:'TypeScript'},{label:'Satır',value:'412',mono:true},{label:'Son değişiklik',value:'24 Nis 2025, 10:14',mono:true}]}/>
+</div>
+<div className="col">
+ <FileTree activePath="src/middleware/auth.ts" items={[{name:'src',type:'dir',open:true,depth:0},{name:'middleware',type:'dir',open:true,depth:1},{name:'auth.ts',path:'src/middleware/auth.ts',depth:2},{name:'main.rs',depth:1}]}/>
+ <TokenMeter total={4096} used={2341} segments={[{label:'Sistem',value:312,color:'var(--status-info)'},{label:'Kullanıcı',value:1842,color:'var(--copper-400)'},{label:'Araçlar',value:187,color:'var(--status-warn)'}]}/>
+ <LogTable activeId="req_8f3a" columns={[{key:'time',label:'Zaman',width:'80px',mono:true},{key:'purpose',label:'Amaç',width:'1.4fr'},{key:'tokens',label:'Token',width:'70px',mono:true}]} rows={[{id:'req_8f3a',time:'14:02:11',purpose:'Ana model',tokens:'2.341'},{id:'req_8f3b',time:'14:02:44',purpose:'Özet',tokens:'412'}]}/>
+ <Pagination page={p} pages={5} onChange={setP}/>
+</div>
+</div>}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script></body></html>

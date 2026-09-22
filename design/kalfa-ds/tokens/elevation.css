@@ -1,0 +1,14 @@
+:root{
+/* Dark UI separates by surface value + hairline, not by drop shadow. */
+--shadow-none:none;
+--shadow-hairline:inset 0 0 0 1px var(--border-subtle);
+--shadow-card:0 1px 2px rgba(0,0,0,.35);
+--shadow-raised:0 4px 14px rgba(0,0,0,.35);
+--shadow-overlay:0 18px 48px rgba(0,0,0,.55);
+--shadow-focus:0 0 0 3px color-mix(in oklab,var(--focus-ring) 28%,transparent);
+--shadow-accent-edge:inset 3px 0 0 var(--copper-400); /* active nav item */
+/* Light scope uses a soft warm shadow instead of value contrast. */
+--shadow-paper:0 1px 2px rgba(60,44,32,.06),0 8px 24px rgba(60,44,32,.06);
+--scrim:rgba(8,10,12,.62);
+--blur-scrim:blur(2px);/* @kind other */
+}

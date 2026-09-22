@@ -1,0 +1,41 @@
+:root{
+--font-sans:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+--font-serif:"Source Serif 4",Georgia,serif;
+--font-mono:"JetBrains Mono","Cascadia Mono",ui-monospace,monospace;
+
+--text-wordmark:38px;
+--text-display:28px;
+--text-title-lg:22px;
+--text-title:17px;
+--text-subtitle:15px;
+--text-body-size:14px;
+--text-small:13px;
+--text-micro:12px;
+--text-nano:11px;
+
+--lh-tight:1.15;/* @kind other */
+--lh-snug:1.35;/* @kind other */
+--lh-normal:1.55;/* @kind other */
+--lh-relaxed:1.7;/* @kind other */
+
+--fw-light:300;/* @kind other */--fw-regular:400;/* @kind other */--fw-medium:500;/* @kind other */--fw-semibold:600;/* @kind other */--fw-bold:700;/* @kind other */
+
+--tracking-wordmark:-0.02em;/* @kind other */
+--tracking-tight:-0.01em;/* @kind other */
+--tracking-normal:0;/* @kind other */
+--tracking-label:0.06em;/* @kind other */  /* sidebar section labels, all-caps */
+--tracking-mono:0.01em;/* @kind other */
+
+/* role aliases */
+--type-wordmark:var(--fw-light) var(--text-wordmark)/var(--lh-tight) var(--font-sans);
+--type-tagline:var(--fw-regular) var(--text-micro)/var(--lh-snug) var(--font-mono);
+--type-display:var(--fw-semibold) var(--text-display)/var(--lh-tight) var(--font-sans);
+--type-title:var(--fw-semibold) var(--text-title)/var(--lh-snug) var(--font-sans);
+--type-subtitle:var(--fw-regular) var(--text-subtitle)/var(--lh-snug) var(--font-sans);
+--type-body:var(--fw-regular) var(--text-body-size)/var(--lh-normal) var(--font-sans);
+--type-small:var(--fw-regular) var(--text-small)/var(--lh-normal) var(--font-sans);
+--type-label:var(--fw-semibold) var(--text-nano)/var(--lh-snug) var(--font-sans);
+--type-code:var(--fw-regular) var(--text-small)/1.65 var(--font-mono);
+--type-meta:var(--fw-regular) var(--text-micro)/var(--lh-snug) var(--font-mono);
+--type-doc:var(--fw-regular) 16px/var(--lh-relaxed) var(--font-serif);
+}

@@ -91,12 +91,15 @@ Canlı EVREN testleri (`#[ignore]`) bu geçişte de çalıştırılmadı — dep
 politikası gereği ajan bu testleri hiç koşturmaz (`.env` var olsa da).
 Kullanıcı isterse: `set -a && . ./.env && set +a && cargo test --workspace -- --ignored`.
 
-## Sıradaki aşama
+## Sıradaki aşama — 1c (Tauri + Svelte kabuğu)
 
-1c planı **henüz yazılmadı.** Kullanıcı önce tasarımı birlikte düşünmek
-istiyor; bu yüzden bu geçişte 1c'nin uygulama planı oluşturulmadı. Tasarım
-belgesinin §11 ve §12.3 bölümleri ile birlikte ele alınması gereken açık
-noktalar (1c planına girdi olacak):
+1c'nin tasarımı konuşuluyor. 1c spec'i ve uygulama planı **henüz yazılmadı.**
+Bu bölüm, konuşmada şimdiye kadar verilen kararları kaydeder; böylece başka bir
+oturum ya da araç kaldığı yerden devam edebilir.
+
+### Başlangıç kapsamı (henüz kesinleşmedi)
+
+Tasarım belgesinin §11 ve §12.3 bölümlerinden:
 
 1. Anahtar girişi ve kimlik deposu, şart metni/onayı, çalışma alanı seçimi.
 2. `Komut`/`Zarf<Olay>` köprüsü, akış görünümü, iptal, araç onay kartları ve
@@ -106,6 +109,42 @@ noktalar (1c planına girdi olacak):
 4. Olay birleştirme ve sert bayt/olay bütçeli IPC. Mevcut çekirdeğin sınırsız
    olay kanalı üretim arayüzü için bellek sınırı sağlamaz.
 5. Pencereye göre komut yetkileri, sıkı CSP ve güvenli Markdown gösterimi.
+
+### Verilen kararlar (2026-09-22)
+
+1. **Görsel temel:** Claude Design'daki "Kalfa Design System" projesi. Repodaki
+   anlık kopyası `design/kalfa-ds/`. Kaynağı, kopyada eksik olanlar ve spec'le
+   çelişen içerikler (şart ekranı, onay kapsamı vb.) `design/README.md`'de.
+2. **Tokenlar aynen kullanılır:** `design/kalfa-ds/tokens/*.css` Svelte
+   uygulamasına olduğu gibi girer. Tek istisna `fonts.css` (madde 4).
+3. **Bileşenler Svelte 5'te yeniden yazılır.** Tasarım sistemindeki bileşenler
+   React (`.jsx`). Her bileşenin `.d.ts` dosyası arayüz tanımı, `.prompt.md`
+   dosyası kullanım notu olarak kullanılır. `_ds_bundle.js` ve
+   `_adherence.oxlintrc.json` React'e özgüdür, uygulamaya girmez.
+4. **Dış kaynak yok (§11.8, §11.9):** Tasarım sistemi fontları Google Fonts'tan,
+   ikonları unpkg CDN'inden yüklüyor. Uygulamada Source Sans 3, Source Serif 4
+   ve JetBrains Mono (hepsi OFL lisanslı) uygulamayla birlikte paketlenir;
+   Lucide ikonları npm paketinden gelir.
+5. **Üç sütunlu yerleşim:** menü (213 px), oturum listesi (295 px), konuşma.
+   Tasarım sistemindeki sağ inspector sütunu (proje dosya ağacı ve dosya
+   önizlemesi) 1c'ye girmez. Bu sütun, arayüzün çalışma alanını ajan döngüsü
+   dışında okumasını ve gizli dosya kuralını (§7.4) arayüz tarafında da
+   uygulamayı gerektirir; sonraki bir aşamada ele alınır.
+6. **1c yalnızca kendi payını uygular.** Tasarım sisteminde olup sonraki
+   aşamalara kalanlar:
+   - `TurnSummary`'deki "Geri al" ve gönderim günlüğü ekranı: aşama 3.
+   - Onay kartındaki "bu oturumda" kapsam seçimi: aşama 3. 1c'de kapsam her
+     zaman "yalnızca bu çağrı".
+   - Menüdeki "Eklentiler": aşama 4.
+   - "Paylaş" düğmesi: v1 dışında (§12.2).
+
+### Henüz konuşulmayanlar
+
+- Beş maddelik kapsamın kesinleşmesi.
+- Tauri/Svelte projesinin repodaki yeri ve yapısı.
+- Olay köprüsü ve IPC bütçesinin tasarımı (§11.1'deki kabul kapısı).
+- Kilit yöneticisi ve kayıt dosyası başına tek yazıcı.
+- Pencere bazlı komut yetkileri ve şart penceresi.
 
 Kabuk yalıtımı, bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi,
 güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Henüz çalışır
