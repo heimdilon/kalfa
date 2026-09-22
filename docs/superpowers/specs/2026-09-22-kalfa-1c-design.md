@@ -142,6 +142,9 @@ ui/                   (yeni) Svelte 5 arayüzü
 1c'nin çekirdekte yaptığı, arayüzden bağımsız değişiklikler:
 
 - **`aktarim` modülü** (yeni): paketleyici ve kredi (§4).
+- **Terminal aktarım olayı:** aktarım durunca çekirdeğin son olayı, bugünkü
+  teknik `Hata` metni yerine nedeni taşıyan `Olay::AktarimDurdu { neden }`
+  olur (§4.4).
 - **Şart kapısı** (yeni): oturumun şart akışı kapıya devredilir; oturum kabul
   isteğini artık kendisi göndermez. `SartlariKabulEt` oturum komutu olmaktan
   çıkar, kapının girdisi olur; kabul edilen sürüm her bekleyen oturumun kaydına
@@ -230,9 +233,8 @@ sınırlamaz.
 ### 4.4 Kanal mesajları ve numaralandırma
 
 ```
-KanalMesaji    ::= Olaylar  { no: u64, zarflar: [Zarf<Olay>] }
-                 | Bildirim { no: u64, bildirim: KopruBildirimi }
-KopruBildirimi ::= AktarimDurdu { neden } | OturumKapandi { neden }
+KanalMesaji ::= Olaylar { no: u64, zarflar: [Zarf<Olay>] }
+              | Kapandi { no: u64 }
 ```
 
 - `no` her abonelikte 1'den başlar ve boşluksuz artar. Arayüz boşluk görürse
@@ -244,9 +246,13 @@ KopruBildirimi ::= AktarimDurdu { neden } | OturumKapandi { neden }
   faydası, kayıttan okunan geçmişle canlı olayların tek sırada birleşmesidir
   (§5.5). Üst belge §4.1'deki "boşluk görürse durumu yeniden ister" kuralı bu
   biçimde güncellendi.
-- Aktarım durduğunda (çekirdek bütçesi aşıldı ya da alıcı kapandı) köprü
-  `AktarimDurdu` bildirimini gönderir. Arayüz çekirdeğin teknik metnini değil,
-  ne olduğunu ve ne yapılacağını gösterir (§10).
+- Aktarım durduğunda çekirdek, kuyruğun son olayı olarak
+  `Olay::AktarimDurdu { neden }` yayar. Neden `TuketiciYetismedi` (kuyruk
+  boşaltılamadı), `OlayCokBuyuk` (tek olay bütçeden büyük) ya da `Diger`
+  olabilir. Arayüz teknik bir metin değil, bu nedene göre ne olduğunu ve ne
+  yapılacağını gösterir (§10). Ardından kuyruk kapanır ve paketleyici
+  `Kapandi` gönderir. Olay çekirdekte olduğu için her tüketici (Tauri, ileride
+  daemon ya da test) aynı bilgiyi alır.
 
 ---
 
@@ -567,7 +573,8 @@ SourceTag.
 | Kayıtlı anahtar oturum ortasında geçersizleşti | Tur hatayla biter; kartta aynı açıklama ve "Anahtarı değiştir" düğmesi | Anahtarı değiştirip mesajı yeniden göndermek |
 | EVREN'e ulaşılamıyor | Ana pencerede "bağlantı yok" şeridi; gönderilen mesaj hatayla biter | Bağlantı gelince yeniden göndermek |
 | Kimlik deposu yok (Linux) | "Anahtar bu oturum boyunca bellekte tutulacak. Kalfa kapanınca yeniden girmeniz gerekecek." | Secret Service kurmak |
-| Aktarım durdu | "Arayüz uzun süre yanıt vermediği için oturum durduruldu. Oturumu yeniden açabilirsiniz." | Oturumu kayıttan açmak |
+| Aktarım durdu: arayüz yetişemedi (`TuketiciYetismedi`) | "Arayüz uzun süre yanıt vermediği için oturum durduruldu. Oturumu yeniden açabilirsiniz." | Oturumu kayıttan açmak |
+| Aktarım durdu: tek olay çok büyük (`OlayCokBuyuk`) | "Bu adımın çıktısı gösterilemeyecek kadar büyük olduğu için oturum durduruldu. Oturumu yeniden açabilirsiniz." | Oturumu kayıttan açmak |
 | Kayıt yazılamadı | Çekirdeğin mevcut davranışı: oturum durur. "Oturum kaydı yazılamadı. Yeni bir oturum açın." | Yeni oturum açmak |
 | Kayıt başka bir süreçte açık | "Bu oturum başka bir Kalfa sürecinde açık." | O süreci kapatmak |
 | Kayıt bozuk | Listede "okunamadı"; ayrıntıda bozuk satırın numarası | — |
@@ -663,8 +670,8 @@ yalnızca test özelliği açıkken derlenir; sürüm derlemesine girmez.
    sahte sağlayıcı yüksek hızda akar. Beklenen: yoldaki veri krediyi, çekirdek
    kuyruğu bütçeyi hiç aşmaz (test derlemesindeki sayaçlarla ölçülür); bütçe
    dolunca tur iptal edilir; arayüz yeniden işlemeye başlayınca `AktarimDurdu`
-   bildirimi görünür. Sürecin belleği (RSS) ek bir akıl sağlığı denetimi olarak
-   izlenir.
+   olayı gelir ve arayüz karşılığındaki uyarıyı gösterir. Sürecin belleği (RSS)
+   ek bir akıl sağlığı denetimi olarak izlenir.
 3. **Arayüz kopması:** tur sürerken sayfa yeniden yüklenir. Tur iptal edilir,
    kayıtta `TurBitti { Iptal }` bulunur, kayıt kilidi bırakılır ve oturum
    kayıttan açılabilir. Pencere kapatmada da aynısı olur.
