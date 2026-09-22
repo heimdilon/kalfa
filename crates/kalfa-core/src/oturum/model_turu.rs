@@ -1,6 +1,7 @@
 //! Model turu: istek, akış tüketimi ve iptal edilebilir bekleme.
 
 use std::future::Future;
+use std::time::Duration;
 
 use futures_util::StreamExt;
 use kalfa_evren::tipler::{ChatMessage, ChatRequest, ToolCall};
@@ -8,7 +9,7 @@ use kalfa_evren::{AkisOlayi, YanitMeta};
 
 use super::{Etki, Oturum};
 use crate::kayit::KayitOgesi;
-use crate::protokol::{BitisNedeni, Olay};
+use crate::protokol::{BitisNedeni, Komut, Olay};
 use crate::saglayici::SaglayiciAkisi;
 
 pub(super) struct ModelCevabi {
@@ -96,18 +97,37 @@ impl Oturum {
         &mut self,
         istek: ChatRequest,
     ) -> Result<SaglayiciAkisi, BitisNedeni> {
-        let saglayici = self.baglam.saglayici.clone();
-        match self
-            .iptal_edilebilir(async move { saglayici.akis(istek).await })
-            .await?
-        {
-            Ok(akis) => {
-                self.istek_kaydet("ana", &akis.meta).await;
-                Ok(akis)
-            }
-            Err(e) => {
-                self.hata(e.to_string()).await;
-                Err(BitisNedeni::Hata)
+        let mut hiz_denendi = false;
+        loop {
+            let saglayici = self.baglam.saglayici.clone();
+            let deneme = istek.clone();
+            match self
+                .iptal_edilebilir(async move { saglayici.akis(deneme).await })
+                .await?
+            {
+                Ok(akis) => {
+                    self.istek_kaydet("ana", &akis.meta).await;
+                    return Ok(akis);
+                }
+                Err(kalfa_evren::EvrenError::SartKabulGerekli { .. }) => {
+                    self.sart_akisi().await?;
+                }
+                Err(kalfa_evren::EvrenError::HizSiniri { tekrar_dene }) if !hiz_denendi => {
+                    hiz_denendi = true;
+                    let sure = tekrar_dene
+                        .unwrap_or(Duration::from_secs(5))
+                        .min(self.ayarlar.sinirlar.azami_bekleme);
+                    self.hata(format!(
+                        "EVREN istek sınırına ulaşıldı; {} sn sonra bir kez yeniden denenecek.",
+                        sure.as_secs()
+                    ))
+                    .await;
+                    self.iptal_edilebilir(tokio::time::sleep(sure)).await?;
+                }
+                Err(e) => {
+                    self.hata(e.to_string()).await;
+                    return Err(BitisNedeni::Hata);
+                }
             }
         }
     }
@@ -142,6 +162,67 @@ impl Oturum {
                     }
                 }
                 cikti = &mut gelecek => return Ok(cikti),
+            }
+        }
+    }
+
+    /// Şart kapısı (spec §3.1, §11.8). Metin gösterilir; kabul yalnızca
+    /// kullanıcının `SartlariKabulEt` komutuyla ve gösterilen sürümle gider.
+    async fn sart_akisi(&mut self) -> Result<(), BitisNedeni> {
+        loop {
+            let saglayici = self.baglam.saglayici.clone();
+            let metin = match self
+                .iptal_edilebilir(async move { saglayici.sart_metni().await })
+                .await?
+            {
+                Ok(m) => m,
+                Err(e) => {
+                    self.hata(e.to_string()).await;
+                    return Err(BitisNedeni::Hata);
+                }
+            };
+            let gosterilen = metin.version;
+            self.yay(Olay::SartOnayiGerekiyor {
+                surum: gosterilen,
+                metin: metin.content,
+            })
+            .await;
+
+            let surum = loop {
+                let Some(komut) = self.tur_komutu_al().await else {
+                    return Err(BitisNedeni::Iptal);
+                };
+                match komut {
+                    Komut::SartlariKabulEt { surum } => break surum,
+                    diger => {
+                        if self.genel_komut(diger).await == Etki::Iptal {
+                            return Err(BitisNedeni::Iptal);
+                        }
+                    }
+                }
+            };
+            if surum != gosterilen {
+                self.hata(
+                    "Onaylanan sürüm gösterilen şart metniyle aynı değil; güncel metin yeniden gösteriliyor.",
+                )
+                .await;
+                continue;
+            }
+
+            let saglayici = self.baglam.saglayici.clone();
+            match self
+                .iptal_edilebilir(async move { saglayici.sart_kabul(surum).await })
+                .await?
+            {
+                Ok(()) => return Ok(()),
+                Err(kalfa_evren::EvrenError::SartKabulGerekli { .. }) => {
+                    self.hata("Şart metni bu sırada güncellendi; yeni sürüm gösteriliyor.")
+                        .await;
+                }
+                Err(e) => {
+                    self.hata(e.to_string()).await;
+                    return Err(BitisNedeni::Hata);
+                }
             }
         }
     }
