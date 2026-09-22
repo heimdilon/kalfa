@@ -24,8 +24,8 @@ use crate::izin::{Kip, Siniflandirici};
 use crate::kayit::{KayitOgesi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
 use crate::kimlik::{OturumId, TurId};
-use crate::kurtarma::KurtarmaHatasi;
-use crate::protokol::{BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf};
+use crate::kurtarma::{BILINMEYEN_SONUC, KurtarilmisDurum, KurtarmaHatasi, kurtar};
+use crate::protokol::{AracDurumu, BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf};
 use crate::saglayici::Saglayici;
 use arac_asamasi::AsamaSonucu;
 
@@ -156,6 +156,58 @@ pub fn baslat(
         None => None,
     };
     Ok(baslat_ic(ayarlar, baglam, kayit))
+}
+
+/// Kayıttan oturumu sürdürür (spec §6.6). Model ve kip kayıttan gelir (Serbest
+/// kip Sıkı olarak döner); sınırlar ve sistem mesajı `ayarlar`'dan alınır.
+/// Sonucu bilinmeyen çağrılar yeniden çalıştırılmaz, bildirilir.
+pub fn devam_et(
+    kayit_yolu: &Path,
+    ayarlar: OturumAyarlari,
+    baglam: OturumBaglami,
+) -> Result<(OturumTutamaci, OlayAlici, KurtarilmisDurum), OturumHatasi> {
+    let durum = kurtar(&OturumKaydi::oku(kayit_yolu)?)?;
+    let kayit = OturumKaydi::ac(kayit_yolu)?;
+    let ayarlar = OturumAyarlari {
+        model: durum.model.clone(),
+        kip: durum.kip,
+        kayit_yolu: Some(kayit_yolu.to_path_buf()),
+        ..ayarlar
+    };
+    let (mut oturum, tutamac, alici) = Oturum::kur(
+        durum.oturum,
+        ayarlar,
+        baglam,
+        Some(kayit),
+        durum.mesajlar.clone(),
+        durum.son_sira,
+    );
+    let tamamlayicilar = durum.tamamlayicilar.clone();
+    let bilinmeyenler = durum.bilinmeyenler.clone();
+    tokio::spawn(async move {
+        let kip = oturum.ayarlar.kip;
+        oturum.kaydet(KayitOgesi::KipDegisti { kip }).await;
+        for mesaj in tamamlayicilar {
+            oturum.mesaj_ekle(mesaj).await;
+        }
+        for b in bilinmeyenler {
+            oturum
+                .kaydet(KayitOgesi::AracBitti {
+                    cagri: b.cagri,
+                    durum: AracDurumu::SonucuBilinmiyor,
+                })
+                .await;
+            let olay = Olay::AracSonucu {
+                cagri: b.cagri,
+                arac: b.arac,
+                durum: AracDurumu::SonucuBilinmiyor,
+                icerik: BILINMEYEN_SONUC.to_string(),
+            };
+            oturum.yay(olay).await;
+        }
+        oturum.calis().await;
+    });
+    Ok((tutamac, alici, durum))
 }
 
 /// Uygulamanın verdiği bir kayıt hedefiyle başlatır; `ayarlar.kayit_yolu`
