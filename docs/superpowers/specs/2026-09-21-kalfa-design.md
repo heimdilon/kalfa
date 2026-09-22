@@ -1,8 +1,8 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Revizyon:** r3.2 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); değişiklik özeti §17'de
-**Durum:** Kullanıcı okuması bekliyor; onaydan sonra uygulama planı
+**Revizyon:** r3.3 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); değişiklik özeti §17'de
+**Durum:** 1a ve 1b uygulandı; 1c tasarımı yazıldı, uygulama planı bekliyor
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
 ---
@@ -209,7 +209,9 @@ Event    ::= TurBaşladı | TokenParçası | DüşünceParçası | TokenKullanı
            | ŞartOnayıGerekiyor(sürüm, metin) | Hata | Tamamlandı
 ```
 
-`sıra` oturum başına tekdüze artar; arayüz boşluk görürse durumu yeniden ister.
+`sıra` oturum başına tekdüze artar ve kayıt öğeleriyle ortak sayaçtan gelir; bu
+yüzden olay akışında boşluk olağandır. Kopukluğu aktarım katmanının paket
+numarası yakalar ([1c tasarımı](2026-09-22-kalfa-1c-design.md) §4.4).
 `şema` sürümü, sınırın ileride daemon'a taşınmasında ve eski oturum kayıtlarının
 okunmasında uyumluluğu sağlar. Oturum kaydı (§6.6) bu zarfların kendisidir.
 
@@ -430,6 +432,9 @@ günlüğüne ve bütçeye girer.
   kesilir; geçerli son kaydın satır sonu eksikse tamamlanır ve onarım diske
   kalıcılaştırılır. Ortadaki bozuk kayıt hata verir. Aynı kayıt dosyasına
   eşzamanlı iki yazıcı açılmaz; uygulama kayıt sahipliğini tekilleştirir.
+  Sahiplik, kaydın yanındaki kilit dosyasında tutulan işletim sistemi kilidiyle
+  sağlanır. Kilit kaydın kendisine konmaz, çünkü Windows'ta aynı süreçteki
+  okumaları da engeller ([1c tasarımı](2026-09-22-kalfa-1c-design.md) §5.2).
 - Bekleyen onaylar ve "bu oturumda izin ver" kısayolları geri yüklenmez. Serbest
   kipteki oturum Sıkı kipte açılır (§7.5).
 - **Kayıtsız oturum** seçeneği: kayıt diske yazılmaz; o oturumda kurtarma ve geri
@@ -1137,6 +1142,9 @@ Sınırsız kuyruğu tek başına üretim arka basınç çözümü saymak yasakt
 UI kopması ve uzun süre okumayan UI testleri hem iptali hem bellek üst sınırını
 kanıtlamadan arayüz aşaması tamamlanmaz.
 
+1c'deki karşılığı (paketleyici, kredi, kanal mesajları ve kabul ölçümü)
+[1c tasarımının](2026-09-22-kalfa-1c-design.md) §4 ve §11.4 bölümlerindedir.
+
 ### 11.2 Uzun oturumda sabit maliyet
 
 - **Mesaj listesi sanallaştırılır.** Akan mesaj bu mekanizmanın dışındadır.
@@ -1255,6 +1263,9 @@ Anahtar girişi ──► GET /v1/terms/status
   `kalfa-evren` bunu tipli hataya çevirir, çekirdek `ŞartOnayıGerekiyor` olayını
   yayar ve şart penceresi açılır. Ajan döngüsü duraklar; kabul gelirse
   reddedilen istek yeniden gönderilir, gelmezse tur iptal edilir. Oturum kaybolmaz.
+  Kabul isteği uygulama genelindeki tek şart kapısından bir kez gönderilir;
+  aynı anda bekleyen bütün oturumlar birlikte uyanır
+  ([1c tasarımı](2026-09-22-kalfa-1c-design.md) §7.3).
 - **Anahtar düz metin olarak saklanmaz.** İşletim sisteminin kimlik deposuna
   yazılır: Windows'ta Credential Manager, Linux'ta Secret Service (`keyring`
   crate'i). Secret Service bulunamazsa kullanıcı uyarılır ve anahtar yalnızca
@@ -1587,3 +1598,10 @@ onay iptali ve yürütme anında yeniden yetkilendirme · dosya araçlarında b�
 yol bileşenleri için no-follow · bağlantı ve kayıt hatası regresyon örnekleri.
 Bu revizyon plan ve kod örneği düzeyindedir; uygulama testlerinin çalıştırıldığı
 anlamına gelmez. Sınırsız olay kanalının bellek riski 1c kabul kapısında açıktır.
+
+**r3.3 (2026-09-22):** 1c'nin (Tauri + Svelte kabuğu) tasarımı ayrı belgede:
+[2026-09-22-kalfa-1c-design.md](2026-09-22-kalfa-1c-design.md). Bu belgede
+değişenler: `sira` boşluk kuralı aktarım katmanının paket numarasına devredildi
+(§4.1) · tek yazıcı, kaydın yanındaki kilit dosyasıyla (§6.6) · köprü ve kabul
+ölçümü 1c belgesine bağlandı (§11.1) · şart kabulü uygulama genelindeki tek şart
+kapısından, bir kez (§11.8).
