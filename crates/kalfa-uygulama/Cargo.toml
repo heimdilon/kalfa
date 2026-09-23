@@ -1,0 +1,29 @@
+[package]
+name = "kalfa-uygulama"
+description = "Kalfa masaüstü uygulamasının Tauri'siz mantığı: oturum tablosu, köprü, şart penceresi akışı, kimlik deposu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+test-destek = ["kalfa-core/test-destek"]
+
+[dependencies]
+async-trait.workspace = true
+kalfa-core = { path = "../kalfa-core" }
+kalfa-evren = { path = "../kalfa-evren" }
+kalfa-tools = { path = "../kalfa-tools" }
+keyring.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+kalfa-uygulama = { path = ".", features = ["test-destek"] }
+kalfa-core = { path = "../kalfa-core", features = ["test-destek"] }
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
