@@ -57,12 +57,20 @@ impl Oturum {
                     }
                     Some(Ok(AkisOlayi::AracCagrilari(v))) => cagrilar.extend(v),
                     Some(Ok(AkisOlayi::Kullanim(u))) => {
-                        let olay = Olay::TokenKullanimi {
-                            istem: u.prompt_tokens,
-                            tamamlama: u.completion_tokens,
-                            dusunce: u.reasoning_tokens(),
-                        };
-                        self.yay(olay).await;
+                        let (istem, tamamlama, dusunce) =
+                            (u.prompt_tokens, u.completion_tokens, u.reasoning_tokens());
+                        self.kaydet(KayitOgesi::Kullanim {
+                            istem,
+                            tamamlama,
+                            dusunce,
+                        })
+                        .await;
+                        self.yay(Olay::TokenKullanimi {
+                            istem,
+                            tamamlama,
+                            dusunce,
+                        })
+                        .await;
                     }
                     Some(Ok(AkisOlayi::Bitti { .. })) | None => break Ok(()),
                     Some(Err(e)) => {
@@ -144,8 +152,14 @@ impl Oturum {
             amac: amac.to_string(),
             istek_id: meta.istek_id.clone(),
             kredi: meta.kredi.clone(),
+            yonlendirilen_model: meta.yonlendirilen_model.clone(),
         };
         self.kaydet(oge).await;
+        self.yay(Olay::IstekBilgisi {
+            istek_id: meta.istek_id.clone(),
+            yonlendirilen_model: meta.yonlendirilen_model.clone(),
+        })
+        .await;
         if let Some(gozlem) = meta.kredi.clone() {
             self.yay(Olay::KrediGozlemi { gozlem }).await;
         }

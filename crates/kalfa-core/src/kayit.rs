@@ -56,6 +56,10 @@ pub enum KayitOgesi {
     OturumAcildi {
         model: String,
         kip: Kip,
+        /// Oturumun açıldığı çalışma alanı; kayıttan açarken araçlar buna göre
+        /// kurulur. Bu alanı olmayan eski kayıtlar yalnızca geçmiş gösterir.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        calisma_alani: Option<PathBuf>,
     },
     Komut {
         komut: KayitKomutu,
@@ -76,6 +80,15 @@ pub enum KayitOgesi {
         amac: String,
         istek_id: Option<String>,
         kredi: Option<KrediGozlemi>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        yonlendirilen_model: Option<String>,
+    },
+    /// Bir model isteğinin token kullanımı; kayıttan açılan oturumun durum
+    /// çubuğu bundan toplanır.
+    Kullanim {
+        istem: u64,
+        tamamlama: u64,
+        dusunce: u64,
     },
     KipDegisti {
         kip: Kip,

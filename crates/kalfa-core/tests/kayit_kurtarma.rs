@@ -32,6 +32,7 @@ fn acilis(kip: Kip) -> KayitOgesi {
     KayitOgesi::OturumAcildi {
         model: "glm-5.3".into(),
         kip,
+        calisma_alani: None,
     }
 }
 

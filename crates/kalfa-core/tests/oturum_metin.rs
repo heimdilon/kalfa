@@ -177,7 +177,7 @@ async fn oturum_kaydi_yazilir() {
 
     let k = OturumKaydi::oku(&yol).unwrap();
     assert!(
-        matches!(&k[0].yuk, KayitOgesi::OturumAcildi { model, kip: Kip::Siki } if model == "glm-5.3")
+        matches!(&k[0].yuk, KayitOgesi::OturumAcildi { model, kip: Kip::Siki, .. } if model == "glm-5.3")
     );
     assert!(
         k.iter()

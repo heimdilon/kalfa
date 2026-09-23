@@ -43,6 +43,7 @@ fn yarim_kayit(dizin: &Path) -> (PathBuf, CagriId) {
         KayitOgesi::OturumAcildi {
             model: "glm-5.3".into(),
             kip: Kip::Serbest,
+            calisma_alani: None,
         },
     ))
     .unwrap();

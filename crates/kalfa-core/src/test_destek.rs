@@ -121,6 +121,7 @@ impl SahteSaglayici {
 #[async_trait]
 impl Saglayici for SahteSaglayici {
     async fn akis(&self, istek: ChatRequest) -> Result<SaglayiciAkisi, EvrenError> {
+        let model = istek.model.clone();
         let sira = {
             let mut istekler = self.istekler.lock().unwrap();
             istekler.push(istek);
@@ -134,6 +135,7 @@ impl Saglayici for SahteSaglayici {
             .expect("sahte senaryoda yanıt kalmadı");
         let meta = YanitMeta {
             istek_id: Some(format!("sahte-{sira}")),
+            yonlendirilen_model: Some(model),
             ..Default::default()
         };
         match yanit {

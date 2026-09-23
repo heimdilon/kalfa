@@ -115,6 +115,11 @@ pub enum Olay {
         islem: IslemId,
         ogeler: Vec<OnayOgesi>,
     },
+    /// Bir EVREN isteğinin kimliği ve yönlendirilen model (üst belge §6.4).
+    IstekBilgisi {
+        istek_id: Option<String>,
+        yonlendirilen_model: Option<String>,
+    },
     KrediGozlemi {
         gozlem: KrediGozlemi,
     },

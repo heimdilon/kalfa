@@ -62,6 +62,8 @@ impl Default for Sinirlar {
 pub struct OturumAyarlari {
     pub model: String,
     pub kip: Kip,
+    /// Çalışma alanının kökü; açılış kaydına yazılır.
+    pub calisma_alani: Option<PathBuf>,
     pub sinirlar: Sinirlar,
     pub olay_butcesi: OlayButcesi,
     /// `None`: kayıtsız oturum (spec §6.6).
@@ -74,6 +76,7 @@ impl OturumAyarlari {
         Self {
             model: model.into(),
             kip: Kip::Siki,
+            calisma_alani: Some(calisma_alani.to_path_buf()),
             sinirlar: Sinirlar::default(),
             olay_butcesi: OlayButcesi::default(),
             kayit_yolu: None,
@@ -644,11 +647,22 @@ pub fn baslat(
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
 ) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi> {
+    baslat_kimlikle(OturumId::yeni(), ayarlar, baglam)
+}
+
+/// Verilen kimlikle yeni bir oturum başlatır. Uygulama kayıt dosyasına oturum
+/// kimliğini ad olarak verir (1c tasarımı §5.1); bu yüzden kimliği oturumdan
+/// önce üretir.
+pub fn baslat_kimlikle(
+    kimlik: OturumId,
+    ayarlar: OturumAyarlari,
+    baglam: OturumBaglami,
+) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi> {
     let kayit = match &ayarlar.kayit_yolu {
         Some(yol) => Some(OturumKaydi::olustur(yol)?),
         None => None,
     };
-    Ok(baslat_ic(ayarlar, baglam, kayit))
+    Ok(baslat_ic(kimlik, ayarlar, baglam, kayit))
 }
 
 /// Kayıttan oturumu sürdürür (spec §6.6). Model ve kip kayıttan gelir (Serbest
@@ -711,20 +725,22 @@ pub fn baslat_kayitla(
     baglam: OturumBaglami,
     kayit: OturumKaydi,
 ) -> (OturumTutamaci, OlayAlici) {
-    baslat_ic(ayarlar, baglam, Some(kayit))
+    baslat_ic(OturumId::yeni(), ayarlar, baglam, Some(kayit))
 }
 
 fn baslat_ic(
+    kimlik: OturumId,
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
     kayit: Option<OturumKaydi>,
 ) -> (OturumTutamaci, OlayAlici) {
     let (mut oturum, tutamac, alici, kapanis) =
-        Oturum::kur(OturumId::yeni(), ayarlar, baglam, kayit, Vec::new(), 0);
+        Oturum::kur(kimlik, ayarlar, baglam, kayit, Vec::new(), 0);
     tokio::spawn(async move {
         let acilis = KayitOgesi::OturumAcildi {
             model: oturum.ayarlar.model.clone(),
             kip: oturum.ayarlar.kip,
+            calisma_alani: oturum.ayarlar.calisma_alani.clone(),
         };
         oturum.kaydet(acilis).await;
         oturum.calis().await;

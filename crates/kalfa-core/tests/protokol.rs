@@ -93,6 +93,10 @@ fn butun_olaylar_gidip_gelir() {
                 muhur: OnayMuhru("m".into()),
             }],
         },
+        Olay::IstekBilgisi {
+            istek_id: Some("r".into()),
+            yonlendirilen_model: Some("glm-5.3".into()),
+        },
         Olay::KrediGozlemi {
             gozlem: KrediGozlemi {
                 kalan: None,

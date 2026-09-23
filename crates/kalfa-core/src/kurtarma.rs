@@ -4,6 +4,7 @@
 //! "sonucu bilinmiyor" olarak modele ve kullanıcıya bildirilir.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 use kalfa_evren::tipler::{ChatMessage, Role};
 
@@ -26,6 +27,7 @@ pub struct KurtarilmisDurum {
     pub oturum: OturumId,
     pub model: String,
     pub kip: Kip,
+    pub calisma_alani: Option<PathBuf>,
     /// Kayıtta bulunan bağlam mesajları.
     pub mesajlar: Vec<ChatMessage>,
     /// Yanıtı olmayan araç çağrıları için üretilen, henüz kayda yazılmamış
@@ -45,7 +47,12 @@ pub enum KurtarmaHatasi {
 
 pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, KurtarmaHatasi> {
     let ilk = kayitlar.first().ok_or(KurtarmaHatasi::Bos)?;
-    let KayitOgesi::OturumAcildi { model, kip } = &ilk.yuk else {
+    let KayitOgesi::OturumAcildi {
+        model,
+        kip,
+        calisma_alani,
+    } = &ilk.yuk
+    else {
         return Err(KurtarmaHatasi::AcilisYok);
     };
     let (mut model, mut kip) = (model.clone(), *kip);
@@ -110,6 +117,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
         oturum: ilk.oturum,
         model,
         kip,
+        calisma_alani: calisma_alani.clone(),
         mesajlar,
         tamamlayicilar,
         bilinmeyenler,
