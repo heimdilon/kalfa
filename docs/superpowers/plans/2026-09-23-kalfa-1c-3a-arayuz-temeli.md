@@ -1238,6 +1238,24 @@ function paket(no: number, ...yukler: Olay[]): KanalMesaji {
   return { tip: 'Olaylar', no, zarflar: yukler.map((y) => zarf(y)) };
 }
 
+function onayGerekiyor(islem: string, cagri: string): Extract<Olay, { tip: 'OnayGerekiyor' }> {
+  return {
+    tip: 'OnayGerekiyor',
+    islem,
+    ogeler: [
+      {
+        cagri,
+        arac: 'dosya_yaz',
+        aciklama: 'a.rs yazılır',
+        hedefler: ['a.rs'],
+        diff: null,
+        uyarilar: [],
+        muhur: 'm',
+      },
+    ],
+  };
+}
+
 function tipler(d: OturumEkrani): EkranOgesi['tip'][] {
   return d.ogeler.map((o) => o.tip);
 }
@@ -1318,6 +1336,43 @@ describe('kanal mesajı → oturum durumu (1c tasarımı §8.4)', () => {
     d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1' });
     expect(d.anlik).toBe('Calisiyor');
     expect(d.ogeler.at(-1)).toMatchObject({ durum: 'Yanitlandi' });
+  });
+
+  it('önceki onayın gecikmiş yanıtı yeni bekleyen isteği temizlemez', () => {
+    let d = uygula(acilis(), {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'TurBasladi' }, onayGerekiyor('i-1', 'c-1')),
+    });
+    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1' });
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(2, onayGerekiyor('i-2', 'c-2')),
+    });
+    expect(d.anlik).toBe('OnayBekliyor');
+
+    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1' });
+
+    expect(d.anlik).toBe('OnayBekliyor');
+    expect(d.ogeler.at(-1)).toMatchObject({ tip: 'OnayIstegi', islem: 'i-2', durum: 'Bekliyor' });
+  });
+
+  it('eski onay kartı yanıtlanırken yeni bekleyen istek durumu korur', () => {
+    let d = uygula(acilis(), {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'TurBasladi' }, onayGerekiyor('i-1', 'c-1')),
+    });
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(2, onayGerekiyor('i-2', 'c-2')),
+    });
+
+    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1' });
+
+    expect(d.anlik).toBe('OnayBekliyor');
+    expect(d.ogeler.find((o) => o.tip === 'OnayIstegi' && o.islem === 'i-1')).toMatchObject({
+      durum: 'Yanitlandi',
+    });
+    expect(d.ogeler.at(-1)).toMatchObject({ tip: 'OnayIstegi', islem: 'i-2', durum: 'Bekliyor' });
   });
 
   it('tur sonu akışı dondurur, bekleyen onayı geçersiz kılar', () => {
@@ -1693,12 +1748,18 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
     }
     case 'OnayYanitlandi': {
       const d = kopya(durum);
-      d.ogeler = d.ogeler.map((o) =>
-        o.tip === 'OnayIstegi' && o.islem === girdi.islem && o.durum === 'Bekliyor'
-          ? { ...o, durum: 'Yanitlandi' }
-          : o,
-      );
-      if (d.anlik === 'OnayBekliyor') d.anlik = 'Calisiyor';
+      let eslesenIstekGuncellendi = false;
+      d.ogeler = d.ogeler.map((o) => {
+        if (o.tip === 'OnayIstegi' && o.islem === girdi.islem && o.durum === 'Bekliyor') {
+          eslesenIstekGuncellendi = true;
+          return { ...o, durum: 'Yanitlandi' };
+        }
+        return o;
+      });
+      const bekleyenOnayVar = d.ogeler.some((o) => o.tip === 'OnayIstegi' && o.durum === 'Bekliyor');
+      if (eslesenIstekGuncellendi && d.anlik === 'OnayBekliyor' && !bekleyenOnayVar) {
+        d.anlik = 'Calisiyor';
+      }
       return d;
     }
     case 'ModelDegisti':
