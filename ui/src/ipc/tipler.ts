@@ -195,7 +195,10 @@ export type AnahtarSonucu =
   | { tip: 'Ulasilamadi' }
   | { tip: 'Kaydedildi'; depo: DepoTuru; sonraki: SartPenceresiDurumu };
 
-export type KabulYaniti = { tip: 'Kabul' } | { tip: 'YeniMetin'; metin: SartMetni };
+export type KabulYaniti =
+  | { tip: 'Kabul' }
+  | { tip: 'YeniMetin'; metin: SartMetni }
+  | { tip: 'Kilitli' };
 
 export type HataKodu =
   | 'OturumYok'
