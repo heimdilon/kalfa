@@ -402,10 +402,22 @@ geliştirmedeki ekran önizlemesi (`ui/onizleme.html`) sahte bir arka uçla
 
 | Kontrol | Windows | Linux |
 | --- | --- | --- |
-| `npm ci` | 208 paket eklendi; 209 paket denetlendi, 0 güvenlik açığı | (inceleme) |
-| `npm run check` | 0 hata, 0 uyarı | (inceleme) |
-| `npm test` | 14 dosya, 167 test geçti | (inceleme) |
-| `npm run build` + paket denetimi | Başarılı; `Paket denetimi temiz.` | (inceleme) |
+| `npm ci` | 208 paket eklendi; 209 paket denetlendi, 0 güvenlik açığı | Başarılı |
+| `npm run check` | 0 hata, 0 uyarı | 0 hata, 0 uyarı |
+| `npm test` | 14 dosya, 167 test geçti | 14 dosya, 167 test geçti |
+| `npm run build` + paket denetimi | Başarılı; `Paket denetimi temiz.` | Başarılı; `Paket denetimi temiz.` |
+
+Linux sütunu PR incelemesinde, 1c-2 ile birleşmiş ağaçta dolduruldu: Ubuntu
+24.04 (WSL2), Node v24.20.0.
+
+Birleşik uygulama denemesi (Windows, WebView2, sahte EVREN sunucusu): 1c-2'nin
+kabuğu ile bu ekranlar ilk kez birlikte çalıştırıldı. Anahtar formdan girildi,
+alan boşaldı, şart metni geldi. "Kabul ediyorum" tek `POST` gönderdi; ana pencere
+boş liste ve karşılama ekranıyla açıldı; "Anahtarı değiştir" şart penceresini
+anahtar formuyla açtı. Denemede görülen bir hata incelemede düzeltildi: açık
+temadaki şart penceresinde not ve uyarı zemini koyu çıkıyordu, çünkü tasarım
+sistemindeki `--amber-tint` ve `--blue-tint` yalnızca koyu temada tanımlı. Zemin
+artık durum renginden `color-mix` ile türetilir.
 
 ### Tasarım belgesi
 
