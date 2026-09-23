@@ -303,6 +303,22 @@ Tasarım belgesinin §11 ve §12.3 bölümlerinden:
       durumuna uygular, DOM'a dokunmaz, Vitest ile test edilir); Svelte
       yalnızca bu durumu çizer.
 
+### 1c-3a — arayüz temeli (tamamlandı)
+
+Plan: [`2026-09-23-kalfa-1c-3a-arayuz-temeli.md`](superpowers/plans/2026-09-23-kalfa-1c-3a-arayuz-temeli.md).
+`ui/` altında Vite + Svelte 5 + TypeScript iskeleti; tasarım tokenları ve
+paketlenmiş fontlar; Türkçe katalog; komut sözleşmesinin tipleri ve
+çağrıları; oturum durumu işlevi; güvenli Markdown ve Shiki; tasarım
+sisteminin 1c bileşenleri ve geliştirmede açılan bileşen vitrini. İki
+pencerenin ekranları 1c-3b'de.
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `npm ci` | 208 paket eklendi; 209 paket denetlendi, 0 güvenlik açığı | (inceleme) |
+| `npm run check` | 0 hata, 0 uyarı | (inceleme) |
+| `npm test` | 10 dosya, 104 test geçti | (inceleme) |
+| `npm run build` + paket denetimi | Başarılı; `Paket denetimi temiz.` | (inceleme) |
+
 ### Tasarım belgesi
 
 Bütün kararlar, yukarıdakilere ek olarak çizim ve dil, hata durumları, test ve
