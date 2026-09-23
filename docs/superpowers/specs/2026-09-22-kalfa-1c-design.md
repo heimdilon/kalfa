@@ -2,8 +2,9 @@
 
 **Tarih:** 2026-09-22
 **Durum:** §1–§9 kullanıcıyla bölüm bölüm konuşulup onaylandı. §10–§14,
-kullanıcının "sormadan yaz" isteğiyle ayrıca onaya sunulmadan yazıldı. Sıradaki
-adım uygulama planı.
+kullanıcının "sormadan yaz" isteğiyle ayrıca onaya sunulmadan yazıldı.
+2026-09-23: komut sözleşmesi kesinleşti (§6.1), plan aşamasındaki sorular
+cevaplandı (§13). Planlar PR ile yürütülüyor: kodu Codex yazar, Claude inceler.
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §4, §6.1, §6.6, §11 ve §12.3. Bu belgede `§` işaretleri bu belgenin
 bölümlerini gösterir; üst belgeye "üst belge §x" diye başvurulur.
@@ -69,8 +70,8 @@ uygulamasına dönüşür. 1c bittiğinde kullanıcı:
   §13.3).
 - `cargo test --workspace`, Clippy (`-D warnings`) ve `cargo fmt --check`;
   `ui/` için `npm ci`, `npm run check`, `npm test` ve `npm run build` temiz geçer.
-- `kalfa-core` Tauri'ye ve `kalfa-tools`'a bağımlı olmaz (`cargo tree` denetimi
-  sürer).
+- `kalfa-core` Tauri'ye ve `kalfa-tools`'a, `kalfa-uygulama` Tauri'ye bağımlı
+  olmaz (`cargo tree` denetimi sürer).
 
 ---
 
@@ -83,7 +84,9 @@ crates/
   kalfa-evren/        (var) EVREN istemcisi
   kalfa-core/         (var) çekirdek; 1c'de yeni modüller: aktarim, sart_kapisi, gecmis
   kalfa-tools/        (var) dosya araçları
-  kalfa/              (yeni) Tauri uygulaması ve binary (üst belge §4)
+  kalfa-uygulama/     (yeni) uygulamanın Tauri'siz mantığı: oturum tablosu, köprü,
+                      şart penceresi akışı, kimlik deposu, komut sözleşmesinin tipleri
+  kalfa/              (yeni) Tauri uygulaması ve binary (üst belge §4); ince katman
     tauri.conf.json
     capabilities/     ana-pencere.json, sart-penceresi.json
     src/
@@ -93,8 +96,8 @@ ui/                   (yeni) Svelte 5 arayüzü
   sartlar.html        şart penceresi
   src/
     stiller/          tokenlar (design/kalfa-ds/tokens'tan kopya, fonts.css hariç)
-    fontlar/          Source Sans 3, Source Serif 4, JetBrains Mono (woff2) ve OFL lisans metinleri
     bilesenler/       tasarım sistemindeki adlarla: Button.svelte, ToolCallCard.svelte …
+    ipc/              komut sözleşmesinin TypeScript tipleri ve komut çağrıları (§6.1)
     durum/            kanal mesajı → oturum durumu işlevi
     markdown/         güvenli Markdown çizicisi
     dil/              Türkçe metin kataloğu
@@ -111,14 +114,23 @@ ui/                   (yeni) Svelte 5 arayüzü
   bulunur; sohbet ekranının kodu yoktur. Bu, üst belge §11.9'daki pencere
   ayrımına derleme düzeyinde ikinci bir katman ekler.
 - Tokenlar `ui/src/stiller/`'e kopyalanır. `design/kalfa-ds/` referanstır,
-  derlemeye girmez. Lucide ikonları npm paketinden gelir. Dış kaynaktan font,
-  ikon ya da stil yüklenmez.
+  derlemeye girmez. Lucide ikonları (`@lucide/svelte`) ve fontlar
+  (`@fontsource-variable/source-sans-3`, `…/source-serif-4`,
+  `…/jetbrains-mono`; OFL lisansları paketin içinde) npm paketlerinden gelir;
+  Vite font dosyalarını pakete gömer. Bu paketler aileleri "Source Sans 3
+  Variable" gibi adlarla tanımladığı için tipografi tokenlarında bu adlar
+  önce gelir. Dış kaynaktan font, ikon ya da stil yüklenmez.
 - `kalfa` crate'i ince tutulur: pencere kurulumu, Tauri komutları, kanal
-  bağdaştırıcısı, kimlik deposu ve yerel iletişim kutuları. Test gerektiren
-  mantık Tauri'ye bağlı olmayan crate'lerde durur.
+  bağdaştırıcısı ve yerel iletişim kutuları. Test gerektiren mantık Tauri'ye
+  bağlı olmayan crate'lerde durur: çekirdeğe ait olanlar `kalfa-core`'da,
+  uygulamaya ait olanlar (`kalfa-tools`'u ve kimlik deposunu da kullandığı
+  için) `kalfa-uygulama`'da. `kalfa-uygulama` pencereye, iletişim kutusuna ve
+  kanala trait'lerle erişir; testleri sahteleriyle koşar ve Linux'ta WebKitGTK
+  istemez.
 - Sonuçları: `kalfa` workspace'e girince Linux'ta `cargo test --workspace`
-  WebKitGTK geliştirme paketlerini ister. `cargo test`'in önce `npm run build`
-  gerektirip gerektirmediği plan aşamasında doğrulanır (§13).
+  WebKitGTK geliştirme paketlerini ister. `cargo test` için önce
+  `npm run build` gerekmez: `devUrl` tanımlıyken geliştirme derlemesi arayüzü
+  gömmez (§13).
 
 ### 3.2 Birimler
 
@@ -129,11 +141,12 @@ ui/                   (yeni) Svelte 5 arayüzü
 | Kilit yöneticisi | `kalfa-core::kilit` | Çalışma alanı kökünün dosya sistemi kimliği → paylaşılan `KaynakKilitleri` (§5.3) |
 | Kayıt sahipliği | `kalfa-core::kayit` | Kaydın yanındaki kilit dosyasında işletim sistemi kilidi (§5.2) |
 | Geçmiş ve oturum listesi | `kalfa-core::gecmis` | Kayıt öğelerinden ekran öğeleri, tur bazlı sayfalama, kayıt dizininden oturum listesi (§5.4, §5.5) |
-| Oturum tablosu | `kalfa` | Açık oturumlar; her birinin çekirdek tutamacı, aktarım görevi ve bağlı olduğu pencere (§5.1) |
-| Köprü | `kalfa` | Paketleri `Channel`'a yazar; "işledim" bildirimini paketleyiciye iletir |
+| Oturum tablosu | `kalfa-uygulama` | Açık oturumlar; her birinin çekirdek tutamacı, aktarım görevi ve bağlı olduğu pencere (§5.1) |
+| Köprü | `kalfa-uygulama` | Paketleri kanala yazar; "işledim" bildirimini paketleyiciye iletir. `Channel`'a bağlayan bağdaştırıcı `kalfa`'dadır |
+| Şart penceresi akışı | `kalfa-uygulama` | İlk açılış, anahtar kaydı, kapı izleyicisi, pencere durumu (§6.1, §7) |
 | Komutlar ve yetkiler | `kalfa` | Pencere başına Tauri komutları, uygulama manifest'i, capability dosyaları (§6) |
-| Kimlik deposu | `kalfa` | `keyring`; depo yoksa bellekte tutma (§7.2) |
-| Yerel iletişim kutuları | `kalfa` | Klasör seçici, izin kipi yükseltme onayı, bağlantı açma onayı |
+| Kimlik deposu | `kalfa-uygulama` | `keyring`; depo yoksa bellekte tutma (§7.2) |
+| Yerel iletişim kutuları | `kalfa` | Klasör seçici, izin kipi yükseltme onayı, bağlantı açma onayı (trait'leri `kalfa-uygulama`'da) |
 | Arayüz durumu | `ui/src/durum` | Kanal mesajını oturum durumuna uygulayan saf işlev (§8.4) |
 | Markdown çizicisi | `ui/src/markdown` | Sözdizimi ağacından Svelte bileşenleri; `{@html}` yok (§9.1) |
 
@@ -337,13 +350,13 @@ açılmaz; açık olana geçilir.
 
 ## 6. Pencereler ve komut yetkileri (üst belge §11.9)
 
-İki pencere vardır; ikisini de yalnızca Rust açar. Komut adları öneridir; plan
-aşamasında kesinleşir.
+İki pencere vardır; ikisini de yalnızca Rust açar. Komutların argümanları ve
+dönüş tipleri §6.1'dedir.
 
 | Pencere | Gösterdiği | Komutları |
 |---|---|---|
-| `ana` | Oturum listesi, konuşma, onay kartları, durum çubuğu | `uygulama_durumu`, `oturumlari_listele`, `calisma_alani_sec`, `oturum_baslat`, `oturum_ac`, `oturumu_kapat`, `oturumu_dinle`, `paketi_isledim`, `gecmis_sayfasi`, `mesaj_gonder`, `turu_iptal_et`, `arac_onayi`, `model_degistir`, `izin_kipi_degistir`, `baglanti_ac`, `anahtar_penceresini_ac` |
-| `sartlar` | Anahtar formu, EVREN şart metni, kilitli görünüm | `anahtari_kaydet`, `sart_metnini_al`, `sartlari_kabul_et`, `sartlari_reddet`, `baglanti_ac` |
+| `ana` | Oturum listesi, konuşma, onay kartları, durum çubuğu | `uygulama_durumu`, `oturumlari_listele`, `calisma_alani_sec`, `oturum_baslat`, `oturum_ac`, `oturumu_kapat`, `oturumu_dinle`, `paketi_isledim`, `gecmis_sayfasi`, `mesaj_gonder`, `turu_iptal_et`, `arac_onayi`, `model_degistir`, `izin_kipi_degistir`, `baglanti_ac`, `anahtar_penceresini_ac`, `sart_penceresini_ac` |
+| `sartlar` | Anahtar formu, EVREN şart metni, kilitli görünüm | `sart_penceresi_durumu`, `anahtari_kaydet`, `sartlari_kabul_et`, `sartlari_reddet`, `sart_metnini_goster`, `baglanti_ac` |
 
 - **Genel bir "komut gönder" yoktur.** Her işlemin kendi Tauri komutu vardır.
   Şart kabulüne giden tek yol şart penceresindeki "Kabul ediyorum" düğmesidir.
@@ -369,6 +382,104 @@ aşamasında kesinleşir.
   http://ipc.localhost; base-uri 'none'; form-action 'none'`. Geliştirme
   sunucusu için ayrı bir `devCsp` yalnızca geliştirmede geçerlidir. `asset:`
   protokolü kapalıdır; arayüz dosya sistemine doğrudan erişmez.
+- **`window.open`** reddedilir (`on_new_window` → `Deny`). Tauri'nin kanal
+  verisini getiren iç komutu (`plugin:__TAURI_CHANNEL__|fetch`) yetki
+  denetiminden muaftır; `Channel` için pencereye ek izin verilmez.
+
+### 6.1 Komut sözleşmesi
+
+Komutlar `#[tauri::command(rename_all = "snake_case")]` ile tanımlanır; arayüz
+argümanları Rust'taki adlarla (`once_sira` gibi) gönderir. Tiplerin JSON
+biçimi Rust'taki `serde` tanımlarından gelir; arayüz aynı adları
+`ui/src/ipc/tipler.ts`'de tutar. Kimlikler (`OturumId`, `TurId`, `CagriId`,
+`IslemId`) UUID metnidir; `u64` alanları JavaScript sayısıdır.
+
+Hata durumunda her komut `KomutHatasi { kod, mesaj }` döner. `mesaj`
+kullanıcıya gösterilebilecek Türkçe metindir ("siz" dili); `kod` arayüzün ne
+yapacağını seçer: `OturumYok`, `KayitMesgul` (kayıt başka bir süreçte açık),
+`SaltOkunur`, `GecersizGirdi`, `Evren`, `Ic`.
+
+**Ana pencere (`ana`)**
+
+| Komut | Argümanlar | Dönüş | Not |
+|---|---|---|---|
+| `uygulama_durumu` | — | `UygulamaDurumu` | Sayfa her yüklendiğinde |
+| `oturumlari_listele` | — | `OturumSatiri[]` | En yeni önce |
+| `calisma_alani_sec` | — | `CalismaAlani \| null` | Yerel klasör seçici; vazgeçilirse `null` |
+| `oturum_baslat` | `calisma_alani: number`, `model: string` | `OturumAcilisi` | Kip Sıkı başlar |
+| `oturum_ac` | `oturum` | `OturumAcilisi` | Son 20 tur; oturum açıksa açık olanın geçmişi |
+| `oturumu_dinle` | `oturum`, `kanal: Channel<KanalMesaji>` | — | Açılan oturum başına bir kez |
+| `paketi_isledim` | `oturum`, `no: number` | — | |
+| `gecmis_sayfasi` | `oturum`, `once_sira: number` | `GecmisSayfasi` | 20 tur daha |
+| `mesaj_gonder` | `oturum`, `metin: string` | — | |
+| `turu_iptal_et` | `oturum` | — | |
+| `arac_onayi` | `oturum`, `kararlar: OnayGirdisi[]` | — | |
+| `model_degistir` | `oturum`, `model: string` | — | Yalnızca `UygulamaDurumu.modeller`'deki kimlikler |
+| `izin_kipi_degistir` | `oturum`, `kip: Kip` | `Kip` | Yükseltmede yerel onay; reddedilirse eski kip döner |
+| `oturumu_kapat` | `oturum` | — | Tur iptal, kilit bırakılır |
+| `baglanti_ac` | `adres: string` | — | Yalnızca `http`/`https`, yerel onayla |
+| `anahtar_penceresini_ac` | — | — | Şart onayı bekleniyorsa önce şart metni |
+| `sart_penceresini_ac` | — | — | Kapatılmış şart penceresini yeniden açar |
+
+**Şart penceresi (`sartlar`)**
+
+| Komut | Argümanlar | Dönüş |
+|---|---|---|
+| `sart_penceresi_durumu` | — | `SartPenceresiDurumu` |
+| `anahtari_kaydet` | `anahtar: string` | `AnahtarSonucu` |
+| `sartlari_kabul_et` | `surum: number` | `KabulYaniti` |
+| `sartlari_reddet` | — | — |
+| `sart_metnini_goster` | — | `SartMetni` |
+| `baglanti_ac` | `adres: string` | — |
+
+**Uygulamanın tipleri** (`kalfa-uygulama`):
+
+```
+UygulamaDurumu      { baglanti: "Var" | "Yok", anahtar_deposu: "Kalici" | "Bellekte",
+                      modeller: ModelSecenegi[], varsayilan_model: string,
+                      son_oturum: OturumId | null }
+ModelSecenegi       { kimlik: string, profil: "Hizli" | "Dengeli" | "Derin" | "Otomatik" }
+OturumSatiri        { oturum: OturumId | null, dosya: string, baslik: string | null,
+                      calisma_alani: string | null, son_degisiklik_ms: number,
+                      durum: OturumDurumu }
+CalismaAlani        { kimlik: number, yol: string }
+OturumAcilisi       { oturum: OturumId, calisma_alani: string | null, gecmis: GecmisSayfasi,
+                      ozet: DurumOzeti, salt_okunur: SaltOkunurNedeni | null }
+SaltOkunurNedeni    ::= { tip: "CalismaAlaniYok", yol: string } | { tip: "CalismaAlaniKayitsiz" }
+OnayGirdisi         { cagri: CagriId, muhur: string, karar: OnayKarari }
+SartPenceresiDurumu ::= { tip: "AnahtarGerekli", neden: "Yok" | "KayitliGecersiz" | "Degistir" }
+                      | { tip: "SartGerekli", metin: SartMetni }
+                      | { tip: "Kilitli" } | { tip: "Tamam" }
+AnahtarSonucu       ::= { tip: "Gecersiz" } | { tip: "Ulasilamadi" }
+                      | { tip: "Kaydedildi", depo: "Kalici" | "Bellekte",
+                          sonraki: SartPenceresiDurumu }
+KabulYaniti         ::= { tip: "Kabul" } | { tip: "YeniMetin", metin: SartMetni }
+KomutHatasi         { kod: string, mesaj: string }
+```
+
+**Çekirdekten gelen tipler** (`kalfa-core`, 1c-1): `KanalMesaji`, `Zarf<Olay>`,
+`Olay`, `GorunumOgesi`, `GecmisSayfasi`, `DurumOzeti`, `OturumDurumu`,
+`SartMetni`, `OnayOgesi`, `OnayKarari`, `Kip`, `AracDurumu`, `BitisNedeni`,
+`AktarimDurmaNedeni`; `kalfa-evren`'den `KrediGozlemi` (tutarlar ondalık
+metindir).
+
+**Pencere kuralları**
+
+- Model profilleri üst belge §6.4'tekilerdir: Hızlı `qwen3.8-flash-next`,
+  Dengeli `deepseek-v4-flash`, Derin `glm-5.3`, Otomatik `auto`. Varsayılan
+  Derin'dir.
+- `son_oturum`, bu çalıştırmada en son açılan ya da başlatılan oturumdur;
+  yeniden yüklenen ana pencere onu kayıttan açar (§5.6).
+- Kayıttan açılan oturumun çalışma alanı yoksa ya da kayıtta yazmıyorsa
+  oturum çekirdekte başlatılmaz; geçmiş gösterilir, `salt_okunur` dolu gelir
+  (§10).
+- Şart kapısı metni göstermeye geçtiğinde Rust şart penceresini açar; pencere
+  açıksa yeniden yükler ve öne getirir. Pencere durumunu
+  `sart_penceresi_durumu` ile okur. Şart penceresini kapatmak ret sayılmaz:
+  bekleyen turlar beklemeyi sürdürür, iptal edilebilir; `sart_penceresini_ac`
+  pencereyi yeniden açar.
+- Kabulden sonra ya da anahtar kaydedilip şartların zaten kabul edildiği
+  görülünce Rust ana pencereyi açar (açık değilse) ve şart penceresini kapatır.
 
 ---
 
@@ -617,14 +728,14 @@ pazarlık konusu değildir.
 - **İstek bilgisi:** yönlendirilen modelin olay olarak yayılması; token
   kullanımıyla birlikte kayda yazılması.
 
-### 11.2 Uygulama (`cargo test -p kalfa`)
+### 11.2 Uygulama (`cargo test -p kalfa-uygulama -p kalfa`)
 
 - Tauri'nin test çalışma zamanıyla (`tauri::test`) komut yetkileri: ana
   pencereden `sartlari_kabul_et` ve pencere açma reddedilir; şart penceresinden
   oturum komutları reddedilir.
-- Test çalışma zamanı uygulama komutlarının yetkilerini uygulamıyorsa
-  capability dosyaları statik olarak doğrulanır; gerçek pencere testi (§11.4)
-  bu boşluğu kapatır.
+- Test çalışma zamanı (`tauri::test::mock_builder`), uygulama manifest'i
+  tanımlıyken uygulama komutlarının yetkilerini uygular (§13). Gerçek pencere
+  testi (§11.4) aynı sınırı gerçek webview'da da sınar.
 - `baglanti_ac` yalnızca `http` ve `https` açar; iletişim kutusu reddedilince
   hiçbir şey açılmaz (sahte iletişim kutusuyla).
 - `izin_kipi_degistir` yükseltmede iletişim kutusu sorar, düşürmede sormaz.
@@ -694,6 +805,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 cargo tree -p kalfa-core -e normal | grep -E "kalfa-tools|tauri"   # çıktı boş olmalı
+cargo tree -p kalfa-uygulama -e normal | grep -E "tauri|wry"       # çıktı boş olmalı
 cd ui && npm ci && npm run check && npm test && npm run build
 ```
 
@@ -717,41 +829,65 @@ Bu tasarımla birlikte üst belgede güncellenen yerler (r3.3):
 
 ---
 
-## 13. Plan aşamasında doğrulanacaklar
+## 13. Plan aşamasında doğrulananlar
 
-- Tauri'nin `generate_context!` makrosu arayüz dosyalarını derleme sırasında
-  okuyabiliyor. `cargo test --workspace` öncesinde `npm run build` gerekip
-  gerekmediği doğrulanır.
-- WSL'deki Ubuntu 24.04'e WebKitGTK geliştirme paketlerinin kurulumu; uçtan uca
-  testler için görüntü sunucusu (WSLg ya da Xvfb).
-- `keyring` 3'te platform depoları özellik bayraklarıyla açılır. Bayraklar
-  açılmazsa crate sessizce kalıcı olmayan bir sahte depo kullanır. Windows ve
-  Secret Service bayrakları açıkça verilir ve testle doğrulanır.
-- Tauri'nin test çalışma zamanının uygulama komutlarının yetkilerini uygulayıp
-  uygulamadığı (§11.2).
-- Küçültülmüş pencerede WebView2 ve WebKitGTK'nin betik yürütmesi. Gerekirse
-  pencere yapılandırmasında arka plan kısıtlaması kapatılır (§4.3).
-- `tauri-driver` kurulumu: Windows'ta WebView2 sürümüyle uyumlu
-  `msedgedriver`, Linux'ta `WebKitWebDriver`.
-- `same-file`'ın Windows'ta dizinler için verdiği kimlik; ReFS'deki 128 bitlik
-  dosya kimlikleri.
-- Tauri'nin veri dizini API'siyle üst belge §6.6'daki yolların
-  (`%APPDATA%\Kalfa`, `$XDG_DATA_HOME/kalfa`) eşleştirilmesi.
-- Shiki'nin JavaScript motorunun seçilen dillerdeki doğruluğu.
+2026-09-22'de geçici prototiplerle doğrulandı; ayrıntılar planlardadır.
 
----
+- **Arayüz dosyaları ve `cargo test`:** `devUrl` tanımlıyken geliştirme
+  derlemesi arayüzü gömmez; `cargo test --workspace` öncesinde
+  `npm run build` gerekmez. `frontendDist` `crates/kalfa`'dan `../../ui/dist`
+  gösterir.
+- **Test çalışma zamanında yetkiler:** `tauri::test::mock_builder()` ile
+  kurulan uygulamada, izni verilmemiş komut "not allowed" hatasıyla reddedilir.
+  İzin adları `allow-<komut>` biçimindedir (alt çizgi yerine tire).
+- **Windows'ta Tauri test ikilileri:** Common Controls v6 manifest'i yalnızca
+  binary'ye bağlandığı için test ikilisi `STATUS_ENTRYPOINT_NOT_FOUND` ile
+  açılmaz. Çözüm: testler yalnızca `tests/` altında; `build.rs` onlara
+  manifest'i `rustc-link-arg-tests` ile bağlar; kütüphanenin ve binary'nin
+  kendi test hedefleri kapatılır (`test = false`, `doctest = false`).
+- **`keyring`:** 4.2 sürümünde varsayılan `v1` özelliği Windows Credential
+  Manager'ı ve Secret Service'i (zbus) açar; sessiz sahte depo yoktur. Depo
+  kurulamazsa `Entry::store_status()` hata verir; Secret Service çalışmıyorsa
+  hata yazmada da gelebilir. İki durumda da anahtar bellekte tutulur ve
+  kullanıcıya söylenir (§7.2).
+- **Kanal verisi:** `plugin:__TAURI_CHANNEL__|fetch` yetki denetiminden
+  muaftır (§6).
+- **Veri dizini:** Tauri'nin `app_data_dir`'i uygulama kimliğini ekler; üst
+  belge §6.6'daki yol için `data_dir` alınıp Windows'ta `Kalfa`, Linux'ta
+  `kalfa` eklenir. `KALFA_VERI_DIZINI` testlerde bu dizini değiştirir.
+- **Linux ortamı:** WSL'deki Ubuntu 24.04'te WSLg var (`DISPLAY=:0`);
+  WebKitGTK geliştirme paketleri, `WebKitWebDriver` ve Xvfb kurulu değil.
+  Kurulum kullanıcı onayı ister.
+- **`tauri-driver`:** 2.0.6. Windows'ta WebView2 153.0.4234.48 kurulu;
+  eşleşen `msedgedriver` 153 indirilmeli (kullanıcı onayı ister).
+- **Arayüz sürümleri:** Vite 8.3 (çok sayfa `build.rolldownOptions.input`),
+  Svelte 5.57, TypeScript 6.0 (svelte-check 7'yi henüz desteklemiyor), Vitest
+  5, jsdom 30. Derlenmiş HTML'de satır içi betik yoktur; şart penceresinin
+  paketinde sohbet kodu yoktur.
+- **CSP ve Svelte:** Svelte'in `style:` yönergesi stili CSSOM ile verir ve
+  CSP'den geçer; şablondaki sabit `style="…"` özniteliği engellenir.
+  Bileşenler sınıf ve `style:` kullanır. Shiki `codeToHtml` değil
+  `codeToTokens` ile kullanılır; tokenlar Svelte ile çizilir.
+
+Uçtan uca testlerde doğrulanacaklar (1c-4): küçültülmüş pencerede WebView2 ve
+WebKitGTK'nin betik yürütmesi (gerekirse `background_throttling` kapatılır);
+`same-file`'ın Windows'ta dizinler ve ReFS için verdiği kimlik; Shiki'nin
+JavaScript motorunun seçilen dillerdeki doğruluğu.
 
 ## 14. Uygulama planına geçiş
 
-1c tek bir plan için büyük. 1a ve 1b'deki gibi bölünmesi öneriliyor; her parça
-kendi başına test edilebilir:
+1c tek bir plan için büyük; 1a ve 1b'deki gibi bölündü. Her parça kendi başına
+test edilebilir ve kendi PR'ında yürütülür:
 
-1. **1c-1 Çekirdek eklemeleri** (Tauri'siz): çalışma ağacındaki olay kuyruğu
-   değişikliğinin gözden geçirilip kullanıcı onayıyla commit'lenmesi,
-   paketleyici, şart kapısı, kilit yöneticisi, kayıt kilidi, `OturumAcildi` ve
-   istek bilgisi, geçmiş ve oturum listesi, metin tonu.
-2. **1c-2 Tauri kabuğu:** `kalfa` crate'i, pencereler, komutlar ve yetkiler,
-   köprü, kimlik deposu, tek süreç, yerel iletişim kutuları.
-3. **1c-3 Arayüz:** `ui/` iskeleti, tokenlar ve fontlar, bileşenler, durum
-   işlevi, Markdown çizicisi, iki pencerenin ekranları.
-4. **1c-4 Kabul:** uçtan uca testler ve üst belge §11.1 ölçümü.
+1. **1c-1 Çekirdek eklemeleri** (Tauri'siz): olay kuyruğu değişikliğinin
+   commit'lenmesi, paketleyici, şart kapısı, kilit yöneticisi, kayıt kilidi,
+   `OturumAcildi` ve istek bilgisi, `baslat_kimlikle`, geçmiş ve oturum listesi,
+   metin tonu.
+2. **1c-2 Tauri kabuğu:** `kalfa-uygulama` (oturum tablosu, köprü, şart
+   penceresi akışı, kimlik deposu) ve `kalfa` (pencereler, komutlar ve
+   yetkiler, tek süreç, yerel iletişim kutuları). 1c-1'in üstüne kurulur.
+3. **1c-3a Arayüz temeli:** `ui/` iskeleti, tokenlar ve fontlar, dil kataloğu,
+   komut sözleşmesinin tipleri, bileşenler, durum işlevi, Markdown çizicisi.
+   Rust'a bağlı değildir; 1c-1 ve 1c-2 ile paralel yürür.
+4. **1c-3b Ekranlar:** iki pencerenin ekranları ve komutlara bağlanması.
+5. **1c-4 Kabul:** uçtan uca testler ve üst belge §11.1 ölçümü.
