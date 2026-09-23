@@ -366,7 +366,7 @@ fn tek_baglantili_kayit(dosya: &File) -> io::Result<()> {
 
 /// Kaydı çözer. İkinci değer, son geçerli satırın bittiği bayttır (satır sonu
 /// dahil); `ac` dosyayı bu uzunluğa keser.
-fn coz(veri: &[u8]) -> io::Result<(Vec<Zarf<KayitOgesi>>, usize)> {
+pub(crate) fn coz(veri: &[u8]) -> io::Result<(Vec<Zarf<KayitOgesi>>, usize)> {
     let mut kayitlar = Vec::new();
     let mut gecerli = 0usize;
     let mut bas = 0usize;
