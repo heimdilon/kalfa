@@ -189,13 +189,14 @@
   .serit span {
     flex: 1;
   }
+  /* Zemin durum renginden türetilir; iki temada da doğru kalır. */
   .uyari {
     color: var(--status-warn);
-    background: var(--amber-tint);
+    background: color-mix(in srgb, var(--status-warn) 14%, transparent);
   }
   .tehlike {
     color: var(--status-danger);
-    background: var(--red-tint);
+    background: color-mix(in srgb, var(--status-danger) 14%, transparent);
   }
   .bilgi {
     color: var(--text-secondary);

@@ -90,13 +90,15 @@
     border-radius: var(--radius-md);
     font: var(--type-small);
   }
+  /* Zemin durum renginden türetilir: tasarım sistemindeki --amber-tint ve
+     --blue-tint yalnızca koyu temada tanımlı, bu pencere açık temada. */
   .not {
     color: var(--status-info);
-    background: var(--blue-tint);
+    background: color-mix(in srgb, var(--status-info) 12%, transparent);
   }
   .uyari {
     color: var(--status-warn);
-    background: var(--amber-tint);
+    background: color-mix(in srgb, var(--status-warn) 14%, transparent);
   }
   .metin {
     max-height: 52vh;
