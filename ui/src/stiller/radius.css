@@ -1,0 +1,11 @@
+:root{
+--radius-xs:4px;   /* code gutter marks, tiny swatches */
+--radius-sm:6px;   /* source tags, inline chips */
+--radius-md:8px;   /* buttons, inputs, list rows */
+--radius-lg:10px;  /* cards, dropdowns */
+--radius-xl:12px;  /* message bubbles, tool-call cards */
+--radius-2xl:16px; /* modal / approval sheet */
+--radius-pill:999px;
+--border-width:1px;
+--border-width-accent:1.5px; /* focused composer, selected row */
+}

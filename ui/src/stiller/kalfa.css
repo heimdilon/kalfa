@@ -1,0 +1,44 @@
+/* Kalfa arayüzünün tek stil girişi. Tokenlar design/kalfa-ds/tokens'tan
+   kopyalandı (fonts.css hariç; fontlar npm paketlerinden gelir). */
+@import './colors.css';
+@import './typography.css';
+@import './spacing.css';
+@import './radius.css';
+@import './elevation.css';
+@import './motion.css';
+@import './base.css';
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+#kok {
+  height: 100%;
+}
+
+/* Ekranda görünmeyen ama ekran okuyucunun okuduğu metin. */
+.gizli-erisilebilir {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes kalfa-imlec {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes kalfa-don {
+  to {
+    transform: rotate(360deg);
+  }
+}

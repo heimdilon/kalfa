@@ -44,3 +44,17 @@ Tasarım sistemi taslak görsellerden üretildi; spec'i okuyarak değil. Uygular
   yükleniyor. §11.8 ve §11.9 buna izin vermez; uygulamada ikisi de paketlenir.
 - **Sonraki aşamalara ait ekranlar.** Geri alma, gönderim günlüğü, eklentiler ve
   sağdaki dosya paneli 1c'nin kapsamında değil.
+
+### Kopyadaki hata ve uygulamadaki değişiklikler
+
+Tokenlar `ui/src/stiller/`'e kopyalanırken (1c-3a) iki yer değişti:
+
+- **`--text-title` çakışması (hata).** `tokens/colors.css` bu adı başlık rengi,
+  `tokens/typography.css` başlık yazı boyutu (`17px`) için kullanıyor. Sonra
+  yüklenen boyut rengi eziyor; koyu temada başlık rengi çözülemiyor ve rengi
+  kendisi vermeyen öğelerde başlık siyah görünüyor. Uygulamadaki kopyada boyut
+  `--text-title-size` adını aldı; `ui/src/stiller/tokenlar.test.ts` aynı adın iki
+  kez tanımlanmasını yakalar. Claude Design'daki projede de düzeltilmesi gerekir.
+- **Font aileleri.** Fontlar `@fontsource-variable` paketlerinden geliyor. Paketler
+  aileleri "Source Sans 3 Variable" gibi adlarla tanımladığı için kopyada bu adlar
+  önce geliyor.
