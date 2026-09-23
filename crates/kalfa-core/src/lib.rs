@@ -5,6 +5,7 @@
 
 pub mod aktarim;
 pub mod arac;
+pub mod gecmis;
 pub mod git_koruma;
 pub mod izin;
 pub mod kayit;
