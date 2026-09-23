@@ -24,7 +24,7 @@ async fn kayit_yazilamazsa_oturum_durur_ve_kayitsiza_donmez() {
     d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("Oturum kaydı yazılamadı")))
         .await;
     d.gonder(mesaj("selam")).await;
-    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("yazılamadığı için bu oturum durduruldu")))
+    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("yazılamadığı için bu oturum durduruldu") && mesaj.ends_with("Yeni bir oturum açın.")))
         .await;
     assert!(
         s.istekler().is_empty(),

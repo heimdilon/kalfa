@@ -830,7 +830,7 @@ impl Oturum {
                 Komut::KullaniciMesaji { metin } => {
                     if let Some(neden) = self.kayit_hatasi.clone() {
                         let mesaj = format!(
-                            "Oturum kaydı yazılamadığı için bu oturum durduruldu ({neden}). Yeni bir oturum aç."
+                            "Oturum kaydı yazılamadığı için bu oturum durduruldu ({neden}). Yeni bir oturum açın."
                         );
                         self.hata(mesaj).await;
                     } else {
@@ -907,7 +907,7 @@ impl Oturum {
                 self.kaydet(KayitOgesi::ModelDegisti { model }).await;
             }
             Komut::KullaniciMesaji { .. } => {
-                self.hata("Önceki tur sürüyor; bitmesini bekle ya da iptal et.")
+                self.hata("Önceki tur sürüyor; bitmesini bekleyin ya da iptal edin.")
                     .await;
             }
             Komut::AracOnayi { .. } => {
