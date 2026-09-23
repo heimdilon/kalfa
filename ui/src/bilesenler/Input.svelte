@@ -82,6 +82,10 @@
     color: var(--text-body);
     font: var(--type-small);
   }
+  /* Odak çerçevede gösterilir; içteki alan ikinci bir halka çizmez. */
+  input:focus-visible {
+    outline: none;
+  }
   input.mono {
     font: var(--type-meta);
   }

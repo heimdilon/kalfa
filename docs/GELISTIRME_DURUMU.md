@@ -391,6 +391,34 @@ async kilitle sıraya alındı. Plandaki kodda eşzamanlı iki düşürme (ör. 
 Proje ve İnceleme) ters sırayla çekirdeğe ulaşırsa kip onaysız yükselebiliyordu;
 `eszamanli_kip_degisimleri_ayni_oturumda_sirayla_islenir` testi sınar.
 
+### 1c-3b — ekranlar (tamamlandı)
+
+Plan: [`2026-09-23-kalfa-1c-3b-ekranlar.md`](superpowers/plans/2026-09-23-kalfa-1c-3b-ekranlar.md).
+İki pencerenin ekranları yazılıp komutlara bağlandı: ana pencerede menü,
+oturum listesi, konuşma, onay kartı ve onay sayfası, durum çubuğu; şart
+penceresinde anahtar formu, EVREN şart metni ve kilitli görünüm. Testler ve
+geliştirmedeki ekran önizlemesi (`ui/onizleme.html`) sahte bir arka uçla
+(`ui/src/sahte/arka.ts`) çalışır; uygulama paketine girmez.
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `npm ci` | 208 paket eklendi; 209 paket denetlendi, 0 güvenlik açığı | Başarılı |
+| `npm run check` | 0 hata, 0 uyarı | 0 hata, 0 uyarı |
+| `npm test` | 14 dosya, 167 test geçti | 14 dosya, 167 test geçti |
+| `npm run build` + paket denetimi | Başarılı; `Paket denetimi temiz.` | Başarılı; `Paket denetimi temiz.` |
+
+Linux sütunu PR incelemesinde, 1c-2 ile birleşmiş ağaçta dolduruldu: Ubuntu
+24.04 (WSL2), Node v24.20.0.
+
+Birleşik uygulama denemesi (Windows, WebView2, sahte EVREN sunucusu): 1c-2'nin
+kabuğu ile bu ekranlar ilk kez birlikte çalıştırıldı. Anahtar formdan girildi,
+alan boşaldı, şart metni geldi. "Kabul ediyorum" tek `POST` gönderdi; ana pencere
+boş liste ve karşılama ekranıyla açıldı; "Anahtarı değiştir" şart penceresini
+anahtar formuyla açtı. Denemede görülen bir hata incelemede düzeltildi: açık
+temadaki şart penceresinde not ve uyarı zemini koyu çıkıyordu, çünkü tasarım
+sistemindeki `--amber-tint` ve `--blue-tint` yalnızca koyu temada tanımlı. Zemin
+artık durum renginden `color-mix` ile türetilir.
+
 ### Tasarım belgesi
 
 Bütün kararlar, yukarıdakilere ek olarak çizim ve dil, hata durumları, test ve

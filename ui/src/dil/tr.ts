@@ -62,6 +62,134 @@ export const tr = {
 
   'markdown.gorsel': 'görsel',
   'kod.kirpildi': 'Çıktının devamı gösterilmiyor',
+  'uygulama.slogan': 'Daha iyi yazılım, daha aydınlık yarınlar.',
+  'uygulama.alt_not': 'Küçük adımlar, büyük işler.',
+  'genel.kapat': 'Kapat',
+  'zaman.dun': 'Dün',
+
+  'menu.ad': 'Menü',
+  'menu.oturumlar': 'Oturumlar',
+  'menu.anahtar': 'Anahtarı değiştir',
+
+  'liste.baslik': 'Oturumlar',
+  'liste.yeni': 'Yeni oturum',
+  'liste.ara': 'Oturumlarda ara…',
+  'liste.bos': 'Henüz oturum yok. Yeni bir oturumla başlayın.',
+  'liste.sonuc_yok': 'Aramaya uyan oturum yok.',
+  'liste.grup.bugun': 'Bugün',
+  'liste.grup.dun': 'Dün',
+  'liste.grup.hafta': 'Bu hafta',
+  'liste.grup.eski': 'Daha eski',
+
+  'oturum.yeni': 'Yeni oturum',
+  'oturum.durum.calisiyor': 'Çalışıyor',
+  'oturum.durum.onay': 'Onay bekliyor',
+  'oturum.durum.sart': 'Şart onayı bekliyor',
+  'oturum.durum.tamamlandi': 'Tamamlandı',
+  'oturum.durum.iptal': 'İptal edildi',
+  'oturum.durum.hata': 'Hatayla bitti',
+  'oturum.durum.yarim': 'Yarım kaldı',
+  'oturum.durum.okunamadi': 'Okunamadı',
+  'oturum.durum.bos': 'Boş',
+
+  'konusma.ad': 'Konuşma',
+  'konusma.kapat': 'Oturumu kapat',
+  'konusma.yeniden_ac': 'Yeniden aç',
+  'konusma.eskiler': 'Daha eski mesajları göster',
+  'konusma.bos': 'Bu oturumda henüz mesaj yok.',
+  'konusma.kapandi': 'Oturum kapandı. Devam etmek için yeniden açın.',
+  'konusma.karsilama.baslik': 'Bir oturum seçin ya da yeni bir oturum başlatın.',
+  'konusma.karsilama.metin':
+    'Kalfa seçtiğiniz klasörde çalışır. Dosya yazmadan önce onayınızı ister.',
+
+  'arac.dosya_oku.suruyor': 'Dosya okunuyor',
+  'arac.dosya_oku.bitti': 'Dosya okundu',
+  'arac.dosya_oku.ad': 'Dosya okuma',
+  'arac.dosya_listele.suruyor': 'Dizin listeleniyor',
+  'arac.dosya_listele.bitti': 'Dizin listelendi',
+  'arac.dosya_listele.ad': 'Dizin listeleme',
+  'arac.icerik_ara.suruyor': 'İçerik aranıyor',
+  'arac.icerik_ara.bitti': 'İçerik arandı',
+  'arac.icerik_ara.ad': 'İçerik arama',
+  'arac.dosya_yaz.suruyor': 'Dosya yazılıyor',
+  'arac.dosya_yaz.bitti': 'Dosya yazıldı',
+  'arac.dosya_yaz.ad': 'Dosya yazma',
+  'arac.dosya_duzenle.suruyor': 'Dosya düzenleniyor',
+  'arac.dosya_duzenle.bitti': 'Dosya düzenlendi',
+  'arac.dosya_duzenle.ad': 'Dosya düzenleme',
+
+  'onay.kart.baslik': 'Onay isteği: {sayi} değişiklik',
+  'onay.kart.incele': 'İncele',
+  'onay.kart.yanitlandi': 'Yanıtlandı',
+  'onay.kart.gecersiz': 'Tur bitti; karar gerekmiyor',
+  'onay.kart.uyari': '{sayi} uyarı',
+  'onay.sayfa.baslik': 'Kalfa {sayi} değişiklik yapmak istiyor.',
+  'onay.sayfa.alt':
+    'Devam etmeden önce değişiklikleri inceleyin. Seçmediğiniz değişiklikler gerekçenizle reddedilir.',
+  'onay.sayfa.tumunu_sec': 'Tümünü seç',
+  'onay.sayfa.secili': '{secili} / {toplam} seçili',
+  'onay.sayfa.goster': '{ad} değişikliğini göster',
+  'onay.sayfa.diff_yok': 'Bu değişiklik için önizleme yok.',
+  'onay.sayfa.ne': 'Ne',
+  'onay.sayfa.nerede': 'Nerede',
+  'onay.sayfa.uyarilar': 'Uyarılar',
+  'onay.sayfa.gerekce': 'Reddetme nedeni (isteğe bağlı)',
+  'onay.sayfa.gerekce_yer': 'Reddetme nedeninizi buraya yazabilirsiniz…',
+  'onay.sayfa.tumunu_onayla': 'Tümünü onayla',
+  'onay.sayfa.secilenleri_onayla': 'Seçilenleri onayla',
+  'onay.sayfa.reddet': 'Reddet',
+
+  'sart.kart.baslik': 'EVREN şartları (sürüm {surum})',
+  'sart.kart.bekliyor':
+    'EVREN, şartlar kabul edilene kadar isteği yanıtlamıyor. Tur, şart penceresindeki kararınızı bekliyor.',
+  'sart.kart.cozuldu': 'Şart kararı verildi.',
+  'sart.kart.ac': 'Şart penceresini aç',
+
+  'hata.kart.baslik': 'Tur hatayla bitti',
+  'aktarim.baslik': 'Aktarım durdu',
+
+  'durum.ad': 'Durum çubuğu',
+  'durum.hazir': 'Hazır',
+  'durum.calisiyor': 'Çalışıyor',
+  'durum.baglanti_yok': 'Bağlantı yok',
+  'durum.anahtar_bellekte': 'Anahtar bellekte',
+  'durum.bakiye': '{kalan} kredi · {saat}',
+  'durum.bakiye_ipucu': 'Son gözlenen bakiye ve gözlem zamanı',
+  'durum.token': '{sayi} token',
+  'durum.token_ipucu': 'İstem {istem} · Tamamlama {tamamlama} · Düşünce {dusunce}',
+  'durum.model_ipucu': 'Yönlendirilen model',
+
+  'duyuru.onay': 'Onay isteği: {sayi} değişiklik kararınızı bekliyor.',
+  'duyuru.sart': 'EVREN şartlarının onayı bekleniyor.',
+  'duyuru.tur_sonu': 'Tur bitti.',
+
+  'anahtar.baslik': 'EVREN API anahtarı',
+  'anahtar.aciklama.Yok':
+    "Kalfa EVREN'e sizin anahtarınızla bağlanır. Anahtarınızı EVREN portalından alabilirsiniz.",
+  'anahtar.aciklama.KayitliGecersiz':
+    'Kayıtlı anahtar artık geçerli değil. EVREN portalından yeni anahtarınızı alıp girin.',
+  'anahtar.aciklama.Degistir': 'Yeni anahtarınızı girin. Açık oturumlar yeni anahtarı kullanır.',
+  'anahtar.etiket': 'Anahtar',
+  'anahtar.not':
+    'Anahtar işletim sisteminin kimlik deposunda saklanır. Kalfa onu arayüze geri göndermez.',
+  'anahtar.kaydet': 'Kaydet',
+
+  'sart.baslik': 'EVREN kullanım şartları',
+  'sart.surum': 'Sürüm {surum}',
+  'sart.esasli': 'Esaslı değişiklik',
+  'sart.esasli_degil': 'Küçük değişiklik',
+  'sart.aciklama':
+    "Kalfa'yı kullanmak için EVREN'in şartlarını kabul etmeniz gerekir. Metin EVREN'den geldiği gibi gösterilir.",
+  'sart.kabul': 'Kabul ediyorum',
+  'sart.reddet': 'Kabul etmiyorum',
+
+  'kilitli.baslik': 'Şartlar kabul edilmedi',
+  'kilitli.metin':
+    "EVREN, şartlar kabul edilmeden hiçbir isteği yanıtlamıyor. Bekleyen turlar iptal edildi; oturumlarınız kayıtlı. Anahtarınız saklı kalır; Kalfa'yı bir sonraki açışınızda şartlar yeniden gösterilir.",
+  'kilitli.goster': 'Metni yeniden göster',
+
+  'sartlar.tamam': 'Tamamlandı. Kalfa açılıyor.',
+  'sartlar.alt_not': 'Kalfa dikkatli çalışır. Kontrol her zaman sizdedir.',
 } as const;
 
 export type MetinAnahtari = keyof typeof tr;
