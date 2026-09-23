@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use kalfa_evren::tipler::{ChatMessage, ToolCall};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::AracKayitDefteri;
@@ -596,6 +596,7 @@ pub struct OturumTutamaci {
     oturum: OturumId,
     tx: mpsc::Sender<Komut>,
     aktif_tur: AktifTur,
+    kapanis: watch::Receiver<bool>,
 }
 
 impl OturumTutamaci {
@@ -609,6 +610,14 @@ impl OturumTutamaci {
             .unwrap_or_else(|z| z.into_inner())
             .as_ref()
             .map(|(tur, _)| *tur)
+    }
+
+    /// Oturum görevi bitene kadar bekler. Döndüğünde oturumun kaydı ve kayıt
+    /// kilidi bırakılmıştır; kayıt aynı süreçte yeniden açılabilir. Oturumu
+    /// kapatmak için önce olay alıcısı bırakılır.
+    pub async fn kapanmasini_bekle(&self) {
+        let mut kapanis = self.kapanis.clone();
+        let _ = kapanis.wait_for(|kapandi| *kapandi).await;
     }
 
     pub async fn gonder(&self, komut: Komut) -> Result<(), OturumHatasi> {
@@ -650,15 +659,15 @@ pub fn devam_et(
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
 ) -> Result<(OturumTutamaci, OlayAlici, KurtarilmisDurum), OturumHatasi> {
-    let durum = kurtar(&OturumKaydi::oku(kayit_yolu)?)?;
-    let kayit = OturumKaydi::ac(kayit_yolu)?;
+    let (kayit, kayitlar) = OturumKaydi::devam_icin_ac(kayit_yolu)?;
+    let durum = kurtar(&kayitlar)?;
     let ayarlar = OturumAyarlari {
         model: durum.model.clone(),
         kip: durum.kip,
         kayit_yolu: Some(kayit_yolu.to_path_buf()),
         ..ayarlar
     };
-    let (mut oturum, tutamac, alici) = Oturum::kur(
+    let (mut oturum, tutamac, alici, kapanis) = Oturum::kur(
         durum.oturum,
         ayarlar,
         baglam,
@@ -690,6 +699,7 @@ pub fn devam_et(
             oturum.yay(olay).await;
         }
         oturum.calis().await;
+        let _ = kapanis.send(true);
     });
     Ok((tutamac, alici, durum))
 }
@@ -709,7 +719,7 @@ fn baslat_ic(
     baglam: OturumBaglami,
     kayit: Option<OturumKaydi>,
 ) -> (OturumTutamaci, OlayAlici) {
-    let (mut oturum, tutamac, alici) =
+    let (mut oturum, tutamac, alici, kapanis) =
         Oturum::kur(OturumId::yeni(), ayarlar, baglam, kayit, Vec::new(), 0);
     tokio::spawn(async move {
         let acilis = KayitOgesi::OturumAcildi {
@@ -718,6 +728,7 @@ fn baslat_ic(
         };
         oturum.kaydet(acilis).await;
         oturum.calis().await;
+        let _ = kapanis.send(true);
     });
     (tutamac, alici)
 }
@@ -758,8 +769,9 @@ impl Oturum {
         kayit: Option<OturumKaydi>,
         mesajlar: Vec<ChatMessage>,
         sira: u64,
-    ) -> (Self, OturumTutamaci, OlayAlici) {
+    ) -> (Self, OturumTutamaci, OlayAlici, watch::Sender<bool>) {
         let (komut_tx, komut_rx) = mpsc::channel(KOMUT_KANALI);
+        let (kapanis_tx, kapanis_rx) = watch::channel(false);
         let aktif_tur: AktifTur = Arc::new(Mutex::new(None));
         let (olay_tx, olay_rx) = OlayKanali::yeni(ayarlar.olay_butcesi, aktif_tur.clone());
         let olay_kapanma = olay_tx.kapanma();
@@ -786,8 +798,10 @@ impl Oturum {
                 oturum: kimlik,
                 tx: komut_tx,
                 aktif_tur,
+                kapanis: kapanis_rx,
             },
             olay_rx,
+            kapanis_tx,
         )
     }
 

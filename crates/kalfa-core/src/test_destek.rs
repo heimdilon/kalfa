@@ -344,6 +344,18 @@ impl Surucu {
             .expect("oturum açık olmalı");
     }
 
+    /// Olay alıcısını bırakır ve oturum görevi bitene kadar bekler; ardından
+    /// kayıt yeniden açılabilir.
+    pub async fn kapat(self) {
+        let Self {
+            tutamac, olaylar, ..
+        } = self;
+        drop(olaylar);
+        tokio::time::timeout(Duration::from_secs(5), tutamac.kapanmasini_bekle())
+            .await
+            .expect("oturum kapanmalı");
+    }
+
     pub async fn sonraki(&mut self) -> Zarf<Olay> {
         let zarf = tokio::time::timeout(self.zaman_asimi, self.olaylar.recv())
             .await
