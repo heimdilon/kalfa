@@ -314,10 +314,13 @@ pencerenin ekranları 1c-3b'de.
 
 | Kontrol | Windows | Linux |
 | --- | --- | --- |
-| `npm ci` | 208 paket eklendi; 209 paket denetlendi, 0 güvenlik açığı | (inceleme) |
-| `npm run check` | 0 hata, 0 uyarı | (inceleme) |
-| `npm test` | 10 dosya, 104 test geçti | (inceleme) |
-| `npm run build` + paket denetimi | Başarılı; `Paket denetimi temiz.` | (inceleme) |
+| `npm ci` | 208 paket eklendi; 209 paket denetlendi, 0 güvenlik açığı | Başarılı |
+| `npm run check` | 0 hata, 0 uyarı | 0 hata, 0 uyarı |
+| `npm test` | 10 dosya, 104 test geçti | 10 dosya, 104 test geçti |
+| `npm run build` + paket denetimi | Başarılı; `Paket denetimi temiz.` | Başarılı; `Paket denetimi temiz.` |
+
+Linux sütunu PR incelemesinde dolduruldu: Ubuntu 24.04 (WSL2), Node v24.20.0,
+`56f5759`.
 
 ### Tasarım belgesi
 
