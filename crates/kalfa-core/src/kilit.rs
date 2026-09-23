@@ -143,3 +143,24 @@ impl KilitYoneticisi {
         kokler.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::KilitYoneticisi;
+
+    #[test]
+    fn son_arc_dropu_registry_kaydini_yontem_cagrisi_olmadan_siler() {
+        let d = tempfile::tempdir().unwrap();
+        let y = KilitYoneticisi::yeni();
+        let kilitler = y.al(d.path()).unwrap();
+        assert_eq!(y.kokler.lock().unwrap().len(), 1);
+
+        drop(kilitler);
+
+        assert_eq!(
+            y.kokler.lock().unwrap().len(),
+            0,
+            "temizlik son Arc drop'unda yapılmalı"
+        );
+    }
+}

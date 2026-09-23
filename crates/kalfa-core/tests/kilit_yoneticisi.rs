@@ -72,8 +72,8 @@ fn son_oturum_birakinca_kok_kaydi_ve_handle_temizlenir() {
     let a = y.al(d.path()).unwrap();
     assert_eq!(y.acik_kok_sayisi(), 1);
     drop(a);
-    assert_eq!(y.acik_kok_sayisi(), 0);
     d.close().expect("dizin handle bırakılınca silinebilir");
+    assert_eq!(y.acik_kok_sayisi(), 0);
 }
 
 #[tokio::test]
