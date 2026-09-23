@@ -1,7 +1,7 @@
 // Şart penceresinin komutları (1c tasarımı §6.1). Bu modül ana pencerenin
 // komutlarını içe aktarmaz; şart penceresinin paketi sohbet kodunu taşımaz.
 import { invoke } from '@tauri-apps/api/core';
-import type { AnahtarSonucu, KabulYaniti, SartMetni, SartPenceresiDurumu } from './tipler';
+import type { AnahtarSonucu, KabulYaniti, SartPenceresiDurumu } from './tipler';
 
 export const sartPenceresiDurumu = () => invoke<SartPenceresiDurumu>('sart_penceresi_durumu');
 
@@ -14,6 +14,6 @@ export const sartlariKabulEt = (surum: number) =>
 
 export const sartlariReddet = () => invoke<void>('sartlari_reddet');
 
-export const sartMetniniGoster = () => invoke<SartMetni>('sart_metnini_goster');
+export const sartMetniniGoster = () => invoke<SartPenceresiDurumu>('sart_metnini_goster');
 
 export const baglantiAc = (adres: string) => invoke<void>('baglanti_ac', { adres });

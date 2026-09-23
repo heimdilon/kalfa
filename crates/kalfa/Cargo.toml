@@ -1,0 +1,42 @@
+[package]
+name = "kalfa"
+description = "Kalfa masaüstü uygulaması: Tauri kabuğu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+# Windows'ta Tauri'ye bağlanan test ikilisi Common Controls v6 manifest'i
+# olmadan açılmaz (STATUS_ENTRYPOINT_NOT_FOUND). build.rs manifest'i yalnızca
+# `tests/` altındaki testlere bağlar; kütüphanenin ve binary'nin kendi test
+# hedefleri bu yüzden kapalıdır.
+[lib]
+name = "kalfa_kabuk"
+path = "src/lib.rs"
+test = false
+doctest = false
+
+[[bin]]
+name = "kalfa"
+path = "src/main.rs"
+test = false
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+async-trait.workspace = true
+kalfa-core = { path = "../kalfa-core" }
+kalfa-evren = { path = "../kalfa-evren" }
+kalfa-uygulama = { path = "../kalfa-uygulama" }
+tauri = { version = "2.11.6", features = [] }
+tauri-plugin-dialog = "2.7.3"
+tauri-plugin-opener = "2.5.5"
+tauri-plugin-single-instance = "2.4.5"
+tokio.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tauri = { version = "2.11.6", features = ["test"] }
