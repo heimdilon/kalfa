@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, stream};
-use kalfa_evren::tipler::{ChatRequest, FunctionCall, TermsText, ToolCall};
+use kalfa_evren::tipler::{ChatRequest, FunctionCall, TermsStatus, TermsText, ToolCall};
 use kalfa_evren::{AkisOlayi, EvrenError, YanitMeta};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -21,6 +21,7 @@ use crate::kilit::KaynakKilitleri;
 use crate::oturum::{OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci, baslat};
 use crate::protokol::{BitisNedeni, Komut, Olay, Zarf};
 use crate::saglayici::{Saglayici, SaglayiciAkisi};
+use crate::sart_kapisi::SartKapisi;
 use crate::yol::CalismaYolu;
 
 static MODEL_CAGRI_SAYACI: AtomicU64 = AtomicU64::new(0);
@@ -83,6 +84,7 @@ pub struct SahteSaglayici {
     senaryo: Mutex<VecDeque<SahteYanit>>,
     istekler: Mutex<Vec<ChatRequest>>,
     sart: Mutex<SahteSart>,
+    durum_hatasi: Mutex<Option<EvrenError>>,
 }
 
 impl SahteSaglayici {
@@ -95,6 +97,7 @@ impl SahteSaglayici {
                 metin: "# Sahte kullanım şartları".into(),
                 kabul_edilen: Vec::new(),
             }),
+            durum_hatasi: Mutex::new(None),
         })
     }
 
@@ -106,6 +109,10 @@ impl SahteSaglayici {
         self.sart.lock().unwrap().kabul_edilen.clone()
     }
 
+    pub fn sart_durumu_hatasi(&self, hata: Option<EvrenError>) {
+        *self.durum_hatasi.lock().unwrap() = hata;
+    }
+
     pub fn sart_surumunu_degistir(&self, surum: u32) {
         self.sart.lock().unwrap().surum = surum;
     }
@@ -114,6 +121,7 @@ impl SahteSaglayici {
 #[async_trait]
 impl Saglayici for SahteSaglayici {
     async fn akis(&self, istek: ChatRequest) -> Result<SaglayiciAkisi, EvrenError> {
+        let model = istek.model.clone();
         let sira = {
             let mut istekler = self.istekler.lock().unwrap();
             istekler.push(istek);
@@ -127,6 +135,7 @@ impl Saglayici for SahteSaglayici {
             .expect("sahte senaryoda yanıt kalmadı");
         let meta = YanitMeta {
             istek_id: Some(format!("sahte-{sira}")),
+            yonlendirilen_model: Some(model),
             ..Default::default()
         };
         match yanit {
@@ -142,6 +151,19 @@ impl Saglayici for SahteSaglayici {
             }),
             SahteYanit::Hata(hata) => Err(hata),
         }
+    }
+
+    async fn sart_durumu(&self) -> Result<TermsStatus, EvrenError> {
+        if let Some(hata) = self.durum_hatasi.lock().unwrap().clone() {
+            return Err(hata);
+        }
+        let s = self.sart.lock().unwrap();
+        Ok(TermsStatus {
+            current_version: s.surum,
+            is_material: true,
+            accepted: s.kabul_edilen.contains(&s.surum),
+            doc_path: None,
+        })
     }
 
     async fn sart_metni(&self) -> Result<TermsText, EvrenError> {
@@ -324,6 +346,18 @@ impl Surucu {
             .expect("oturum açık olmalı");
     }
 
+    /// Olay alıcısını bırakır ve oturum görevi bitene kadar bekler; ardından
+    /// kayıt yeniden açılabilir.
+    pub async fn kapat(self) {
+        let Self {
+            tutamac, olaylar, ..
+        } = self;
+        drop(olaylar);
+        tokio::time::timeout(Duration::from_secs(5), tutamac.kapanmasini_bekle())
+            .await
+            .expect("oturum kapanmalı");
+    }
+
     pub async fn sonraki(&mut self) -> Zarf<Olay> {
         let zarf = tokio::time::timeout(self.zaman_asimi, self.olaylar.recv())
             .await
@@ -390,6 +424,7 @@ pub fn test_baglami(
     siniflandirici: Arc<Siniflandirici>,
 ) -> OturumBaglami {
     OturumBaglami {
+        sart_kapisi: Arc::new(SartKapisi::yeni(saglayici.clone())),
         saglayici,
         araclar: Arc::new(AracKayitDefteri::yeni(araclar).expect("araç kaydı")),
         siniflandirici,

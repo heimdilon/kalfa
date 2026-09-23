@@ -20,6 +20,12 @@ fn gecersiz_anahtar() {
 }
 
 #[test]
+fn anahtar_hatasi_kullaniciya_siz_diye_hitap_eder() {
+    let m = EvrenError::AnahtarGecersiz.to_string();
+    assert!(m.contains("anahtarınızı kontrol edip yeniden girin"), "{m}");
+}
+
+#[test]
 fn sart_kabul_gerekli_sentetik() {
     let h = hata_esle(403, None, &ortak::sentetik_bayt("terms_not_accepted.json"));
     assert_eq!(h, EvrenError::SartKabulGerekli { surum: Some(1) });

@@ -196,7 +196,7 @@ async fn tur_sirasinda_yeni_mesaj_reddedilir() {
     let tur = tur_basladi(&mut d).await;
     d.bekle(|o| matches!(o, Olay::TokenParcasi { .. })).await;
     d.gonder(mesaj("iki")).await;
-    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("Önceki tur sürüyor")))
+    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj == "Önceki tur sürüyor; bitmesini bekleyin ya da iptal edin."))
         .await;
     d.gonder(Komut::Iptal { tur }).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);

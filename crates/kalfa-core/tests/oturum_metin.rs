@@ -24,7 +24,7 @@ async fn kayit_yazilamazsa_oturum_durur_ve_kayitsiza_donmez() {
     d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("Oturum kaydı yazılamadı")))
         .await;
     d.gonder(mesaj("selam")).await;
-    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("yazılamadığı için bu oturum durduruldu")))
+    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("yazılamadığı için bu oturum durduruldu") && mesaj.ends_with("Yeni bir oturum açın.")))
         .await;
     assert!(
         s.istekler().is_empty(),
@@ -138,17 +138,16 @@ async fn akis_ortasinda_hata_yarim_metni_korur() {
 async fn bosta_gecersiz_komutlar_hata_verir() {
     let s = SahteSaglayici::yeni(vec![]);
     let mut d = oturum(&s, vec![], ayarlar());
-    d.gonder(Komut::SartlariKabulEt { surum: 1 }).await;
-    let z = d.bekle(|o| matches!(o, Olay::Hata { .. })).await;
-    assert!(z.tur.is_none());
     d.gonder(Komut::AracOnayi {
         cagri: CagriId::yeni(),
         karar: OnayKarari::Onayla,
         muhur: OnayMuhru("x".into()),
     })
     .await;
-    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("artık geçerli değil")))
+    let z = d
+        .bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("artık geçerli değil")))
         .await;
+    assert!(z.tur.is_none());
 }
 
 #[tokio::test]
@@ -178,7 +177,7 @@ async fn oturum_kaydi_yazilir() {
 
     let k = OturumKaydi::oku(&yol).unwrap();
     assert!(
-        matches!(&k[0].yuk, KayitOgesi::OturumAcildi { model, kip: Kip::Siki } if model == "glm-5.3")
+        matches!(&k[0].yuk, KayitOgesi::OturumAcildi { model, kip: Kip::Siki, .. } if model == "glm-5.3")
     );
     assert!(
         k.iter()
@@ -186,7 +185,7 @@ async fn oturum_kaydi_yazilir() {
     );
     assert!(k.iter().any(|z| z.yuk
         == KayitOgesi::Komut {
-            komut: mesaj("selam")
+            komut: mesaj("selam").into()
         }));
     assert!(
         k.iter().any(

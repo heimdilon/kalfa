@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use kalfa_core::izin::Kip;
-use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
+use kalfa_core::kayit::{EskiSartKabulKomutu, KayitKomutu, KayitOgesi, OturumKaydi};
 use kalfa_core::kimlik::{CagriId, OturumId};
 use kalfa_core::kurtarma::*;
 use kalfa_core::protokol::{AracDurumu, Komut, SEMA_SURUMU, Zarf};
@@ -32,6 +32,7 @@ fn acilis(kip: Kip) -> KayitOgesi {
     KayitOgesi::OturumAcildi {
         model: "glm-5.3".into(),
         kip,
+        calisma_alani: None,
     }
 }
 
@@ -48,7 +49,8 @@ fn kayit_yazilir_okunur_ve_ikinci_olusturma_reddedilir() {
         KayitOgesi::Komut {
             komut: Komut::KullaniciMesaji {
                 metin: "selam".into(),
-            },
+            }
+            .into(),
         },
     ))
     .unwrap();
@@ -61,6 +63,7 @@ fn kayit_yazilir_okunur_ve_ikinci_olusturma_reddedilir() {
             komut: Komut::KullaniciMesaji {
                 metin: "selam".into()
             }
+            .into()
         }
     );
     assert!(
@@ -72,6 +75,125 @@ fn kayit_yazilir_okunur_ve_ikinci_olusturma_reddedilir() {
     k.yaz(&z(o, 3, KayitOgesi::KipDegisti { kip: Kip::Proje }))
         .unwrap();
     assert_eq!(OturumKaydi::oku(&yol).unwrap().len(), 3);
+}
+
+fn eski_sart_satiri(oturum: OturumId, sira: u64) -> String {
+    format!(
+        r#"{{"sema":{},"oturum":"{}","tur":null,"sira":{},"yuk":{{"tip":"Komut","komut":{{"tip":"SartlariKabulEt","surum":1}}}}}}"#,
+        SEMA_SURUMU, oturum, sira
+    )
+}
+
+#[test]
+fn eski_sart_komutu_kayit_turunde_kabul_edilir_canli_komutta_edilmez() {
+    let eski = r#"{"tip":"SartlariKabulEt","surum":1}"#;
+    assert!(serde_json::from_str::<Komut>(eski).is_err());
+    let kayit_komutu = serde_json::from_str::<KayitKomutu>(eski).unwrap();
+    assert_eq!(
+        kayit_komutu,
+        KayitKomutu::EskiSartKabulIstegi(EskiSartKabulKomutu::SartKabulIstegi { surum: 1 })
+    );
+    assert!(serde_json::to_string(&kayit_komutu).is_err());
+}
+
+#[test]
+fn ortadaki_eski_sart_komutu_ve_sonraki_kayitlar_okunur() {
+    let d = tempfile::tempdir().unwrap();
+    let yol = d.path().join("oturum.jsonl");
+    let o = OturumId::yeni();
+    let mut k = OturumKaydi::olustur(&yol).unwrap();
+    k.yaz(&z(o, 1, acilis(Kip::Siki))).unwrap();
+    drop(k);
+
+    let mut dosya = std::fs::OpenOptions::new().append(true).open(&yol).unwrap();
+    writeln!(dosya, "{}", eski_sart_satiri(o, 2)).unwrap();
+    writeln!(
+        dosya,
+        "{}",
+        serde_json::to_string(&z(
+            o,
+            3,
+            KayitOgesi::ModelDegisti {
+                model: "deepseek-v4-flash".into(),
+            },
+        ))
+        .unwrap()
+    )
+    .unwrap();
+    drop(dosya);
+
+    let kayitlar = OturumKaydi::oku(&yol).unwrap();
+    assert_eq!(kayitlar.len(), 3);
+    assert!(matches!(
+        &kayitlar[1].yuk,
+        KayitOgesi::Komut {
+            komut: KayitKomutu::EskiSartKabulIstegi(EskiSartKabulKomutu::SartKabulIstegi {
+                surum: 1
+            })
+        }
+    ));
+    assert_eq!(
+        kayitlar[2].yuk,
+        KayitOgesi::ModelDegisti {
+            model: "deepseek-v4-flash".into(),
+        }
+    );
+    assert!(
+        !kayitlar
+            .iter()
+            .any(|z| matches!(z.yuk, KayitOgesi::SartKabulEdildi { .. }))
+    );
+
+    let durum = kurtar(&kayitlar).unwrap();
+    assert_eq!(durum.model, "deepseek-v4-flash");
+    assert_eq!(durum.son_sira, 3);
+}
+
+#[test]
+fn eof_eski_sart_komutu_acip_yazarken_korunur() {
+    let d = tempfile::tempdir().unwrap();
+    let yol = d.path().join("oturum.jsonl");
+    let o = OturumId::yeni();
+    let mut k = OturumKaydi::olustur(&yol).unwrap();
+    k.yaz(&z(o, 1, acilis(Kip::Siki))).unwrap();
+    drop(k);
+
+    let mut dosya = std::fs::OpenOptions::new().append(true).open(&yol).unwrap();
+    writeln!(dosya, "{}", eski_sart_satiri(o, 2)).unwrap();
+    drop(dosya);
+    let eski_baytlar = std::fs::read(&yol).unwrap();
+
+    let mut k = OturumKaydi::ac(&yol).unwrap();
+    k.yaz(&z(
+        o,
+        3,
+        KayitOgesi::ModelDegisti {
+            model: "deepseek-v4-flash".into(),
+        },
+    ))
+    .unwrap();
+    drop(k);
+
+    let yeni_baytlar = std::fs::read(&yol).unwrap();
+    assert!(yeni_baytlar.starts_with(&eski_baytlar));
+    let kayitlar = OturumKaydi::oku(&yol).unwrap();
+    assert_eq!(kayitlar.len(), 3);
+    assert!(matches!(
+        &kayitlar[1].yuk,
+        KayitOgesi::Komut {
+            komut: KayitKomutu::EskiSartKabulIstegi(EskiSartKabulKomutu::SartKabulIstegi {
+                surum: 1
+            })
+        }
+    ));
+    assert!(
+        !kayitlar
+            .iter()
+            .any(|z| matches!(z.yuk, KayitOgesi::SartKabulEdildi { .. }))
+    );
+    let durum = kurtar(&kayitlar).unwrap();
+    assert_eq!(durum.model, "deepseek-v4-flash");
+    assert_eq!(durum.son_sira, 3);
 }
 
 #[test]

@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use kalfa_core::oturum::{OlayAktarimHatasi, OlayButcesi, OturumAyarlari, baslat};
-use kalfa_core::protokol::{Komut, Olay, OnayKarari};
+use kalfa_core::protokol::{AktarimDurmaNedeni, Komut, Olay, OnayKarari};
 use kalfa_core::test_destek::{SahteSaglayici, SahteYanit, sanal_siniflandirici, test_baglami};
 use kalfa_evren::AkisOlayi;
 
@@ -64,8 +64,12 @@ async fn yavas_alici_olay_sayisi_butcesini_asamaz() {
             .await
             .expect("taşıma hatasından sonra kanal kapanmalı");
         let Some(zarf) = zarf else { break };
-        if matches!(zarf.yuk, Olay::Hata { ref mesaj } if mesaj.contains("Olay aktarımı durduruldu"))
-        {
+        if matches!(
+            zarf.yuk,
+            Olay::AktarimDurdu {
+                neden: AktarimDurmaNedeni::TuketiciYetismedi
+            }
+        ) {
             terminal_goruldu = true;
         }
         kabul_edilen.push(zarf);
@@ -152,8 +156,7 @@ async fn buyuk_onay_olayi_yazma_baslamadan_turu_kapatir() {
         else {
             break;
         };
-        if matches!(zarf.yuk, Olay::Hata { mesaj } if mesaj.contains("Olay aktarımı durduruldu"))
-        {
+        if matches!(zarf.yuk, Olay::AktarimDurdu { .. }) {
             terminal_goruldu = true;
             break;
         }

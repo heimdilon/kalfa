@@ -9,8 +9,9 @@ use kalfa_evren::{AkisOlayi, YanitMeta};
 
 use super::{Etki, Oturum};
 use crate::kayit::KayitOgesi;
-use crate::protokol::{BitisNedeni, Komut, Olay};
+use crate::protokol::{BitisNedeni, Olay};
 use crate::saglayici::SaglayiciAkisi;
+use crate::sart_kapisi::SartKarari;
 
 pub(super) struct ModelCevabi {
     pub(super) cagrilar: Vec<ToolCall>,
@@ -56,12 +57,20 @@ impl Oturum {
                     }
                     Some(Ok(AkisOlayi::AracCagrilari(v))) => cagrilar.extend(v),
                     Some(Ok(AkisOlayi::Kullanim(u))) => {
-                        let olay = Olay::TokenKullanimi {
-                            istem: u.prompt_tokens,
-                            tamamlama: u.completion_tokens,
-                            dusunce: u.reasoning_tokens(),
-                        };
-                        self.yay(olay).await;
+                        let (istem, tamamlama, dusunce) =
+                            (u.prompt_tokens, u.completion_tokens, u.reasoning_tokens());
+                        self.kaydet(KayitOgesi::Kullanim {
+                            istem,
+                            tamamlama,
+                            dusunce,
+                        })
+                        .await;
+                        self.yay(Olay::TokenKullanimi {
+                            istem,
+                            tamamlama,
+                            dusunce,
+                        })
+                        .await;
                     }
                     Some(Ok(AkisOlayi::Bitti { .. })) | None => break Ok(()),
                     Some(Err(e)) => {
@@ -101,18 +110,24 @@ impl Oturum {
         loop {
             let saglayici = self.baglam.saglayici.clone();
             let deneme = istek.clone();
+            let kapi = self.baglam.sart_kapisi.clone();
             match self
-                .iptal_edilebilir(async move { saglayici.akis(deneme).await })
+                .iptal_edilebilir(async move {
+                    // Nesli future ilk kez gerçekten çalışmaya başladığında
+                    // yakala; önceden snapshot alıp komut beklerken eskimesin.
+                    let istek_nesli = kapi.durum().nesil;
+                    (istek_nesli, saglayici.akis(deneme).await)
+                })
                 .await?
             {
-                Ok(akis) => {
+                (_, Ok(akis)) => {
                     self.istek_kaydet("ana", &akis.meta).await;
                     return Ok(akis);
                 }
-                Err(kalfa_evren::EvrenError::SartKabulGerekli { .. }) => {
-                    self.sart_akisi().await?;
+                (istek_nesli, Err(kalfa_evren::EvrenError::SartKabulGerekli { .. })) => {
+                    self.sart_akisi(istek_nesli).await?;
                 }
-                Err(kalfa_evren::EvrenError::HizSiniri { tekrar_dene }) if !hiz_denendi => {
+                (_, Err(kalfa_evren::EvrenError::HizSiniri { tekrar_dene })) if !hiz_denendi => {
                     hiz_denendi = true;
                     let sure = tekrar_dene
                         .unwrap_or(Duration::from_secs(5))
@@ -124,7 +139,7 @@ impl Oturum {
                     .await;
                     self.iptal_edilebilir(tokio::time::sleep(sure)).await?;
                 }
-                Err(e) => {
+                (_, Err(e)) => {
                     self.hata(e.to_string()).await;
                     return Err(BitisNedeni::Hata);
                 }
@@ -137,8 +152,14 @@ impl Oturum {
             amac: amac.to_string(),
             istek_id: meta.istek_id.clone(),
             kredi: meta.kredi.clone(),
+            yonlendirilen_model: meta.yonlendirilen_model.clone(),
         };
         self.kaydet(oge).await;
+        self.yay(Olay::IstekBilgisi {
+            istek_id: meta.istek_id.clone(),
+            yonlendirilen_model: meta.yonlendirilen_model.clone(),
+        })
+        .await;
         if let Some(gozlem) = meta.kredi.clone() {
             self.yay(Olay::KrediGozlemi { gozlem }).await;
         }
@@ -166,64 +187,44 @@ impl Oturum {
         }
     }
 
-    /// Şart kapısı (spec §3.1, §11.8). Metin gösterilir; kabul yalnızca
-    /// kullanıcının `SartlariKabulEt` komutuyla ve gösterilen sürümle gider.
-    async fn sart_akisi(&mut self) -> Result<(), BitisNedeni> {
-        loop {
-            let saglayici = self.baglam.saglayici.clone();
-            let metin = match self
-                .iptal_edilebilir(async move { saglayici.sart_metni().await })
-                .await?
-            {
-                Ok(m) => m,
-                Err(e) => {
-                    self.hata(e.to_string()).await;
-                    return Err(BitisNedeni::Hata);
-                }
-            };
-            let gosterilen = metin.version;
-            self.yay(Olay::SartOnayiGerekiyor {
-                surum: gosterilen,
-                metin: metin.content,
-            })
-            .await;
-
-            let surum = loop {
-                let Some(komut) = self.tur_komutu_al().await else {
-                    return Err(BitisNedeni::Iptal);
-                };
-                match komut {
-                    Komut::SartlariKabulEt { surum } => break surum,
-                    diger => {
-                        if self.genel_komut(diger).await == Etki::Iptal {
-                            return Err(BitisNedeni::Iptal);
-                        }
-                    }
-                }
-            };
-            if surum != gosterilen {
-                self.hata(
-                    "Onaylanan sürüm gösterilen şart metniyle aynı değil; güncel metin yeniden gösteriliyor.",
-                )
-                .await;
-                continue;
+    /// Şart kapısı (1c tasarımı §7.3, üst belge §11.8). Oturum kabul isteğini
+    /// kendisi göndermez: uygulama genelindeki kapıya kaydolur, metni yayar ve
+    /// kullanıcının şart penceresindeki kararını bekler.
+    async fn sart_akisi(&mut self, istek_nesli: u64) -> Result<(), BitisNedeni> {
+        let kapi = self.baglam.sart_kapisi.clone();
+        let gerekli = match self
+            .iptal_edilebilir(async move { kapi.gerekli(istek_nesli).await })
+            .await?
+        {
+            Ok(v) => v,
+            Err(e) => {
+                self.hata(e.to_string()).await;
+                return Err(BitisNedeni::Hata);
             }
-
-            let saglayici = self.baglam.saglayici.clone();
-            match self
-                .iptal_edilebilir(async move { saglayici.sart_kabul(surum).await })
-                .await?
-            {
-                Ok(()) => return Ok(()),
-                Err(kalfa_evren::EvrenError::SartKabulGerekli { .. }) => {
-                    self.hata("Şart metni bu sırada güncellendi; yeni sürüm gösteriliyor.")
-                        .await;
-                }
-                Err(e) => {
-                    self.hata(e.to_string()).await;
-                    return Err(BitisNedeni::Hata);
-                }
+        };
+        let (metin, nesil) = match gerekli {
+            crate::sart_kapisi::GerekliSonucu::OnayGerekli { metin, nesil } => (metin, nesil),
+            crate::sart_kapisi::GerekliSonucu::KabulEdildi { surum } => {
+                self.kaydet(KayitOgesi::SartKabulEdildi { surum }).await;
+                return Ok(());
             }
+            crate::sart_kapisi::GerekliSonucu::Ret => return Err(BitisNedeni::Iptal),
+        };
+        self.yay(Olay::SartOnayiGerekiyor {
+            surum: metin.surum,
+            metin: metin.metin,
+        })
+        .await;
+        let kapi = self.baglam.sart_kapisi.clone();
+        match self
+            .iptal_edilebilir(async move { kapi.karar_bekle(nesil).await })
+            .await?
+        {
+            SartKarari::Kabul { surum } => {
+                self.kaydet(KayitOgesi::SartKabulEdildi { surum }).await;
+                Ok(())
+            }
+            SartKarari::Ret => Err(BitisNedeni::Iptal),
         }
     }
 }

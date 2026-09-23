@@ -17,6 +17,7 @@ globset.workspace = true
 hex.workspace = true
 jsonschema.workspace = true
 kalfa-evren = { path = "../kalfa-evren" }
+same-file.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -25,8 +26,12 @@ tokio.workspace = true
 tokio-util.workspace = true
 uuid.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
 [dev-dependencies]
 kalfa-core = { path = ".", features = ["test-destek"] }
+tokio = { workspace = true, features = ["test-util"] }
 serde.workspace = true
 tempfile.workspace = true
 wiremock.workspace = true

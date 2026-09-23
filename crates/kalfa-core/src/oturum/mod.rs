@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use kalfa_evren::tipler::{ChatMessage, ToolCall};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::AracKayitDefteri;
@@ -25,8 +25,11 @@ use crate::kayit::{KayitOgesi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
 use crate::kimlik::{OturumId, TurId};
 use crate::kurtarma::{BILINMEYEN_SONUC, KurtarilmisDurum, KurtarmaHatasi, kurtar};
-use crate::protokol::{AracDurumu, BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf};
+use crate::protokol::{
+    AktarimDurmaNedeni, AracDurumu, BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf,
+};
 use crate::saglayici::Saglayici;
+use crate::sart_kapisi::SartKapisi;
 use arac_asamasi::AsamaSonucu;
 
 const KOMUT_KANALI: usize = 256;
@@ -59,6 +62,8 @@ impl Default for Sinirlar {
 pub struct OturumAyarlari {
     pub model: String,
     pub kip: Kip,
+    /// Çalışma alanının kökü; açılış kaydına yazılır.
+    pub calisma_alani: Option<PathBuf>,
     pub sinirlar: Sinirlar,
     pub olay_butcesi: OlayButcesi,
     /// `None`: kayıtsız oturum (spec §6.6).
@@ -71,6 +76,7 @@ impl OturumAyarlari {
         Self {
             model: model.into(),
             kip: Kip::Siki,
+            calisma_alani: Some(calisma_alani.to_path_buf()),
             sinirlar: Sinirlar::default(),
             olay_butcesi: OlayButcesi::default(),
             kayit_yolu: None,
@@ -95,6 +101,9 @@ pub fn varsayilan_sistem_mesaji(calisma_alani: &Path) -> String {
 #[derive(Clone)]
 pub struct OturumBaglami {
     pub saglayici: Arc<dyn Saglayici>,
+    /// Uygulama genelindeki tek şart kapısı (1c tasarımı §7.3). Bütün oturumlar
+    /// aynı kapıyı paylaşır.
+    pub sart_kapisi: Arc<SartKapisi>,
     pub araclar: Arc<AracKayitDefteri>,
     pub siniflandirici: Arc<Siniflandirici>,
     pub kilitler: Arc<KaynakKilitleri>,
@@ -189,6 +198,20 @@ pub enum OlayAktarimHatasi {
     },
     #[error("olay serileştirmesi başarısız oldu")]
     Serilestirme,
+}
+
+impl OlayAktarimHatasi {
+    /// Arayüze bildirilen neden.
+    pub fn durma_nedeni(&self) -> AktarimDurmaNedeni {
+        match self {
+            Self::OlaySayisiAsildi { .. } => AktarimDurmaNedeni::TuketiciYetismedi,
+            Self::BaytButcesiAsildi { olay, azami, .. } if olay > azami => {
+                AktarimDurmaNedeni::OlayCokBuyuk
+            }
+            Self::BaytButcesiAsildi { .. } => AktarimDurmaNedeni::TuketiciYetismedi,
+            Self::AliciKapandi | Self::Serilestirme => AktarimDurmaNedeni::Diger,
+        }
+    }
 }
 
 struct OlayPaketi {
@@ -523,22 +546,51 @@ mod tests {
     }
 
     #[test]
-    fn terminal_hata_rezervi_uuid_ve_mesajla_bile_yeterlidir() {
+    fn terminal_olay_rezerve_sigar() {
         let zarf = Zarf {
             sema: SEMA_SURUMU,
             oturum: OturumId::yeni(),
             tur: Some(TurId::yeni()),
             sira: u64::MAX,
-            yuk: Olay::Hata {
-                mesaj: format!(
-                    "Olay aktarımı durduruldu: olay bayt bütçesi aşıldı ({} + {} > {}).",
-                    usize::MAX,
-                    usize::MAX,
-                    usize::MAX
-                ),
+            yuk: Olay::AktarimDurdu {
+                neden: AktarimDurmaNedeni::TuketiciYetismedi,
             },
         };
         assert!(serilestirilmis_bayt(&zarf, TERMINAL_OLAY_BAYT_REZERVI).is_ok());
+    }
+
+    #[test]
+    fn durma_nedeni_eslemesi() {
+        assert_eq!(
+            OlayAktarimHatasi::OlaySayisiAsildi {
+                bekleyen: 3,
+                azami: 3
+            }
+            .durma_nedeni(),
+            AktarimDurmaNedeni::TuketiciYetismedi
+        );
+        assert_eq!(
+            OlayAktarimHatasi::BaytButcesiAsildi {
+                bekleyen: 0,
+                olay: 11,
+                azami: 10
+            }
+            .durma_nedeni(),
+            AktarimDurmaNedeni::OlayCokBuyuk
+        );
+        assert_eq!(
+            OlayAktarimHatasi::BaytButcesiAsildi {
+                bekleyen: 8,
+                olay: 5,
+                azami: 10
+            }
+            .durma_nedeni(),
+            AktarimDurmaNedeni::TuketiciYetismedi
+        );
+        assert_eq!(
+            OlayAktarimHatasi::Serilestirme.durma_nedeni(),
+            AktarimDurmaNedeni::Diger
+        );
     }
 }
 
@@ -547,6 +599,7 @@ pub struct OturumTutamaci {
     oturum: OturumId,
     tx: mpsc::Sender<Komut>,
     aktif_tur: AktifTur,
+    kapanis: watch::Receiver<bool>,
 }
 
 impl OturumTutamaci {
@@ -560,6 +613,14 @@ impl OturumTutamaci {
             .unwrap_or_else(|z| z.into_inner())
             .as_ref()
             .map(|(tur, _)| *tur)
+    }
+
+    /// Oturum görevi bitene kadar bekler. Döndüğünde oturumun kaydı ve kayıt
+    /// kilidi bırakılmıştır; kayıt aynı süreçte yeniden açılabilir. Oturumu
+    /// kapatmak için önce olay alıcısı bırakılır.
+    pub async fn kapanmasini_bekle(&self) {
+        let mut kapanis = self.kapanis.clone();
+        let _ = kapanis.wait_for(|kapandi| *kapandi).await;
     }
 
     pub async fn gonder(&self, komut: Komut) -> Result<(), OturumHatasi> {
@@ -586,11 +647,22 @@ pub fn baslat(
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
 ) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi> {
+    baslat_kimlikle(OturumId::yeni(), ayarlar, baglam)
+}
+
+/// Verilen kimlikle yeni bir oturum başlatır. Uygulama kayıt dosyasına oturum
+/// kimliğini ad olarak verir (1c tasarımı §5.1); bu yüzden kimliği oturumdan
+/// önce üretir.
+pub fn baslat_kimlikle(
+    kimlik: OturumId,
+    ayarlar: OturumAyarlari,
+    baglam: OturumBaglami,
+) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi> {
     let kayit = match &ayarlar.kayit_yolu {
         Some(yol) => Some(OturumKaydi::olustur(yol)?),
         None => None,
     };
-    Ok(baslat_ic(ayarlar, baglam, kayit))
+    Ok(baslat_ic(kimlik, ayarlar, baglam, kayit))
 }
 
 /// Kayıttan oturumu sürdürür (spec §6.6). Model ve kip kayıttan gelir (Serbest
@@ -601,15 +673,15 @@ pub fn devam_et(
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
 ) -> Result<(OturumTutamaci, OlayAlici, KurtarilmisDurum), OturumHatasi> {
-    let durum = kurtar(&OturumKaydi::oku(kayit_yolu)?)?;
-    let kayit = OturumKaydi::ac(kayit_yolu)?;
+    let (kayit, kayitlar) = OturumKaydi::devam_icin_ac(kayit_yolu)?;
+    let durum = kurtar(&kayitlar)?;
     let ayarlar = OturumAyarlari {
         model: durum.model.clone(),
         kip: durum.kip,
         kayit_yolu: Some(kayit_yolu.to_path_buf()),
         ..ayarlar
     };
-    let (mut oturum, tutamac, alici) = Oturum::kur(
+    let (mut oturum, tutamac, alici, kapanis) = Oturum::kur(
         durum.oturum,
         ayarlar,
         baglam,
@@ -641,6 +713,7 @@ pub fn devam_et(
             oturum.yay(olay).await;
         }
         oturum.calis().await;
+        let _ = kapanis.send(true);
     });
     Ok((tutamac, alici, durum))
 }
@@ -652,23 +725,26 @@ pub fn baslat_kayitla(
     baglam: OturumBaglami,
     kayit: OturumKaydi,
 ) -> (OturumTutamaci, OlayAlici) {
-    baslat_ic(ayarlar, baglam, Some(kayit))
+    baslat_ic(OturumId::yeni(), ayarlar, baglam, Some(kayit))
 }
 
 fn baslat_ic(
+    kimlik: OturumId,
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
     kayit: Option<OturumKaydi>,
 ) -> (OturumTutamaci, OlayAlici) {
-    let (mut oturum, tutamac, alici) =
-        Oturum::kur(OturumId::yeni(), ayarlar, baglam, kayit, Vec::new(), 0);
+    let (mut oturum, tutamac, alici, kapanis) =
+        Oturum::kur(kimlik, ayarlar, baglam, kayit, Vec::new(), 0);
     tokio::spawn(async move {
         let acilis = KayitOgesi::OturumAcildi {
             model: oturum.ayarlar.model.clone(),
             kip: oturum.ayarlar.kip,
+            calisma_alani: oturum.ayarlar.calisma_alani.clone(),
         };
         oturum.kaydet(acilis).await;
         oturum.calis().await;
+        let _ = kapanis.send(true);
     });
     (tutamac, alici)
 }
@@ -709,8 +785,9 @@ impl Oturum {
         kayit: Option<OturumKaydi>,
         mesajlar: Vec<ChatMessage>,
         sira: u64,
-    ) -> (Self, OturumTutamaci, OlayAlici) {
+    ) -> (Self, OturumTutamaci, OlayAlici, watch::Sender<bool>) {
         let (komut_tx, komut_rx) = mpsc::channel(KOMUT_KANALI);
+        let (kapanis_tx, kapanis_rx) = watch::channel(false);
         let aktif_tur: AktifTur = Arc::new(Mutex::new(None));
         let (olay_tx, olay_rx) = OlayKanali::yeni(ayarlar.olay_butcesi, aktif_tur.clone());
         let olay_kapanma = olay_tx.kapanma();
@@ -737,8 +814,10 @@ impl Oturum {
                 oturum: kimlik,
                 tx: komut_tx,
                 aktif_tur,
+                kapanis: kapanis_rx,
             },
             olay_rx,
+            kapanis_tx,
         )
     }
 
@@ -751,7 +830,7 @@ impl Oturum {
                 Komut::KullaniciMesaji { metin } => {
                     if let Some(neden) = self.kayit_hatasi.clone() {
                         let mesaj = format!(
-                            "Oturum kaydı yazılamadığı için bu oturum durduruldu ({neden}). Yeni bir oturum aç."
+                            "Oturum kaydı yazılamadığı için bu oturum durduruldu ({neden}). Yeni bir oturum açın."
                         );
                         self.hata(mesaj).await;
                     } else {
@@ -783,7 +862,10 @@ impl Oturum {
     async fn komut_geldi(&mut self, komut: Option<Komut>) -> Option<Komut> {
         match komut {
             Some(k) => {
-                self.kaydet(KayitOgesi::Komut { komut: k.clone() }).await;
+                self.kaydet(KayitOgesi::Komut {
+                    komut: k.clone().into(),
+                })
+                .await;
                 Some(k)
             }
             None => {
@@ -825,15 +907,12 @@ impl Oturum {
                 self.kaydet(KayitOgesi::ModelDegisti { model }).await;
             }
             Komut::KullaniciMesaji { .. } => {
-                self.hata("Önceki tur sürüyor; bitmesini bekle ya da iptal et.")
+                self.hata("Önceki tur sürüyor; bitmesini bekleyin ya da iptal edin.")
                     .await;
             }
             Komut::AracOnayi { .. } => {
                 self.hata("Bu onay artık geçerli değil; bekleyen bir işlem yok.")
                     .await;
-            }
-            Komut::SartlariKabulEt { .. } => {
-                self.hata("Şu an bekleyen bir şart onayı yok.").await;
             }
         }
         Etki::Devam
@@ -941,8 +1020,8 @@ impl Oturum {
                     oturum: self.kimlik,
                     tur: self.tur,
                     sira: self.sira,
-                    yuk: Olay::Hata {
-                        mesaj: format!("Olay aktarımı durduruldu: {hata}."),
+                    yuk: Olay::AktarimDurdu {
+                        neden: hata.durma_nedeni(),
                     },
                 };
                 self.olaylar.terminal_gonder(terminal);

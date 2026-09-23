@@ -5,10 +5,18 @@
 //! dönülmez (`yaz_kalici`). Çökmede yarım kalan son satır, kayıt devam etmek
 //! üzere açılırken kesilir; yoksa yeni kayıtlar o yarım satıra yapışır ve bir
 //! sonraki açılışta kayıt ortasından bozuk görünürdü.
+//!
+//! Aynı kayda aynı anda tek yazıcı açılır: kaydın yanındaki `<kayıt>.kilit`
+//! dosyasında işletim sistemi kilidi tutulur (1c tasarımı §5.2). Kilit kaydın
+//! kendisine konmaz; Windows'ta dosya kilidi aynı süreçteki okumaları da
+//! engellerdi. Çoklu hardlink'i olan kayıtlar açık hata ile reddedilir; bu
+//! alias'lar için ortak bir sidecar adı üretilemez.
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::fs::{self, File, OpenOptions, TryLockError};
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+
+use same_file::Handle;
 
 use kalfa_evren::KrediGozlemi;
 use kalfa_evren::tipler::ChatMessage;
@@ -18,15 +26,43 @@ use crate::izin::Kip;
 use crate::kimlik::CagriId;
 use crate::protokol::{AracDurumu, BitisNedeni, Komut, Zarf};
 
+/// Komut kaydının wire türü. Geçmişteki şart kabul komutu yalnızca kayıt
+/// uyumluluğu için okunur; bu kayıt EVREN'in kabulü onayladığını göstermez.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum KayitKomutu {
+    Guncel(Komut),
+    EskiSartKabulIstegi(EskiSartKabulKomutu),
+}
+
+/// Kayıtlarda tutulmuş eski şart kabul isteği; yeni `Komut` API'sinin parçası
+/// değildir.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "tip")]
+pub enum EskiSartKabulKomutu {
+    #[serde(rename = "SartlariKabulEt", skip_serializing)]
+    SartKabulIstegi { surum: u32 },
+}
+
+impl From<Komut> for KayitKomutu {
+    fn from(komut: Komut) -> Self {
+        Self::Guncel(komut)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "tip")]
 pub enum KayitOgesi {
     OturumAcildi {
         model: String,
         kip: Kip,
+        /// Oturumun açıldığı çalışma alanı; kayıttan açarken araçlar buna göre
+        /// kurulur. Bu alanı olmayan eski kayıtlar yalnızca geçmiş gösterir.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        calisma_alani: Option<PathBuf>,
     },
     Komut {
-        komut: Komut,
+        komut: KayitKomutu,
     },
     Mesaj {
         mesaj: ChatMessage,
@@ -44,6 +80,15 @@ pub enum KayitOgesi {
         amac: String,
         istek_id: Option<String>,
         kredi: Option<KrediGozlemi>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        yonlendirilen_model: Option<String>,
+    },
+    /// Bir model isteğinin token kullanımı; kayıttan açılan oturumun durum
+    /// çubuğu bundan toplanır.
+    Kullanim {
+        istem: u64,
+        tamamlama: u64,
+        dusunce: u64,
     },
     KipDegisti {
         kip: Kip,
@@ -53,6 +98,10 @@ pub enum KayitOgesi {
     },
     TurBitti {
         neden: BitisNedeni,
+    },
+    /// Oturum, kullanıcının şart penceresinde kabul ettiği sürümle sürdü.
+    SartKabulEdildi {
+        surum: u32,
     },
 }
 
@@ -78,41 +127,67 @@ impl KayitHedefi for File {
 
 pub struct OturumKaydi {
     hedef: Box<dyn KayitHedefi>,
+    /// Kayıt yanındaki sidecar kilidi, kayıt açık kaldığı sürece tutulur.
+    _kilit: Option<File>,
 }
 
 impl OturumKaydi {
     /// Yeni kayıt oluşturur; dosya zaten varsa hata döner.
     pub fn olustur(yol: &Path) -> io::Result<Self> {
+        kilit_uzantisi_kontrol(yol)?;
         if let Some(ust) = yol.parent() {
             fs::create_dir_all(ust)?;
         }
-        let mut secenek = OpenOptions::new();
-        secenek.create_new(true).append(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            secenek.mode(0o600);
-        }
-        Ok(Self::hedefle(Box::new(secenek.open(yol)?)))
+        let kilitli = kilitle(yol)?;
+        let dosya = yeni_kayit_dosyasi(&kilitli.yol)?;
+        dosya_kimligini_dogrula(&dosya, &kilitli.yol, kilitli.beklenen.as_ref())?;
+        Ok(Self {
+            hedef: Box::new(dosya),
+            _kilit: Some(kilitli.dosya),
+        })
     }
 
     /// Var olan kaydı devam etmek üzere açar ve onarır: çökmede yarım kalan
     /// son satır kesilir, son geçerli satırın satır sonu eksikse eklenir.
     pub fn ac(yol: &Path) -> io::Result<Self> {
-        let veri = fs::read(yol)?;
-        let (_, gecerli) = coz(&veri)?;
-        let mut dosya = OpenOptions::new().read(true).write(true).open(yol)?;
+        Self::devam_icin_ac(yol).map(|(kayit, _)| kayit)
+    }
+
+    /// Önce kilidi alır, sonra kaydı okur ve onarır. Kilit okumadan önce
+    /// tutulduğu için arada başka bir yazıcı ekleme yapamaz.
+    pub fn devam_icin_ac(yol: &Path) -> io::Result<(Self, Vec<Zarf<KayitOgesi>>)> {
+        // Olmayan kayıt için kilit dosyası bırakmamak için önce varlığı sına.
+        fs::metadata(yol)?;
+        let kilitli = kilitle(yol)?;
+        let mut dosya = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&kilitli.yol)?;
+        dosya_kimligini_dogrula(&dosya, &kilitli.yol, kilitli.beklenen.as_ref())?;
+        dosya.seek(SeekFrom::Start(0))?;
+        let mut veri = Vec::new();
+        dosya.read_to_end(&mut veri)?;
+        let (kayitlar, gecerli) = coz(&veri)?;
         dosya.set_len(gecerli as u64)?;
         dosya.seek(SeekFrom::End(0))?;
         if gecerli > 0 && veri[gecerli - 1] != b'\n' {
             dosya.write_all(b"\n")?;
         }
         dosya.sync_data()?;
-        Ok(Self::hedefle(Box::new(dosya)))
+        Ok((
+            Self {
+                hedef: Box::new(dosya),
+                _kilit: Some(kilitli.dosya),
+            },
+            kayitlar,
+        ))
     }
 
     pub fn hedefle(hedef: Box<dyn KayitHedefi>) -> Self {
-        Self { hedef }
+        Self {
+            hedef,
+            _kilit: None,
+        }
     }
 
     pub fn yaz(&mut self, zarf: &Zarf<KayitOgesi>) -> io::Result<()> {
@@ -133,9 +208,165 @@ impl OturumKaydi {
     }
 }
 
+struct KilitliKayitYolu {
+    dosya: File,
+    yol: PathBuf,
+    beklenen: Option<Handle>,
+}
+
+/// Kayıt kilit dosyasının yolu. Mevcut symlink/junction ve mevcut olmayan
+/// dosyanın üst dizini mümkün olduğunda kanonikleştirilir; hata durumunda
+/// API'nin `PathBuf` imzası için girdinin yan yolu döndürülür.
+pub fn kilit_yolu(kayit: &Path) -> PathBuf {
+    let yol = kayit_yolunu_coz(kayit).unwrap_or_else(|_| kayit.to_path_buf());
+    sidecar_yolu(&yol)
+}
+
+fn kilit_uzantisi_kontrol(kayit: &Path) -> io::Result<()> {
+    if kayit
+        .extension()
+        .is_some_and(|uzanti| uzanti.to_string_lossy().eq_ignore_ascii_case("kilit"))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Kayıt adı .kilit ile bitemez; bu uzantı kayıt kilidi dosyasına ayrılmıştır.",
+        ));
+    }
+    Ok(())
+}
+
+/// Mevcut kayıt için canonical path; yeni kayıt için canonical üst dizin ve
+/// özgün dosya adı. Böylece symlink/junction alias'ları aynı sidecar'ı bulur.
+fn kayit_yolunu_coz(kayit: &Path) -> io::Result<PathBuf> {
+    match fs::canonicalize(kayit) {
+        Ok(yol) => Ok(yol),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            let ad = kayit.file_name().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "Kayıt dosya adı gerekli.")
+            })?;
+            let ust = kayit
+                .parent()
+                .filter(|ust| !ust.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            Ok(fs::canonicalize(ust)?.join(ad))
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn sidecar_yolu(kayit: &Path) -> PathBuf {
+    let mut ad = kayit.as_os_str().to_owned();
+    ad.push(".kilit");
+    PathBuf::from(ad)
+}
+
+/// Kayıt kilidini alır; kilit başka bir yazıcıdaysa `ResourceBusy` döner.
+/// Kilit sonrası açılan kayıt file handle'ı canonicalization öncesi kimlikle
+/// karşılaştırılır; arada hedef değiştirilmişse açma başarısız olur.
+fn kilitle(kayit: &Path) -> io::Result<KilitliKayitYolu> {
+    kilit_uzantisi_kontrol(kayit)?;
+    let yol = kayit_yolunu_coz(kayit)?;
+    kilit_uzantisi_kontrol(&yol)?;
+    let beklenen = match fs::metadata(&yol) {
+        Ok(_) => Some(Handle::from_path(&yol)?),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e),
+    };
+    let mut secenek = OpenOptions::new();
+    secenek.create(true).write(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        secenek.mode(0o600);
+    }
+    let dosya = secenek.open(sidecar_yolu(&yol))?;
+    match dosya.try_lock() {
+        Ok(()) => Ok(KilitliKayitYolu {
+            dosya,
+            yol,
+            beklenen,
+        }),
+        Err(TryLockError::WouldBlock) => Err(io::Error::new(
+            io::ErrorKind::ResourceBusy,
+            "Bu oturum kaydı başka bir yerde açık.",
+        )),
+        Err(TryLockError::Error(e)) => Err(e),
+    }
+}
+
+fn yeni_kayit_dosyasi(yol: &Path) -> io::Result<File> {
+    let mut secenek = OpenOptions::new();
+    secenek.create_new(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        secenek.mode(0o600);
+    }
+    secenek.open(yol)
+}
+
+fn dosya_kimligini_dogrula(dosya: &File, yol: &Path, beklenen: Option<&Handle>) -> io::Result<()> {
+    let acilan = Handle::from_file(dosya.try_clone()?)?;
+    if beklenen.is_some_and(|beklenen| beklenen != &acilan) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Kayıt dosyası kilit alınırken değişti.",
+        ));
+    }
+    if Handle::from_path(yol)? != acilan {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Açılan kayıt yolu başka bir dosyayı gösteriyor.",
+        ));
+    }
+    tek_baglantili_kayit(dosya)
+}
+
+fn tek_baglantili_kayit(dosya: &File) -> io::Result<()> {
+    #[cfg(unix)]
+    let baglanti_sayisi: u64 = {
+        use std::os::unix::fs::MetadataExt;
+        dosya.metadata()?.nlink()
+    };
+    #[cfg(windows)]
+    let baglanti_sayisi = {
+        use std::mem::MaybeUninit;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        };
+
+        let mut bilgi = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+        // Windows MetadataExt::number_of_links() henüz unstable. Aynı alanı
+        // dosyanın açık handle'ı üzerinden Win32 API ile güvenle alıyoruz.
+        let basarili =
+            unsafe { GetFileInformationByHandle(dosya.as_raw_handle(), bilgi.as_mut_ptr()) };
+        if basarili == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        u64::from(unsafe { bilgi.assume_init().nNumberOfLinks })
+    };
+    #[cfg(not(any(unix, windows)))]
+    let baglanti_sayisi = {
+        let _ = dosya;
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Bu platformda hardlink sayısı doğrulanamıyor.",
+        ));
+    };
+
+    if baglanti_sayisi > 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Birden fazla hardlink'i olan kayıtlar desteklenmiyor.",
+        ));
+    }
+    Ok(())
+}
+
 /// Kaydı çözer. İkinci değer, son geçerli satırın bittiği bayttır (satır sonu
 /// dahil); `ac` dosyayı bu uzunluğa keser.
-fn coz(veri: &[u8]) -> io::Result<(Vec<Zarf<KayitOgesi>>, usize)> {
+pub(crate) fn coz(veri: &[u8]) -> io::Result<(Vec<Zarf<KayitOgesi>>, usize)> {
     let mut kayitlar = Vec::new();
     let mut gecerli = 0usize;
     let mut bas = 0usize;

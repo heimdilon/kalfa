@@ -50,7 +50,6 @@ fn butun_komutlar_gidip_gelir() {
             model: "glm-5.3".into(),
         },
         Komut::IzinKipiDegistir { kip: Kip::Proje },
-        Komut::SartlariKabulEt { surum: 2 },
     ] {
         gidip_gelir(&k);
     }
@@ -94,6 +93,10 @@ fn butun_olaylar_gidip_gelir() {
                 muhur: OnayMuhru("m".into()),
             }],
         },
+        Olay::IstekBilgisi {
+            istek_id: Some("r".into()),
+            yonlendirilen_model: Some("glm-5.3".into()),
+        },
         Olay::KrediGozlemi {
             gozlem: KrediGozlemi {
                 kalan: None,
@@ -122,9 +125,23 @@ fn butun_olaylar_gidip_gelir() {
         Olay::Tamamlandi {
             neden: BitisNedeni::Normal,
         },
+        Olay::AktarimDurdu {
+            neden: AktarimDurmaNedeni::OlayCokBuyuk,
+        },
     ] {
         gidip_gelir(&o);
     }
+}
+
+#[test]
+fn aktarim_durdu_json_bicimi() {
+    assert_eq!(
+        serde_json::to_value(Olay::AktarimDurdu {
+            neden: AktarimDurmaNedeni::TuketiciYetismedi
+        })
+        .unwrap(),
+        json!({"tip": "AktarimDurdu", "neden": "TuketiciYetismedi"})
+    );
 }
 
 #[test]

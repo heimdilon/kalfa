@@ -8,7 +8,9 @@ const AZAMI_MESAJ: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EvrenError {
-    #[error("Anahtar geçersiz ya da eksik. EVREN portalından anahtarını kontrol edip yeniden gir.")]
+    #[error(
+        "Anahtar geçersiz ya da eksik. EVREN portalından anahtarınızı kontrol edip yeniden girin."
+    )]
     AnahtarGecersiz,
     #[error("EVREN kullanım şartlarının kabul edilmesi gerekiyor.")]
     SartKabulGerekli { surum: Option<u32> },

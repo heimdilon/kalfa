@@ -10,11 +10,22 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-22-kalfa-1c-design.md` (1c tasarımı) — §3.3, §4, §5, §7.3, §9.3, §9.4, §11.1. Üst belge: `docs/superpowers/specs/2026-09-21-kalfa-design.md` — §4.1, §6.1, §6.6, §11.1, §11.8.
 
-**Ön koşul:** 1a ve 1b tamam. Çalışma ağacında, bu planın temel aldığı ama henüz commit'lenmemiş olay kuyruğu değişikliği var (Görev 1).
+**Ön koşul:** 1a ve 1b tamam. Bu planın temel aldığı olay kuyruğu değişikliği Görev 1'de commit'lendi (`d02c22b`).
 
 **Bu planın kapsamı dışında:** `kalfa` Tauri crate'i, pencereler, komut yetkileri, kimlik deposu (1c-2) · `ui/` Svelte arayüzü (1c-3) · gerçek pencereyle uçtan uca testler ve p95 ölçümü (1c-4).
 
 **Kod örnekleri hakkında:** Örnekler mevcut kodun tiplerine göre yazıldı ama bu plan yazılırken derlenmedi. Uygulayıcı derleme hatasını düzeltirken testin sınadığı davranışı değiştirmez; davranış değişmesi gerekiyorsa durur ve sorar.
+
+## PR ile yürütme
+
+Kullanıcı kararı (2026-09-23): kodu Codex yazar, Claude inceler.
+
+- **Dal ve PR:** çalışma dalı `1c-1/cekirdek`, PR'ın hedefi `kalfa-asama-1`. Uygulayıcı bu dalda çalışır. Ayrı bir PR açması gerekirse hedef dal olarak `1c-1/cekirdek`'i seçer.
+- **Sıra:** görevler sırayla uygulanır; Görev 1 yapıldı, iş **Görev 2'den** başlar. Her görev planda yazan mesajla kendi commit'ini alır; her commit'ten sonra push'lanır. Geçmiş yeniden yazılmaz, force-push yapılmaz.
+- **Doğrulama:** her görevin sonundaki komutlar uygulayıcının ortamında koşturulur. Kayıt kilidi ve kök kimliği platforma göre değiştiği için öbür platformu (Windows ya da Linux) inceleyici PR'ı birleştirmeden önce koşturur.
+- **Soru ve sapma:** plandan sapmak gerekirse (davranış değişikliği, yeni bağımlılık, plandaki bir testin yanlış olması) uygulayıcı durur ve PR'a yorum yazar; kendi başına karar vermez.
+- **İnceleme:** inceleyici PR'a yorum yazar. Düzeltmeler yeni commit'lerle gelir. İnceleme temizse ve iki platform yeşilse inceleyici PR'ı birleştirir.
+- **Ortam:** Rust `rust-toolchain.toml`'dan kurulur (1.98.1, clippy ve rustfmt ile). 1c-1 Tauri'siz olduğu için başka sistem paketi gerekmez. `.env` yoktur ve gerekmez; canlı EVREN testleri (`#[ignore]`) koşturulmaz.
 
 ## Global Constraints
 
@@ -28,7 +39,7 @@
 - **Kod kuralı:** kütüphane kodunda `unwrap()` / `expect()` yok; `test_destek` ve testler serbest.
 - **Metin tonu:** kullanıcıya giden metinler "siz" diliyle; modele giden araç hataları "sen" kalır.
 - **Her görevin sonunda:** `cargo test --workspace --quiet` yeşil; `cargo clippy --workspace --all-targets -- -D warnings` temiz; `cargo fmt --all -- --check` temiz. Canlı EVREN testleri (`#[ignore]`) koşturulmaz.
-- **Commit:** mesajlar Türkçe, `kalfa-core: …` biçiminde. Co-Authored-By satırı eklenip eklenmeyeceğini yürütme başında kullanıcı belirler; 1b commit'lerine eklenmedi.
+- **Commit:** mesajlar Türkçe, `kalfa-core: …` biçiminde. Kullanıcı kararı (2026-09-22): yalnızca Claude'un yazdığı commit'lerin sonuna `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` eklenir. Codex'in yazdığı commit'lere ve Görev 1'in commit'lerine bu satır eklenmez.
 - **Dokunulmayanlar:** `.env`, `Screenshot*.png`, kök dizindeki `tasks.png`.
 
 ## Dosya Yapısı
@@ -69,6 +80,8 @@ docs/GELISTIRME_DURUMU.md                     1c-1 sonuçları (değişir)
 
 ### Task 1: Olay kuyruğu değişikliğini doğrula ve commit'le
 
+> **Durum: yapıldı (2026-09-23), PR açılmadan önce.** Commit'ler `d02c22b` (kod) ve `15bb90e` (durum dosyası). Windows'ta `cargo test --workspace` 182 geçti, 4 canlı test atlandı; Clippy ve biçim temiz. Uygulayıcı **Görev 2'den** başlar.
+
 Çalışma ağacında, başka bir araçla yapılmış ve henüz commit'lenmemiş bir değişiklik var: çekirdek olay kuyruğunu sayı ve bayt bütçesiyle sınırlayan iş. Bu plan onun üzerine kurulur. Kod bu planın yürütücüsünce yazılmadığı için commit **kullanıcının açık onayıyla** yapılır.
 
 **Files:**
@@ -77,26 +90,26 @@ docs/GELISTIRME_DURUMU.md                     1c-1 sonuçları (değişir)
 **Interfaces:**
 - Produces: `kalfa_core::oturum::{OlayAlici, OlayButcesi, OlayAktarimHatasi, OlayButcesiHatasi, TERMINAL_OLAY_BAYT_REZERVI}`; `OturumAyarlari::olay_butcesi`; `OlayAlici::{recv, try_recv, transport_hatasi, bekleyen_olay_sayisi, bekleyen_bayt, close}`.
 
-- [ ] **Step 1: Çalışma ağacını gör**
+- [x] **Step 1: Çalışma ağacını gör**
 
 Run: `git status --short && git diff --stat`
 Expected: yukarıdaki beş dosya değişmiş ya da yeni; başka kod dosyası yok. Farklıysa dur ve kullanıcıya sor.
 
-- [ ] **Step 2: Doğrulamayı koştur**
+- [x] **Step 2: Doğrulamayı koştur**
 
 Run: `cargo test --workspace --quiet && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -- --check`
 Expected: testler geçer (değişikliğin kendi kaydı 182 geçti, 4 atlandı diyor), Clippy ve biçim temiz.
 
-- [ ] **Step 3: Farkı gözden geçir**
+- [x] **Step 3: Farkı gözden geçir**
 
 Run: `git diff crates/kalfa-core/src/oturum/mod.rs`
 Kontrol: `OlayKanali::gonder` kuyruğa kabulden önce sayı ve bayt sınırını denetliyor; sınır aşılınca `basarisiz` hata durumunu kuruyor; `Oturum::yay` hata dönünce `iptal.cancel()` ve `kapandi = true` yapıyor; `OlayAlici` bırakılınca aktif tur iptal ediliyor.
 
-- [ ] **Step 4: Kontrol noktası — kullanıcı onayı**
+- [x] **Step 4: Kontrol noktası — kullanıcı onayı**
 
-Ana oturum kullanıcıya sorar: "Çalışma ağacındaki olay kuyruğu değişikliğini (5 dosya, testler yeşil) iki commit olarak işleyeyim mi?" Açık "evet" gelmeden commit'lenmez.
+Kullanıcı 2026-09-22'de onay verdi ("Evet, commit'le"). Adım 1–3 beklenmedik bir şey gösterirse (başka dosya, kırmızı test) commit'lenmez; kullanıcıya yeniden sorulur.
 
-- [ ] **Step 5: Commit'le**
+- [x] **Step 5: Commit'le**
 
 ```bash
 git add crates/kalfa-core/src/oturum/mod.rs crates/kalfa-core/tests/oturum_olay_aktarimi.rs docs/superpowers/plans/2026-09-22-kalfa-1c-olay-aktarimi.md README.md
@@ -2715,8 +2728,9 @@ Kayıttan açılabilmek için `OturumAcildi` çalışma alanı yolunu taşır. D
 - Test: `crates/kalfa-core/tests/kayit_ayrintilari.rs`
 
 **Interfaces:**
-- Produces: `KayitOgesi::OturumAcildi { model, kip, calisma_alani: Option<PathBuf> }`; `KayitOgesi::Istek { amac, istek_id, kredi, yonlendirilen_model: Option<String> }`; `KayitOgesi::Kullanim { istem: u64, tamamlama: u64, dusunce: u64 }`; `Olay::IstekBilgisi { istek_id: Option<String>, yonlendirilen_model: Option<String> }`; `OturumAyarlari::calisma_alani: Option<PathBuf>`; `KurtarilmisDurum::calisma_alani: Option<PathBuf>`.
+- Produces: `KayitOgesi::OturumAcildi { model, kip, calisma_alani: Option<PathBuf> }`; `KayitOgesi::Istek { amac, istek_id, kredi, yonlendirilen_model: Option<String> }`; `KayitOgesi::Kullanim { istem: u64, tamamlama: u64, dusunce: u64 }`; `Olay::IstekBilgisi { istek_id: Option<String>, yonlendirilen_model: Option<String> }`; `OturumAyarlari::calisma_alani: Option<PathBuf>`; `KurtarilmisDurum::calisma_alani: Option<PathBuf>`; `oturum::baslat_kimlikle(kimlik: OturumId, ayarlar: OturumAyarlari, baglam: OturumBaglami) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi>`.
 - Yeni alanlar `#[serde(default, skip_serializing_if = "Option::is_none")]`: alanı olmayan eski kayıtlar okunur.
+- `baslat_kimlikle`: uygulama kayıt dosyasına oturum kimliğini ad olarak verir (1c tasarımı §5.1). Bu yüzden kimliği oturumdan önce üretmesi gerekir. `baslat` artık `baslat_kimlikle(OturumId::yeni(), …)` çağırır.
 
 - [ ] **Step 1: Başarısız testleri yaz**
 
@@ -2726,8 +2740,9 @@ Kayıttan açılabilmek için `OturumAcildi` çalışma alanı yolunu taşır. D
 use std::path::{Path, PathBuf};
 
 use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
+use kalfa_core::kimlik::OturumId;
 use kalfa_core::kurtarma::kurtar;
-use kalfa_core::oturum::OturumAyarlari;
+use kalfa_core::oturum::{OturumAyarlari, baslat_kimlikle};
 use kalfa_core::protokol::{BitisNedeni, Komut, Olay, Zarf};
 use kalfa_core::test_destek::*;
 use kalfa_evren::AkisOlayi;
@@ -2827,12 +2842,31 @@ async fn token_kullanimi_kayda_yazilir() {
             dusunce: 2
         }));
 }
+
+#[tokio::test]
+async fn verilen_kimlikle_baslar() {
+    let d = tempfile::tempdir().unwrap();
+    let kimlik = OturumId::yeni();
+    let yol = d.path().join(format!("{kimlik}.jsonl"));
+    let mut ayar = OturumAyarlari::yeni("glm-5.3", Path::new("calisma"));
+    ayar.kayit_yolu = Some(yol.clone());
+    let s = SahteSaglayici::yeni(vec![]);
+    let (tutamac, alici) =
+        baslat_kimlikle(kimlik, ayar, test_baglami(s, vec![], sanal_siniflandirici())).unwrap();
+    assert_eq!(tutamac.oturum_id(), kimlik);
+    drop(alici);
+    tokio::time::timeout(std::time::Duration::from_secs(5), tutamac.kapanmasini_bekle())
+        .await
+        .expect("oturum kapanmalı");
+    let kayitlar = OturumKaydi::oku(&yol).unwrap();
+    assert_eq!(kayitlar[0].oturum, kimlik);
+}
 ```
 
 - [ ] **Step 2: Testlerin başarısız olduğunu gör**
 
 Run: `cargo test -p kalfa-core --test kayit_ayrintilari`
-Expected: FAIL — yeni alanlar, `Kullanim` ve `IstekBilgisi` yok.
+Expected: FAIL — yeni alanlar, `Kullanim`, `IstekBilgisi` ve `baslat_kimlikle` yok.
 
 - [ ] **Step 3: Kayıt öğelerini ve olayı genişlet**
 
@@ -2903,6 +2937,35 @@ Expected: FAIL — yeni alanlar, `Kullanim` ve `IstekBilgisi` yok.
             calisma_alani: oturum.ayarlar.calisma_alani.clone(),
         };
 ```
+
+Kimliği dışarıdan alan başlatmayı ekle. `baslat` işlevini şununla değiştir ve hemen altına `baslat_kimlikle`'yi ekle:
+
+```rust
+/// Yeni bir oturum başlatır. Bir tokio çalışma zamanı içinde çağrılmalıdır.
+pub fn baslat(
+    ayarlar: OturumAyarlari,
+    baglam: OturumBaglami,
+) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi> {
+    baslat_kimlikle(OturumId::yeni(), ayarlar, baglam)
+}
+
+/// Verilen kimlikle yeni bir oturum başlatır. Uygulama kayıt dosyasına oturum
+/// kimliğini ad olarak verir (1c tasarımı §5.1); bu yüzden kimliği oturumdan
+/// önce üretir.
+pub fn baslat_kimlikle(
+    kimlik: OturumId,
+    ayarlar: OturumAyarlari,
+    baglam: OturumBaglami,
+) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi> {
+    let kayit = match &ayarlar.kayit_yolu {
+        Some(yol) => Some(OturumKaydi::olustur(yol)?),
+        None => None,
+    };
+    Ok(baslat_ic(kimlik, ayarlar, baglam, kayit))
+}
+```
+
+`baslat_kayitla` içindeki çağrıyı `baslat_ic(OturumId::yeni(), ayarlar, baglam, Some(kayit))` yap. `baslat_ic`'in imzasına ilk parametre olarak `kimlik: OturumId` ekle ve içindeki `Oturum::kur(OturumId::yeni(), …)` çağrısında `OturumId::yeni()` yerine `kimlik` kullan.
 
 `crates/kalfa-core/src/kurtarma.rs` içinde `use std::collections::{HashMap, HashSet};` satırından sonra ekle:
 
@@ -3044,7 +3107,7 @@ fn acilis(kip: Kip) -> KayitOgesi {
 - [ ] **Step 7: Testleri koştur**
 
 Run: `cargo test --workspace --quiet`
-Expected: PASS (`kayit_ayrintilari` 4 test dahil).
+Expected: PASS (`kayit_ayrintilari` 5 test dahil).
 
 - [ ] **Step 8: Doğrulama ve commit**
 
@@ -3053,7 +3116,7 @@ Expected: temiz.
 
 ```bash
 git add crates/kalfa-core/src crates/kalfa-core/tests
-git commit -m "kalfa-core: kayıtta çalışma alanı, yönlendirilen model ve token kullanımı"
+git commit -m "kalfa-core: kayıtta çalışma alanı, yönlendirilen model ve token kullanımı; kimlikle başlatma"
 ```
 
 ---
@@ -4139,12 +4202,14 @@ git commit -m "kalfa-core, kalfa-evren: kullanıcıya giden hata metinleri siz d
 
 ---
 
-### Task 12: Son doğrulama (Windows ve Linux) ve durum dosyası
+### Task 12: Son doğrulama ve durum dosyası
+
+Kayıt kilidi (flock / LockFileEx) ve kök kimliği (aygıt+inode / birim+dizin) platforma göre değişir; plan iki platformda da doğrulanır. Uygulayıcı kendi ortamında doğrular; öbür platformu inceleyici PR'ı birleştirmeden önce doğrular (bkz. "PR ile yürütme").
 
 **Files:**
 - Modify: `docs/GELISTIRME_DURUMU.md`
 
-- [ ] **Step 1: Windows doğrulaması**
+- [ ] **Step 1: Uygulayıcının ortamında doğrulama**
 
 Run:
 
@@ -4157,23 +4222,11 @@ git grep -n -E "\.unwrap\(\)|\.expect\(" -- crates/kalfa-core/src ':!crates/kalf
 git status research/
 ```
 
-Expected: testler geçer; Clippy ve biçim temiz; `cargo tree` çıktısı boş; `research/` temiz. `git grep` eşleşmeleri yalnızca `#[cfg(test)]` test modüllerinde olabilir (ör. `oturum/mod.rs` içindeki `mod tests`); kütüphane kodunda eşleşme varsa düzeltilir.
+Expected: testler geçer; Clippy ve biçim temiz; `cargo tree` çıktısı boş; `research/` temiz. `git grep` eşleşmeleri yalnızca `#[cfg(test)]` test modüllerinde olabilir (ör. `oturum/mod.rs` içindeki `mod tests`); kütüphane kodunda eşleşme varsa düzeltilir. Windows'ta Windows'a özel testler (`junction_*`, `buyuk_kucuk_harf_*`) de koşar; Linux'ta derlenmezler, `sembolik_baglanti_ayni_koku_verir` ise Linux'ta koşar.
 
-- [ ] **Step 2: Linux doğrulaması (WSL, Ubuntu 24.04)**
+- [ ] **Step 2: Durum dosyasını güncelle**
 
-Kayıt kilidi (flock / LockFileEx) ve kök kimliği (aygıt+inode / birim+dizin) platforma göre değişir; iki platformda da koşturulur.
-
-Run:
-
-```bash
-wsl -d Ubuntu-24.04 -- bash -lc 'cd /root/kalfa && git pull --ff-only "/mnt/c/Users/kullanici/OneDrive/Masaüstü/harness" kalfa-asama-1 && cargo test --workspace'
-```
-
-Expected: bütün testler geçer; Windows'a özel testler (`junction_*`, `buyuk_kucuk_harf_*`) Linux'ta derlenmez, `sembolik_baglanti_ayni_koku_verir` Linux'ta koşar.
-
-- [ ] **Step 3: Durum dosyasını güncelle**
-
-`docs/GELISTIRME_DURUMU.md` içinde "Devam eden aşama — 1c" bölümüne, "Tasarım belgesi" alt başlığından önce şu alt başlığı ekle ve tabloyu Adım 1–2'nin gerçek çıktılarıyla doldur:
+`docs/GELISTIRME_DURUMU.md` içinde "Devam eden aşama — 1c" bölümüne, "Tasarım belgesi" alt başlığından önce şu alt başlığı ekle. Tabloda yalnızca Adım 1'i koştuğun platformun sütununu gerçek çıktılarla doldur; öbür sütunda `(inceleme)` kalsın, onu inceleyici doldurur:
 
 ```markdown
 ### 1c-1 — çekirdek eklemeleri (tamamlandı)
@@ -4185,19 +4238,24 @@ kendisi göndermez), çalışma alanı kilit yöneticisi, kayıt başına tek ya
 kayıtta çalışma alanı / yönlendirilen model / token kullanımı, geçmiş
 görünümü ve oturum listesi (`gecmis`).
 
-| Kontrol | Windows | Linux (WSL) |
+| Kontrol | Windows | Linux |
 | --- | --- | --- |
 | `cargo test --workspace` | (sayılar) | (sayılar) |
-| Clippy / fmt | Temiz | — |
-| `cargo tree` izolasyonu | Boş | — |
+| Clippy / fmt | (sonuç) | (sonuç) |
+| `cargo tree` izolasyonu | (sonuç) | (sonuç) |
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit ve push**
 
 ```bash
 git add docs/GELISTIRME_DURUMU.md
 git commit -m "docs: 1c-1 çekirdek eklemeleri tamamlandı; doğrulama kaydı"
+git push
 ```
+
+- [ ] **Step 4 (inceleyici): Öbür platformda doğrulama ve birleştirme**
+
+İnceleyici PR dalını alır, Adım 1'in komutlarını öbür platformda koşar (Windows ya da WSL'deki Ubuntu 24.04), tablonun boş sütununu doldurup commit'ler ve inceleme temizse PR'ı birleştirir.
 
 ## Plan sonu kontrol listesi
 

@@ -7,7 +7,8 @@ use kalfa_core::kayit::OturumKaydi;
 use kalfa_core::kurtarma::kurtar;
 use kalfa_core::oturum::{OturumAyarlari, OturumBaglami, baslat};
 use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OnayOgesi};
-use kalfa_core::saglayici::EvrenSaglayici;
+use kalfa_core::saglayici::{EvrenSaglayici, Saglayici};
+use kalfa_core::sart_kapisi::SartKapisi;
 use kalfa_core::test_destek::*;
 use kalfa_evren::tipler::Role;
 use kalfa_evren::{ApiAnahtari, EvrenIstemcisi, VARSAYILAN_TABAN};
@@ -258,8 +259,10 @@ async fn canli_evren_ile_dosya_okuyup_yanitlar() {
     let taban = std::env::var("EVREN_BASE_URL").unwrap_or_else(|_| VARSAYILAN_TABAN.to_string());
     let istemci = EvrenIstemcisi::yeni(taban, ApiAnahtari::yeni(anahtar)).unwrap();
     let calisma_alani = CalismaAlani::ac(o.siniflandirici.clone()).unwrap();
+    let saglayici: Arc<dyn Saglayici> = Arc::new(EvrenSaglayici::yeni(istemci));
     let baglam = OturumBaglami {
-        saglayici: Arc::new(EvrenSaglayici::yeni(istemci)),
+        sart_kapisi: Arc::new(SartKapisi::yeni(saglayici.clone())),
+        saglayici,
         araclar: Arc::new(AracKayitDefteri::yeni(varsayilan_araclar(calisma_alani)).unwrap()),
         siniflandirici: o.siniflandirici.clone(),
         kilitler: Arc::new(kalfa_core::kilit::KaynakKilitleri::yeni()),
