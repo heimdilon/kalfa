@@ -371,10 +371,25 @@ pencerenin ekranları 1c-3b'de.
 
 | Kontrol | Windows | Linux |
 | --- | --- | --- |
-| `cargo test --workspace --all-features --locked` | 301 geçti, 0 başarısız, 4 yok sayıldı | (inceleme) |
-| Clippy / fmt | Başarılı | (inceleme) |
-| `cargo tree -p kalfa-uygulama` içinde `tauri`/`wry`/`webkit` | Yok | (inceleme) |
-| `unwrap()` / `expect()` taraması | Yalnızca `test_destek.rs` | (inceleme) |
+| `cargo test --workspace --all-features --locked` | 301 geçti, 0 başarısız, 4 yok sayıldı | 295 geçti, 0 başarısız, 4 yok sayıldı (`kalfa` hariç) |
+| Clippy / fmt | Başarılı | Başarılı (`kalfa` hariç) |
+| `cargo tree -p kalfa-uygulama` içinde `tauri`/`wry`/`webkit` | Yok | Yok |
+| `unwrap()` / `expect()` taraması | Yalnızca `test_destek.rs` | Aynı |
+
+Linux sütunu PR incelemesinde dolduruldu: Ubuntu 24.04 (WSL2), Rust 1.98.1,
+`767e8f5`. `kalfa` crate'i WebKitGTK geliştirme paketleri istediği için Linux'ta
+derlenmedi; fark onun 5 izin testi ve Windows'a özel junction testidir.
+
+Gerçek pencere denemesi (Windows, WebView2, sahte EVREN sunucusu; planın
+İnceleme bölümü): şart penceresinde anahtar kaydı ve tek `POST` ile kabul, ana
+pencerenin açılması ve şart penceresinin kapanması, pencereler arası ve
+Tauri/eklenti komutlarının reddi, `window.open` ve dış adrese gezinme engeli,
+kaydı olmayan oturumda `OturumYok` beklenen gibi.
+
+Plandan sapma (Codex, PR yorumu): aynı oturumdaki izin kipi değişiklikleri
+async kilitle sıraya alındı. Plandaki kodda eşzamanlı iki düşürme (ör. Serbest'ten
+Proje ve İnceleme) ters sırayla çekirdeğe ulaşırsa kip onaysız yükselebiliyordu;
+`eszamanli_kip_degisimleri_ayni_oturumda_sirayla_islenir` testi sınar.
 
 ### Tasarım belgesi
 
