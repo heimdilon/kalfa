@@ -1,0 +1,47 @@
+<!-- Menü (1c tasarımı §8.1): 1c'de yalnızca Oturumlar ve "Anahtarı değiştir". -->
+<script lang="ts">
+  import NavItem from '../bilesenler/NavItem.svelte';
+  import NavRail from '../bilesenler/NavRail.svelte';
+  import { m } from '../dil/tr';
+  import type { AnaDurum } from './anaDurum.svelte';
+
+  let { durum }: { durum: AnaDurum } = $props();
+</script>
+
+<NavRail label={m('menu.ad')} class="menu">
+  {#snippet header()}
+    <div class="marka">{m('uygulama.adi')}</div>
+    <div class="slogan">{m('uygulama.slogan')}</div>
+  {/snippet}
+  <NavItem icon="message-square" active>{m('menu.oturumlar')}</NavItem>
+  <NavItem icon="key-round" onclick={() => durum.anahtariDegistir()}>
+    {m('menu.anahtar')}
+  </NavItem>
+  {#snippet footer()}
+    <div class="cizgi"></div>
+    <div class="alt-not">{m('uygulama.alt_not')}</div>
+  {/snippet}
+</NavRail>
+
+<style>
+  .marka {
+    font: var(--type-wordmark);
+    letter-spacing: var(--tracking-wordmark);
+    color: var(--text-title);
+  }
+  .slogan {
+    margin-top: 4px;
+    font: var(--type-tagline);
+    color: var(--text-muted);
+  }
+  .cizgi {
+    width: 34px;
+    height: 2px;
+    margin-bottom: 10px;
+    background: var(--copper-400);
+  }
+  .alt-not {
+    font: var(--type-small);
+    color: var(--text-muted);
+  }
+</style>

@@ -55,6 +55,10 @@
     color: var(--text-body);
     font: var(--type-body);
   }
+  /* Odak çerçevede gösterilir; içteki alan ikinci bir halka çizmez. */
+  textarea:focus-visible {
+    outline: none;
+  }
   .alt {
     display: flex;
     align-items: center;
