@@ -95,9 +95,44 @@ Kullanıcı isterse: `set -a && . ./.env && set +a && cargo test --workspace -- 
 
 1c'nin tasarım belgesi yazıldı:
 [`2026-09-22-kalfa-1c-design.md`](superpowers/specs/2026-09-22-kalfa-1c-design.md).
-Uygulama planı **henüz yazılmadı.**
+1c uygulama planı parçalara ayrıldı; çekirdek ve arayüz işleri ilgili plan
+dosyalarında izleniyor.
 Bu bölüm, konuşmada şimdiye kadar verilen kararları kaydeder; böylece başka bir
 oturum ya da araç kaldığı yerden devam edebilir.
+
+### 1c-1 — çekirdek eklemeleri (tamamlandı)
+
+Plan: [`2026-09-22-kalfa-1c-1-cekirdek-eklemeleri.md`](superpowers/plans/2026-09-22-kalfa-1c-1-cekirdek-eklemeleri.md).
+`kalfa-core`'a olay paketleyici ve kredi sınırı (`aktarim`), terminal
+`AktarimDurdu` olayı, tek şart kapısı (`sart_kapisi`), çalışma alanı kilit
+yöneticisi, kayıt başına tek yazıcı, kayıtta çalışma alanı / yönlendirilen model
+/ token kullanımı, geçmiş görünümü ve oturum listesi (`gecmis`) eklendi.
+
+Windows doğrulaması (2026-09-23):
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `cargo test --workspace --quiet` | 254 geçti, 0 başarısız, 4 yok sayıldı | (inceleme) |
+| Clippy / fmt | Temiz | (inceleme) |
+| `cargo tree` normal bağımlılık izolasyonu | `kalfa-tools` / `tauri` yok | (inceleme) |
+| `unwrap()` / `expect()` üretim taraması | Eşleşmeler yalnızca `#[cfg(test)]` modüllerinde | (inceleme) |
+
+`research/` çalışma ağacı temizdi. Task 11 push'undan sonra CodeRabbit yeni
+incelemeyi yürütüyordu; önceki inceleme limit nedeniyle satır satır
+tamamlanamamıştı. Linux sonuçlarını PR inceleyicisi dolduracak.
+
+Uygulama sınırları: eski kayıtta `calisma_alani: None` ise çekirdek kurtarma
+API'si yine kullanılabilir; bu tür kayıtları yalnızca geçmiş görünümünde açma
+kapısı uygulama/UI katmanında, `oturum_ac` sırasında zorunlu tutulmalı. Kayıt
+kilidi yan dosyası (`.kilit`) oturum açıkken silinmemelidir; uygulama kendi
+temizliğinde bu dosyayı silmez. Kök kilit yöneticisi pasif yol girdilerini bir
+sonraki yeni yol erişiminde toplar; sessiz dönemde tablo geçici olarak en yüksek
+eşzamanlı yol sayısına kadar girdi tutabilir. Şart reddi yerel bekleyenleri
+iptal eder, ancak başlamış EVREN kabul POST'unu uzaktan geri alamaz; yerel kapı
+Ret durumunu korur. Bekleyen çağrı birden fazla karar neslini atlarsa fail-closed
+olarak Ret alır; iki hızlı Kabul de atlanırsa aynı korumacı sonuç oluşabilir.
+Büyük kayıt listesi 64 KiB bloklarla geriye taranır; tek bir çok uzun JSONL
+satırını satır sınırında çözmek daha büyük bir okuma gerektirebilir.
 
 ### İlk altyapı adımı: olay kuyruğu
 
