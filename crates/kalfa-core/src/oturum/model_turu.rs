@@ -102,18 +102,24 @@ impl Oturum {
         loop {
             let saglayici = self.baglam.saglayici.clone();
             let deneme = istek.clone();
+            let kapi = self.baglam.sart_kapisi.clone();
             match self
-                .iptal_edilebilir(async move { saglayici.akis(deneme).await })
+                .iptal_edilebilir(async move {
+                    // Nesli future ilk kez gerçekten çalışmaya başladığında
+                    // yakala; önceden snapshot alıp komut beklerken eskimesin.
+                    let istek_nesli = kapi.durum().nesil;
+                    (istek_nesli, saglayici.akis(deneme).await)
+                })
                 .await?
             {
-                Ok(akis) => {
+                (_, Ok(akis)) => {
                     self.istek_kaydet("ana", &akis.meta).await;
                     return Ok(akis);
                 }
-                Err(kalfa_evren::EvrenError::SartKabulGerekli { .. }) => {
-                    self.sart_akisi().await?;
+                (istek_nesli, Err(kalfa_evren::EvrenError::SartKabulGerekli { .. })) => {
+                    self.sart_akisi(istek_nesli).await?;
                 }
-                Err(kalfa_evren::EvrenError::HizSiniri { tekrar_dene }) if !hiz_denendi => {
+                (_, Err(kalfa_evren::EvrenError::HizSiniri { tekrar_dene })) if !hiz_denendi => {
                     hiz_denendi = true;
                     let sure = tekrar_dene
                         .unwrap_or(Duration::from_secs(5))
@@ -125,7 +131,7 @@ impl Oturum {
                     .await;
                     self.iptal_edilebilir(tokio::time::sleep(sure)).await?;
                 }
-                Err(e) => {
+                (_, Err(e)) => {
                     self.hata(e.to_string()).await;
                     return Err(BitisNedeni::Hata);
                 }
@@ -170,10 +176,10 @@ impl Oturum {
     /// Şart kapısı (1c tasarımı §7.3, üst belge §11.8). Oturum kabul isteğini
     /// kendisi göndermez: uygulama genelindeki kapıya kaydolur, metni yayar ve
     /// kullanıcının şart penceresindeki kararını bekler.
-    async fn sart_akisi(&mut self) -> Result<(), BitisNedeni> {
+    async fn sart_akisi(&mut self, istek_nesli: u64) -> Result<(), BitisNedeni> {
         let kapi = self.baglam.sart_kapisi.clone();
-        let (metin, nesil) = match self
-            .iptal_edilebilir(async move { kapi.gerekli().await })
+        let gerekli = match self
+            .iptal_edilebilir(async move { kapi.gerekli(istek_nesli).await })
             .await?
         {
             Ok(v) => v,
@@ -181,6 +187,14 @@ impl Oturum {
                 self.hata(e.to_string()).await;
                 return Err(BitisNedeni::Hata);
             }
+        };
+        let (metin, nesil) = match gerekli {
+            crate::sart_kapisi::GerekliSonucu::OnayGerekli { metin, nesil } => (metin, nesil),
+            crate::sart_kapisi::GerekliSonucu::KabulEdildi { surum } => {
+                self.kaydet(KayitOgesi::SartKabulEdildi { surum }).await;
+                return Ok(());
+            }
+            crate::sart_kapisi::GerekliSonucu::Ret => return Err(BitisNedeni::Iptal),
         };
         self.yay(Olay::SartOnayiGerekiyor {
             surum: metin.surum,

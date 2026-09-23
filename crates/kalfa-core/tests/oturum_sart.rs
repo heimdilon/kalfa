@@ -120,7 +120,7 @@ async fn ret_bekleyen_turu_iptal_eder() {
     let (mut d, kapi) = oturum(&s, ayarlar());
     d.gonder(mesaj()).await;
     sart_bekle(&mut d, 1).await;
-    kapi.reddet();
+    assert!(kapi.reddet());
     assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);
     assert!(s.kabul_edilen_surumler().is_empty());
 }
