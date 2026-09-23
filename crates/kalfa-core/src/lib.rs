@@ -15,6 +15,7 @@ pub mod muhur;
 pub mod oturum;
 pub mod protokol;
 pub mod saglayici;
+pub mod sart_kapisi;
 pub mod yol;
 
 #[cfg(feature = "test-destek")]

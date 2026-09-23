@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, stream};
-use kalfa_evren::tipler::{ChatRequest, FunctionCall, TermsText, ToolCall};
+use kalfa_evren::tipler::{ChatRequest, FunctionCall, TermsStatus, TermsText, ToolCall};
 use kalfa_evren::{AkisOlayi, EvrenError, YanitMeta};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -83,6 +83,7 @@ pub struct SahteSaglayici {
     senaryo: Mutex<VecDeque<SahteYanit>>,
     istekler: Mutex<Vec<ChatRequest>>,
     sart: Mutex<SahteSart>,
+    durum_hatasi: Mutex<Option<EvrenError>>,
 }
 
 impl SahteSaglayici {
@@ -95,6 +96,7 @@ impl SahteSaglayici {
                 metin: "# Sahte kullanım şartları".into(),
                 kabul_edilen: Vec::new(),
             }),
+            durum_hatasi: Mutex::new(None),
         })
     }
 
@@ -104,6 +106,10 @@ impl SahteSaglayici {
 
     pub fn kabul_edilen_surumler(&self) -> Vec<u32> {
         self.sart.lock().unwrap().kabul_edilen.clone()
+    }
+
+    pub fn sart_durumu_hatasi(&self, hata: Option<EvrenError>) {
+        *self.durum_hatasi.lock().unwrap() = hata;
     }
 
     pub fn sart_surumunu_degistir(&self, surum: u32) {
@@ -142,6 +148,19 @@ impl Saglayici for SahteSaglayici {
             }),
             SahteYanit::Hata(hata) => Err(hata),
         }
+    }
+
+    async fn sart_durumu(&self) -> Result<TermsStatus, EvrenError> {
+        if let Some(hata) = self.durum_hatasi.lock().unwrap().clone() {
+            return Err(hata);
+        }
+        let s = self.sart.lock().unwrap();
+        Ok(TermsStatus {
+            current_version: s.surum,
+            is_material: true,
+            accepted: s.kabul_edilen.contains(&s.surum),
+            doc_path: None,
+        })
     }
 
     async fn sart_metni(&self) -> Result<TermsText, EvrenError> {
