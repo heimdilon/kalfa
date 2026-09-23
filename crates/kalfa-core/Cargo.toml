@@ -27,6 +27,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 kalfa-core = { path = ".", features = ["test-destek"] }
+tokio = { workspace = true, features = ["test-util"] }
 serde.workspace = true
 tempfile.workspace = true
 wiremock.workspace = true
