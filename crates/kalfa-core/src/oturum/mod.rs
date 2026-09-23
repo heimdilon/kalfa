@@ -9,7 +9,7 @@ mod model_turu;
 
 use std::collections::HashMap;
 
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -60,6 +60,7 @@ pub struct OturumAyarlari {
     pub model: String,
     pub kip: Kip,
     pub sinirlar: Sinirlar,
+    pub olay_butcesi: OlayButcesi,
     /// `None`: kayıtsız oturum (spec §6.6).
     pub kayit_yolu: Option<PathBuf>,
     pub sistem_mesaji: String,
@@ -71,6 +72,7 @@ impl OturumAyarlari {
             model: model.into(),
             kip: Kip::Siki,
             sinirlar: Sinirlar::default(),
+            olay_butcesi: OlayButcesi::default(),
             kayit_yolu: None,
             sistem_mesaji: varsayilan_sistem_mesaji(calisma_alani),
         }
@@ -108,12 +110,437 @@ pub enum OturumHatasi {
     Kapali,
 }
 
-/// Çekirdekten uygulamaya olay kanalı. Sınırsızdır: çekirdek olay gönderirken
-/// arayüzü asla beklemez (spec §11). Birleştirme ve sınırlı IPC kuyruğu
-/// uygulama katmanının işidir (spec §11.1).
-pub type OlayAlici = mpsc::UnboundedReceiver<Zarf<Olay>>;
-
 type AktifTur = Arc<Mutex<Option<(TurId, CancellationToken)>>>;
+
+/// Taşıma kuyruğunda terminal hata için ayrılan kapasite. Bu kapasite toplam
+/// olay/bayt bütçesine dahildir; normal olaylar bu kısmı kullanamaz.
+pub const TERMINAL_OLAY_BAYT_REZERVI: usize = 512;
+
+/// Çekirdekten uygulamaya olay aktarımının sert sınırları.
+///
+/// `azami_olay` ve `azami_bayt` terminal hata olayı için ayrılan bir olay ve
+/// `TERMINAL_OLAY_BAYT_REZERVI` baytı da içerir. Kuyruk dolduğunda olaylar
+/// sessizce düşürülmez: taşıma hata durumuna geçer, aktif tur iptal edilir ve
+/// ayrılmış terminal olay tüketiciye gönderilir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OlayButcesi {
+    azami_olay: usize,
+    azami_bayt: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum OlayButcesiHatasi {
+    #[error("olay bütçesi en az iki olay içermeli")]
+    YetersizOlay,
+    #[error("olay bütçesi tokio kanalının izin verdiği üst sınırı aşıyor")]
+    FazlaOlay,
+    #[error("olay bayt bütçesi terminal hata rezervinden büyük olmalı")]
+    YetersizBayt,
+}
+
+impl OlayButcesi {
+    pub fn yeni(azami_olay: usize, azami_bayt: usize) -> Result<Self, OlayButcesiHatasi> {
+        if azami_olay < 2 {
+            return Err(OlayButcesiHatasi::YetersizOlay);
+        }
+        if azami_olay > tokio::sync::Semaphore::MAX_PERMITS {
+            return Err(OlayButcesiHatasi::FazlaOlay);
+        }
+        if azami_bayt <= TERMINAL_OLAY_BAYT_REZERVI {
+            return Err(OlayButcesiHatasi::YetersizBayt);
+        }
+        Ok(Self {
+            azami_olay,
+            azami_bayt,
+        })
+    }
+
+    pub fn azami_olay(self) -> usize {
+        self.azami_olay
+    }
+
+    pub fn azami_bayt(self) -> usize {
+        self.azami_bayt
+    }
+}
+
+impl Default for OlayButcesi {
+    fn default() -> Self {
+        // Varsayılan, mevcut uzun akışların normal çalışmasını sürdürürken
+        // yine de sabit bir üst sınır koyar. UI daha küçük bir bütçe seçebilir.
+        Self {
+            azami_olay: 16_384,
+            azami_bayt: 8 * 1024 * 1024,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum OlayAktarimHatasi {
+    #[error("olay alıcısı kapandı")]
+    AliciKapandi,
+    #[error("olay sayısı bütçesi aşıldı ({bekleyen}/{azami})")]
+    OlaySayisiAsildi { bekleyen: usize, azami: usize },
+    #[error("olay bayt bütçesi aşıldı ({bekleyen} + {olay} > {azami})")]
+    BaytButcesiAsildi {
+        bekleyen: usize,
+        olay: usize,
+        azami: usize,
+    },
+    #[error("olay serileştirmesi başarısız oldu")]
+    Serilestirme,
+}
+
+struct OlayPaketi {
+    zarf: Zarf<Olay>,
+    bayt: usize,
+}
+
+struct OlayIstatistik {
+    bekleyen_olay: usize,
+    bekleyen_bayt: usize,
+    hata: Option<OlayAktarimHatasi>,
+    terminal_gonderildi: bool,
+    alici_kapandi: bool,
+}
+
+struct OlayDurumu {
+    butce: OlayButcesi,
+    istatistik: Mutex<OlayIstatistik>,
+    kapanma: CancellationToken,
+}
+
+impl OlayDurumu {
+    fn yeni(butce: OlayButcesi) -> Arc<Self> {
+        Arc::new(Self {
+            butce,
+            istatistik: Mutex::new(OlayIstatistik {
+                bekleyen_olay: 0,
+                bekleyen_bayt: 0,
+                hata: None,
+                terminal_gonderildi: false,
+                alici_kapandi: false,
+            }),
+            kapanma: CancellationToken::new(),
+        })
+    }
+
+    fn hata(&self) -> Option<OlayAktarimHatasi> {
+        self.istatistik
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .hata
+            .clone()
+    }
+
+    fn alici_kapandi(&self) {
+        let mut istatistik = self.istatistik.lock().unwrap_or_else(|z| z.into_inner());
+        istatistik.alici_kapandi = true;
+        if istatistik.hata.is_none() {
+            istatistik.hata = Some(OlayAktarimHatasi::AliciKapandi);
+        }
+        drop(istatistik);
+        self.kapanma.cancel();
+    }
+
+    fn alindi(&self, bayt: usize) {
+        let mut istatistik = self.istatistik.lock().unwrap_or_else(|z| z.into_inner());
+        istatistik.bekleyen_olay = istatistik.bekleyen_olay.saturating_sub(1);
+        istatistik.bekleyen_bayt = istatistik.bekleyen_bayt.saturating_sub(bayt);
+    }
+
+    fn bekleyen(&self) -> (usize, usize) {
+        let istatistik = self.istatistik.lock().unwrap_or_else(|z| z.into_inner());
+        (istatistik.bekleyen_olay, istatistik.bekleyen_bayt)
+    }
+}
+
+struct OlayKanali {
+    tx: mpsc::Sender<OlayPaketi>,
+    durum: Arc<OlayDurumu>,
+}
+
+impl OlayKanali {
+    fn yeni(butce: OlayButcesi, aktif_tur: AktifTur) -> (Self, OlayAlici) {
+        let (tx, rx) = mpsc::channel(butce.azami_olay);
+        let durum = OlayDurumu::yeni(butce);
+        (
+            Self {
+                tx,
+                durum: durum.clone(),
+            },
+            OlayAlici {
+                rx,
+                durum,
+                aktif_tur,
+            },
+        )
+    }
+
+    fn kapanma(&self) -> CancellationToken {
+        self.durum.kapanma.clone()
+    }
+
+    fn gonder(&self, zarf: Zarf<Olay>) -> Result<(), OlayAktarimHatasi> {
+        let normal_olay = self.durum.butce.azami_olay - 1;
+        let normal_bayt = self.durum.butce.azami_bayt - TERMINAL_OLAY_BAYT_REZERVI;
+        {
+            let istatistik = self
+                .durum
+                .istatistik
+                .lock()
+                .unwrap_or_else(|z| z.into_inner());
+            if let Some(hata) = istatistik.hata.clone() {
+                return Err(hata);
+            }
+            if istatistik.alici_kapandi {
+                drop(istatistik);
+                return self.basarisiz(OlayAktarimHatasi::AliciKapandi);
+            }
+        }
+        let bayt = match serilestirilmis_bayt(&zarf, normal_bayt) {
+            Ok(bayt) => bayt,
+            Err(SerilestirmeBoyutu::Asildi(bayt)) => {
+                return self.basarisiz(OlayAktarimHatasi::BaytButcesiAsildi {
+                    bekleyen: self.durum.bekleyen().1,
+                    olay: bayt,
+                    azami: normal_bayt,
+                });
+            }
+            Err(SerilestirmeBoyutu::Hata) => {
+                return self.basarisiz(OlayAktarimHatasi::Serilestirme);
+            }
+        };
+        let mut istatistik = self
+            .durum
+            .istatistik
+            .lock()
+            .unwrap_or_else(|z| z.into_inner());
+        if let Some(hata) = istatistik.hata.clone() {
+            return Err(hata);
+        }
+        if istatistik.alici_kapandi {
+            drop(istatistik);
+            return self.basarisiz(OlayAktarimHatasi::AliciKapandi);
+        }
+        if istatistik.bekleyen_olay >= normal_olay {
+            let hata = OlayAktarimHatasi::OlaySayisiAsildi {
+                bekleyen: istatistik.bekleyen_olay,
+                azami: normal_olay,
+            };
+            drop(istatistik);
+            return self.basarisiz(hata);
+        }
+        if istatistik.bekleyen_bayt.saturating_add(bayt) > normal_bayt {
+            let hata = OlayAktarimHatasi::BaytButcesiAsildi {
+                bekleyen: istatistik.bekleyen_bayt,
+                olay: bayt,
+                azami: normal_bayt,
+            };
+            drop(istatistik);
+            return self.basarisiz(hata);
+        }
+        match self.tx.try_send(OlayPaketi { zarf, bayt }) {
+            Ok(()) => {
+                istatistik.bekleyen_olay += 1;
+                istatistik.bekleyen_bayt += bayt;
+                Ok(())
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                drop(istatistik);
+                self.basarisiz(OlayAktarimHatasi::AliciKapandi)
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                let hata = OlayAktarimHatasi::OlaySayisiAsildi {
+                    bekleyen: istatistik.bekleyen_olay,
+                    azami: normal_olay,
+                };
+                drop(istatistik);
+                self.basarisiz(hata)
+            }
+        }
+    }
+
+    fn basarisiz(&self, hata: OlayAktarimHatasi) -> Result<(), OlayAktarimHatasi> {
+        let mut istatistik = self
+            .durum
+            .istatistik
+            .lock()
+            .unwrap_or_else(|z| z.into_inner());
+        if let Some(mevcut) = istatistik.hata.clone() {
+            return Err(mevcut);
+        }
+        istatistik.hata = Some(hata.clone());
+        Err(hata)
+    }
+
+    fn terminal_gonder(&self, zarf: Zarf<Olay>) {
+        let Ok(bayt) = serilestirilmis_bayt(&zarf, TERMINAL_OLAY_BAYT_REZERVI) else {
+            return;
+        };
+        let mut istatistik = self
+            .durum
+            .istatistik
+            .lock()
+            .unwrap_or_else(|z| z.into_inner());
+        if istatistik.terminal_gonderildi
+            || istatistik.alici_kapandi
+            || istatistik.bekleyen_olay >= self.durum.butce.azami_olay
+            || istatistik.bekleyen_bayt.saturating_add(bayt) > self.durum.butce.azami_bayt
+        {
+            return;
+        }
+        if self.tx.try_send(OlayPaketi { zarf, bayt }).is_ok() {
+            istatistik.bekleyen_olay += 1;
+            istatistik.bekleyen_bayt += bayt;
+            istatistik.terminal_gonderildi = true;
+        }
+    }
+}
+
+/// Bounded event receiver. `recv`/`try_recv` preserve the old receiver usage;
+/// the extra transport state makes a fail-closed queue observable to the UI.
+pub struct OlayAlici {
+    rx: mpsc::Receiver<OlayPaketi>,
+    durum: Arc<OlayDurumu>,
+    aktif_tur: AktifTur,
+}
+
+impl OlayAlici {
+    pub async fn recv(&mut self) -> Option<Zarf<Olay>> {
+        let paket = self.rx.recv().await?;
+        self.durum.alindi(paket.bayt);
+        Some(paket.zarf)
+    }
+
+    pub fn try_recv(&mut self) -> Result<Zarf<Olay>, mpsc::error::TryRecvError> {
+        let paket = self.rx.try_recv()?;
+        self.durum.alindi(paket.bayt);
+        Ok(paket.zarf)
+    }
+
+    pub fn transport_hatasi(&self) -> Option<OlayAktarimHatasi> {
+        self.durum.hata()
+    }
+
+    pub fn bekleyen_olay_sayisi(&self) -> usize {
+        self.durum.bekleyen().0
+    }
+
+    pub fn bekleyen_bayt(&self) -> usize {
+        self.durum.bekleyen().1
+    }
+
+    pub fn close(&mut self) {
+        self.rx.close();
+        self.durum.alici_kapandi();
+        if let Some((_, iptal)) = self
+            .aktif_tur
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .clone()
+        {
+            iptal.cancel();
+        }
+    }
+}
+
+impl Drop for OlayAlici {
+    fn drop(&mut self) {
+        self.durum.alici_kapandi();
+        if let Some((_, iptal)) = self
+            .aktif_tur
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .clone()
+        {
+            iptal.cancel();
+        }
+    }
+}
+
+struct SayacYazici {
+    sayi: usize,
+    sinir: usize,
+}
+
+impl Write for SayacYazici {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.sayi.saturating_add(buf.len()) > self.sinir {
+            self.sayi = self.sinir.saturating_add(1);
+            return Err(io::Error::other("serileştirilmiş olay bütçeyi aştı"));
+        }
+        self.sayi += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+enum SerilestirmeBoyutu {
+    Asildi(usize),
+    Hata,
+}
+
+fn serilestirilmis_bayt<T: serde::Serialize>(
+    deger: &T,
+    sinir: usize,
+) -> Result<usize, SerilestirmeBoyutu> {
+    let mut yazici = SayacYazici { sayi: 0, sinir };
+    match serde_json::to_writer(&mut yazici, deger) {
+        Ok(()) => Ok(yazici.sayi),
+        Err(_) if yazici.sayi > sinir => Err(SerilestirmeBoyutu::Asildi(yazici.sayi)),
+        Err(_) => Err(SerilestirmeBoyutu::Hata),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_bayt_sayaci_utf8_ve_escapeleri_dogru_sayar() {
+        let zarf = Zarf {
+            sema: SEMA_SURUMU,
+            oturum: OturumId::yeni(),
+            tur: None,
+            sira: 7,
+            yuk: Olay::TokenParcasi {
+                metin: "ş \\\"\n".into(),
+            },
+        };
+        let beklenen = serde_json::to_vec(&zarf)
+            .expect("zarf serileştirilmeli")
+            .len();
+        assert_eq!(serilestirilmis_bayt(&zarf, beklenen).unwrap(), beklenen);
+        assert!(matches!(
+            serilestirilmis_bayt(&zarf, beklenen - 1),
+            Err(SerilestirmeBoyutu::Asildi(_))
+        ));
+    }
+
+    #[test]
+    fn terminal_hata_rezervi_uuid_ve_mesajla_bile_yeterlidir() {
+        let zarf = Zarf {
+            sema: SEMA_SURUMU,
+            oturum: OturumId::yeni(),
+            tur: Some(TurId::yeni()),
+            sira: u64::MAX,
+            yuk: Olay::Hata {
+                mesaj: format!(
+                    "Olay aktarımı durduruldu: olay bayt bütçesi aşıldı ({} + {} > {}).",
+                    usize::MAX,
+                    usize::MAX,
+                    usize::MAX
+                ),
+            },
+        };
+        assert!(serilestirilmis_bayt(&zarf, TERMINAL_OLAY_BAYT_REZERVI).is_ok());
+    }
+}
 
 #[derive(Clone)]
 pub struct OturumTutamaci {
@@ -125,6 +552,14 @@ pub struct OturumTutamaci {
 impl OturumTutamaci {
     pub fn oturum_id(&self) -> OturumId {
         self.oturum
+    }
+
+    pub fn aktif_tur(&self) -> Option<TurId> {
+        self.aktif_tur
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .as_ref()
+            .map(|(tur, _)| *tur)
     }
 
     pub async fn gonder(&self, komut: Komut) -> Result<(), OturumHatasi> {
@@ -243,7 +678,8 @@ struct Oturum {
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
     komutlar: mpsc::Receiver<Komut>,
-    olaylar: mpsc::UnboundedSender<Zarf<Olay>>,
+    olaylar: OlayKanali,
+    olay_kapanma: CancellationToken,
     kayit: Option<OturumKaydi>,
     /// Kayıt bir kez yazılamadıysa nedeni. Oturum durur (spec §6.6).
     kayit_hatasi: Option<String>,
@@ -275,14 +711,16 @@ impl Oturum {
         sira: u64,
     ) -> (Self, OturumTutamaci, OlayAlici) {
         let (komut_tx, komut_rx) = mpsc::channel(KOMUT_KANALI);
-        let (olay_tx, olay_rx) = mpsc::unbounded_channel();
         let aktif_tur: AktifTur = Arc::new(Mutex::new(None));
+        let (olay_tx, olay_rx) = OlayKanali::yeni(ayarlar.olay_butcesi, aktif_tur.clone());
+        let olay_kapanma = olay_tx.kapanma();
         let oturum = Self {
             kimlik,
             ayarlar,
             baglam,
             komutlar: komut_rx,
             olaylar: olay_tx,
+            olay_kapanma,
             kayit,
             kayit_hatasi: None,
             sira,
@@ -328,7 +766,15 @@ impl Oturum {
     }
 
     async fn komut_al(&mut self) -> Option<Komut> {
-        let komut = self.komutlar.recv().await;
+        let komut = tokio::select! {
+            biased;
+            _ = self.olay_kapanma.cancelled() => {
+                self.kapandi = true;
+                self.iptal.cancel();
+                None
+            }
+            komut = self.komutlar.recv() => komut,
+        };
         self.komut_geldi(komut).await
     }
 
@@ -475,7 +921,7 @@ impl Oturum {
         }
     }
 
-    async fn yay(&mut self, olay: Olay) {
+    async fn yay(&mut self, olay: Olay) -> bool {
         self.sira += 1;
         let zarf = Zarf {
             sema: SEMA_SURUMU,
@@ -484,9 +930,25 @@ impl Oturum {
             sira: self.sira,
             yuk: olay,
         };
-        // Sınırsız kanal: çekirdek arayüzü beklemez. Alıcı yoksa olay düşer;
-        // komut kanalı kapanınca oturum da biter.
-        let _ = self.olaylar.send(zarf);
+        match self.olaylar.gonder(zarf) {
+            Ok(()) => true,
+            Err(hata) => {
+                self.iptal.cancel();
+                self.kapandi = true;
+                self.sira += 1;
+                let terminal = Zarf {
+                    sema: SEMA_SURUMU,
+                    oturum: self.kimlik,
+                    tur: self.tur,
+                    sira: self.sira,
+                    yuk: Olay::Hata {
+                        mesaj: format!("Olay aktarımı durduruldu: {hata}."),
+                    },
+                };
+                self.olaylar.terminal_gonder(terminal);
+                false
+            }
+        }
     }
 
     async fn hata(&mut self, mesaj: impl Into<String>) {
