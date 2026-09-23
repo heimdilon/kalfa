@@ -81,6 +81,18 @@ pub enum BitisNedeni {
     Hata,
 }
 
+/// Olay aktarımının neden durduğu (1c tasarımı §4.4). Arayüz gösterilecek
+/// metni buna göre seçer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AktarimDurmaNedeni {
+    /// Tüketici kuyruğu boşaltamadı: olay ya da bayt bütçesi doldu.
+    TuketiciYetismedi,
+    /// Tek bir olay bütçeden büyüktü.
+    OlayCokBuyuk,
+    /// Olay serileştirilemedi ya da alıcı kapandı.
+    Diger,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "tip")]
 pub enum Olay {
@@ -123,5 +135,9 @@ pub enum Olay {
     },
     Tamamlandi {
         neden: BitisNedeni,
+    },
+    /// Olay kuyruğu durdu ve oturum kapanıyor; kuyruğun son olayıdır.
+    AktarimDurdu {
+        neden: AktarimDurmaNedeni,
     },
 }

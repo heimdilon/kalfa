@@ -122,9 +122,23 @@ fn butun_olaylar_gidip_gelir() {
         Olay::Tamamlandi {
             neden: BitisNedeni::Normal,
         },
+        Olay::AktarimDurdu {
+            neden: AktarimDurmaNedeni::OlayCokBuyuk,
+        },
     ] {
         gidip_gelir(&o);
     }
+}
+
+#[test]
+fn aktarim_durdu_json_bicimi() {
+    assert_eq!(
+        serde_json::to_value(Olay::AktarimDurdu {
+            neden: AktarimDurmaNedeni::TuketiciYetismedi
+        })
+        .unwrap(),
+        json!({"tip": "AktarimDurdu", "neden": "TuketiciYetismedi"})
+    );
 }
 
 #[test]

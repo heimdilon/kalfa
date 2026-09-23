@@ -25,7 +25,9 @@ use crate::kayit::{KayitOgesi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
 use crate::kimlik::{OturumId, TurId};
 use crate::kurtarma::{BILINMEYEN_SONUC, KurtarilmisDurum, KurtarmaHatasi, kurtar};
-use crate::protokol::{AracDurumu, BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf};
+use crate::protokol::{
+    AktarimDurmaNedeni, AracDurumu, BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf,
+};
 use crate::saglayici::Saglayici;
 use arac_asamasi::AsamaSonucu;
 
@@ -189,6 +191,20 @@ pub enum OlayAktarimHatasi {
     },
     #[error("olay serileştirmesi başarısız oldu")]
     Serilestirme,
+}
+
+impl OlayAktarimHatasi {
+    /// Arayüze bildirilen neden.
+    pub fn durma_nedeni(&self) -> AktarimDurmaNedeni {
+        match self {
+            Self::OlaySayisiAsildi { .. } => AktarimDurmaNedeni::TuketiciYetismedi,
+            Self::BaytButcesiAsildi { olay, azami, .. } if olay > azami => {
+                AktarimDurmaNedeni::OlayCokBuyuk
+            }
+            Self::BaytButcesiAsildi { .. } => AktarimDurmaNedeni::TuketiciYetismedi,
+            Self::AliciKapandi | Self::Serilestirme => AktarimDurmaNedeni::Diger,
+        }
+    }
 }
 
 struct OlayPaketi {
@@ -523,22 +539,51 @@ mod tests {
     }
 
     #[test]
-    fn terminal_hata_rezervi_uuid_ve_mesajla_bile_yeterlidir() {
+    fn terminal_olay_rezerve_sigar() {
         let zarf = Zarf {
             sema: SEMA_SURUMU,
             oturum: OturumId::yeni(),
             tur: Some(TurId::yeni()),
             sira: u64::MAX,
-            yuk: Olay::Hata {
-                mesaj: format!(
-                    "Olay aktarımı durduruldu: olay bayt bütçesi aşıldı ({} + {} > {}).",
-                    usize::MAX,
-                    usize::MAX,
-                    usize::MAX
-                ),
+            yuk: Olay::AktarimDurdu {
+                neden: AktarimDurmaNedeni::TuketiciYetismedi,
             },
         };
         assert!(serilestirilmis_bayt(&zarf, TERMINAL_OLAY_BAYT_REZERVI).is_ok());
+    }
+
+    #[test]
+    fn durma_nedeni_eslemesi() {
+        assert_eq!(
+            OlayAktarimHatasi::OlaySayisiAsildi {
+                bekleyen: 3,
+                azami: 3
+            }
+            .durma_nedeni(),
+            AktarimDurmaNedeni::TuketiciYetismedi
+        );
+        assert_eq!(
+            OlayAktarimHatasi::BaytButcesiAsildi {
+                bekleyen: 0,
+                olay: 11,
+                azami: 10
+            }
+            .durma_nedeni(),
+            AktarimDurmaNedeni::OlayCokBuyuk
+        );
+        assert_eq!(
+            OlayAktarimHatasi::BaytButcesiAsildi {
+                bekleyen: 8,
+                olay: 5,
+                azami: 10
+            }
+            .durma_nedeni(),
+            AktarimDurmaNedeni::TuketiciYetismedi
+        );
+        assert_eq!(
+            OlayAktarimHatasi::Serilestirme.durma_nedeni(),
+            AktarimDurmaNedeni::Diger
+        );
     }
 }
 
@@ -941,8 +986,8 @@ impl Oturum {
                     oturum: self.kimlik,
                     tur: self.tur,
                     sira: self.sira,
-                    yuk: Olay::Hata {
-                        mesaj: format!("Olay aktarımı durduruldu: {hata}."),
+                    yuk: Olay::AktarimDurdu {
+                        neden: hata.durma_nedeni(),
                     },
                 };
                 self.olaylar.terminal_gonder(terminal);
