@@ -361,6 +361,22 @@ pencerenin ekranları 1c-3b'de.
 Linux sütunu PR incelemesinde dolduruldu: Ubuntu 24.04 (WSL2), Node v24.20.0,
 `56f5759`.
 
+### 1c-3b — ekranlar (tamamlandı)
+
+Plan: [`2026-09-23-kalfa-1c-3b-ekranlar.md`](superpowers/plans/2026-09-23-kalfa-1c-3b-ekranlar.md).
+İki pencerenin ekranları yazılıp komutlara bağlandı: ana pencerede menü,
+oturum listesi, konuşma, onay kartı ve onay sayfası, durum çubuğu; şart
+penceresinde anahtar formu, EVREN şart metni ve kilitli görünüm. Testler ve
+geliştirmedeki ekran önizlemesi (`ui/onizleme.html`) sahte bir arka uçla
+(`ui/src/sahte/arka.ts`) çalışır; uygulama paketine girmez.
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `npm ci` | 208 paket eklendi; 209 paket denetlendi, 0 güvenlik açığı | (inceleme) |
+| `npm run check` | 0 hata, 0 uyarı | (inceleme) |
+| `npm test` | 14 dosya, 167 test geçti | (inceleme) |
+| `npm run build` + paket denetimi | Başarılı; `Paket denetimi temiz.` | (inceleme) |
+
 ### Tasarım belgesi
 
 Bütün kararlar, yukarıdakilere ek olarak çizim ve dil, hata durumları, test ve

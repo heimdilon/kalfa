@@ -3,8 +3,8 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { svelteTesting } from '@testing-library/svelte/vite';
 
-// İki pencere iki ayrı giriş noktasıdır (1c tasarımı §3.1). `vitrin.html`
-// yalnızca geliştirme sunucusunda açılır; derlemeye girmez.
+// İki pencere iki ayrı giriş noktasıdır (1c tasarımı §3.1). `vitrin.html` ve
+// `onizleme.html` yalnızca geliştirme sunucusunda açılır; derlemeye girmez.
 export default defineConfig({
   plugins: [svelte(), svelteTesting()],
   clearScreen: false,
