@@ -361,6 +361,21 @@ pencerenin ekranları 1c-3b'de.
 Linux sütunu PR incelemesinde dolduruldu: Ubuntu 24.04 (WSL2), Node v24.20.0,
 `56f5759`.
 
+### 1c-2 — Tauri kabuğu (tamamlandı)
+
+Plan: [`2026-09-23-kalfa-1c-2-tauri-kabugu.md`](superpowers/plans/2026-09-23-kalfa-1c-2-tauri-kabugu.md).
+`kalfa-uygulama` (Tauri'siz uygulama mantığı: komut sözleşmesi, şart akışı,
+oturum tablosu, olay köprüsü, kimlik deposu) ve `kalfa` (Tauri kabuğu: iki
+pencere, 22 komut, pencere izinleri, yerel iletişim kutuları) eklendi. İki
+pencerenin ekranları 1c-3b'de.
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `cargo test --workspace --all-features --locked` | 301 geçti, 0 başarısız, 4 yok sayıldı | (inceleme) |
+| Clippy / fmt | Başarılı | (inceleme) |
+| `cargo tree -p kalfa-uygulama` içinde `tauri`/`wry`/`webkit` | Yok | (inceleme) |
+| `unwrap()` / `expect()` taraması | Yalnızca `test_destek.rs` | (inceleme) |
+
 ### Tasarım belgesi
 
 Bütün kararlar, yukarıdakilere ek olarak çizim ve dil, hata durumları, test ve
