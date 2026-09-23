@@ -108,18 +108,22 @@ Plan: [`2026-09-22-kalfa-1c-1-cekirdek-eklemeleri.md`](superpowers/plans/2026-09
 yöneticisi, kayıt başına tek yazıcı, kayıtta çalışma alanı / yönlendirilen model
 / token kullanımı, geçmiş görünümü ve oturum listesi (`gecmis`) eklendi.
 
-Windows doğrulaması (2026-09-23):
+Doğrulama (2026-09-23):
 
 | Kontrol | Windows | Linux |
 | --- | --- | --- |
-| `cargo test --workspace --quiet` | 254 geçti, 0 başarısız, 4 yok sayıldı | (inceleme) |
-| Clippy / fmt | Temiz | (inceleme) |
-| `cargo tree` normal bağımlılık izolasyonu | `kalfa-tools` / `tauri` yok | (inceleme) |
-| `unwrap()` / `expect()` üretim taraması | Eşleşmeler yalnızca `#[cfg(test)]` modüllerinde | (inceleme) |
+| `cargo test --workspace --quiet` | 254 geçti, 0 başarısız, 4 yok sayıldı | 253 geçti, 0 başarısız, 4 yok sayıldı |
+| Clippy / fmt | Temiz | Temiz |
+| `cargo tree` normal bağımlılık izolasyonu | `kalfa-tools` / `tauri` yok | `kalfa-tools` / `tauri` yok |
+| `unwrap()` / `expect()` üretim taraması | Eşleşmeler yalnızca `#[cfg(test)]` modüllerinde | Aynı |
 
 `research/` çalışma ağacı temizdi. Task 11 push'undan sonra CodeRabbit yeni
 incelemeyi yürütüyordu; önceki inceleme limit nedeniyle satır satır
-tamamlanamamıştı. Linux sonuçlarını PR inceleyicisi dolduracak.
+tamamlanamamıştı.
+
+Linux sütunu PR incelemesinde dolduruldu: Ubuntu 24.04 (WSL2, native ext4),
+Rust 1.98.1, `4f26f9d`. Windows'tan tek fark `junction_uzerinden_git_hook_yazilamaz`
+testinin `#[cfg(windows)]` olmasıdır.
 
 Uygulama sınırları: eski kayıtta `calisma_alani: None` ise çekirdek kurtarma
 API'si yine kullanılabilir; bu tür kayıtları yalnızca geçmiş görünümünde açma
