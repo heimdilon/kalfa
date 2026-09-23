@@ -1,0 +1,24 @@
+{
+  "identifier": "ana-pencere",
+  "description": "Ana pencere: oturum listesi, konuşma, onay kartları, durum çubuğu (1c tasarımı §6). Tauri'nin kendi izinleri verilmez; bu pencere pencere açamaz ve şart kabul edemez.",
+  "windows": ["ana"],
+  "permissions": [
+    "allow-uygulama-durumu",
+    "allow-oturumlari-listele",
+    "allow-calisma-alani-sec",
+    "allow-oturum-baslat",
+    "allow-oturum-ac",
+    "allow-oturumu-dinle",
+    "allow-paketi-isledim",
+    "allow-gecmis-sayfasi",
+    "allow-mesaj-gonder",
+    "allow-turu-iptal-et",
+    "allow-arac-onayi",
+    "allow-model-degistir",
+    "allow-izin-kipi-degistir",
+    "allow-oturumu-kapat",
+    "allow-baglanti-ac",
+    "allow-anahtar-penceresini-ac",
+    "allow-sart-penceresini-ac"
+  ]
+}
