@@ -429,7 +429,7 @@ yapacağını seçer: `OturumYok`, `KayitMesgul` (kayıt başka bir süreçte a�
 | `anahtari_kaydet` | `anahtar: string` | `AnahtarSonucu` |
 | `sartlari_kabul_et` | `surum: number` | `KabulYaniti` |
 | `sartlari_reddet` | — | — |
-| `sart_metnini_goster` | — | `SartMetni` |
+| `sart_metnini_goster` | — | `SartPenceresiDurumu` |
 | `baglanti_ac` | `adres: string` | — |
 
 **Uygulamanın tipleri** (`kalfa-uygulama`):
@@ -454,6 +454,7 @@ AnahtarSonucu       ::= { tip: "Gecersiz" } | { tip: "Ulasilamadi" }
                       | { tip: "Kaydedildi", depo: "Kalici" | "Bellekte",
                           sonraki: SartPenceresiDurumu }
 KabulYaniti         ::= { tip: "Kabul" } | { tip: "YeniMetin", metin: SartMetni }
+                      | { tip: "Kilitli" }
 KomutHatasi         { kod: string, mesaj: string }
 ```
 

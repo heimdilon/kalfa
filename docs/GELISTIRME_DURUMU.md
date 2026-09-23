@@ -361,6 +361,36 @@ pencerenin ekranları 1c-3b'de.
 Linux sütunu PR incelemesinde dolduruldu: Ubuntu 24.04 (WSL2), Node v24.20.0,
 `56f5759`.
 
+### 1c-2 — Tauri kabuğu (tamamlandı)
+
+Plan: [`2026-09-23-kalfa-1c-2-tauri-kabugu.md`](superpowers/plans/2026-09-23-kalfa-1c-2-tauri-kabugu.md).
+`kalfa-uygulama` (Tauri'siz uygulama mantığı: komut sözleşmesi, şart akışı,
+oturum tablosu, olay köprüsü, kimlik deposu) ve `kalfa` (Tauri kabuğu: iki
+pencere, 22 komut, pencere izinleri, yerel iletişim kutuları) eklendi. İki
+pencerenin ekranları 1c-3b'de.
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `cargo test --workspace --all-features --locked` | 301 geçti, 0 başarısız, 4 yok sayıldı | 295 geçti, 0 başarısız, 4 yok sayıldı (`kalfa` hariç) |
+| Clippy / fmt | Başarılı | Başarılı (`kalfa` hariç) |
+| `cargo tree -p kalfa-uygulama` içinde `tauri`/`wry`/`webkit` | Yok | Yok |
+| `unwrap()` / `expect()` taraması | Yalnızca `test_destek.rs` | Aynı |
+
+Linux sütunu PR incelemesinde dolduruldu: Ubuntu 24.04 (WSL2), Rust 1.98.1,
+`767e8f5`. `kalfa` crate'i WebKitGTK geliştirme paketleri istediği için Linux'ta
+derlenmedi; fark onun 5 izin testi ve Windows'a özel junction testidir.
+
+Gerçek pencere denemesi (Windows, WebView2, sahte EVREN sunucusu; planın
+İnceleme bölümü): şart penceresinde anahtar kaydı ve tek `POST` ile kabul, ana
+pencerenin açılması ve şart penceresinin kapanması, pencereler arası ve
+Tauri/eklenti komutlarının reddi, `window.open` ve dış adrese gezinme engeli,
+kaydı olmayan oturumda `OturumYok` beklenen gibi.
+
+Plandan sapma (Codex, PR yorumu): aynı oturumdaki izin kipi değişiklikleri
+async kilitle sıraya alındı. Plandaki kodda eşzamanlı iki düşürme (ör. Serbest'ten
+Proje ve İnceleme) ters sırayla çekirdeğe ulaşırsa kip onaysız yükselebiliyordu;
+`eszamanli_kip_degisimleri_ayni_oturumda_sirayla_islenir` testi sınar.
+
 ### Tasarım belgesi
 
 Bütün kararlar, yukarıdakilere ek olarak çizim ve dil, hata durumları, test ve

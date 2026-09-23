@@ -1,0 +1,13 @@
+{
+  "identifier": "sart-penceresi",
+  "description": "Şart penceresi: anahtar formu, EVREN şart metni, kilitli görünüm (1c tasarımı §6, §7). Şart kabulüne giden tek yol buradaki sartlari_kabul_et'tir.",
+  "windows": ["sartlar"],
+  "permissions": [
+    "allow-sart-penceresi-durumu",
+    "allow-anahtari-kaydet",
+    "allow-sartlari-kabul-et",
+    "allow-sartlari-reddet",
+    "allow-sart-metnini-goster",
+    "allow-baglanti-ac"
+  ]
+}
