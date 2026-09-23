@@ -21,6 +21,7 @@ use crate::kilit::KaynakKilitleri;
 use crate::oturum::{OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci, baslat};
 use crate::protokol::{BitisNedeni, Komut, Olay, Zarf};
 use crate::saglayici::{Saglayici, SaglayiciAkisi};
+use crate::sart_kapisi::SartKapisi;
 use crate::yol::CalismaYolu;
 
 static MODEL_CAGRI_SAYACI: AtomicU64 = AtomicU64::new(0);
@@ -409,6 +410,7 @@ pub fn test_baglami(
     siniflandirici: Arc<Siniflandirici>,
 ) -> OturumBaglami {
     OturumBaglami {
+        sart_kapisi: Arc::new(SartKapisi::yeni(saglayici.clone())),
         saglayici,
         araclar: Arc::new(AracKayitDefteri::yeni(araclar).expect("araç kaydı")),
         siniflandirici,

@@ -50,7 +50,6 @@ fn butun_komutlar_gidip_gelir() {
             model: "glm-5.3".into(),
         },
         Komut::IzinKipiDegistir { kip: Kip::Proje },
-        Komut::SartlariKabulEt { surum: 2 },
     ] {
         gidip_gelir(&k);
     }

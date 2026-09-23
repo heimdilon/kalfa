@@ -29,6 +29,7 @@ use crate::protokol::{
     AktarimDurmaNedeni, AracDurumu, BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf,
 };
 use crate::saglayici::Saglayici;
+use crate::sart_kapisi::SartKapisi;
 use arac_asamasi::AsamaSonucu;
 
 const KOMUT_KANALI: usize = 256;
@@ -97,6 +98,9 @@ pub fn varsayilan_sistem_mesaji(calisma_alani: &Path) -> String {
 #[derive(Clone)]
 pub struct OturumBaglami {
     pub saglayici: Arc<dyn Saglayici>,
+    /// Uygulama genelindeki tek şart kapısı (1c tasarımı §7.3). Bütün oturumlar
+    /// aynı kapıyı paylaşır.
+    pub sart_kapisi: Arc<SartKapisi>,
     pub araclar: Arc<AracKayitDefteri>,
     pub siniflandirici: Arc<Siniflandirici>,
     pub kilitler: Arc<KaynakKilitleri>,
@@ -828,7 +832,10 @@ impl Oturum {
     async fn komut_geldi(&mut self, komut: Option<Komut>) -> Option<Komut> {
         match komut {
             Some(k) => {
-                self.kaydet(KayitOgesi::Komut { komut: k.clone() }).await;
+                self.kaydet(KayitOgesi::Komut {
+                    komut: k.clone().into(),
+                })
+                .await;
                 Some(k)
             }
             None => {
@@ -876,9 +883,6 @@ impl Oturum {
             Komut::AracOnayi { .. } => {
                 self.hata("Bu onay artık geçerli değil; bekleyen bir işlem yok.")
                     .await;
-            }
-            Komut::SartlariKabulEt { .. } => {
-                self.hata("Şu an bekleyen bir şart onayı yok.").await;
             }
         }
         Etki::Devam

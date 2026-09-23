@@ -40,9 +40,6 @@ pub enum Komut {
     IzinKipiDegistir {
         kip: Kip,
     },
-    SartlariKabulEt {
-        surum: u32,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -18,6 +18,30 @@ use crate::izin::Kip;
 use crate::kimlik::CagriId;
 use crate::protokol::{AracDurumu, BitisNedeni, Komut, Zarf};
 
+/// Komut kaydının wire türü. Geçmişteki şart kabul komutu yalnızca kayıt
+/// uyumluluğu için okunur; bu kayıt EVREN'in kabulü onayladığını göstermez.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum KayitKomutu {
+    Guncel(Komut),
+    EskiSartKabulIstegi(EskiSartKabulKomutu),
+}
+
+/// Kayıtlarda tutulmuş eski şart kabul isteği; yeni `Komut` API'sinin parçası
+/// değildir.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "tip")]
+pub enum EskiSartKabulKomutu {
+    #[serde(rename = "SartlariKabulEt", skip_serializing)]
+    SartKabulIstegi { surum: u32 },
+}
+
+impl From<Komut> for KayitKomutu {
+    fn from(komut: Komut) -> Self {
+        Self::Guncel(komut)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "tip")]
 pub enum KayitOgesi {
@@ -26,7 +50,7 @@ pub enum KayitOgesi {
         kip: Kip,
     },
     Komut {
-        komut: Komut,
+        komut: KayitKomutu,
     },
     Mesaj {
         mesaj: ChatMessage,
@@ -53,6 +77,10 @@ pub enum KayitOgesi {
     },
     TurBitti {
         neden: BitisNedeni,
+    },
+    /// Oturum, kullanıcının şart penceresinde kabul ettiği sürümle sürdü.
+    SartKabulEdildi {
+        surum: u32,
     },
 }
 
