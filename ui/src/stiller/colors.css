@@ -1,0 +1,97 @@
+:root{
+/* ── Base neutrals — warm charcoal (dark is the product default) ───────── */
+--warm-1000:#0c1013;--warm-950:#0f1214;--warm-900:#111619;--warm-850:#14171a;
+--warm-800:#161a1d;--warm-750:#1c2125;--warm-700:#1e2327;--warm-650:#242a2e;
+--warm-600:#2a3035;--warm-500:#3a4147;--warm-400:#565e64;--warm-300:#6e7478;
+--warm-200:#a6adb2;--warm-100:#c9cdd0;--warm-050:#e8e6e3;
+
+/* ── Base neutrals — warm paper (light surfaces: onboarding, documents) ── */
+--paper-050:#fcfaf6;--paper-100:#f7f4ef;--paper-200:#f1efe9;--paper-300:#e9e5dd;
+--paper-400:#e3ded5;--paper-500:#cdc6ba;--paper-600:#8c857c;--paper-700:#5e5852;
+--paper-900:#23201d;
+
+/* ── Copper — the single brand accent (ahi / craft) ───────────────────── */
+--copper-100:#f6d2b8;--copper-200:#f3ab78;--copper-300:#dd9161;--copper-400:#b8754f;
+--copper-500:#9e5a3e;--copper-600:#7e462f;
+--copper-tint:#2d2824;--copper-tint-strong:#413730;--copper-tint-paper:#f3e4da;
+
+/* ── Semantics ─────────────────────────────────────────────────────────── */
+--green-200:#5fcb9c;--green-400:#53a485;--green-600:#516d58;
+--green-tint:#203428;--green-tint-paper:#e2ece4;
+--red-200:#e0776e;--red-400:#b4524a;--red-600:#8c3b34;
+--red-tint:#3c2424;--red-tint-paper:#f6e3e0;
+--amber-200:#d9a05b;--amber-400:#a8783e;--amber-tint:#3a2e1e;
+--blue-200:#79a9c9;--blue-tint:#1d2a33;
+
+/* ── Diff ──────────────────────────────────────────────────────────────── */
+--diff-add-bg:#1b2e22;--diff-add-fg:#8fd6ac;--diff-add-gutter:#2a4733;
+--diff-del-bg:#33211f;--diff-del-fg:#e5948c;--diff-del-gutter:#4d2b28;
+
+/* ── Syntax (code blocks, dark) ───────────────────────────────────────── */
+--code-kw:#c99bd6;--code-fn:#7fb3e0;--code-str:#8fbf7f;--code-num:#dd9161;
+--code-type:#6fc7c0;--code-com:#5c6469;--code-punct:#98a0a6;
+
+/* ══ Semantic aliases — dark (default) ═════════════════════════════════ */
+--bg-app:var(--warm-850);
+--bg-rail:var(--warm-900);
+--bg-panel:var(--warm-900);
+--surface-card:var(--warm-750);
+--surface-raised:var(--warm-700);
+--surface-sunken:var(--warm-800);
+--surface-selected:var(--copper-tint);
+--surface-selected-strong:var(--copper-tint-strong);
+--border-subtle:#1f2529;
+--border-default:var(--warm-600);
+--border-strong:var(--warm-500);
+--border-accent:var(--copper-400);
+--text-title:#f0eeeb;
+--text-body:var(--warm-050);
+--text-secondary:var(--warm-200);
+--text-muted:var(--warm-300);
+--text-accent:var(--copper-200);
+--text-inverse:#1a1613;
+--text-link:var(--copper-200);
+--text-link-hover:var(--copper-100);
+--action-primary:var(--copper-400);
+--action-primary-hover:var(--copper-300);
+--action-primary-press:var(--copper-500);
+--action-primary-fg:#1a1613;
+--focus-ring:var(--copper-300);
+--status-ok:var(--green-200);
+--status-warn:var(--amber-200);
+--status-danger:var(--red-200);
+--status-info:var(--blue-200);
+}
+
+/* ══ Light scope — onboarding, terms, printed/documents ══════════════════ */
+.kalfa-light{
+--bg-app:var(--paper-200);
+--bg-rail:var(--paper-100);
+--bg-panel:var(--paper-100);
+--surface-card:var(--paper-050);
+--surface-raised:#ffffff;
+--surface-sunken:var(--paper-100);
+--surface-selected:var(--copper-tint-paper);
+--surface-selected-strong:#ecd8cb;
+--border-subtle:var(--paper-300);
+--border-default:var(--paper-400);
+--border-strong:var(--paper-500);
+--border-accent:var(--copper-500);
+--text-title:var(--paper-900);
+--text-body:#2b2724;
+--text-secondary:var(--paper-700);
+--text-muted:var(--paper-600);
+--text-accent:var(--copper-500);
+--text-inverse:#fcfaf6;
+--text-link:var(--copper-500);
+--text-link-hover:var(--copper-600);
+--action-primary:var(--copper-500);
+--action-primary-hover:var(--copper-400);
+--action-primary-press:var(--copper-600);
+--action-primary-fg:#fcfaf6;
+--focus-ring:var(--copper-500);
+--status-ok:var(--green-600);
+--status-warn:var(--amber-400);
+--status-danger:var(--red-400);
+--status-info:#3f6d8c;
+}

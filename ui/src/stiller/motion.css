@@ -1,0 +1,12 @@
+:root{
+--dur-instant:80ms;/* @kind other */
+--dur-fast:120ms;/* @kind other */
+--dur-normal:180ms;/* @kind other */
+--dur-slow:260ms;/* @kind other */
+--dur-stream:16ms;/* @kind other */ /* token-batching window, §11.1 */
+--ease-standard:cubic-bezier(.2,0,.2,1);/* @kind other */
+--ease-out:cubic-bezier(0,0,.2,1);/* @kind other */
+--ease-in:cubic-bezier(.4,0,1,1);/* @kind other */
+--transition-control:background-color var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard);/* @kind other */
+--transition-panel:opacity var(--dur-normal) var(--ease-out),transform var(--dur-normal) var(--ease-out);/* @kind other */
+}
