@@ -1,19 +1,27 @@
-//! Yol bazında okuma/yazma kilitleri (spec §6.1).
+//! Yol bazında okuma/yazma kilitleri ve çalışma alanı başına kilit yöneticisi
+//! (spec §6.1, 1c tasarımı §5.3).
 //!
 //! Önce genel kilit (paylaşımlı ya da özel), sonra yol kilitleri anahtar
 //! sırasıyla alınır. Sıralı edinim kilitlenmeyi (deadlock) önler.
 
 use std::collections::{BTreeMap, HashMap};
+use std::io;
+use std::path::Path;
+use std::sync::Weak;
 use std::sync::{Arc, Mutex};
 
+use same_file::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
 use crate::yol::CalismaYolu;
 
-#[derive(Debug, Default)]
+type KokTablosu = Mutex<Vec<(Handle, Weak<KaynakKilitleri>)>>;
+
+#[derive(Default)]
 pub struct KaynakKilitleri {
     genel: Arc<RwLock<()>>,
     yollar: Mutex<HashMap<String, Arc<RwLock<()>>>>,
+    kok_tablosu: Option<Weak<KokTablosu>>,
 }
 
 /// Tutulan kilitler; bırakılınca (drop) çözülür.
@@ -38,7 +46,15 @@ impl KaynakKilitleri {
 
     fn kilit(&self, anahtar: &str) -> Arc<RwLock<()>> {
         let mut harita = self.yollar.lock().unwrap_or_else(|z| z.into_inner());
+        // Kimsenin tutmadığı ve beklemediği kilitler atılır; tablo büyümez.
+        harita.retain(|_, kilit| Arc::strong_count(kilit) > 1);
         harita.entry(anahtar.to_string()).or_default().clone()
+    }
+
+    /// Yol kilidi tablosundaki girdi sayısı (testler için).
+    #[cfg(feature = "test-destek")]
+    pub fn yol_tablosu_boyutu(&self) -> usize {
+        self.yollar.lock().unwrap_or_else(|z| z.into_inner()).len()
     }
 
     pub async fn al(
@@ -72,5 +88,58 @@ impl KaynakKilitleri {
             _genel: genel,
             _yollar: yollar,
         }
+    }
+}
+
+impl Drop for KaynakKilitleri {
+    fn drop(&mut self) {
+        let Some(kok_tablosu) = self.kok_tablosu.as_ref().and_then(Weak::upgrade) else {
+            return;
+        };
+        let mut kokler = kok_tablosu.lock().unwrap_or_else(|z| z.into_inner());
+        // Son oturum bırakıldığında Weak kaydı ve dosya sistemi Handle'ı da
+        // bırakılır; sonraki bir kök erişimini beklemez.
+        kokler.retain(|(_, kilitler)| kilitler.strong_count() > 0);
+    }
+}
+
+/// Çalışma alanı kökünü dosya sistemi kimliğiyle tanır ve aynı köke aynı
+/// kaynak kilitlerini verir. Kilitler süreç içidir; iç içe çalışma alanları
+/// ayrı yönetici alır (bilinen sınır).
+#[derive(Default)]
+pub struct KilitYoneticisi {
+    kokler: Arc<KokTablosu>,
+}
+
+impl KilitYoneticisi {
+    pub fn yeni() -> Self {
+        Self::default()
+    }
+
+    /// `kok` dizininin kilitleri. Aynı kökü açan bütün oturumlar aynı
+    /// kilitleri paylaşır; son oturum bırakınca kökün kaydı silinir.
+    pub fn al(&self, kok: &Path) -> io::Result<Arc<KaynakKilitleri>> {
+        let kimlik = Handle::from_path(kok)?;
+        let mut kokler = self.kokler.lock().unwrap_or_else(|z| z.into_inner());
+        kokler.retain(|(_, kilitler)| kilitler.strong_count() > 0);
+        let mevcut = kokler
+            .iter()
+            .find(|(h, _)| *h == kimlik)
+            .and_then(|(_, kilitler)| kilitler.upgrade());
+        if let Some(kilitler) = mevcut {
+            return Ok(kilitler);
+        }
+        let mut yonetilen = KaynakKilitleri::default();
+        yonetilen.kok_tablosu = Some(Arc::downgrade(&self.kokler));
+        let kilitler = Arc::new(yonetilen);
+        kokler.push((kimlik, Arc::downgrade(&kilitler)));
+        Ok(kilitler)
+    }
+
+    /// Hâlâ kullanılan kök sayısı; aynı anda ölü kayıtları da temizler.
+    pub fn acik_kok_sayisi(&self) -> usize {
+        let mut kokler = self.kokler.lock().unwrap_or_else(|z| z.into_inner());
+        kokler.retain(|(_, kilitler)| kilitler.strong_count() > 0);
+        kokler.len()
     }
 }
