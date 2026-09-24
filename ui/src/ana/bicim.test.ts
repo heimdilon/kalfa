@@ -4,6 +4,7 @@ import { onayOgesi } from '../sahte/arka';
 import {
   aracBasligi,
   aracHedefi,
+  kabukOzeti,
   aracKartDurumu,
   ciktiOnizlemesi,
   gruplara,
@@ -79,6 +80,7 @@ describe('araç kartı', () => {
       argumanlar: null,
       durum: 'Basarili',
       sonuc: null,
+      terminal: null,
       ...ek,
     }) as Extract<EkranOgesi, { tip: 'AracCagrisi' }>;
 
@@ -93,6 +95,19 @@ describe('araç kartı', () => {
     expect(aracHedefi(arac({ aciklama: 'src/main.rs' }))).toBe('src/main.rs');
     expect(aracHedefi(arac({ argumanlar: '{"yol":"src/lib.rs"}' }))).toBe('src/lib.rs');
     expect(aracHedefi(arac({ argumanlar: 'bozuk' }))).toBeUndefined();
+  });
+
+  it('kabuk: başlık, kayıttan gelen komut ve çıkış kodu özeti (aşama 2 tasarımı §10.1)', () => {
+    expect(aracBasligi(arac({ arac: 'kabuk', durum: 'Suruyor' }))).toBe('Komut çalışıyor');
+    expect(aracBasligi(arac({ arac: 'kabuk', durum: 'Basarisiz' }))).toBe('Komut');
+    expect(
+      aracHedefi(arac({ arac: 'kabuk', argumanlar: '{"program":"cargo","argumanlar":["test"]}' })),
+    ).toBe('cargo test');
+    expect(aracHedefi(arac({ arac: 'kabuk', argumanlar: '{"betik":"a | b\\nc"}' }))).toBe('a | b');
+    expect(
+      kabukOzeti(arac({ arac: 'kabuk', sonuc: '[kaynak: kabuk:cargo]\nÇıkış kodu: 101\nSüre: 2 sn' })),
+    ).toBe('Çıkış kodu: 101');
+    expect(kabukOzeti(arac({ sonuc: 'fn main() {}' }))).toBeUndefined();
   });
 
   it('başlamamış çağrı "Çalıştırılmadı", bilinmeyen sonuç "Sonucu bilinmiyor"', () => {

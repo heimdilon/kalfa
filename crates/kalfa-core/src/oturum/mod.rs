@@ -23,10 +23,11 @@ use crate::arac::AracKayitDefteri;
 use crate::izin::{Kip, Siniflandirici};
 use crate::kayit::{KayitOgesi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
+use crate::kimlik::CagriId;
 use crate::kimlik::{OturumId, TurId};
 use crate::kurtarma::{BILINMEYEN_SONUC, KurtarilmisDurum, KurtarmaHatasi, kurtar};
 use crate::protokol::{
-    AktarimDurmaNedeni, AracDurumu, BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf,
+    AktarimDurmaNedeni, AracDurumu, BitisNedeni, Komut, Olay, OnayOgesi, SEMA_SURUMU, Zarf,
 };
 use crate::saglayici::Saglayici;
 use crate::sart_kapisi::SartKapisi;
@@ -120,6 +121,9 @@ pub enum OturumHatasi {
 }
 
 type AktifTur = Arc<Mutex<Option<(TurId, CancellationToken)>>>;
+
+/// Onay bekleyen öğeler; yerel iletişim kutusu komutu buradan okur.
+type BekleyenOnaylar = Arc<Mutex<HashMap<CagriId, OnayOgesi>>>;
 
 /// Taşıma kuyruğunda terminal hata için ayrılan kapasite. Bu kapasite toplam
 /// olay/bayt bütçesine dahildir; normal olaylar bu kısmı kullanamaz.
@@ -302,6 +306,17 @@ impl OlayKanali {
 
     fn kapanma(&self) -> CancellationToken {
         self.durum.kapanma.clone()
+    }
+
+    /// Kuyrukta `bayt` büyüklüğünde bir olay için rahat yer var mı: olay ve
+    /// bayt bütçesinin yarısı. Atılabilen ara çıktı bununla sınırlanır;
+    /// kuyruğun geri kalanı düşürülemeyen olaylara kalır.
+    fn yer_var(&self, bayt: usize) -> bool {
+        let (olay, bekleyen_bayt) = self.durum.bekleyen();
+        // Zarfın ve JSON kaçışlarının payı.
+        let tahmin = bayt.saturating_mul(2).saturating_add(256);
+        olay < self.durum.butce.azami_olay / 2
+            && bekleyen_bayt.saturating_add(tahmin) < self.durum.butce.azami_bayt / 2
     }
 
     fn gonder(&self, zarf: Zarf<Olay>) -> Result<(), OlayAktarimHatasi> {
@@ -600,11 +615,22 @@ pub struct OturumTutamaci {
     tx: mpsc::Sender<Komut>,
     aktif_tur: AktifTur,
     kapanis: watch::Receiver<bool>,
+    bekleyen_onaylar: BekleyenOnaylar,
 }
 
 impl OturumTutamaci {
     pub fn oturum_id(&self) -> OturumId {
         self.oturum
+    }
+
+    /// Onay bekleyen bir öğe. Yerel iletişim kutusu gösterdiği komutu
+    /// buradan alır (aşama 2 tasarımı §5.2).
+    pub fn bekleyen_onay(&self, cagri: CagriId) -> Option<OnayOgesi> {
+        self.bekleyen_onaylar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .get(&cagri)
+            .cloned()
     }
 
     pub fn aktif_tur(&self) -> Option<TurId> {
@@ -768,6 +794,7 @@ struct Oturum {
     /// İzin kipi her değiştiğinde artar. Planlanan işlem, planlandığı sürümle
     /// yürütülür; sürüm değiştiyse yürütülmez (spec §7.6, Task 9).
     politika: Arc<AtomicU64>,
+    bekleyen_onaylar: BekleyenOnaylar,
     kapandi: bool,
 }
 
@@ -791,6 +818,7 @@ impl Oturum {
         let aktif_tur: AktifTur = Arc::new(Mutex::new(None));
         let (olay_tx, olay_rx) = OlayKanali::yeni(ayarlar.olay_butcesi, aktif_tur.clone());
         let olay_kapanma = olay_tx.kapanma();
+        let bekleyen_onaylar = BekleyenOnaylar::default();
         let oturum = Self {
             kimlik,
             ayarlar,
@@ -806,6 +834,7 @@ impl Oturum {
             iptal: CancellationToken::new(),
             aktif_tur: aktif_tur.clone(),
             politika: Arc::new(AtomicU64::new(0)),
+            bekleyen_onaylar: bekleyen_onaylar.clone(),
             kapandi: false,
         };
         (
@@ -815,6 +844,7 @@ impl Oturum {
                 tx: komut_tx,
                 aktif_tur,
                 kapanis: kapanis_rx,
+                bekleyen_onaylar,
             },
             olay_rx,
             kapanis_tx,
@@ -910,7 +940,7 @@ impl Oturum {
                 self.hata("Önceki tur sürüyor; bitmesini bekleyin ya da iptal edin.")
                     .await;
             }
-            Komut::AracOnayi { .. } => {
+            Komut::AracOnayi { .. } | Komut::YerelOnay { .. } => {
                 self.hata("Bu onay artık geçerli değil; bekleyen bir işlem yok.")
                     .await;
             }

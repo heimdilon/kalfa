@@ -14,12 +14,13 @@ use kalfa_core::kayit::OturumKaydi;
 use kalfa_core::kimlik::OturumId;
 use kalfa_core::kurtarma::kurtar;
 use kalfa_core::oturum::{self, OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci};
-use kalfa_core::protokol::Komut;
-use kalfa_tools::{CalismaAlani as AracAlani, varsayilan_araclar};
+use kalfa_core::protokol::{Komut, OnayKarari, OnayOgesi};
+use kalfa_tools::{CalismaAlani as AracAlani, KabukAraci, varsayilan_araclar};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 
 use crate::arayuz::KanalYazici;
+use crate::calisma_alanlari::{AlanGuveni, CalismaAlaniKaydi};
 use crate::hata::KomutHatasi;
 use crate::sozlesme::{
     CalismaAlani, OnayGirdisi, OturumAcilisi, OturumSatiri, SaltOkunurNedeni, UygulamaDurumu,
@@ -56,6 +57,7 @@ impl Uygulama {
             modeller: modeller::modeller(),
             varsayilan_model: modeller::VARSAYILAN_MODEL.to_string(),
             son_oturum: ic.son_oturum,
+            yalitim: self.yalitici.durum(),
         }
     }
 
@@ -307,20 +309,53 @@ impl Uygulama {
         Ok(())
     }
 
+    /// Onay kararlarını çekirdeğe iletir. Yerel onay isteyen bir öğeyi
+    /// arayüz onayladıysa Rust komutu yerel iletişim kutusunda yeniden sorar
+    /// (aşama 2 tasarımı §5.2). Kutuda gösterilen komut arayüzden değil
+    /// çekirdekten okunur; webview'a sızmış bir betik başka bir komutu
+    /// onaylatamaz.
     pub async fn arac_onayi(
         &self,
         oturum: OturumId,
         kararlar: Vec<OnayGirdisi>,
     ) -> Result<(), KomutHatasi> {
         let tutamac = self.tutamac(oturum)?;
+        let yereller: Vec<OnayOgesi> = kararlar
+            .iter()
+            .filter(|k| k.karar == OnayKarari::Onayla)
+            .filter_map(|k| tutamac.bekleyen_onay(k.cagri))
+            .filter(|o| o.yerel_onay)
+            .collect();
+        let yerel_evet = !yereller.is_empty()
+            && self
+                .iletisim
+                .onayla(
+                    "Komutu yalıtımsız çalıştır",
+                    &guvenlik::yerel_onay_metni(&yereller),
+                    "Çalıştır",
+                    "Vazgeç",
+                )
+                .await;
         for k in kararlar {
-            tutamac
-                .gonder(Komut::AracOnayi {
+            let komut = match yereller.iter().find(|o| o.cagri == k.cagri) {
+                Some(o) if yerel_evet => Komut::YerelOnay {
+                    cagri: o.cagri,
+                    muhur: o.muhur.clone(),
+                },
+                Some(o) => Komut::AracOnayi {
+                    cagri: o.cagri,
+                    karar: OnayKarari::Reddet {
+                        gerekce: Some("Kullanıcı yerel pencerede vazgeçti.".into()),
+                    },
+                    muhur: o.muhur.clone(),
+                },
+                None => Komut::AracOnayi {
                     cagri: k.cagri,
                     karar: k.karar,
                     muhur: k.muhur,
-                })
-                .await?;
+                },
+            };
+            tutamac.gonder(komut).await?;
         }
         Ok(())
     }
@@ -467,7 +502,17 @@ impl Uygulama {
     pub(crate) fn baglam(&self, kok: &Path) -> Result<OturumBaglami, KomutHatasi> {
         let siniflandirici = Arc::new(Siniflandirici::yeni(kok, &[]).map_err(ic_hata)?);
         let alan = AracAlani::ac(siniflandirici.clone())?;
-        let araclar = Arc::new(AracKayitDefteri::yeni(varsayilan_araclar(alan)).map_err(ic_hata)?);
+        let guven = Arc::new(AlanGuveni {
+            kayit: self.alanlar.clone(),
+            kimlik: CalismaAlaniKaydi::kimlik(kok),
+        });
+        let mut araclar = varsayilan_araclar(alan.clone());
+        araclar.push(Arc::new(KabukAraci::yeni(
+            alan,
+            self.yalitici.clone(),
+            guven,
+        )));
+        let araclar = Arc::new(AracKayitDefteri::yeni(araclar).map_err(ic_hata)?);
         Ok(OturumBaglami {
             saglayici: self.evren.clone(),
             araclar,

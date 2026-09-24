@@ -1,8 +1,8 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Revizyon:** r3.3 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); değişiklik özeti §17'de
-**Durum:** 1a ve 1b uygulandı; 1c tasarımı yazıldı, uygulama planı bekliyor
+**Revizyon:** r3.4 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
+**Durum:** 1a, 1b ve 1c uygulandı; aşama 2 (kabuk ve yalıtım) tasarımı yazıldı, uygulama planları bekliyor
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
 ---
@@ -726,6 +726,12 @@ ve Unix soketi açmayı engeller; böylece `docker.sock` ya da `ssh-agent` gibi
 yerel ayrıcalıklı soketlere de ulaşılamaz (`socketpair` serbesttir).
 `PR_SET_NO_NEW_PRIVS` her zaman açıktır.
 
+- *Aşama 2 kararları* ([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §7, §8):
+  - Ağlı profilde de `AF_UNIX` soket açmak engellenir. Ağ ad alanı
+    ayrılmadığında soyut Unix soketleri (X11, D-Bus) ancak böyle kapanır.
+  - Çalışma alanının git dizini dışarıdaysa (worktree, submodule) yazılabilir
+    bağlanır; korumaları aynen uygulanır.
+  - Gizli bir dosyanın çalışma alanındaki hard link'i de örtülür.
 - *Neden Landlock değil:* Landlock yalnızca izin listesiyle çalışır; yazılabilir
   bir dizinin içinde salt okunur ya da okunamaz alt yol (`.git/hooks`, `.env`)
   tanımlanamaz.
@@ -785,6 +791,18 @@ yerel ayrıcalıklı soketlere de ulaşılamaz (`socketpair` serbesttir).
   dayanır.
 - *Kısıt:* kurulum bir kez yönetici yetkisi ister. Yönetici olmayan kullanıcılar
   için kurum BT'si yalıtım kullanıcılarını önceden oluşturabilir.
+- *Aşama 2 kararları* ([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §9):
+  - Kurulumu küçük bir yönetici yardımcısı (`kalfa-yalitim.exe`) yapar;
+    uygulama onu UAC istemiyle başlatır, MSI da sonradan aynı yardımcıyı
+    çağırır.
+  - Parolaları yükseltilmemiş uygulama üretir ve saklar; yükseltme başka bir
+    yönetici hesabıyla da yapılabilir.
+  - Komut şu zincirle çalışır: `CreateProcessWithLogonW` (yalıtım kullanıcısı)
+    → yardımcının `calistir` alt komutu → kısıtlı belirteçle
+    `CreateProcessAsUserW`. Çalışma anında yönetici yetkisi gerekmez.
+  - Yardımcı, yalıtımın yazabileceği bir yerden hiçbir zaman başlatılmaz.
+    Başlatılsaydı yalıtılmış bir komut onu değiştirip yükseltmeyi ele
+    geçirirdi.
 
 **Yalıtım yoksa** — Linux'ta bubblewrap çalışmıyorsa, Windows'ta kurulum
 yapılmamışsa — Kalfa **sessizce yalıtımsız çalışmaz.** Kabuk *yalıtımsız*
@@ -804,6 +822,12 @@ yetkilerinle çalışacak" uyarısıyla yalıtımın nasıl açılacağını sö
   (`--die-with-parent`), Windows'ta Job Object.
 - Mümkün olduğunda komut kabuk metni yerine program + argüman dizisi olarak
   çalıştırılır. Genel kabuk gerektiğinde onay kartı tam komutu gösterir.
+- Değerler (aşama 2 tasarımı §4, §6):
+  - Süre: varsayılan 120 sn, en çok 1800 sn.
+  - Modele giden çıktı: en çok 30 000 bayt (baştan 10 000, sondan 20 000).
+  - Süreç sayısı: en çok 256.
+  - Arayüze giden canlı çıktı kayıplıdır: ekran yetişemezse parça atılır ve tur
+    iptal edilmez. Modelin aldığı çıktı eksiksizdir (kırpma dışında).
 
 **Yalıtımın korumadığı şey: çalışma alanının içindeki kod.** Yalıtılmış bir
 komut `build.rs`'i, `Makefile`'ı ya da `package.json` betiklerini
@@ -1371,6 +1395,9 @@ teslim edilir:
 2. **Kabuk ve yalıtım:** süreç sınırları, Linux arka ucu, ardından Windows arka
    ucu. Windows arka ucu, çalışma alanına özel kısıtlı belirteç ve okuma sınırı
    prototipiyle başlar (§7.7). Yalıtım hazır olana kadar kabuk yalnızca yalıtımsız ve onaylı çalışır.
+   Tasarımı [ayrı belgededir](2026-09-24-kalfa-2-kabuk-yalitim-design.md). Dört plana
+   bölünür: **2a** kabuk aracı ve süreç sınırları · **2b** Linux arka ucu ·
+   **2c** Windows prototipi · **2d** Windows arka ucu.
 3. **Görünürlük:** tur özeti ve geri alma, gönderim günlüğü ve önizleme, "neden
    izin gerekiyor" kartı, İnceleme kipi, güvenlik denetçisi.
 4. **Eklenti ve RAG:** WIT 0.1, kaynak sınırları, `kalfa-rag`.
@@ -1605,3 +1632,14 @@ değişenler: `sira` boşluk kuralı aktarım katmanının paket numarasına dev
 (§4.1) · tek yazıcı, kaydın yanındaki kilit dosyasıyla (§6.6) · köprü ve kabul
 ölçümü 1c belgesine bağlandı (§11.1) · şart kabulü uygulama genelindeki tek şart
 kapısından, bir kez (§11.8).
+
+**r3.4 (2026-09-24):** 1c tamamlandı. Aşama 2'nin (kabuk ve yalıtım) tasarımı
+ayrı belgede:
+[2026-09-24-kalfa-2-kabuk-yalitim-design.md](2026-09-24-kalfa-2-kabuk-yalitim-design.md).
+Bu belgede değişenler (§7.7, §12.3):
+- Windows yalıtımını yönetici yardımcısı kurar; komutun çalışma zinciri ve
+  yardımcının nereden başlatılacağı yazıldı.
+- Linux'ta ağlı profilde de `AF_UNIX` soket açmak engellenir. Dışarıdaki git
+  dizini yazılabilir bağlanır. Gizli dosyaların hard link'leri de örtülür.
+- Süreç sınırlarının değerleri yazıldı; canlı çıktı kayıplıdır.
+- Aşama 2 dört plana bölündü.

@@ -6,11 +6,13 @@ Kalfa, Rust ile yazılmış bir masaüstü ajan uygulamasıdır. EVREN'in model 
 kullanarak dosya okur, yazar, arama yapar ve komut çalıştırır — tamamı senin
 onayınla. Araçlarını WebAssembly eklentileriyle genişletebilirsin.
 
-> **Durum: 1c tamamlandı; masaüstü uygulaması Windows ve Linux'ta çalışıyor.**
-> Rust workspace'inde EVREN istemcisi (`kalfa-evren`), arayüzden bağımsız oturum
-> çekirdeği (`kalfa-core`), beş yerleşik dosya aracı (`kalfa-tools`) ve
-> masaüstü uygulaması (`kalfa-uygulama`, Tauri kabuğu `kalfa`) bulunuyor;
-> Svelte arayüzü `ui/`'dadır. Kabuk aracı, yalıtım ve eklentiler sonraki
+> **Durum: masaüstü uygulaması Windows ve Linux'ta çalışıyor; kabuk aracı
+> var, yalıtımı henüz yok.** Rust workspace'inde EVREN istemcisi
+> (`kalfa-evren`), arayüzden bağımsız oturum çekirdeği (`kalfa-core`), dosya
+> araçları ve kabuk aracı (`kalfa-tools`), komut çalıştırma ve süreç sınırları
+> (`kalfa-sandbox`) ve masaüstü uygulaması (`kalfa-uygulama`, Tauri kabuğu
+> `kalfa`) bulunuyor; Svelte arayüzü `ui/`'dadır. Komutlar şimdilik yalıtımsız
+> çalışır ve her biri yerel pencerede onaylanır; yalıtım ve eklentiler sonraki
 > aşamalarda. [Geliştirme durumu ve devam noktası](docs/GELISTIRME_DURUMU.md).
 
 ## Geliştirme

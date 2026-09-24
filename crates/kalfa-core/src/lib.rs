@@ -8,6 +8,7 @@ pub mod arac;
 pub mod gecmis;
 pub mod git_koruma;
 pub mod izin;
+pub mod kabuk;
 pub mod kayit;
 pub mod kilit;
 pub mod kimlik;

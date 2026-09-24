@@ -18,6 +18,11 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
   tutamacıyla erişilir; üst dizin ve dosya bileşenlerinde sembolik
   bağlantılar (iç ya da dış, ayrıca Windows junction) izlenmez; yazma/
   düzenleme onaydan sonra içerik ya da hard link sayısı değişirse çalışmaz.
+- **1c — masaüstü uygulaması:** `kalfa-uygulama`, Tauri kabuğu `kalfa`,
+  Svelte arayüzü `ui/`; ayrıntısı aşağıda.
+- **2a — kabuk aracı:** `kabuk` (`kalfa-tools`) ve komut çalıştırma, süreç
+  sınırları (`kalfa-sandbox`). Yalıtım henüz yok; her komut yerel pencerede
+  onaylanır. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -492,7 +497,71 @@ kabul ölçümü dahil,
 belgesindedir. Yukarıdaki liste onun özetidir; ayrılırlarsa belge geçerlidir.
 1c'nin dört parçası (1c-1 çekirdek eklemeleri, 1c-2 Tauri kabuğu, 1c-3 arayüz,
 1c-4 kabul) tamamlandı. Sıradaki aşama üst belge §12.3'e göre ikincisidir:
-kabuk aracı ve yalıtım.
+kabuk aracı ve yalıtım. Tasarımı
+[`2026-09-24-kalfa-2-kabuk-yalitim-design.md`](superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md)
+belgesindedir. Aşama dört plana bölünür: 2a kabuk aracı ve süreç sınırları, 2b
+Linux arka ucu, 2c Windows prototipi, 2d Windows arka ucu.
+
+## Devam eden aşama — 2 (kabuk aracı ve yalıtım)
+
+Tasarım:
+[`2026-09-24-kalfa-2-kabuk-yalitim-design.md`](superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md).
+Dört plana bölünür: 2a kabuk aracı ve süreç sınırları, 2b Linux arka ucu, 2c
+Windows prototipi, 2d Windows arka ucu.
+
+### 2a — kabuk aracı ve süreç sınırları (tamamlandı)
+
+Plan: [`2026-09-24-kalfa-2a-kabuk.md`](superpowers/plans/2026-09-24-kalfa-2a-kabuk.md).
+
+Neler eklendi:
+- **`kabuk` aracı.** İki biçimi var: `{program, argumanlar}` ve `{betik}`.
+  Betik Linux'ta sh, Windows'ta PowerShell ile çalışır. Seçenekler: çalışma
+  dizini, ağ isteği, zaman aşımı.
+- **`kalfa-sandbox`.** Komutu başlatır ve süreç sınırlarını uygular:
+  - Ortam değişkenleri izin listesiyle geçer.
+  - Varsayılan süre 120 sn, en çok 1800 sn.
+  - En çok 256 süreç çalışabilir (Windows'ta).
+  - İptal, zaman aşımı ya da komutun bitişi bütün süreç ağacını durdurur:
+    Linux'ta süreç grubu, Windows'ta Job Object.
+- **İzin kararı.** Yalıtım olmadığı için her komut, her kipte yerel pencerede
+  onaylanır. Webview'daki "Onayla" komutu çalıştırmaz; Rust yerel pencereyi
+  açar ve gösterdiği komutu çekirdekten okur.
+- **İlk çağrı uyarısı.** Bir çalışma alanındaki ilk komut, projenin betiklerinin
+  kod olarak çalışacağını söyler. Bu onay uygulamanın veri dizinine kaydedilir.
+- **Canlı çıktı.** Komut çalışırken çıktı araç kartındaki terminal görünümünde
+  akar; ANSI renkleri çizilir. Model, komut bitince kırpılmış çıktıyı alır:
+  baştan 10 000, sondan 20 000 bayt ve çıkış kodu.
+- **Durum çubuğu.** Yalıtım göstergesi ("Yalıtımsız") eklendi.
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `cargo test --workspace --locked` | 348 geçti, 0 başarısız | 346 geçti, 0 başarısız |
+| `cargo test -p kalfa-uygulama -p kalfa --features e2e` | 63 geçti | 63 geçti |
+| Clippy (normal ve `e2e` derlemesi) / fmt | Başarılı | Başarılı |
+| `npm run check` / `npm test` / `npm run build` | 0 hata, 0 uyarı; 18 dosya, 205 test; paket denetimi temiz | Aynı |
+| Uçtan uca (`cd e2e && npm test`) | 24 test geçti (iki koşuda) | 24 test geçti (Xvfb) |
+| Gecikme p95 (düzenli / yığın / paralel) | 24,2–24,4 / 24,8–26,1 / 24,5–24,6 ms | 37,8 / 31,5 / 37,9 ms |
+
+Plan yazılırken bulunanlar:
+- **Çıktı seli Linux'ta arayüzü boğuyordu.** Terminal görünümü megabaytlarca
+  metin tutarken WebKitGTK (Xvfb, yazılım çizimi) saniyede 50–60 KB
+  işleyebildi; tur 60 saniyede bitmedi. Görünüm artık en çok 200 000 karakter
+  tutuyor, tek satır 4 000 karakterde kesiliyor ve araçtan arayüze en çok
+  1 MiB gidiyor. Aynı test 3,6 saniyede bitiyor.
+- **Canlı çıktının kayıplı olması iki yerde gerekli.** Araçtan oturuma giden
+  kanal doluyken parça atılır. Oturum da çekirdeğin olay kuyruğu yarıdan fazla
+  doluyken parçayı iletmez. Yoksa yavaş bir ekran kuyruğu doldurup turu iptal
+  ettirirdi. Atılan her bayt sayılır ve ekranda "… N bayt gösterilmedi …" diye
+  görünür.
+- **Aynı çağrının üç kez başarısız olma sınırı kabuğu durdururdu.** Model testi
+  düzeltip aynı komutu yeniden koştukça sınır dolardı. Sıfırdan farklı çıkış
+  kodu ve zaman aşımı bu sınıra sayılmıyor.
+- **Yerel onay penceresinin gösterdiği komut webview'dan gelmemeli.** Gelseydi
+  sızmış bir betik zararsız bir metinle zararlı komutu onaylatabilirdi. Komut
+  çekirdeğin bekleyen onayından okunuyor. Çekirdek de webview'ın gönderebildiği
+  onay komutuyla yerel onaylı öğeyi onaylamıyor.
+
+Sıradaki plan 2b: Linux arka ucu (bubblewrap + seccomp).
 
 Kabuk yalıtımı, bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi,
 güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü

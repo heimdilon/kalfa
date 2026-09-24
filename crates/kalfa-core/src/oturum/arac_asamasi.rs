@@ -1,7 +1,7 @@
 //! Araç aşaması: planlama (doğrulama + izin) → onay → kilitli paralel
 //! yürütme (spec §6, §6.1, §7.4–§7.6).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -9,16 +9,20 @@ use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
 use kalfa_evren::tipler::{ChatMessage, ToolCall};
 use serde_json::Value;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use super::{Etki, Oturum};
-use crate::arac::{Arac, AracCiktisi, AracHatasi, Hazirlik};
-use crate::izin::{Islem, Karar, Kip, Siniflandirici, YolSinifi, karar_ver};
+use crate::arac::{Arac, AracCiktisi, AracHatasi, CiktiGonderici, CiktiParcasi, Hazirlik};
+use crate::izin::{Islem, Karar, Kip, Siniflandirici, YolSinifi, kabuk_karari, karar_ver};
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, IslemId};
 use crate::muhur::{OnayMuhru, muhur_hesapla};
 use crate::protokol::{AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OnayOgesi};
 use crate::yol::CalismaYolu;
+
+/// Araçlardan oturuma gelen ara çıktı kanalının kapasitesi (parça).
+const CIKTI_KANALI: usize = 64;
 
 struct Planlanan {
     cagri: CagriId,
@@ -42,6 +46,9 @@ struct CagriSonucu {
     anahtar: String,
     durum: AracDurumu,
     icerik: String,
+    /// Başarısızlık, aynı çağrının üst üste başarısızlık sınırına sayılmaz
+    /// (kabukta sıfırdan farklı çıkış kodu; aşama 2 tasarımı §4.5).
+    hata_sayilmaz: bool,
 }
 
 impl CagriSonucu {
@@ -53,6 +60,7 @@ impl CagriSonucu {
             anahtar: p.anahtar.clone(),
             durum,
             icerik,
+            hata_sayilmaz: false,
         }
     }
 }
@@ -92,7 +100,8 @@ impl Oturum {
             };
             match plan {
                 Ok((plan, Karar::Serbest)) => serbest.push(plan),
-                Ok((plan, Karar::Onayli { uyarilar })) => onayli.push((plan, uyarilar)),
+                Ok((plan, Karar::Onayli { uyarilar })) => onayli.push((plan, uyarilar, false)),
+                Ok((plan, Karar::YerelOnayli { uyarilar })) => onayli.push((plan, uyarilar, true)),
                 Ok((plan, Karar::Yasak { neden })) => {
                     let s = CagriSonucu::plandan(
                         &plan,
@@ -119,6 +128,7 @@ impl Oturum {
                         anahtar: tekrar_anahtari(&tc),
                         durum,
                         icerik,
+                        hata_sayilmaz: false,
                     };
                     self.sonuc_isle(s, hata_sayaci).await;
                 }
@@ -128,7 +138,7 @@ impl Oturum {
         // Hazırlıkta iptal, önceden planlanan ve henüz ele alınmayan
         // çağrıları da kapatır; sonraki model isteğinde eksik tool yanıtı kalmaz.
         if self.iptal.is_cancelled() {
-            for p in serbest.iter().chain(onayli.iter().map(|(p, _)| p)) {
+            for p in serbest.iter().chain(onayli.iter().map(|(p, _, _)| p)) {
                 self.sonuc_isle(
                     CagriSonucu::plandan(
                         p,
@@ -149,8 +159,8 @@ impl Oturum {
             serbest.into_iter().partition(|p| p.politika == politika);
         let (onayli, eski_onayli): (Vec<_>, Vec<_>) = onayli
             .into_iter()
-            .partition(|(p, _)| p.politika == politika);
-        eski.extend(eski_onayli.into_iter().map(|(p, _)| p));
+            .partition(|(p, _, _)| p.politika == politika);
+        eski.extend(eski_onayli.into_iter().map(|(p, _, _)| p));
         for p in eski {
             self.sonuc_isle(
                 CagriSonucu::plandan(
@@ -278,13 +288,16 @@ impl Oturum {
             );
             karar = karar.birlestir(yeni);
         }
+        if let Some(kabuk) = &hazirlik.kabuk {
+            karar = karar.birlestir(kabuk_karari(kip, kabuk));
+        }
         karar
     }
 
-    async fn onay_topla(&mut self, bekleyen: Vec<(Planlanan, Vec<String>)>) -> OnayToplama {
-        let ogeler = bekleyen
+    async fn onay_topla(&mut self, bekleyen: Vec<(Planlanan, Vec<String>, bool)>) -> OnayToplama {
+        let ogeler: Vec<OnayOgesi> = bekleyen
             .iter()
-            .map(|(p, uyarilar)| OnayOgesi {
+            .map(|(p, uyarilar, yerel)| OnayOgesi {
                 cagri: p.cagri,
                 arac: p.arac.ad().to_string(),
                 aciklama: p.hazirlik.aciklama.clone(),
@@ -292,10 +305,24 @@ impl Oturum {
                 diff: p.hazirlik.diff.clone(),
                 uyarilar: uyarilar.clone(),
                 muhur: p.muhur.clone(),
+                kabuk: p.hazirlik.kabuk.clone(),
+                yerel_onay: *yerel,
             })
             .collect();
+        // Yerel iletişim kutusu komutu çekirdekten okur, webview'dan değil
+        // (aşama 2 tasarımı §5.2).
+        *self
+            .bekleyen_onaylar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner()) =
+            ogeler.iter().map(|o| (o.cagri, o.clone())).collect();
+        let yerel: HashSet<CagriId> = bekleyen
+            .iter()
+            .filter(|(_, _, yerel)| *yerel)
+            .map(|(p, _, _)| p.cagri)
+            .collect();
         let mut kalan: HashMap<CagriId, Planlanan> =
-            bekleyen.into_iter().map(|(p, _)| (p.cagri, p)).collect();
+            bekleyen.into_iter().map(|(p, _, _)| (p.cagri, p)).collect();
         let mut t = OnayToplama {
             onaylanan: Vec::new(),
             reddedilen: Vec::new(),
@@ -329,6 +356,10 @@ impl Oturum {
                         self.hata("Onay mührü eşleşmedi; onay kartı güncel değil.")
                             .await
                     }
+                    Some(true) if karar == OnayKarari::Onayla && yerel.contains(&cagri) => {
+                        self.hata("Bu komut yalnızca yerel pencerede onaylanabilir.")
+                            .await
+                    }
                     Some(true) => {
                         if let Some(p) = kalan.remove(&cagri) {
                             match karar {
@@ -348,6 +379,26 @@ impl Oturum {
                         }
                     }
                 },
+                Komut::YerelOnay { cagri, muhur } => {
+                    match kalan.get(&cagri).map(|p| p.muhur == muhur) {
+                        None => {
+                            self.hata("Bu onay artık geçerli değil; bekleyen bir işlem yok.")
+                                .await
+                        }
+                        Some(false) => {
+                            self.hata("Onay mührü eşleşmedi; onay kartı güncel değil.")
+                                .await
+                        }
+                        Some(true) if !yerel.contains(&cagri) => {
+                            self.hata("Bu işlem yerel onay gerektirmiyor.").await
+                        }
+                        Some(true) => {
+                            if let Some(p) = kalan.remove(&cagri) {
+                                t.onaylanan.push(p);
+                            }
+                        }
+                    }
+                }
                 diger => {
                     if self.genel_komut(diger).await == Etki::Iptal {
                         t.iptal = Some(BitisNedeni::Iptal);
@@ -361,6 +412,10 @@ impl Oturum {
             }
         }
         t.yanitsiz = kalan.into_values().collect();
+        self.bekleyen_onaylar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .clear();
         t
     }
 
@@ -413,24 +468,40 @@ impl Oturum {
         }
 
         let azami = self.ayarlar.sinirlar.azami_arac_ciktisi;
+        let (cikti_tx, mut cikti_rx) = mpsc::channel::<CiktiParcasi>(CIKTI_KANALI);
         let mut isler = FuturesUnordered::new();
+        // Araç tarafında atılan (oturuma hiç ulaşmayan) baytların sayaçları.
+        let mut arac_sayaclari = HashMap::new();
         for p in calisacak {
             // Kilitler çalışma alanı düzeyinde ortaktır.
             let kilitler = self.baglam.kilitler.clone();
             let politika = self.politika.clone();
             let siniflandirici = self.baglam.siniflandirici.clone();
             let iptal = self.iptal.child_token();
+            let cikti = CiktiGonderici::yeni(p.cagri, cikti_tx.clone());
+            arac_sayaclari.insert(p.cagri, cikti.atlanan_sayaci());
             isler.push(async move {
-                let sonuc = tek_calistir(&p, &kilitler, &politika, &siniflandirici, iptal).await;
+                let sonuc =
+                    tek_calistir(&p, &kilitler, &politika, &siniflandirici, iptal, cikti).await;
                 (p, sonuc)
             });
         }
+        drop(cikti_tx);
 
         let mut iptal_nedeni = None;
+        let mut cikti_kapali = false;
+        // Arayüze iletilemeyen ara çıktının çağrı başına bayt sayısı.
+        let mut atlanan: HashMap<CagriId, u64> = HashMap::new();
         loop {
             tokio::select! {
                 biased;
                 _ = self.iptal.cancelled(), if iptal_nedeni.is_none() => iptal_nedeni = Some(BitisNedeni::Iptal),
+                // Ara çıktı sonuçtan önce işlenir: araç parçayı sonucu
+                // döndürmeden önce gönderir.
+                parca = cikti_rx.recv(), if !cikti_kapali => match parca {
+                    Some(parca) => self.cikti_ilet(parca, &mut atlanan).await,
+                    None => cikti_kapali = true,
+                },
                 komut = self.komutlar.recv(), if iptal_nedeni.is_none() => {
                     match self.komut_geldi(komut).await {
                         Some(k) => {
@@ -443,6 +514,11 @@ impl Oturum {
                 }
                 sonraki = isler.next() => match sonraki {
                     Some((p, sonuc)) => {
+                        if let Some(sayac) = arac_sayaclari.remove(&p.cagri) {
+                            let bayt = sayac.swap(0, Ordering::SeqCst);
+                            *atlanan.entry(p.cagri).or_default() += bayt;
+                        }
+                        self.atlanani_bildir(p.cagri, &mut atlanan).await;
                         let s = sonuc_olustur(&p, sonuc, azami);
                         self.sonuc_isle(s, hata_sayaci).await;
                     }
@@ -457,10 +533,48 @@ impl Oturum {
         }
     }
 
+    /// Ara çıktı parçasını arayüze iletir. Olay kuyruğu yarıdan fazla doluysa
+    /// parça atılır ve sayılır: çıktı seli kuyruğu doldurup turu iptal
+    /// ettirmemeli (aşama 2 tasarımı §4.4).
+    async fn cikti_ilet(&mut self, parca: CiktiParcasi, atlanan: &mut HashMap<CagriId, u64>) {
+        let onceki = atlanan.remove(&parca.cagri).unwrap_or(0) + parca.atlanan_bayt;
+        if self.olaylar.yer_var(parca.metin.len()) {
+            self.yay(Olay::AracCiktisiParcasi {
+                cagri: parca.cagri,
+                akis: parca.akis,
+                metin: parca.metin,
+                atlanan_bayt: onceki,
+            })
+            .await;
+        } else {
+            atlanan.insert(parca.cagri, onceki + parca.metin.len() as u64);
+        }
+    }
+
+    /// Çağrı bitti: atılmış ama bildirilmemiş çıktı varsa boş bir parçayla
+    /// bildirilir. Bu parça atılmaz; çağrı başına en çok bir tane olur ve
+    /// kuyruğun yarısı düşürülemeyen olaylara ayrılmıştır.
+    async fn atlanani_bildir(&mut self, cagri: CagriId, atlanan: &mut HashMap<CagriId, u64>) {
+        let Some(bayt) = atlanan.remove(&cagri) else {
+            return;
+        };
+        if bayt > 0 {
+            self.yay(Olay::AracCiktisiParcasi {
+                cagri,
+                akis: crate::protokol::CiktiAkisi::Standart,
+                metin: String::new(),
+                atlanan_bayt: bayt,
+            })
+            .await;
+        }
+    }
+
     /// Sonucu bağlama, kayda ve arayüze işler. Mesaj `AracBitti`'den önce
     /// yazılır: çökme arada olursa kurtarma sonucu bilir.
     async fn sonuc_isle(&mut self, s: CagriSonucu, hata_sayaci: &mut HashMap<String, u32>) {
-        if s.durum == AracDurumu::Basarisiz {
+        if s.hata_sayilmaz {
+            // Sayaç ne artar ne sıfırlanır.
+        } else if s.durum == AracDurumu::Basarisiz {
             *hata_sayaci.entry(s.anahtar.clone()).or_default() += 1;
         } else {
             hata_sayaci.remove(&s.anahtar);
@@ -496,6 +610,7 @@ async fn tek_calistir(
     politika: &AtomicU64,
     siniflandirici: &Siniflandirici,
     iptal: CancellationToken,
+    cikti: CiktiGonderici,
 ) -> Result<AracCiktisi, AracHatasi> {
     let yazilan: Vec<CalismaYolu> = p.hazirlik.yazilan.iter().map(|h| h.yol.clone()).collect();
     let _kilit = tokio::select! {
@@ -528,7 +643,9 @@ async fn tek_calistir(
     if politika.load(Ordering::SeqCst) != p.politika {
         return Err(AracHatasi::PolitikaDegisti);
     }
-    p.arac.calistir(&p.argumanlar, &taze, iptal).await
+    p.arac
+        .calistir_akisli(&p.argumanlar, &taze, iptal, cikti)
+        .await
 }
 
 fn sonuc_olustur(
@@ -540,6 +657,13 @@ fn sonuc_olustur(
         Ok(c) => {
             let icerik = kirp(format!("[kaynak: {}]\n{}", c.kaynak, c.icerik), azami);
             CagriSonucu::plandan(p, AracDurumu::Basarili, icerik)
+        }
+        Err(AracHatasi::Basarisiz(c)) => {
+            let icerik = kirp(format!("[kaynak: {}]\n{}", c.kaynak, c.icerik), azami);
+            CagriSonucu {
+                hata_sayilmaz: true,
+                ..CagriSonucu::plandan(p, AracDurumu::Basarisiz, icerik)
+            }
         }
         Err(AracHatasi::Iptal) => {
             CagriSonucu::plandan(p, AracDurumu::IptalEdildi, "[iptal edildi]".into())

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/kalfa-evren",
     "crates/kalfa-core",
+    "crates/kalfa-sandbox",
     "crates/kalfa-tools",
     "crates/kalfa-uygulama",
     "crates/kalfa",
@@ -25,6 +26,7 @@ globset = "0.4.20"
 hex = "0.4.3"
 ignore = "0.4.33"
 keyring = "4.2"
+libc = "0.2.189"
 jsonschema = { version = "0.56", default-features = false }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "json", "stream", "http2", "charset", "system-proxy"] }
 rust_decimal = { version = "1.43", features = ["serde"] }
@@ -43,4 +45,11 @@ tokio-util = "0.7.19"
 url = "2.5"
 uuid = { version = "1.26", features = ["v4", "serde"] }
 wiremock = "0.6.5"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }

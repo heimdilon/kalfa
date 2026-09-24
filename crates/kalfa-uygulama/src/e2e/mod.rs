@@ -38,7 +38,8 @@ pub struct E2eAyarlari {
     /// Klasör seçicinin döneceği çalışma alanı; yoksa seçimden vazgeçilir.
     #[serde(default)]
     pub calisma_alani: Option<PathBuf>,
-    /// Yerel onay kutularının cevabı (izin kipi yükseltme, bağlantı açma).
+    /// Yerel onay kutularının cevabı (izin kipi yükseltme, bağlantı açma,
+    /// yalıtımsız komut).
     #[serde(default)]
     pub onay: bool,
     /// Kullanıcı mesajının metniyle seçilen senaryolar. Eşleşmeyen mesaja

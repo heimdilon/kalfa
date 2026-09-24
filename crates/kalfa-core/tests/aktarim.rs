@@ -6,8 +6,8 @@ use std::time::Duration;
 use kalfa_core::aktarim::{
     AktarimAyarlari, IsledimHatasi, KanalMesaji, KrediTutamaci, OlayKaynagi, Paketleyici,
 };
-use kalfa_core::kimlik::{OturumId, TurId};
-use kalfa_core::protokol::{BitisNedeni, Olay, SEMA_SURUMU, Zarf};
+use kalfa_core::kimlik::{CagriId, OturumId, TurId};
+use kalfa_core::protokol::{BitisNedeni, CiktiAkisi, Olay, SEMA_SURUMU, Zarf};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
@@ -115,6 +115,40 @@ async fn pencere_icindeki_bitisik_metin_parcalari_birlesir() {
     assert_eq!(
         zarflar[0].sira, 3,
         "birleşen parça son parçanın sırasını taşır"
+    );
+}
+
+fn cikti(cagri: CagriId, akis: CiktiAkisi, metin: &str, atlanan_bayt: u64) -> Olay {
+    Olay::AracCiktisiParcasi {
+        cagri,
+        akis,
+        metin: metin.into(),
+        atlanan_bayt,
+    }
+}
+
+/// Araç çıktısı yalnızca aynı çağrının aynı akışındaki bitişik parçayla
+/// birleşir; atlanan bayt bildiren parça birleşmeyi keser (aşama 2 tasarımı
+/// §3.3).
+#[tokio::test(start_paused = true)]
+async fn arac_ciktisi_ayni_cagri_ve_akista_birlesir() {
+    let (mut u, mut p, _kredi, _) = kur(AktarimAyarlari::default());
+    let a = CagriId::yeni();
+    let b = CagriId::yeni();
+    u.gonder(cikti(a, CiktiAkisi::Standart, "bir ", 5));
+    u.gonder(cikti(a, CiktiAkisi::Standart, "iki", 0));
+    u.gonder(cikti(a, CiktiAkisi::Hata, "uyarı", 0));
+    u.gonder(cikti(b, CiktiAkisi::Hata, "başka", 0));
+    u.gonder(cikti(b, CiktiAkisi::Hata, "sonra", 7));
+    let m = p.sonraki().await.unwrap();
+    assert_eq!(
+        olaylar(&m),
+        vec![
+            cikti(a, CiktiAkisi::Standart, "bir iki", 5),
+            cikti(a, CiktiAkisi::Hata, "uyarı", 0),
+            cikti(b, CiktiAkisi::Hata, "başka", 0),
+            cikti(b, CiktiAkisi::Hata, "sonra", 7),
+        ]
     );
 }
 

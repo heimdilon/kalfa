@@ -1,6 +1,8 @@
 //! Pencere sınırlarının Tauri'siz kuralları (1c tasarımı §6).
 
 use kalfa_core::izin::Kip;
+use kalfa_core::kabuk::YalitimOzeti;
+use kalfa_core::protokol::OnayOgesi;
 use url::Url;
 
 /// Pencereler yalnızca uygulamanın kendi sayfalarına gidebilir. Derlenmiş
@@ -48,22 +50,48 @@ pub fn kip_adi(kip: Kip) -> &'static str {
     }
 }
 
-/// Yükseltme onayında hedef kipin ne getirdiği (üst belge §7.5). 1c'de kabuk
-/// aracı yok; Proje ile Serbest dosya yazmada aynı davranır.
+/// Yükseltme onayında hedef kipin ne getirdiği (üst belge §7.5, aşama 2
+/// tasarımı §5.1). Yalıtımsız komut her kipte yerel pencerede onay ister.
 pub fn yukseltme_aciklamasi(yeni: Kip) -> &'static str {
     match yeni {
         Kip::Inceleme => "",
         Kip::Siki => {
-            "Kalfa dosya yazmayı ve düzenlemeyi önerebilecek; her yazma onayınıza sunulur."
+            "Kalfa dosya yazmayı, düzenlemeyi ve komut çalıştırmayı önerebilecek; her biri onayınıza \
+             sunulur."
         }
         Kip::Proje => {
             "Kalfa çalışma alanı içindeki dosyaları onay sormadan yazabilecek. Korumalı yollar, \
-             gizli dosyalar ve çalışma alanı dışındaki yollar yine onay ister."
+             gizli dosyalar, çalışma alanı dışındaki yollar ve komutlar yine onay ister."
         }
         Kip::Serbest => {
-            "Kalfa çalışma alanı içindeki dosyaları onay sormadan yazabilecek. Serbest kip yalnızca \
-             bu oturum boyunca geçerlidir. Korumalı yollar, gizli dosyalar ve çalışma alanı dışındaki \
-             yollar yine onay ister."
+            "Kalfa çalışma alanı içindeki dosyaları onay sormadan yazabilecek; yalıtım varsa \
+             yalıtımlı ve ağsız komutları da onay sormadan çalıştırabilecek. Serbest kip yalnızca bu \
+             oturum boyunca geçerlidir. Korumalı yollar, gizli dosyalar, çalışma alanı dışındaki \
+             yollar, ağlı ve yalıtımsız komutlar yine onay ister."
         }
     }
+}
+
+/// Yalıtımsız komutun yerel onay metni (aşama 2 tasarımı §5.2). Komut
+/// çekirdeğin bekleyen onayından gelir.
+pub fn yerel_onay_metni(ogeler: &[OnayOgesi]) -> String {
+    let mut metin = String::from(
+        "Aşağıdaki komut yalıtımsız çalışacak: senin bütün yetkilerinle çalışır, ev dizinindeki \
+         dosyaları okuyabilir ve ağa erişebilir.\n",
+    );
+    let mut talimat = None;
+    for o in ogeler {
+        let Some(k) = &o.kabuk else { continue };
+        metin.push_str(&format!("\nKomut: {}\nDizin: {}\n", k.komut, k.dizin));
+        if k.ag {
+            metin.push_str("Model ağ erişimi istedi.\n");
+        }
+        if let YalitimOzeti::Yalitimsiz { talimat: t } = &k.yalitim {
+            talimat.get_or_insert(t.clone());
+        }
+    }
+    if let Some(t) = talimat {
+        metin.push_str(&format!("\n{t}"));
+    }
+    metin
 }

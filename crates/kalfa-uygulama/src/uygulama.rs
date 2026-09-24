@@ -10,9 +10,11 @@ use kalfa_core::kilit::KilitYoneticisi;
 use kalfa_core::kimlik::OturumId;
 use kalfa_core::oturum::OturumTutamaci;
 use kalfa_core::sart_kapisi::SartKapisi;
+use kalfa_sandbox::{Yalitici, Yalitimsiz};
 
 use crate::anahtar::AnahtarKasasi;
 use crate::arayuz::{Acici, Iletisim, Pencereler};
+use crate::calisma_alanlari::CalismaAlaniKaydi;
 use crate::dizin;
 use crate::evren::{DegisirSaglayici, SaglayiciUretici};
 use crate::oturumlar::AcikOturum;
@@ -40,6 +42,9 @@ pub struct Uygulama {
     pub(crate) acici: Arc<dyn Acici>,
     pub(crate) pencereler: Arc<dyn Pencereler>,
     pub(crate) aktarim: AktarimAyarlari,
+    /// Kabuk komutlarını başlatan arka uç. Aşama 2a'da yalıtım yoktur.
+    pub(crate) yalitici: Arc<dyn Yalitici>,
+    pub(crate) alanlar: Arc<CalismaAlaniKaydi>,
     ic: Mutex<IcDurum>,
 }
 
@@ -74,6 +79,8 @@ impl Uygulama {
             acici: b.acici,
             pencereler: b.pencereler,
             aktarim: b.aktarim,
+            yalitici: Arc::new(Yalitimsiz),
+            alanlar: Arc::new(CalismaAlaniKaydi::yeni(&b.veri_dizini)),
             ic: Mutex::new(IcDurum {
                 baglanti: BaglantiDurumu::Var,
                 son_oturum: None,

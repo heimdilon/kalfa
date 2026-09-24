@@ -117,6 +117,13 @@ export const tr = {
   'arac.dosya_duzenle.suruyor': 'Dosya düzenleniyor',
   'arac.dosya_duzenle.bitti': 'Dosya düzenlendi',
   'arac.dosya_duzenle.ad': 'Dosya düzenleme',
+  'arac.kabuk.suruyor': 'Komut çalışıyor',
+  'arac.kabuk.bitti': 'Komut çalıştı',
+  'arac.kabuk.ad': 'Komut',
+
+  'terminal.etiket': 'Komut çıktısı',
+  'terminal.atilan': 'En eski {sayi} satır gösterilmiyor.',
+  'terminal.kesik': 'Satırın devamı gösterilmiyor; model çıktının tamamını alır.',
 
   'onay.kart.baslik': 'Onay isteği: {sayi} değişiklik',
   'onay.kart.incele': 'İncele',
@@ -138,6 +145,17 @@ export const tr = {
   'onay.sayfa.tumunu_onayla': 'Tümünü onayla',
   'onay.sayfa.secilenleri_onayla': 'Seçilenleri onayla',
   'onay.sayfa.reddet': 'Reddet',
+  'onay.kabuk.komut': 'Komut',
+  'onay.kabuk.betik': 'Betik ({yorumlayici})',
+  'onay.kabuk.dizin': 'Dizin',
+  'onay.kabuk.ag': 'Ağ',
+  'onay.kabuk.ag_kapali': 'Kapalı',
+  'onay.kabuk.ag_acik': 'Açık: komut internete erişebilecek',
+  'onay.kabuk.yalitim': 'Yalıtım',
+  'onay.kabuk.yalitimli': 'Yalıtımlı ({arka_uc})',
+  'onay.kabuk.yalitimsiz': 'Yalıtımsız',
+  'onay.kabuk.yerel':
+    'Yalıtımsız komutlar, onayınızdan sonra yerel bir pencerede bir kez daha sorulur.',
 
   'sart.kart.baslik': 'EVREN şartları (sürüm {surum})',
   'sart.kart.bekliyor':
@@ -158,6 +176,8 @@ export const tr = {
   'durum.token': '{sayi} token',
   'durum.token_ipucu': 'İstem {istem} · Tamamlama {tamamlama} · Düşünce {dusunce}',
   'durum.model_ipucu': 'Yönlendirilen model',
+  'durum.yalitimli': 'Yalıtımlı',
+  'durum.yalitimsiz': 'Yalıtımsız',
 
   'duyuru.onay': 'Onay isteği: {sayi} değişiklik kararınızı bekliyor.',
   'duyuru.sart': 'EVREN şartlarının onayı bekleniyor.',

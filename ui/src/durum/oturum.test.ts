@@ -47,6 +47,8 @@ function onayGerekiyor(islem: string, cagri: string): Extract<Olay, { tip: 'Onay
         diff: null,
         uyarilar: [],
         muhur: 'm',
+        kabuk: null,
+        yerel_onay: false,
       },
     ],
   };
@@ -104,6 +106,29 @@ describe('kanal mesajı → oturum durumu (1c tasarımı §8.4)', () => {
     expect(d.ogeler[1]).toMatchObject({ durum: 'Basarili', sonuc: 'içerik' });
   });
 
+  it('kabuk çıktısı kendi çağrısının terminaline işlenir (aşama 2 tasarımı §10.1)', () => {
+    const d = uygula(acilis(), {
+      tip: 'Kanal',
+      mesaj: paket(
+        1,
+        { tip: 'TurBasladi' },
+        { tip: 'AracCagrisiBasladi', cagri: 'c-1', arac: 'kabuk', aciklama: 'a' },
+        { tip: 'AracCagrisiBasladi', cagri: 'c-2', arac: 'kabuk', aciklama: 'b' },
+        { tip: 'AracCiktisiParcasi', cagri: 'c-1', akis: 'Standart', metin: 'bir\n', atlanan_bayt: 0 },
+        { tip: 'AracCiktisiParcasi', cagri: 'c-2', akis: 'Hata', metin: 'iki\n', atlanan_bayt: 5 },
+        { tip: 'AracCiktisiParcasi', cagri: 'yok', akis: 'Standart', metin: 'x', atlanan_bayt: 0 },
+      ),
+    });
+    const [a, b] = d.ogeler.filter((o) => o.tip === 'AracCagrisi');
+    expect(a.tip === 'AracCagrisi' && a.terminal?.satirlar).toEqual([
+      { akis: 'Standart', metin: 'bir' },
+    ]);
+    expect(b.tip === 'AracCagrisi' && b.terminal?.satirlar).toEqual([
+      { akis: 'Bilgi', metin: '… 5 bayt gösterilmedi …' },
+      { akis: 'Hata', metin: 'iki' },
+    ]);
+  });
+
   it('onay isteği kart olur; yanıtlanınca çalışmaya döner', () => {
     let d = uygula(acilis(), {
       tip: 'Kanal',
@@ -122,6 +147,8 @@ describe('kanal mesajı → oturum durumu (1c tasarımı §8.4)', () => {
               diff: null,
               uyarilar: [],
               muhur: 'm',
+              kabuk: null,
+              yerel_onay: false,
             },
           ],
         },

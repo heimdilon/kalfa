@@ -58,5 +58,14 @@ pub fn muhur_hesapla(
             b"0"
         },
     );
+    // Kabuk: komut, dizin, ağ, yalıtım durumu ve profil özeti, ilk çağrı
+    // (aşama 2 tasarımı §3.3). Biri değişirse onay geçersizdir.
+    if let Some(kabuk) = &hazirlik.kabuk {
+        alan(&mut h, b"k");
+        alan(
+            &mut h,
+            serde_json::to_string(kabuk).unwrap_or_default().as_bytes(),
+        );
+    }
     OnayMuhru(hex::encode(h.finalize()))
 }

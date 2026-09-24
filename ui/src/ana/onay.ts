@@ -23,6 +23,7 @@ export function kararlariUret(
 
 /** Dosya listesinde gösterilen kısa ad: hedefin son bileşeni. */
 export function kisaAd(oge: OnayOgesi): string {
+  if (oge.kabuk) return oge.kabuk.komut.split(/\s+/)[0] || oge.arac;
   const hedef = oge.hedefler[0];
   if (!hedef) return oge.arac;
   return hedef.split(/[\\/]/).filter(Boolean).at(-1) ?? hedef;

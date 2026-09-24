@@ -1,6 +1,6 @@
 [package]
 name = "kalfa-tools"
-description = "Kalfa'nın yerleşik araçları: dosya okuma, yazma, düzenleme, listeleme, arama"
+description = "Kalfa'nın yerleşik araçları: dosya okuma, yazma, düzenleme, listeleme, arama, kabuk"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,6 +14,7 @@ cap-fs-ext.workspace = true
 globset.workspace = true
 ignore.workspace = true
 kalfa-core = { path = "../kalfa-core" }
+kalfa-sandbox = { path = "../kalfa-sandbox" }
 regex.workspace = true
 serde_json.workspace = true
 similar.workspace = true

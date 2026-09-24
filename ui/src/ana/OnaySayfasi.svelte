@@ -3,7 +3,8 @@
   Değişiklik listesi, seçilenin diff'i, "ne" ve "nerede", uyarılar, ret
   gerekçesi ve üç karar. Seçilmeyen çağrılar gerekçeyle reddedilir. Odak
   sayfanın içinde kalır; Escape karar vermeden kapatır. "Bu değişiklikler geri
-  alınabilir" cümlesi geri alma gelene kadar yazılmaz.
+  alınabilir" cümlesi geri alma gelene kadar yazılmaz. Kabuk çağrısında diff
+  yerine komut, dizin, ağ ve yalıtım gösterilir (aşama 2 tasarımı §10.2).
 -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
@@ -143,19 +144,43 @@
 
       <div class="onizleme">
         <div class="onizleme-ust">
-          <Icon name="file-text" size={16} />
+          <Icon name={aktifOge.kabuk ? 'square-terminal' : 'file-text'} size={16} />
           <div class="yol-blogu">
             <div class="ad">{kisaAd(aktifOge)}</div>
             {#if aktifOge.hedefler[0]}<div class="yol">{aktifOge.hedefler[0]}</div>{/if}
           </div>
         </div>
-        <div class="diff">
-          {#each parcalar as p, i (i)}
-            <DiffView hunkHeader={p.baslik} lines={p.satirlar} />
-          {:else}
-            <p class="bos">{m('onay.sayfa.diff_yok')}</p>
-          {/each}
-        </div>
+        {#if aktifOge.kabuk}
+          {@const k = aktifOge.kabuk}
+          <dl class="kabuk">
+            <dt>
+              {k.bicim.tip === 'Betik'
+                ? m('onay.kabuk.betik', { yorumlayici: k.bicim.yorumlayici })
+                : m('onay.kabuk.komut')}
+            </dt>
+            <dd><pre class="komut">{k.komut}</pre></dd>
+            <dt>{m('onay.kabuk.dizin')}</dt>
+            <dd class="mono">{k.dizin}</dd>
+            <dt>{m('onay.kabuk.ag')}</dt>
+            <dd class={{ uyari: k.ag }}>
+              {k.ag ? m('onay.kabuk.ag_acik') : m('onay.kabuk.ag_kapali')}
+            </dd>
+            <dt>{m('onay.kabuk.yalitim')}</dt>
+            <dd class={{ uyari: k.yalitim.tip === 'Yalitimsiz' }}>
+              {k.yalitim.tip === 'Yalitimli'
+                ? m('onay.kabuk.yalitimli', { arka_uc: k.yalitim.arka_uc })
+                : m('onay.kabuk.yalitimsiz')}
+            </dd>
+          </dl>
+        {:else}
+          <div class="diff">
+            {#each parcalar as p, i (i)}
+              <DiffView hunkHeader={p.baslik} lines={p.satirlar} />
+            {:else}
+              <p class="bos">{m('onay.sayfa.diff_yok')}</p>
+            {/each}
+          </div>
+        {/if}
       </div>
     </div>
 
@@ -164,12 +189,14 @@
         <dt><Icon name="info" size={16} />{m('onay.sayfa.ne')}</dt>
         <dd>{aktifOge.aciklama}</dd>
       </div>
-      <div class="bilgi">
-        <dt><Icon name="folder" size={16} />{m('onay.sayfa.nerede')}</dt>
-        <dd class="mono">
-          {#each aktifOge.hedefler as h (h)}<span>{h}</span>{/each}
-        </dd>
-      </div>
+      {#if aktifOge.hedefler.length > 0}
+        <div class="bilgi">
+          <dt><Icon name="folder" size={16} />{m('onay.sayfa.nerede')}</dt>
+          <dd class="mono">
+            {#each aktifOge.hedefler as h (h)}<span>{h}</span>{/each}
+          </dd>
+        </div>
+      {/if}
       {#if aktifOge.uyarilar.length > 0}
         <div class="bilgi uyari">
           <dt><Icon name="triangle-alert" size={16} />{m('onay.sayfa.uyarilar')}</dt>
@@ -181,6 +208,10 @@
         </div>
       {/if}
     </dl>
+
+    {#if ogeler.some((o) => o.yerel_onay)}
+      <p class="yerel"><Icon name="shield-alert" size={16} />{m('onay.kabuk.yerel')}</p>
+    {/if}
 
     <div class="alt">
       <div class="gerekce">
@@ -339,6 +370,40 @@
   .diff {
     max-height: 360px;
     overflow: auto;
+  }
+  .kabuk {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 10px 14px;
+    margin: 0;
+    padding: 14px 16px;
+    font: var(--type-small);
+  }
+  .kabuk dt {
+    color: var(--text-muted);
+  }
+  .kabuk dd {
+    min-width: 0;
+    color: var(--text-body);
+  }
+  .komut {
+    margin: 0;
+    max-height: 240px;
+    overflow: auto;
+    font: var(--text-small) / 1.5 var(--font-mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .kabuk .uyari {
+    color: var(--status-warn);
+  }
+  .yerel {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 16px;
+    font: var(--type-small);
+    color: var(--status-warn);
   }
   .bos {
     margin: 16px;

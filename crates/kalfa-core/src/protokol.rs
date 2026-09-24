@@ -5,6 +5,7 @@ use kalfa_evren::KrediGozlemi;
 use serde::{Deserialize, Serialize};
 
 use crate::izin::Kip;
+use crate::kabuk::KabukTarifi;
 use crate::kimlik::{CagriId, IslemId, OturumId, TurId};
 use crate::muhur::OnayMuhru;
 
@@ -32,6 +33,13 @@ pub enum Komut {
     AracOnayi {
         cagri: CagriId,
         karar: OnayKarari,
+        muhur: OnayMuhru,
+    },
+    /// Yerel iletişim kutusunda onaylanan işlem (aşama 2 tasarımı §5.2).
+    /// Yalnızca `kalfa-uygulama` gönderir; webview gönderemez. Yerel onay
+    /// isteyen bir öğe `AracOnayi` ile onaylanamaz, yalnızca reddedilebilir.
+    YerelOnay {
+        cagri: CagriId,
         muhur: OnayMuhru,
     },
     ModelDegistir {
@@ -67,6 +75,19 @@ pub struct OnayOgesi {
     pub diff: Option<String>,
     pub uyarilar: Vec<String>,
     pub muhur: OnayMuhru,
+    /// Kabuk çağrısında diff yerine gösterilenler (aşama 2 tasarımı §10.2).
+    #[serde(default)]
+    pub kabuk: Option<KabukTarifi>,
+    /// Onay yalnızca yerel iletişim kutusundan verilebilir (§5.2).
+    #[serde(default)]
+    pub yerel_onay: bool,
+}
+
+/// Araç çıktısının hangi akıştan geldiği.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CiktiAkisi {
+    Standart,
+    Hata,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,6 +131,15 @@ pub enum Olay {
         arac: String,
         durum: AracDurumu,
         icerik: String,
+    },
+    /// Süren bir aracın ara çıktısı (aşama 2 tasarımı §4.4). Kayda yazılmaz.
+    /// Ekran yetişemezse parçalar atılır; `atlanan_bayt` bu parçadan önce
+    /// atılanların toplamıdır.
+    AracCiktisiParcasi {
+        cagri: CagriId,
+        akis: CiktiAkisi,
+        metin: String,
+        atlanan_bayt: u64,
     },
     OnayGerekiyor {
         islem: IslemId,

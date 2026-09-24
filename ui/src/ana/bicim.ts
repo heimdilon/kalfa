@@ -128,6 +128,7 @@ const ARAC_BASLIGI: Record<string, [MetinAnahtari, MetinAnahtari, MetinAnahtari]
     'arac.dosya_duzenle.bitti',
     'arac.dosya_duzenle.ad',
   ],
+  kabuk: ['arac.kabuk.suruyor', 'arac.kabuk.bitti', 'arac.kabuk.ad'],
 };
 
 /**
@@ -148,6 +149,11 @@ export function aracHedefi(oge: AracOgesi): string | undefined {
   if (!oge.argumanlar) return undefined;
   try {
     const a = JSON.parse(oge.argumanlar) as Record<string, unknown>;
+    if (typeof a.betik === 'string') return a.betik.split('\n')[0];
+    if (typeof a.program === 'string') {
+      const argumanlar = Array.isArray(a.argumanlar) ? a.argumanlar : [];
+      return [a.program, ...argumanlar].join(' ');
+    }
     for (const alan of ['yol', 'desen', 'dizin']) {
       if (typeof a[alan] === 'string') return a[alan];
     }
@@ -180,6 +186,13 @@ export function aracKartDurumu(durum: AracDurumu | 'Suruyor' | null): {
     case null:
       return { status: 'unknown', etiket: m(ARAC_DURUMU_ADI.Baslamadi) };
   }
+}
+
+/** Kabuk kartının özeti: sonucun ilk satırı ("Çıkış kodu: 0"). */
+export function kabukOzeti(oge: AracOgesi): string | undefined {
+  if (oge.arac !== 'kabuk' || !oge.sonuc) return undefined;
+  // Sonuç `[kaynak: …]` etiketiyle başlar.
+  return oge.sonuc.split('\n').find((s) => s && !s.startsWith('[kaynak:'));
 }
 
 /** Araç çıktısının kartta gösterilen kısmı. */

@@ -2596,6 +2596,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "kalfa-sandbox"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "kalfa-tools"
 version = "0.1.0"
 dependencies = [
@@ -2606,6 +2619,7 @@ dependencies = [
  "ignore",
  "kalfa-core",
  "kalfa-evren",
+ "kalfa-sandbox",
  "regex",
  "serde_json",
  "similar",
@@ -2623,6 +2637,7 @@ dependencies = [
  "futures-util",
  "kalfa-core",
  "kalfa-evren",
+ "kalfa-sandbox",
  "kalfa-tools",
  "kalfa-uygulama",
  "keyring",
@@ -5052,6 +5067,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

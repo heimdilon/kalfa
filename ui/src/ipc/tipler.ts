@@ -40,6 +40,22 @@ export interface KrediGozlemi {
   zaman_ms: number;
 }
 
+export type KabukBicimi = { tip: 'Program' } | { tip: 'Betik'; yorumlayici: string };
+
+export type YalitimOzeti =
+  | { tip: 'Yalitimli'; arka_uc: string; profil: string }
+  | { tip: 'Yalitimsiz'; talimat: string };
+
+/** Kabuk çağrısının onay kartında gösterilenler (aşama 2 tasarımı §10.2). */
+export interface KabukTarifi {
+  komut: string;
+  bicim: KabukBicimi;
+  dizin: string;
+  ag: boolean;
+  yalitim: YalitimOzeti;
+  ilk_cagri: boolean;
+}
+
 export interface OnayOgesi {
   cagri: CagriId;
   arac: string;
@@ -48,7 +64,12 @@ export interface OnayOgesi {
   diff: string | null;
   uyarilar: string[];
   muhur: string;
+  kabuk: KabukTarifi | null;
+  /** Onayı Rust yerel pencerede ayrıca sorar (aşama 2 tasarımı §5.2). */
+  yerel_onay: boolean;
 }
+
+export type CiktiAkisi = 'Standart' | 'Hata';
 
 export type OnayKarari = { tip: 'Onayla' } | { tip: 'Reddet'; gerekce: string | null };
 
@@ -58,6 +79,14 @@ export type Olay =
   | { tip: 'DusunceParcasi'; metin: string }
   | { tip: 'AracCagrisiBasladi'; cagri: CagriId; arac: string; aciklama: string }
   | { tip: 'AracSonucu'; cagri: CagriId; arac: string; durum: AracDurumu; icerik: string }
+  | {
+      tip: 'AracCiktisiParcasi';
+      cagri: CagriId;
+      akis: CiktiAkisi;
+      metin: string;
+      /** Bu parçadan önce ekran yetişemediği için atılan baytlar. */
+      atlanan_bayt: number;
+    }
   | { tip: 'OnayGerekiyor'; islem: IslemId; ogeler: OnayOgesi[] }
   | { tip: 'KrediGozlemi'; gozlem: KrediGozlemi }
   | { tip: 'TokenKullanimi'; istem: number; tamamlama: number; dusunce: number }
@@ -142,12 +171,24 @@ export interface ModelSecenegi {
 
 export type DepoTuru = 'Kalici' | 'Bellekte';
 
+export type YalitimYoklukNedeni =
+  | 'BwrapYok'
+  | 'KullaniciAdAlaniKapali'
+  | 'KurulumGerekli'
+  | 'KurulumBozuk'
+  | 'Desteklenmiyor';
+
+export type YalitimDurumu =
+  | { tip: 'Hazir'; arka_uc: string; surum: string }
+  | { tip: 'Yok'; neden: YalitimYoklukNedeni; talimat: string };
+
 export interface UygulamaDurumu {
   baglanti: 'Var' | 'Yok';
   anahtar_deposu: DepoTuru;
   modeller: ModelSecenegi[];
   varsayilan_model: string;
   son_oturum: OturumId | null;
+  yalitim: YalitimDurumu;
 }
 
 export interface OturumSatiri {

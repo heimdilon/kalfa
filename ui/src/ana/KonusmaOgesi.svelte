@@ -12,8 +12,9 @@
   import type { BitisNedeni, OturumId } from '../ipc/tipler';
   import Markdown from '../markdown/Markdown.svelte';
   import type { AnaDurum } from './anaDurum.svelte';
-  import { aracBasligi, aracHedefi, aracKartDurumu, ciktiOnizlemesi } from './bicim';
+  import { aracBasligi, aracHedefi, aracKartDurumu, ciktiOnizlemesi, kabukOzeti } from './bicim';
   import OnayKarti from './OnayKarti.svelte';
+  import TerminalGorunumu from './TerminalGorunumu.svelte';
 
   let { oge, durum, oturum }: { oge: EkranOgesi; durum: AnaDurum; oturum: OturumId } = $props();
 
@@ -23,6 +24,7 @@
     icerik_ara: 'file-search',
     dosya_yaz: 'file-pen',
     dosya_duzenle: 'file-pen',
+    kabuk: 'square-terminal',
   };
 
   function turSonu(neden: BitisNedeni): string {
@@ -53,11 +55,14 @@
   <ToolCallCard
     tool={aracBasligi(oge)}
     target={aracHedefi(oge)}
+    meta={kabukOzeti(oge)}
     status={d.status}
     statusLabel={d.etiket}
     icon={ARAC_IKONU[oge.arac] ?? 'box'}
   >
-    {#if oge.sonuc}
+    {#if oge.terminal}
+      <TerminalGorunumu terminal={oge.terminal} />
+    {:else if oge.sonuc}
       {@const o = ciktiOnizlemesi(oge.sonuc)}
       <CodeBlock code={o.kod} truncated={o.kirpildi} maxHeight="320px" />
     {/if}

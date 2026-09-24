@@ -33,6 +33,18 @@ const DIFF_DEPO = [
   '     }',
 ].join('\n');
 
+/** Kabuk çağrısının örnek çıktısı (aşama 2 tasarımı §10.1): renkli satırlar, stderr. */
+const KABUK_CIKTISI: [string, 'Standart' | 'Hata'][] = [
+  ['   Compiling kalfa-api v0.1.0 (C:\\projeler\\kalfa-api)\n', 'Hata'],
+  ['    Finished `test` profile [unoptimized] target(s) in 4.21s\n', 'Hata'],
+  ['     Running unittests src\\lib.rs\n', 'Hata'],
+  ['\nrunning 3 tests\n', 'Standart'],
+  ['test auth::token_suresi_24_saat ... \x1b[32mok\x1b[0m\n', 'Standart'],
+  ['test depo::token_ozetlenir ... \x1b[32mok\x1b[0m\n', 'Standart'],
+  ['test depo::eski_kayit_okunur ... \x1b[1;31mFAILED\x1b[0m\n', 'Standart'],
+  ['\ntest result: \x1b[31mFAILED\x1b[0m. 2 passed; 1 failed\n', 'Standart'],
+];
+
 function gecikmeli(adimlar: [number, () => void][]) {
   let toplam = 0;
   for (const [ms, is] of adimlar) {
@@ -126,6 +138,43 @@ export function anaSenaryosu(): SahteArka {
     tur += 1;
     const t = `t${tur}`;
     const gonder = (olaylar: Olay[]) => arka.olaylar(oturum, olaylar, t);
+    // "test" geçen mesaj kabuk çağrısı ister (aşama 2 tasarımı §10).
+    if (String(a.metin).includes('test')) {
+      gecikmeli([
+        [200, () => gonder([{ tip: 'TurBasladi' }])],
+        [300, () => gonder([{ tip: 'TokenParcasi', metin: 'Testleri çalıştırıyorum.' }])],
+        [
+          400,
+          () =>
+            gonder([
+              {
+                tip: 'OnayGerekiyor',
+                islem: `islem-${tur}`,
+                ogeler: [
+                  onayOgesi({
+                    cagri: `k${tur}`,
+                    arac: 'kabuk',
+                    aciklama: '`cargo test --lib` komutunu çalıştırmak istiyor.',
+                    uyarilar: [
+                      'Yalıtımsız: komut senin bütün yetkilerinle çalışacak; ev dizinindeki dosyaları okuyabilir ve ağa erişebilir.',
+                    ],
+                    kabuk: {
+                      komut: 'cargo test --lib',
+                      bicim: { tip: 'Program' },
+                      dizin: '.',
+                      ag: false,
+                      yalitim: { tip: 'Yalitimsiz', talimat: arka.uygulama.yalitim.tip === 'Yok' ? arka.uygulama.yalitim.talimat : '' },
+                      ilk_cagri: false,
+                    },
+                    yerel_onay: true,
+                  }),
+                ],
+              },
+            ]),
+        ],
+      ]);
+      return null;
+    }
     gecikmeli([
       [200, () => gonder([{ tip: 'TurBasladi' }])],
       [300, () => gonder([{ tip: 'DusunceParcasi', metin: 'Token süresi ve depolama ' }])],
@@ -167,6 +216,44 @@ export function anaSenaryosu(): SahteArka {
     const kararlar = a.kararlar as { cagri: string; karar: { tip: string } }[];
     const t = `t${tur}`;
     const gonder = (olaylar: Olay[]) => arka.olaylar(oturum, olaylar, t);
+    const kabuk = kararlar.find((k) => k.cagri.startsWith('k'));
+    if (kabuk) {
+      const cagri = kabuk.cagri;
+      gecikmeli([
+        [
+          200,
+          () =>
+            gonder([
+              {
+                tip: 'AracCagrisiBasladi',
+                cagri,
+                arac: 'kabuk',
+                aciklama: '`cargo test --lib` komutunu çalıştırmak istiyor.',
+              },
+            ]),
+        ],
+        ...KABUK_CIKTISI.map(([metin, akis]): [number, () => void] => [
+          350,
+          () => gonder([{ tip: 'AracCiktisiParcasi', cagri, akis, metin, atlanan_bayt: 0 }]),
+        ]),
+        [
+          300,
+          () =>
+            gonder([
+              {
+                tip: 'AracSonucu',
+                cagri,
+                arac: 'kabuk',
+                durum: 'Basarisiz',
+                icerik: '[kaynak: kabuk:cargo]\nÇıkış kodu: 101\nSüre: 5,3 sn\n--- çıktı ---\n…',
+              },
+              { tip: 'TokenParcasi', metin: 'Bir test başarısız: `depo::eski_kayit_okunur`.' },
+              { tip: 'Tamamlandi', neden: { tip: 'Normal' } },
+            ]),
+        ],
+      ]);
+      return null;
+    }
     gecikmeli([
       [
         300,

@@ -180,3 +180,87 @@ fn core_hookspath_hedefi_korunur() {
     assert_eq!(s.sinifla(&y(".HUSKY/pre-push")), YolSinifi::Korumali);
     assert_eq!(s.sinifla(&y("src/husky.rs")), YolSinifi::Normal);
 }
+
+fn kabuk(yalitimli: bool, ag: bool, ilk_cagri: bool) -> kalfa_core::kabuk::KabukTarifi {
+    use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
+    KabukTarifi {
+        komut: "cargo test".into(),
+        bicim: KabukBicimi::Program,
+        dizin: ".".into(),
+        ag,
+        yalitim: if yalitimli {
+            YalitimOzeti::Yalitimli {
+                arka_uc: "bwrap".into(),
+                profil: "p".into(),
+            }
+        } else {
+            YalitimOzeti::Yalitimsiz {
+                talimat: "yalıtım yok".into(),
+            }
+        },
+        ilk_cagri,
+    }
+}
+
+/// Aşama 2 tasarımı §5.1'in tablosu.
+#[test]
+fn kabuk_kararlari() {
+    for kip in [Kip::Siki, Kip::Proje, Kip::Serbest] {
+        for ag in [false, true] {
+            assert_eq!(
+                kabuk_karari(kip, &kabuk(false, ag, false)),
+                Karar::YerelOnayli {
+                    uyarilar: vec![YALITIMSIZ_UYARISI.into(), "yalıtım yok".into()]
+                },
+                "yalıtımsız çağrı her kipte yerel onay ister ({kip:?}, ağ: {ag})"
+            );
+        }
+        let beklenen = if kip == Kip::Serbest {
+            Karar::Serbest
+        } else {
+            onayli(&[])
+        };
+        assert_eq!(
+            kabuk_karari(kip, &kabuk(true, false, false)),
+            beklenen,
+            "{kip:?}"
+        );
+        assert_eq!(
+            kabuk_karari(kip, &kabuk(true, true, false)),
+            onayli(&[AGLI_KABUK_UYARISI]),
+            "ağlı çağrı her kipte onay ister ({kip:?})"
+        );
+        assert_eq!(
+            kabuk_karari(kip, &kabuk(true, false, true)),
+            onayli(&[ILK_KABUK_UYARISI]),
+            "çalışma alanındaki ilk çağrı Serbest kipte de onay ister ({kip:?})"
+        );
+    }
+    assert!(matches!(
+        kabuk_karari(Kip::Inceleme, &kabuk(true, false, false)),
+        Karar::Yasak { .. }
+    ));
+    assert_eq!(
+        kabuk_karari(Kip::Serbest, &kabuk(false, false, true)),
+        Karar::YerelOnayli {
+            uyarilar: vec![
+                ILK_KABUK_UYARISI.into(),
+                YALITIMSIZ_UYARISI.into(),
+                "yalıtım yok".into()
+            ]
+        }
+    );
+}
+
+#[test]
+fn yerel_onay_birlesmede_onayliyi_ezer() {
+    let yerel = |u: &[&str]| Karar::YerelOnayli {
+        uyarilar: u.iter().map(|s| s.to_string()).collect(),
+    };
+    assert_eq!(onayli(&["a"]).birlestir(yerel(&["b"])), yerel(&["a", "b"]));
+    assert_eq!(yerel(&["b"]).birlestir(onayli(&["a"])), yerel(&["b", "a"]));
+    assert_eq!(yerel(&["a"]).birlestir(Karar::Serbest), yerel(&["a"]));
+    assert_eq!(Karar::Serbest.birlestir(yerel(&["a"])), yerel(&["a"]));
+    let yasak = Karar::Yasak { neden: "x".into() };
+    assert_eq!(yerel(&["a"]).birlestir(yasak.clone()), yasak);
+}

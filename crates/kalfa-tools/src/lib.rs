@@ -9,6 +9,7 @@ pub mod baglanti;
 pub mod calisma_alani;
 pub mod diff;
 pub mod duzenle;
+pub mod kabuk;
 pub mod listele;
 pub mod oku;
 pub mod yaz;
@@ -16,6 +17,7 @@ pub mod yaz;
 pub use ara::IcerikAra;
 pub use calisma_alani::CalismaAlani;
 pub use duzenle::DosyaDuzenle;
+pub use kabuk::{KabukAraci, KabukGuveni};
 pub use listele::DosyaListele;
 pub use oku::DosyaOku;
 pub use yaz::DosyaYaz;
@@ -24,8 +26,8 @@ use std::sync::Arc;
 
 use kalfa_core::arac::Arac;
 
-/// Yerleşik araçların tamamı (spec §12.1). Kabuk aracı daha sonraki aşamada
-/// eklenir.
+/// Yerleşik dosya araçları (spec §12.1). Kabuk aracı ayrıca kurulur
+/// (`KabukAraci::yeni`): yalıtıcı ve çalışma alanının güven kaydını ister.
 pub fn varsayilan_araclar(alan: Arc<CalismaAlani>) -> Vec<Arc<dyn Arac>> {
     vec![
         Arc::new(DosyaOku::yeni(alan.clone())) as Arc<dyn Arac>,

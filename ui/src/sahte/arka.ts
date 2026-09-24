@@ -54,6 +54,8 @@ export function onayOgesi(ek: Partial<OnayOgesi> & { cagri: CagriId }): OnayOges
     diff: null,
     uyarilar: [],
     muhur: `muhur-${ek.cagri}`,
+    kabuk: null,
+    yerel_onay: false,
     ...ek,
   };
 }
@@ -72,6 +74,11 @@ export class SahteArka {
     ],
     varsayilan_model: 'glm-5.3',
     son_oturum: null,
+    yalitim: {
+      tip: 'Yok',
+      neden: 'Desteklenmiyor',
+      talimat: 'Bu sürümde komutlar yalıtımsız çalışıyor.',
+    },
   };
   /** `calisma_alani_sec`'in döneceği klasör; `null` vazgeçmektir. */
   klasor: CalismaAlani | null = { kimlik: 1, yol: 'C:\\projeler\\kalfa' };

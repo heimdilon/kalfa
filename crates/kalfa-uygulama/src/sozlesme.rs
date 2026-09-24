@@ -7,6 +7,7 @@ use kalfa_core::kimlik::{CagriId, OturumId};
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::protokol::OnayKarari;
 use kalfa_core::sart_kapisi::SartMetni;
+use kalfa_sandbox::YalitimDurumu;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -47,6 +48,8 @@ pub struct UygulamaDurumu {
     /// Bu çalıştırmada en son açılan ya da başlatılan oturum; yeniden
     /// yüklenen ana pencere onu kayıttan açar (1c tasarımı §5.6).
     pub son_oturum: Option<OturumId>,
+    /// Kabuk komutlarının yalıtımı (aşama 2 tasarımı §10.3).
+    pub yalitim: YalitimDurumu,
 }
 
 /// Oturum listesinin bir satırı (1c tasarımı §5.4).

@@ -20,6 +20,7 @@ import type {
   TurId,
   Zarf,
 } from '../ipc/tipler';
+import { BOS_TERMINAL, terminalEkle, type Terminal } from './terminal';
 
 /** Oturumun o anki hâli; oturum listesindeki nokta ve Composer buna bakar. */
 export type Anlik = 'Bos' | 'Calisiyor' | 'OnayBekliyor' | 'SartBekliyor';
@@ -44,6 +45,8 @@ export type EkranOgesi =
       /** `null`: çağrı hiç başlamadı. */
       durum: AracDurumu | 'Suruyor' | null;
       sonuc: string | null;
+      /** Kabuğun canlı çıktısı; kayıttan gelen çağrıda yok. */
+      terminal: Terminal | null;
     })
   | (Ortak & {
       tip: 'OnayIstegi';
@@ -115,6 +118,7 @@ export function gecmisOgesi(o: GorunumOgesi): EkranOgesi {
         argumanlar: o.argumanlar,
         durum: o.durum,
         sonuc: o.sonuc,
+        terminal: null,
       };
     case 'TurSonu':
       return { ...o, anahtar: `g-${o.sira}-s` };
@@ -244,6 +248,7 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
         argumanlar: null,
         durum: 'Suruyor',
         sonuc: null,
+        terminal: null,
       });
       return;
     case 'AracSonucu': {
@@ -251,6 +256,17 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
       const i = d.ogeler.findLastIndex((o) => o.tip === 'AracCagrisi' && o.cagri === yuk.cagri);
       const o = d.ogeler[i];
       if (o?.tip === 'AracCagrisi') d.ogeler[i] = { ...o, durum: yuk.durum, sonuc: yuk.icerik };
+      return;
+    }
+    case 'AracCiktisiParcasi': {
+      const i = d.ogeler.findLastIndex((o) => o.tip === 'AracCagrisi' && o.cagri === yuk.cagri);
+      const o = d.ogeler[i];
+      if (o?.tip === 'AracCagrisi') {
+        d.ogeler[i] = {
+          ...o,
+          terminal: terminalEkle(o.terminal ?? BOS_TERMINAL, yuk.akis, yuk.metin, yuk.atlanan_bayt),
+        };
+      }
       return;
     }
     case 'OnayGerekiyor':

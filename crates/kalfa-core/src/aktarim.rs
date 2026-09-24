@@ -175,7 +175,8 @@ fn olaylar_on_eki(no: u64) -> usize {
 }
 
 /// Aynı turdaki bitişik iki metin parçasını birleştirir; birleşen parça son
-/// parçanın sırasını taşır.
+/// parçanın sırasını taşır. Araç çıktısı yalnızca aynı çağrının aynı
+/// akışındaki parçayla birleşir (aşama 2 tasarımı §3.3).
 fn birlestir(onceki: &Zarf<Olay>, yeni: &Zarf<Olay>) -> Option<Zarf<Olay>> {
     if onceki.oturum != yeni.oturum || onceki.tur != yeni.tur {
         return None;
@@ -189,6 +190,25 @@ fn birlestir(onceki: &Zarf<Olay>, yeni: &Zarf<Olay>) -> Option<Zarf<Olay>> {
                 metin: format!("{a}{b}"),
             }
         }
+        (
+            Olay::AracCiktisiParcasi {
+                cagri: c1,
+                akis: a1,
+                metin: m1,
+                atlanan_bayt: t1,
+            },
+            Olay::AracCiktisiParcasi {
+                cagri: c2,
+                akis: a2,
+                metin: m2,
+                atlanan_bayt: t2,
+            },
+        ) if c1 == c2 && a1 == a2 && *t2 == 0 => Olay::AracCiktisiParcasi {
+            cagri: *c1,
+            akis: *a1,
+            metin: format!("{m1}{m2}"),
+            atlanan_bayt: *t1,
+        },
         _ => return None,
     };
     Some(Zarf {

@@ -87,6 +87,15 @@ impl CalismaAlani {
         ))
     }
 
+    /// Yolun çalışma alanının içinde bir dizin olduğunu doğrular; yolun hiçbir
+    /// bileşeni bağlantı olamaz. Kabuğun çalışma dizini için (aşama 2
+    /// tasarımı §4.1).
+    pub fn dizin_dogrula(&self, yol: &CalismaYolu) -> io::Result<()> {
+        let (ust, ad) = self.ust_dizin(yol, false)?;
+        ust.open_dir_nofollow(ad)?;
+        Ok(())
+    }
+
     /// Son dosya bileşenini de no-follow açar ve yalnızca normal dosyaları
     /// kabul eder. `metadata` açık dosya tutamacı üzerinden alınır.
     fn dosya_ac(&self, yol: &CalismaYolu) -> io::Result<File> {

@@ -1,4 +1,5 @@
 use kalfa_core::izin::Kip;
+use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
 use kalfa_core::kimlik::{CagriId, IslemId, OturumId, TurId};
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::protokol::*;
@@ -50,6 +51,10 @@ fn butun_komutlar_gidip_gelir() {
             model: "glm-5.3".into(),
         },
         Komut::IzinKipiDegistir { kip: Kip::Proje },
+        Komut::YerelOnay {
+            cagri: CagriId::yeni(),
+            muhur: OnayMuhru("m".into()),
+        },
     ] {
         gidip_gelir(&k);
     }
@@ -91,7 +96,19 @@ fn butun_olaylar_gidip_gelir() {
                 diff: Some("+x".into()),
                 uyarilar: vec!["dikkat".into()],
                 muhur: OnayMuhru("m".into()),
+                kabuk: None,
+                yerel_onay: false,
             }],
+        },
+        Olay::OnayGerekiyor {
+            islem: IslemId::yeni(),
+            ogeler: vec![kabuk_ogesi(c)],
+        },
+        Olay::AracCiktisiParcasi {
+            cagri: c,
+            akis: CiktiAkisi::Hata,
+            metin: "uyarı: ş\n".into(),
+            atlanan_bayt: 12,
         },
         Olay::IstekBilgisi {
             istek_id: Some("r".into()),
@@ -142,6 +159,66 @@ fn aktarim_durdu_json_bicimi() {
         .unwrap(),
         json!({"tip": "AktarimDurdu", "neden": "TuketiciYetismedi"})
     );
+}
+
+fn kabuk_ogesi(cagri: CagriId) -> OnayOgesi {
+    OnayOgesi {
+        cagri,
+        arac: "kabuk".into(),
+        aciklama: "`cargo test` komutunu çalıştırmak istiyor.".into(),
+        hedefler: vec![],
+        diff: None,
+        uyarilar: vec!["Yalıtımsız".into()],
+        muhur: OnayMuhru("m".into()),
+        kabuk: Some(KabukTarifi {
+            komut: "cargo test".into(),
+            bicim: KabukBicimi::Program,
+            dizin: ".".into(),
+            ag: false,
+            yalitim: YalitimOzeti::Yalitimsiz {
+                talimat: "yok".into(),
+            },
+            ilk_cagri: true,
+        }),
+        yerel_onay: true,
+    }
+}
+
+/// Arayüzün `tipler.ts`'teki tanımları bu biçime dayanır.
+#[test]
+fn kabuk_json_bicimi() {
+    let c = CagriId::yeni();
+    let j = serde_json::to_value(kabuk_ogesi(c)).unwrap();
+    assert_eq!(j["yerel_onay"], json!(true));
+    assert_eq!(
+        j["kabuk"],
+        json!({
+            "komut": "cargo test",
+            "bicim": {"tip": "Program"},
+            "dizin": ".",
+            "ag": false,
+            "yalitim": {"tip": "Yalitimsiz", "talimat": "yok"},
+            "ilk_cagri": true
+        })
+    );
+    let parca = serde_json::to_value(Olay::AracCiktisiParcasi {
+        cagri: c,
+        akis: CiktiAkisi::Standart,
+        metin: "a".into(),
+        atlanan_bayt: 0,
+    })
+    .unwrap();
+    assert_eq!(
+        parca,
+        json!({"tip": "AracCiktisiParcasi", "cagri": c.to_string(), "akis": "Standart", "metin": "a", "atlanan_bayt": 0})
+    );
+    // Kabuk alanları olmayan eski biçim de okunur.
+    let mut eski = serde_json::to_value(kabuk_ogesi(c)).unwrap();
+    eski.as_object_mut().unwrap().remove("kabuk");
+    eski.as_object_mut().unwrap().remove("yerel_onay");
+    let oge: OnayOgesi = serde_json::from_value(eski).unwrap();
+    assert_eq!(oge.kabuk, None);
+    assert!(!oge.yerel_onay);
 }
 
 #[test]

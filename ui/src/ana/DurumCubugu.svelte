@@ -30,6 +30,13 @@
     {#if durum.uygulama?.baglanti === 'Yok'}
       <StatusItem icon="wifi-off" tone="danger">{m('durum.baglanti_yok')}</StatusItem>
     {/if}
+    {#if durum.uygulama?.yalitim.tip === 'Hazir'}
+      <StatusItem icon="shield-check" tone="ok">{m('durum.yalitimli')}</StatusItem>
+    {:else if durum.uygulama?.yalitim.tip === 'Yok'}
+      <StatusItem icon="shield-alert" tone="warn" title={durum.uygulama.yalitim.talimat}>
+        {m('durum.yalitimsiz')}
+      </StatusItem>
+    {/if}
     {#if durum.uygulama?.anahtar_deposu === 'Bellekte'}
       <StatusItem icon="key-round" tone="warn" title={m('hata.anahtar_bellekte')}>
         {m('durum.anahtar_bellekte')}

@@ -110,6 +110,44 @@ describe('ana pencere (1c tasarımı §8.1)', () => {
     expect(screen.getAllByText('Tamamlandı').length).toBeGreaterThan(0);
   });
 
+  it('kabuk çağrısının çıktısı terminalde akar; kart çıkış kodunu gösterir', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      { tip: 'AracCagrisiBasladi', cagri: 'k1', arac: 'kabuk', aciklama: '`cargo test` komutunu çalıştırmak istiyor.' },
+      {
+        tip: 'AracCiktisiParcasi',
+        cagri: 'k1',
+        akis: 'Standart',
+        metin: '\x1b[32mtest ok\x1b[0m\n<b>kalın değil</b>\n',
+        atlanan_bayt: 0,
+      },
+    ]);
+    const terminal = await screen.findByLabelText('Komut çıktısı');
+    expect(terminal.textContent).toContain('test ok');
+    expect(terminal.textContent).toContain('<b>kalın değil</b>');
+    expect(terminal.querySelector('b')).toBeNull();
+    expect(terminal.querySelector('.r-yesil')?.textContent).toBe('test ok');
+    expect(screen.getByText('Komut çalışıyor')).toBeTruthy();
+    arka.olaylar('o1', [
+      {
+        tip: 'AracSonucu',
+        cagri: 'k1',
+        arac: 'kabuk',
+        durum: 'Basarisiz',
+        icerik: '[kaynak: kabuk:cargo]\nÇıkış kodu: 101\nSüre: 1,0 sn',
+      },
+    ]);
+    expect(await screen.findByText('Çıkış kodu: 101')).toBeTruthy();
+    expect(screen.getByLabelText('Komut çıktısı').textContent).toContain('test ok');
+  });
+
+  it('durum çubuğu yalıtım durumunu gösterir', async () => {
+    await ciz();
+    const oge = screen.getByText('Yalıtımsız', { selector: '.durum-ogesi' });
+    expect(oge.getAttribute('title')).toContain('yalıtımsız çalışıyor');
+  });
+
   it('oturum ortasında anahtar geçersizleşirse hata kartında "Anahtarı değiştir" (§10)', async () => {
     const { arka } = await ciz();
     arka.olaylar('o1', [
@@ -168,6 +206,44 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
       },
     ]);
     expect(screen.getByText('Yanıtlandı')).toBeTruthy();
+  });
+
+  it('kabuk öğesinde diff yerine komut, dizin, ağ ve yalıtım; yerel onay notu', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      {
+        tip: 'OnayGerekiyor',
+        islem: 'i2',
+        ogeler: [
+          onayOgesi({
+            cagri: 'k1',
+            arac: 'kabuk',
+            aciklama: '`cargo test` komutunu çalıştırmak istiyor.',
+            uyarilar: ['Yalıtımsız: komut senin bütün yetkilerinle çalışacak.'],
+            kabuk: {
+              komut: 'cargo test --features e2e',
+              bicim: { tip: 'Program' },
+              dizin: 'crates/kalfa',
+              ag: true,
+              yalitim: { tip: 'Yalitimsiz', talimat: 'yok' },
+              ilk_cagri: false,
+            },
+            yerel_onay: true,
+          }),
+        ],
+      },
+    ]);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    const sayfa = await screen.findByRole('dialog');
+    expect(within(sayfa).getByText('cargo test --features e2e')).toBeTruthy();
+    expect(within(sayfa).getByText('crates/kalfa')).toBeTruthy();
+    expect(within(sayfa).getByText('Açık: komut internete erişebilecek')).toBeTruthy();
+    expect(within(sayfa).getByText('Yalıtımsız')).toBeTruthy();
+    expect(within(sayfa).getByText(/yerel bir pencerede bir kez daha sorulur/)).toBeTruthy();
+    expect(within(sayfa).queryByText('Bu değişiklik için önizleme yok.')).toBeNull();
+    await fireEvent.click(within(sayfa).getByRole('button', { name: 'Tümünü onayla' }));
+    await waitFor(() => expect(arka.komutlar('arac_onayi')).toHaveLength(1));
   });
 
   it('Escape karar vermeden kapatır; istek kartta bekler', async () => {

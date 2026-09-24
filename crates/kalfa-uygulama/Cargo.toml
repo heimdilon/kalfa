@@ -11,17 +11,18 @@ authors.workspace = true
 test-destek = ["kalfa-core/test-destek"]
 # Uçtan uca testlerin sahte sağlayıcısı, sahte iletişim kutuları ve aktarım
 # sayaçları (1c tasarımı §11.4). Sürüm derlemesine girmez.
-e2e = ["dep:futures-util", "dep:serde_json"]
+e2e = ["dep:futures-util"]
 
 [dependencies]
 async-trait.workspace = true
 futures-util = { workspace = true, optional = true }
 kalfa-core = { path = "../kalfa-core" }
 kalfa-evren = { path = "../kalfa-evren" }
+kalfa-sandbox = { path = "../kalfa-sandbox" }
 kalfa-tools = { path = "../kalfa-tools" }
 keyring.workspace = true
 serde.workspace = true
-serde_json = { workspace = true, optional = true }
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true

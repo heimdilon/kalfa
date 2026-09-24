@@ -197,6 +197,63 @@ fn muhur_islemin_kendisine_baglidir() {
     );
 }
 
+/// Kabukta mühür komuta, dizine, ağa, yalıtım durumuna ve profil özetine
+/// bağlıdır (aşama 2 tasarımı §3.3).
+#[test]
+fn kabuk_muhru_tarifin_her_alanina_baglidir() {
+    use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
+    let c = CagriId::yeni();
+    let a = json!({"program": "cargo", "argumanlar": ["test"]});
+    let tarif = KabukTarifi {
+        komut: "cargo test".into(),
+        bicim: KabukBicimi::Program,
+        dizin: ".".into(),
+        ag: false,
+        yalitim: YalitimOzeti::Yalitimli {
+            arka_uc: "bwrap".into(),
+            profil: "p1".into(),
+        },
+        ilk_cagri: false,
+    };
+    let h = |t: KabukTarifi| Hazirlik {
+        tum_calisma_alani: true,
+        kabuk: Some(t),
+        ..Default::default()
+    };
+    let temel = muhur_hesapla(c, "kabuk", &a, &h(tarif.clone()));
+    assert_eq!(temel, muhur_hesapla(c, "kabuk", &a, &h(tarif.clone())));
+    let degisikler = [
+        KabukTarifi {
+            dizin: "src".into(),
+            ..tarif.clone()
+        },
+        KabukTarifi {
+            ag: true,
+            ..tarif.clone()
+        },
+        KabukTarifi {
+            yalitim: YalitimOzeti::Yalitimli {
+                arka_uc: "bwrap".into(),
+                profil: "p2".into(),
+            },
+            ..tarif.clone()
+        },
+        KabukTarifi {
+            yalitim: YalitimOzeti::Yalitimsiz {
+                talimat: "yok".into(),
+            },
+            ..tarif.clone()
+        },
+        KabukTarifi {
+            ilk_cagri: true,
+            ..tarif.clone()
+        },
+    ];
+    for d in degisikler {
+        assert_ne!(temel, muhur_hesapla(c, "kabuk", &a, &h(d.clone())), "{d:?}");
+    }
+}
+
 #[test]
 fn ozet_hex_sha256() {
     assert_eq!(
