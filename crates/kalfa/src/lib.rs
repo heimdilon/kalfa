@@ -2,6 +2,8 @@
 //! tutulur: pencereler, komutlar, kanal bağdaştırıcısı, yerel iletişim
 //! kutuları. Mantık `kalfa-uygulama`'dadır.
 
+#[cfg(feature = "e2e")]
+pub mod e2e;
 mod iletisim;
 mod kanal;
 pub mod komut_adlari;
@@ -12,15 +14,13 @@ use std::error::Error;
 use std::sync::Arc;
 
 use kalfa_core::aktarim::AktarimAyarlari;
-use kalfa_evren::VARSAYILAN_TABAN;
 use kalfa_uygulama::anahtar::{AnahtarDeposu, AnahtarKasasi, SistemDeposu};
 use kalfa_uygulama::dizin::{VERI_DIZINI_DEGISKENI, veri_dizini};
-use kalfa_uygulama::evren::{EvrenUretici, TABAN_DEGISKENI};
 use kalfa_uygulama::{Bilesenler, Uygulama};
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Builder, Manager, Runtime, WindowEvent};
+use tauri::{AppHandle, Builder, ExitRequestApi, Manager, RunEvent, Runtime, WindowEvent};
 
-use crate::iletisim::{TauriAcici, TauriIletisim};
+use crate::iletisim::TauriAcici;
 use crate::pencereler::TauriPencereler;
 
 /// `bellek` ise işletim sisteminin kimlik deposu kullanılmaz (uçtan uca
@@ -53,10 +53,37 @@ pub fn calistir() {
                 ana_pencere_gitti(pencere.app_handle());
             }
         });
-    if let Err(e) = komutlar::kur(kurucu).run(tauri::generate_context!()) {
-        eprintln!("Kalfa çalıştırılamadı: {e}");
-        std::process::exit(1);
+    let app = match komutlar::kur(kurucu).build(tauri::generate_context!()) {
+        Ok(app) => app,
+        Err(e) => {
+            eprintln!("Kalfa çalıştırılamadı: {e}");
+            std::process::exit(1);
+        }
+    };
+    app.run(|app, olay| {
+        if let RunEvent::ExitRequested { api, .. } = olay {
+            cikisi_ertele(app, api);
+        }
+    });
+}
+
+/// Ana pencere kapanınca oturumları kapanır; süren tur iptal edilip kayda
+/// yazılır (1c tasarımı §5.6). Son pencere kapandığında süreç bunlar bitmeden
+/// çıkmaz; yoksa kayıt yarım kalır.
+fn cikisi_ertele<R: Runtime>(app: &AppHandle<R>, api: ExitRequestApi) {
+    let Some(durum) = app.try_state::<Arc<Uygulama>>() else {
+        return;
+    };
+    if !durum.kapanan_oturum_var() {
+        return;
     }
+    api.prevent_exit();
+    let uygulama = durum.inner().clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        uygulama.kapananlari_bekle().await;
+        app.exit(0);
+    });
 }
 
 /// Webview'a açılmayan eklentiler: iletişim kutuları ve sistem tarayıcısı
@@ -84,10 +111,6 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
         &app.path().data_dir()?,
         std::env::var_os(VERI_DIZINI_DEGISKENI),
     );
-    let taban = std::env::var(TABAN_DEGISKENI)
-        .ok()
-        .filter(|_| cfg!(debug_assertions))
-        .unwrap_or_else(|| VARSAYILAN_TABAN.to_string());
     let kalici: Option<Box<dyn AnahtarDeposu>> =
         if std::env::var(ANAHTAR_DEPOSU_DEGISKENI).as_deref() == Ok("bellek") {
             None
@@ -96,13 +119,37 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
                 .ok()
                 .map(|depo| Box::new(depo) as Box<dyn AnahtarDeposu>)
         };
+    let kasa = AnahtarKasasi::yeni(kalici);
+    #[cfg(not(feature = "e2e"))]
+    let (uretici, iletisim) = evren_bilesenleri(app);
+    #[cfg(feature = "e2e")]
+    let (uretici, iletisim) = e2e::kur(app, &kasa)?;
     Ok(Uygulama::yeni(Bilesenler {
         veri_dizini: veri,
-        kasa: AnahtarKasasi::yeni(kalici),
-        uretici: Arc::new(EvrenUretici { taban }),
-        iletisim: Arc::new(TauriIletisim(app.clone())),
+        kasa,
+        uretici,
+        iletisim,
         acici: Arc::new(TauriAcici(app.clone())),
         pencereler: Arc::new(TauriPencereler(app.clone())),
         aktarim: AktarimAyarlari::default(),
     }))
+}
+
+/// EVREN istemcisi ve işletim sisteminin iletişim kutuları. Uçtan uca test
+/// derlemesi bunların yerine `e2e::kur`'un sahtelerini kullanır.
+#[cfg(not(feature = "e2e"))]
+fn evren_bilesenleri<R: Runtime>(
+    app: &AppHandle<R>,
+) -> (
+    Arc<dyn kalfa_uygulama::evren::SaglayiciUretici>,
+    Arc<dyn kalfa_uygulama::arayuz::Iletisim>,
+) {
+    let taban = std::env::var(kalfa_uygulama::evren::TABAN_DEGISKENI)
+        .ok()
+        .filter(|_| cfg!(debug_assertions))
+        .unwrap_or_else(|| kalfa_evren::VARSAYILAN_TABAN.to_string());
+    (
+        Arc::new(kalfa_uygulama::evren::EvrenUretici { taban }),
+        Arc::new(iletisim::TauriIletisim(app.clone())),
+    )
 }

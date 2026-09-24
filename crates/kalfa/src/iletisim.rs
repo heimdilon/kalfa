@@ -1,6 +1,10 @@
 //! Yerel iletişim kutuları ve sistem tarayıcısı (1c tasarımı §6). Onay
 //! gerektiren işler webview'daki bir düğmeyle değil, işletim sisteminin
 //! kutusuyla doğrulanır.
+//!
+//! Uçtan uca test derlemesi yerel kutuların yerine ayardaki cevapları kullanır
+//! (`e2e`); orada `TauriIletisim` kullanılmaz.
+#![cfg_attr(feature = "e2e", allow(dead_code))]
 
 use std::path::PathBuf;
 

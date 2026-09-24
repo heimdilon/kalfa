@@ -34,3 +34,12 @@ pub const SART_PENCERESI_KOMUTLARI: [&str; 6] = [
     "sart_metnini_goster",
     "baglanti_ac",
 ];
+
+/// Uçtan uca test derlemesinin komutları (`e2e` özelliği). Yalnızca o
+/// derlemede kayıtlıdır; yetkisi açılışta ana pencereye verilir.
+pub const E2E_KOMUTLARI: [&str; 4] = [
+    "e2e_olcumler",
+    "e2e_olcumleri_sifirla",
+    "e2e_kayit_uret",
+    "e2e_ana_pencereyi_kapat",
+];

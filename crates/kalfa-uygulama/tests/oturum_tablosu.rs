@@ -455,6 +455,39 @@ async fn ana_pencere_gidince_tur_iptal_edilir_kilit_birakilir() {
 }
 
 #[tokio::test]
+async fn cikista_kapanan_oturumlarin_kaydi_tamamlanana_kadar_beklenir() {
+    let o = ortam(vec![SahteYanit::Askida(vec![AkisOlayi::Metin(
+        "yarım".into(),
+    )])])
+    .await;
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .mesaj_gonder(oturum, "uzun iş".into())
+        .await
+        .unwrap();
+    olay_bekle(&o.t, oturum, &mut rx, |x| {
+        matches!(x, Olay::TokenParcasi { .. })
+    })
+    .await;
+    assert!(!o.t.uygulama.kapanan_oturum_var());
+
+    // Son pencere kapandı: süreç çıkmadan önce kapanışlar beklenir (1c
+    // tasarımı §5.6); iptal edilen tur kayda yazılmış olur.
+    let _ = o.t.uygulama.ana_pencere_gitti();
+    assert!(o.t.uygulama.kapanan_oturum_var());
+    o.t.uygulama.kapananlari_bekle().await;
+    assert!(!o.t.uygulama.kapanan_oturum_var());
+    let kayitlar = OturumKaydi::oku(&o.kayit(oturum)).unwrap();
+    assert!(kayitlar.iter().any(|z| matches!(
+        z.yuk,
+        KayitOgesi::TurBitti {
+            neden: BitisNedeni::Iptal
+        }
+    )));
+}
+
+#[tokio::test]
 async fn turu_iptal_etmek_tamamlandi_iptal_uretir() {
     let o = ortam(vec![SahteYanit::Askida(vec![AkisOlayi::Metin(
         "yarım".into(),

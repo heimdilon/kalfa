@@ -2,7 +2,7 @@
 //! da uygulanır: her pencere yalnızca kendi komutlarını çağırabilir, Tauri'nin
 //! ve eklentilerin komutları hiçbir pencereye açık değildir.
 
-use kalfa_kabuk::komut_adlari::{ANA_PENCERE_KOMUTLARI, SART_PENCERESI_KOMUTLARI};
+use kalfa_kabuk::komut_adlari::{ANA_PENCERE_KOMUTLARI, E2E_KOMUTLARI, SART_PENCERESI_KOMUTLARI};
 use serde_json::Value;
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder};
@@ -118,6 +118,39 @@ fn baska_bir_pencere_hicbir_komutu_cagiramaz() {
         assert!(
             !izinli(&baska, komut),
             "tanımsız pencere {komut} çağırabildi"
+        );
+    }
+}
+
+/// Test komutları normal derlemede kayıtlı değildir; hiçbir pencere
+/// çağıramaz (1c tasarımı §11.4).
+#[cfg(not(feature = "e2e"))]
+#[test]
+fn e2e_komutlari_normal_derlemede_yok() {
+    let app = uygulama();
+    let ana = pencere(&app, "ana");
+    for komut in E2E_KOMUTLARI {
+        let hata = get_ipc_response(&ana, istek(komut))
+            .expect_err(komut)
+            .to_string();
+        assert!(hata.contains("not allowed"), "{komut}: {hata}");
+    }
+}
+
+/// Uçtan uca test derlemesinde test komutları yalnızca ana pencereye açılır.
+#[cfg(feature = "e2e")]
+#[test]
+fn e2e_komutlari_yalnizca_ana_pencereye_acilir() {
+    use tauri::Manager;
+    let app = uygulama();
+    app.add_capability(kalfa_kabuk::e2e::yetki()).unwrap();
+    let ana = pencere(&app, "ana");
+    let sartlar = pencere(&app, "sartlar");
+    for komut in E2E_KOMUTLARI {
+        assert!(izinli(&ana, komut), "ana pencere {komut} çağıramadı");
+        assert!(
+            !izinli(&sartlar, komut),
+            "şart penceresi {komut} çağırabildi"
         );
     }
 }

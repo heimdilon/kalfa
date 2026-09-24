@@ -5,6 +5,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { m } from '../dil/tr';
 import { acilistanEkran, uygula, type Girdi, type OturumEkrani } from '../durum/oturum';
 import { kanalIsleyicisi } from '../durum/dinleyici';
+import { sar as e2eSar } from '../e2e/kanca';
 import * as ipc from '../ipc/ana';
 import { komutHatasi } from '../ipc/hata';
 import type {
@@ -178,7 +179,9 @@ export class AnaDurum {
         ipc.paketiIsledim(oturum, no).catch(() => undefined);
       },
     );
-    await ipc.oturumuDinle(oturum, isleyici);
+    // Uçtan uca test derlemesinde dinleyici ölçülür ve duraklatılabilir
+    // (1c tasarımı §11.4); sürüm derlemesinde bu dal yoktur.
+    await ipc.oturumuDinle(oturum, import.meta.env.MODE === 'e2e' ? e2eSar(isleyici) : isleyici);
   }
 
   #uygula(oturum: OturumId, girdi: Girdi): void {

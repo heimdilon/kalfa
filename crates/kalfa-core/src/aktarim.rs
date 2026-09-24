@@ -17,11 +17,13 @@ use tokio::time::Instant;
 use crate::oturum::OlayAlici;
 use crate::protokol::{Olay, Zarf};
 
-/// Paketleyici ayarları. Varsayılanlar başlangıç değeridir; gerçek arayüzle
-/// yapılan gecikme ölçümüyle ayarlanır (1c tasarımı §11.4).
+/// Paketleyici ayarları. Varsayılanlar gerçek arayüzle yapılan gecikme
+/// ölçümüyle seçildi (1c tasarımı §11.4): 16 ms'lik pencerede token'ın ekrana
+/// düşmesinin p95'i Windows'ta 41, Linux'ta 47 ms'ydi; 8 ms'de 26 ve 30–42 ms.
+/// Paket sınırı ve kredi başlangıç değerinde kaldı.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AktarimAyarlari {
-    /// İlk olaydan sonra aynı pakete olay toplanan süre.
+    /// İlk olaydan sonra aynı pakete olay toplanan süre (varsayılan 8 ms).
     pub pencere: Duration,
     /// Paketin hedef bayt üst sınırı; sınırdan büyük tek olay yine gider.
     pub azami_paket_bayt: usize,
@@ -34,7 +36,7 @@ pub struct AktarimAyarlari {
 impl Default for AktarimAyarlari {
     fn default() -> Self {
         Self {
-            pencere: Duration::from_millis(16),
+            pencere: Duration::from_millis(8),
             azami_paket_bayt: 64 * 1024,
             kredi_paket: 4,
             kredi_bayt: 256 * 1024,

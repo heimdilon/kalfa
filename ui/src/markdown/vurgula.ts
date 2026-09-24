@@ -13,7 +13,7 @@ export interface Parca {
 const DUZ = '#98a0a6';
 
 // Renkler tasarım sisteminin sözdizimi tokenlarıdır (colors.css: --code-*).
-const TEMA: ThemeRegistration = {
+export const TEMA: ThemeRegistration = {
   name: 'kalfa',
   type: 'dark',
   colors: { 'editor.foreground': DUZ, 'editor.background': '#161a1d' },
@@ -64,7 +64,7 @@ const TEMA: ThemeRegistration = {
   ],
 };
 
-const DILLER = {
+export const DILLER = {
   rust: () => import('@shikijs/langs/rust'),
   typescript: () => import('@shikijs/langs/typescript'),
   javascript: () => import('@shikijs/langs/javascript'),

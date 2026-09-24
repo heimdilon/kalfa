@@ -4,7 +4,8 @@
 // - HTML'de satır içi betik, stil özniteliği, <style> etiketi ve dış adres yok.
 // - Şart penceresinin açılışta yüklediği dosyalar ana pencerenin sohbet
 //   komutlarını içermez.
-import { readFileSync } from 'node:fs';
+// - Uçtan uca test kancası (`src/e2e/`) sürüm paketine girmez.
+import { readdirSync, readFileSync } from 'node:fs';
 
 const dist = new URL('../dist/', import.meta.url);
 const oku = (ad) => readFileSync(new URL(ad, dist), 'utf8');
@@ -70,6 +71,15 @@ for (const dosya of sartlarGrafigi) {
     if (icerik.includes(komut)) {
       hatalar.push(`sartlar.html → ${dosya}: ana pencere komutu "${komut}" içeriyor`);
     }
+  }
+}
+
+// Test kancası yalnızca `npm run build:e2e` derlemesindedir (1c tasarımı §11.4).
+for (const dosya of readdirSync(new URL('assets/', dist))) {
+  if (!/\.m?js$/.test(dosya)) continue;
+  const icerik = oku(`assets/${dosya}`);
+  for (const iz of ['__kalfaE2e', '[[e2e:']) {
+    if (icerik.includes(iz)) hatalar.push(`assets/${dosya}: uçtan uca test kancası ("${iz}") içeriyor`);
   }
 }
 

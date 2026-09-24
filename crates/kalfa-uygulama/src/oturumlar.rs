@@ -262,7 +262,14 @@ impl Uygulama {
             .alici
             .take()
             .ok_or_else(|| KomutHatasi::gecersiz("Bu oturum zaten dinleniyor."))?;
+        // Uçtan uca test derlemesi kuyruğu ve yoldaki veriyi ölçer (1c
+        // tasarımı §11.4).
+        #[cfg(feature = "e2e")]
+        let alici = crate::e2e::OlcumluKaynak(alici);
         let (paketleyici, kredi) = Paketleyici::yeni(alici, self.aktarim);
+        #[cfg(feature = "e2e")]
+        let yazici: Box<dyn KanalYazici> =
+            Box::new(crate::e2e::OlcumluYazici::yeni(yazici, kredi.clone()));
         let gorev = tokio::spawn(kopru::calistir(paketleyici, yazici));
         acik.kopru = Some((gorev, kredi));
         Ok(())
@@ -405,6 +412,23 @@ impl Uygulama {
         }
     }
 
+    /// Kapanmakta olan oturum var mı. Son pencere kapanınca süreç bunların
+    /// kaydı tamamlanmadan çıkmaz (1c tasarımı §5.6).
+    pub fn kapanan_oturum_var(&self) -> bool {
+        !self.ic().kapaniyor.is_empty()
+    }
+
+    /// Kapanmakta olan bütün oturumların görevlerini bekler.
+    pub async fn kapananlari_bekle(&self) {
+        let kapananlar: Vec<(OturumId, OturumTutamaci)> = self
+            .ic()
+            .kapaniyor
+            .iter()
+            .map(|(oturum, tutamac)| (*oturum, tutamac.clone()))
+            .collect();
+        self.kapanislari_bekle(kapananlar).await;
+    }
+
     fn kapatmaya_basla(&self, oturum: OturumId) -> Option<OturumTutamaci> {
         let acik = {
             let mut ic = self.ic();
@@ -440,7 +464,7 @@ impl Uygulama {
     }
 
     /// Çalışma alanının araçları ve ortak kilitleriyle oturum bağlamı.
-    fn baglam(&self, kok: &Path) -> Result<OturumBaglami, KomutHatasi> {
+    pub(crate) fn baglam(&self, kok: &Path) -> Result<OturumBaglami, KomutHatasi> {
         let siniflandirici = Arc::new(Siniflandirici::yeni(kok, &[]).map_err(ic_hata)?);
         let alan = AracAlani::ac(siniflandirici.clone())?;
         let araclar = Arc::new(AracKayitDefteri::yeni(varsayilan_araclar(alan)).map_err(ic_hata)?);

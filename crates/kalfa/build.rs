@@ -6,6 +6,9 @@ fn main() {
         .chain(SART_PENCERESI_KOMUTLARI.iter())
         .copied()
         .collect();
+    if std::env::var_os("CARGO_FEATURE_E2E").is_some() {
+        komutlar.extend(E2E_KOMUTLARI);
+    }
     komutlar.sort_unstable();
     komutlar.dedup();
     // `AppManifest` 'static dilim ister; build betiği kısa ömürlüdür.

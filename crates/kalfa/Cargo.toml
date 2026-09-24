@@ -22,6 +22,11 @@ name = "kalfa"
 path = "src/main.rs"
 test = false
 
+[features]
+# Uçtan uca test derlemesi (1c tasarımı §11.4): sahte EVREN, sahte iletişim
+# kutuları ve test komutları. Sürüm derlemesine girmez.
+e2e = ["kalfa-uygulama/e2e"]
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 

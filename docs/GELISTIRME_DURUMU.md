@@ -1,6 +1,6 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-09-22. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-09-24. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
 ## Mevcut uygulama
@@ -229,7 +229,8 @@ Tasarım belgesinin §11 ve §12.3 bölümlerinden:
    `npm run build` gerektirip gerektirmediği plan aşamasında doğrulanacak.
 8. **Olay köprüsü (§11.1): Tauri `Channel` + kredi.** Paketleyici ve kredi
    hesabı `kalfa-core`'da, oturum döngüsünden ayrı bir `aktarim` modülünde.
-   İlk olay 16 ms'lik pencere açar; pencerede biriken olaylar tek pakette
+   İlk olay 16 ms'lik pencere açar (1c-4'te ölçümle 8 ms'ye indi); pencerede
+   biriken olaylar tek pakette
    gider; art arda gelen aynı türden metin parçaları birleştirilir. Onay,
    hata, tamamlanma, araç ve şart olayları birleştirilmez, düşürülmez ve
    pencereyi beklemeden hemen gönderilir. Arayüzün "işledim" demediği veri en
@@ -419,15 +420,80 @@ temadaki şart penceresinde not ve uyarı zemini koyu çıkıyordu, çünkü tas
 sistemindeki `--amber-tint` ve `--blue-tint` yalnızca koyu temada tanımlı. Zemin
 artık durum renginden `color-mix` ile türetilir.
 
+### 1c-4 — kabul (tamamlandı)
+
+Plan: [`2026-09-24-kalfa-1c-4-kabul.md`](superpowers/plans/2026-09-24-kalfa-1c-4-kabul.md).
+
+Neler eklendi:
+- Uygulama gerçek pencerede, sahte EVREN'li bir test derlemesiyle ve
+  `tauri-driver` üzerinden sınanıyor. Kapsam: ilk açılış, konuşma, onay, iptal,
+  kayıttan açma ve güvenlik sınırları.
+- Üst belge §11.1'in kabul kapısı iki platformda geçti.
+- Test derlemesi `e2e` özelliğidir ve sürüm derlemesine girmez. Özellik şunları
+  getirir:
+  - Sahte sağlayıcı, sahte iletişim kutuları ve aktarım sayaçları.
+  - Test komutları ve arayüzün test kancası.
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `cargo test --workspace --locked` | 303 geçti, 0 başarısız, 4 yok sayıldı | 302 geçti, 0 başarısız, 4 yok sayıldı |
+| `cargo test -p kalfa-uygulama -p kalfa --features e2e` | Başarılı | Başarılı |
+| Clippy (normal ve `e2e` derlemesi) / fmt | Başarılı | Başarılı |
+| `npm run check` / `npm test` / `npm run build` | 0 hata, 0 uyarı; 16 dosya, 184 test; paket denetimi temiz | Aynı |
+| Uçtan uca (`cd e2e && npm test`) | 21 test geçti | 21 test geçti (Xvfb) |
+
+Kabul ölçümü (plan doğrulaması, 2026-09-24):
+- **Windows:** Windows 11, WebView2 153.
+- **Linux:** Ubuntu 24.04, WSL2, Xvfb (yazılım çizimi), WebKitGTK 2.52.
+- **Gecikme:** parçanın üretilmesinden ekrana çizilmesine kadar geçen süre.
+
+| Ölçüm | Windows | Linux |
+| --- | --- | --- |
+| Gecikme p50 / p95 / p99, 20 ms'de bir parça | 21,9 / 25,2 / 25,9 ms | 26,8 / 40,1 / 44,3 ms |
+| Gecikme, 5–10 parçalık yığınlar | 21,9 / 26,0 / 31,8 ms | 21,2 / 31,3 / 32,9 ms |
+| Gecikme, düşünce ve metin paralel | 21,9 / 26,0 / 27,2 ms | 20,9 / 29,2 / 31,9 ms |
+| Duraklayan arayüz: yoldaki en çok veri (kredi 4 paket, 256 KiB) | 4 paket, 246 889 bayt | Aynı |
+| Duraklayan arayüz: kuyruğun en yükseği (bütçe 16 384 olay, 8 MiB) | 1 973 olay, 8 387 088 bayt | Aynı |
+| Duraklarken Kalfa sürecinin belleği | 29 → 38 MB | 205 → 232 MB |
+| Uzun oturum açılışı, 20 / 500 tur | 36,6 / 66,3 ms | 54 / 111 ms |
+| Ekrandaki DOM düğümü, 20 / 500 tur | 635 / 639 | 635 / 639 |
+
+- **Paketleme penceresi 16 ms'den 8 ms'ye indi.** 16 ms'de p95 Windows'ta 41,
+  Linux'ta 47 ms'ydi; hedef 50 ms'ye çok yakındı.
+- **Kredi ve paket sınırı değişmedi.**
+- **Duraklayan arayüzde tur iptal edildi, sınırlar aşılmadı.** Arayüz yeniden
+  işlemeye başlayınca `AktarimDurdu` uyarısı geldi. Kuyruk bütçeye kadar doldu,
+  ama ne o ne de yoldaki veri sınırı aştı.
+- **Linux'ta bellek daha yüksek görünüyor:** WebKitGTK'nin arayüz süreci
+  Kalfa'nın kendi sürecidir. Windows'ta WebView2 ayrı süreçlerdedir.
+- **Uzun oturumda tam sanallaştırma gerekmedi (§9.3).** Açılış 20 turluk
+  kayıttakiyle aynı mertebede kaldı.
+
+Plan yazılırken bulunanlar:
+- **Pencere kapanınca oturum kaydı süreç çıkışıyla yarışıyordu.** Süren tur
+  iptal edilip kayda yazılırken süreç çıkabiliyordu. Artık süreç kapanan
+  oturumları bekliyor (`kapananlari_bekle`).
+- **WebDriver'ın pencere kapatması uygulamanın kapanış yolunu sınamıyor.** Son
+  pencerede süreci doğrudan sonlandırıyor. Test bu yüzden pencereyi test
+  komutuyla kapatıyor.
+- **Chromium, WebDriver'ın betik bağlamında `eval`'i engellemiyor.** Yalnızca
+  ihlali bildiriyor; dizeden kod bu yüzden dize zamanlayıcısıyla sınanıyor.
+- **WebKit'te pencereyi kapatan tıklama "no such window" dönebiliyor.** Test
+  yardımcısı bunu beklenen sonuç sayıyor.
+
+Açık madde: `same-file`'ın ReFS'teki (Dev Drive) kimliği doğrulanamadı;
+makinede ReFS birimi yok.
+
 ### Tasarım belgesi
 
 Bütün kararlar, yukarıdakilere ek olarak çizim ve dil, hata durumları, test ve
 kabul ölçümü dahil,
 [`2026-09-22-kalfa-1c-design.md`](superpowers/specs/2026-09-22-kalfa-1c-design.md)
 belgesindedir. Yukarıdaki liste onun özetidir; ayrılırlarsa belge geçerlidir.
-Sıradaki adım uygulama planıdır; belge §14 dört parçaya bölünmesini öneriyor
-(1c-1 çekirdek eklemeleri, 1c-2 Tauri kabuğu, 1c-3 arayüz, 1c-4 kabul).
+1c'nin dört parçası (1c-1 çekirdek eklemeleri, 1c-2 Tauri kabuğu, 1c-3 arayüz,
+1c-4 kabul) tamamlandı. Sıradaki aşama üst belge §12.3'e göre ikincisidir:
+kabuk aracı ve yalıtım.
 
 Kabuk yalıtımı, bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi,
-güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Henüz çalışır
-bir masaüstü uygulaması veya tamamlanmış v1 sürümü yoktur.
+güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü
+uygulaması Windows ve Linux'ta çalışıyor; tamamlanmış bir v1 sürümü yoktur.

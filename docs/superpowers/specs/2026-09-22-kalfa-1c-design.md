@@ -5,6 +5,9 @@
 kullanıcının "sormadan yaz" isteğiyle ayrıca onaya sunulmadan yazıldı.
 2026-09-23: komut sözleşmesi kesinleşti (§6.1), plan aşamasındaki sorular
 cevaplandı (§13). Planlar PR ile yürütülüyor: kodu Codex yazar, Claude inceler.
+2026-09-24: 1c-4 planında kabul ölçümüyle paketleme penceresi 8 ms'ye indi
+(§4.2); uçtan uca testlerin kurulumu ve §13'te açık kalan maddeler yazıldı
+(§11.4, §11.6, §13).
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §4, §6.1, §6.6, §11 ve §12.3. Bu belgede `§` işaretleri bu belgenin
 bölümlerini gösterir; üst belgeye "üst belge §x" diye başvurulur.
@@ -215,7 +218,7 @@ sınırlamaz.
 
 ### 4.2 Paketleme
 
-- İlk olay 16 ms'lik bir pencere açar. Pencerede biriken olaylar tek pakette
+- İlk olay 8 ms'lik bir pencere açar. Pencerede biriken olaylar tek pakette
   gider.
 - Art arda gelen aynı türden metin parçaları (`TokenParcasi`, `DusunceParcasi`)
   tek parçada birleştirilir. Birleştirme yalnızca bitişik ve aynı turdaki
@@ -227,12 +230,14 @@ sınırlamaz.
   hemen gönderilir.
 - Paketin bir bayt üst sınırı vardır; sınıra ulaşan paket pencereyi beklemeden
   gider. Sınırdan büyük tek bir olay kendi paketinde, bölünmeden gider.
-- Başlangıç değerleri 16 ms ve 64 KiB'tır; §11.4'teki ölçümle ayarlanır.
+- Değerler 8 ms ve 64 KiB'tır. Pencere başta 16 ms'ydi. §11.4'teki ölçümde
+  token'ın ekrana düşmesinin p95'i Windows'ta 41, Linux'ta 47 ms çıktı. 8 ms'de
+  bu 26 ve 30–42 ms oldu.
 
 ### 4.3 Kredi
 
-- Arayüzün "işledim" demediği veri en çok 4 paket ya da 256 KiB olabilir
-  (başlangıç değerleri; ölçümle ayarlanır).
+- Arayüzün "işledim" demediği veri en çok 4 paket ya da 256 KiB olabilir.
+  §11.4'teki ölçümde bu değerleri değiştirmek gerekmedi.
 - Kredi bitince paketleyici çekirdek kuyruğundan okumayı bırakır. Arayüz uzun
   süre okumazsa çekirdek kuyruğu dolar ve mevcut iptal yolu çalışır.
 - Krediden büyük tek bir olay (örneğin büyük bir diff), yolda başka paket
@@ -707,7 +712,7 @@ pazarlık konusu değildir.
 
 ### 11.1 Çekirdek (Tauri'siz, `cargo test`)
 
-- **Paketleyici** (`tokio::time::pause` ile): 16 ms pencere; bitişik metin
+- **Paketleyici** (`tokio::time::pause` ile): pencere; bitişik metin
   parçalarının birleşmesi, başka türden olayın birleştirmeyi kesmesi; kritik
   olayların hemen gitmesi, hiç birleştirilmemesi ve düşürülmemesi; paket bayt
   sınırı; kredi (paket ve bayt) dolunca çekirdek kuyruğundan okumanın durması;
@@ -791,6 +796,35 @@ yalnızca test özelliği açıkken derlenir; sürüm derlemesine girmez.
    20 turluk bir kayıtla aynı mertebede kalır. Kalmıyorsa tam sanallaştırma
    eklenir (§9.3).
 
+**Kurulum (1c-4)**
+
+- **Uygulama tarafı.**
+  - Sahte sağlayıcı `kalfa-uygulama`'nın `e2e` özelliğindedir.
+  - Kabuk aynı özellikle onu, ayardaki cevapları veren sahte iletişim kutularını
+    ve yalnızca ana pencereye açılan test komutlarını kurar: `e2e_olcumler`,
+    `e2e_olcumleri_sifirla`, `e2e_kayit_uret`, `e2e_ana_pencereyi_kapat`.
+  - Ayarlar `KALFA_E2E` ortam değişkenindeki JSON dosyasından okunur;
+    senaryolar kullanıcı mesajının metniyle seçilir.
+  - Uygulama sürüm profilinde, gömülü arayüzle ve ayrı bir uygulama kimliğiyle
+    (`dev.kalfa.e2e`) derlenir.
+- **Arayüz tarafı.**
+  - Arayüz `npm run build:e2e` ile test kancasıyla derlenir (`ui/dist-e2e`).
+    Kanca gecikmeyi ölçer ve paket işlemeyi duraklatır.
+  - Sürüm paketinde kanca olmadığını paket denetimi sınar.
+- **Testler:** `e2e/` dizinindedir (WebdriverIO, `node:test`).
+- **Gecikme:** ölçümden önce ölçülmeyen bir ısınma turu gönderilir. Uygulamanın
+  ilk turu webview'ın ilk çizimlerini ve derleyici ısınmasını da içerir.
+- **Duraklayan arayüz:** sahte sağlayıcı yüksek hızda düşünce parçası akıtır.
+  Düşünce paneli kapalı olduğundan arayüz yeniden işlemeye başlayınca biriken
+  megabaytları çizmez.
+- **Pencere kapatma.**
+  - Kapatma düğmesinin yolundan (`e2e_ana_pencereyi_kapat`) sınanır.
+    WebDriver'ın pencere kapatması son pencerede süreci doğrudan sonlandırır.
+  - Süreç, kapanan oturumların kaydı tamamlanmadan çıkmaz.
+- **Dizeden kod:** WebDriver'ın çalıştırdığı betik sayfanın bağlamında değildir.
+  Chromium orada `eval`'i ihlali bildirerek çalıştırır. Bu yüzden dizeden kod,
+  sayfanın bağlamında çalışan dize zamanlayıcısıyla sınanır.
+
 ### 11.5 Elle kontrol
 
 - NVDA (Windows) ve Orca (Linux) ile onay isteği ve tur sonu duyurusu.
@@ -810,8 +844,22 @@ cargo tree -p kalfa-uygulama -e normal | grep -E "tauri|wry"       # çıktı bo
 cd ui && npm ci && npm run check && npm test && npm run build
 ```
 
-Uçtan uca testlerin komutu plan aşamasında belirlenir. Canlı EVREN testleri
-(`#[ignore]`) ajan tarafından koşturulmaz.
+Uçtan uca test derlemesinin birim testleri ve uçtan uca testler:
+
+```
+cargo test -p kalfa-uygulama -p kalfa --features e2e
+cargo clippy -p kalfa -p kalfa-uygulama --features e2e --all-targets -- -D warnings
+cd e2e && npm ci && npm test          # Linux'ta: xvfb-run -a npm test
+```
+
+Uçtan uca testler için gerekenler:
+
+- `tauri-driver` iki platformda da PATH'te olmalı.
+- **Windows:** WebView2 sürümüyle aynı `msedgedriver` gerekir. PATH'te değilse
+  yolu `KALFA_E2E_EDGEDRIVER` ile verilir.
+- **Linux:** `webkit2gtk-driver` ve Xvfb gerekir.
+
+Canlı EVREN testleri (`#[ignore]`) ajan tarafından koşturulmaz.
 
 ---
 
@@ -870,10 +918,16 @@ Bu tasarımla birlikte üst belgede güncellenen yerler (r3.3):
   Bileşenler sınıf ve `style:` kullanır. Shiki `codeToHtml` değil
   `codeToTokens` ile kullanılır; tokenlar Svelte ile çizilir.
 
-Uçtan uca testlerde doğrulanacaklar (1c-4): küçültülmüş pencerede WebView2 ve
-WebKitGTK'nin betik yürütmesi (gerekirse `background_throttling` kapatılır);
-`same-file`'ın Windows'ta dizinler ve ReFS için verdiği kimlik; Shiki'nin
-JavaScript motorunun seçilen dillerdeki doğruluğu.
+1c-4'te doğrulananlar (2026-09-24):
+
+- **Küçültülmüş pencere:** WebView2 ve WebKitGTK paketleri işlemeyi
+  sürdürür; `background_throttling` kapatmak gerekmedi. Bunu kabul testi sınar.
+- **Shiki:** JavaScript motoru seçilen 11 dilde Oniguruma ile aynı tokenları
+  verir (`ui/src/markdown/vurgula-motor.test.ts`).
+- **`same-file` ve ReFS:** kimliğin ReFS'te ne verdiği doğrulanamadı; makinede
+  ReFS (Dev Drive) birimi yok. NTFS'te dizin kimliğini, junction'ı ve sembolik
+  bağlantıyı kilit yöneticisinin testleri sınar. Bu madde durum dosyasında açık
+  kalır.
 
 ## 14. Uygulama planına geçiş
 

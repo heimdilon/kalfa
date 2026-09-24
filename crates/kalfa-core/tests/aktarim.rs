@@ -120,12 +120,13 @@ async fn pencere_icindeki_bitisik_metin_parcalari_birlesir() {
 
 #[tokio::test(start_paused = true)]
 async fn pencereden_sonra_gelen_parca_sonraki_pakete_kalir() {
-    let (mut u, mut p, kredi, _) = kur(AktarimAyarlari::default());
+    let ayar = AktarimAyarlari::default();
+    let (mut u, mut p, kredi, _) = kur(ayar);
     u.metin("a");
     let uretici = tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(ayar.pencere / 2).await;
         u.metin("b");
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(ayar.pencere * 2).await;
         u.metin("c");
         u
     });

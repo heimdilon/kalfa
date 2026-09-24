@@ -18,6 +18,9 @@ mod oturumlar;
 mod sartlar;
 mod uygulama;
 
+#[cfg(feature = "e2e")]
+pub mod e2e;
+
 #[cfg(feature = "test-destek")]
 pub mod test_destek;
 

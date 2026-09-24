@@ -24,7 +24,8 @@ use crate::kanal::TauriKanal;
 type Sonuc<T> = Result<T, KomutHatasi>;
 
 /// Komut işleyicisini kurar. Liste `komut_adlari.rs` ile aynıdır
-/// (tests/izinler.rs denetler).
+/// (tests/izinler.rs denetler); uçtan uca test derlemesi test komutlarını
+/// ekler.
 pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
     kurucu.invoke_handler(tauri::generate_handler![
         uygulama_durumu,
@@ -49,6 +50,14 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         sartlari_kabul_et,
         sartlari_reddet,
         sart_metnini_goster,
+        #[cfg(feature = "e2e")]
+        crate::e2e::e2e_olcumler,
+        #[cfg(feature = "e2e")]
+        crate::e2e::e2e_olcumleri_sifirla,
+        #[cfg(feature = "e2e")]
+        crate::e2e::e2e_kayit_uret,
+        #[cfg(feature = "e2e")]
+        crate::e2e::e2e_ana_pencereyi_kapat,
     ])
 }
 

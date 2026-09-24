@@ -6,10 +6,12 @@ Kalfa, Rust ile yazılmış bir masaüstü ajan uygulamasıdır. EVREN'in model 
 kullanarak dosya okur, yazar, arama yapar ve komut çalıştırır — tamamı senin
 onayınla. Araçlarını WebAssembly eklentileriyle genişletebilirsin.
 
-> **Durum: çekirdek ve dosya araçları tamamlandı; 1c altyapısı geliştiriliyor.** Rust workspace içinde
-> EVREN istemcisi (`kalfa-evren`), arayüzden bağımsız oturum çekirdeği
-> (`kalfa-core`) ve beş yerleşik dosya aracı (`kalfa-tools`) bulunuyor.
-> Masaüstü arayüzü henüz uygulanmadı. [Geliştirme durumu ve devam noktası](docs/GELISTIRME_DURUMU.md).
+> **Durum: 1c tamamlandı; masaüstü uygulaması Windows ve Linux'ta çalışıyor.**
+> Rust workspace'inde EVREN istemcisi (`kalfa-evren`), arayüzden bağımsız oturum
+> çekirdeği (`kalfa-core`), beş yerleşik dosya aracı (`kalfa-tools`) ve
+> masaüstü uygulaması (`kalfa-uygulama`, Tauri kabuğu `kalfa`) bulunuyor;
+> Svelte arayüzü `ui/`'dadır. Kabuk aracı, yalıtım ve eklentiler sonraki
+> aşamalarda. [Geliştirme durumu ve devam noktası](docs/GELISTIRME_DURUMU.md).
 
 ## Geliştirme
 
@@ -24,6 +26,31 @@ cargo fmt --all -- --check
 Varsayılan testler sahte sağlayıcılar ve yerel HTTP sunucuları kullanır;
 EVREN anahtarı gerektirmez. Canlı API testleri `#[ignore]` ile ayrıdır.
 Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni gerektirir.
+
+Linux'ta `kalfa` crate'i WebKitGTK geliştirme paketlerini ister
+(`libwebkit2gtk-4.1-dev`).
+
+Arayüz (`ui/`, Node `^22.22.2 || >=24.15.0`):
+
+```sh
+cd ui && npm ci && npm run check && npm test && npm run build
+```
+
+Uçtan uca testler gerçek uygulamayı sahte EVREN'li bir test derlemesiyle
+`tauri-driver` üzerinden sürer:
+
+```sh
+cargo test -p kalfa-uygulama -p kalfa --features e2e
+cd e2e && npm ci && npm test        # Linux'ta: xvfb-run -a npm test
+```
+
+- `tauri-driver` gerekir: `cargo install tauri-driver --locked`.
+- **Windows:** WebView2 sürümüyle aynı `msedgedriver` gerekir. PATH'te değilse
+  yolu `KALFA_E2E_EDGEDRIVER` ile verin.
+- **Linux:** `webkit2gtk-driver` ve `xvfb` paketleri gerekir.
+
+`npm test` önce arayüzü test kancasıyla (`ui/dist-e2e`), sonra uygulamayı
+`target/e2e/` altına derler. Ölçümler `e2e/sonuclar/`'a yazılır.
 
 ---
 

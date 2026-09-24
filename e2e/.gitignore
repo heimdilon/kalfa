@@ -1,0 +1,3 @@
+node_modules/
+# Ölçüm çıktıları (kabul kapısı); sonuçlar docs/GELISTIRME_DURUMU.md'ye yazılır.
+sonuclar/
