@@ -1,8 +1,8 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Revizyon:** r3.4 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
-**Durum:** 1a, 1b ve 1c uygulandı; aşama 2 (kabuk ve yalıtım) tasarımı yazıldı, uygulama planları bekliyor
+**Revizyon:** r3.5 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
+**Durum:** 1a, 1b ve 1c uygulandı; aşama 2'de 2a ve 2b uygulandı, 2c (Windows prototipi) ölçüldü, 2d bekliyor
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
 ---
@@ -741,65 +741,60 @@ yerel ayrıcalıklı soketlere de ulaşılamaz (`socketpair` serbesttir).
   varsayılan olarak açık; hedef dağıtımların her biri uyumluluk matrisinde
   doğrulanır (§13.2).
 
-**Windows arka ucu — ayrı yerel kullanıcı + ACL + güvenlik duvarı.**
+**Windows arka ucu — AppContainer + ACL.**
 
-- Kurulumda iki gizli, yetkisiz yerel kullanıcı oluşturulur: ağsız ve ağlı.
-  Ağsız kullanıcının bütün giden trafiği Windows Güvenlik Duvarı kuralıyla
-  engellenir. Parolalar geliştiricinin hesabına bağlı olarak DPAPI ile saklanır.
-  Windows yükleyicisi makine geneli kurulum yaptığı için zaten yönetici
-  yetkisiyle çalışır; yalıtım altyapısı o sırada hazırlanır.
-- Komutlar bu kullanıcılardan biri olarak çalışır. Kullanıcı sınırı
-  geliştiricinin profilini korur: yalıtım kullanıcısı `~/.ssh`'ı ve Credential
-  Manager'ı — dolayısıyla EVREN anahtarını — okuyamaz.
-- **Çalışma alanlarını birbirinden belirteç ayırır, kullanıcı değil.** Yalıtım
-  kullanıcıları bütün çalışma alanları için ortaktır. İzinler yalnızca bu
-  kullanıcılara verilseydi, A projesi için çalışan bir süreç, aynı anda açık
-  olan B projesine verilen izinleri de kullanabilirdi. Bu yüzden:
-  - Her çalışma alanına özel bir güvenlik tanımlayıcısı (SID) üretilir.
-  - Komut, bu SID'i *kısıtlayıcı SID* olarak taşıyan kısıtlı bir belirteçle
-    (restricted token) çalışır. Windows böyle bir belirteçte erişimi iki kez
-    denetler: hem kullanıcının hem kısıtlayıcı SID'lerin izni gerekir.
-  - Çalışma alanının ACL'i okuma-yazma iznini yalnızca o çalışma alanının SID'ine
-    verir. A için çalışan süreç, aynı yalıtım kullanıcısıyla çalışsa bile B'ye
-    erişemez.
-- **Okuma sınırı Linux'takiyle aynı hedefi taşır:** sistem + izinli araç zinciri
-  + kendi çalışma alanı. Sistem ve program dizinlerini okuyabilmek için
-  kısıtlayıcı SID listesine `ALL APPLICATION PACKAGES` grubu eklenir; Windows bu
-  dizinlerde bu gruba okuma izni verir, kullanıcıların oluşturduğu klasörler
-  (örn. `C:\projeler\`) ise bu izni taşımaz. **Bu mekanizma bir varsayımdır.**
-  Windows aşamasının ilk adımı onu bir prototiple doğrular (§12.3). Doğrulanamazsa
-  kalan sınır — "yalıtılmış süreç, bilgisayardaki her yerel kullanıcının
-  okuyabildiği dosyaları okuyabilir" — belgeye ve arayüze açıkça yazılır ve geniş
-  izinli bir klasördeki çalışma alanı açılırken uyarı verilir.
-- **İzinlerin yaşam döngüsü:** çalışma alanının ACL kaydı, çalışma alanı Kalfa'ya
-  ilk eklendiğinde bir kez verilir; büyük ağaçlarda bu zaman alır ve ilerleme
-  gösterilir. Çalışma alanı Kalfa'dan kaldırıldığında ya da Kalfa kaldırılırken
-  geri alınır. Verilen her ACE uygulama veri dizininde kayıtlıdır ve geri alma bu
-  kayda göre yapılır.
-- **Ortak durum yok:** yalıtım kullanıcısının kendi profili kısıtlı belirteç için
-  salt okunurdur. `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` ve `TEMP`
+- Komut, geliştiricinin kendi hesabıyla, çalışma alanına özel bir AppContainer'da
+  ve bir Job Object içinde çalışır. Windows erişimi iki kez denetler: hem
+  geliştiricinin hem kabın izni gerekir. Kabın izni paket SID'ine, yeteneklerine
+  ya da `ALL APPLICATION PACKAGES`'a verilmiş olmalıdır.
+- **Okuma sınırı Linux'takiyle aynı hedefi taşır:** sistem, izinli araç zinciri
+  ve kendi çalışma alanı.
+  - Sistem ve program dizinleri `ALL APPLICATION PACKAGES`'a açıktır.
+  - Kullanıcı klasörleri (örn. `C:\projeler\`) ve `C:\Users` açık değildir.
+  - Geliştiricinin profili de açık değildir: `~/.ssh`, Credential Manager ve
+    dolayısıyla EVREN anahtarı okunamaz.
+  - 2c'de ölçüldü.
+- **Çalışma alanlarını paket SID'i ayırır.** Her çalışma alanının kendi
+  AppContainer profili vardır. Çalışma alanının ACL'i yazma iznini yalnızca onun
+  paket SID'ine verir. Kabın içinden başka bir paket SID'iyle süreç
+  başlatılamaz.
+- **İzinli araç zinciri** bir yetenek SID'ine okuma izniyle açılır; bütün kaplar
+  bu yeteneği taşır.
+- **Ağ:** ağsız çalıştırmada kaba ağ yeteneği verilmez; DNS dahil bağlantı
+  yoktur. Ağlı çalıştırmada `internetClient` verilir. Geri döngü iki durumda da
+  kapalıdır.
+- **İzinlerin yaşam döngüsü:**
+  - Çalışma alanının ACL kaydı, çalışma alanı Kalfa'ya ilk eklendiğinde bir kez
+    verilir. Büyük ağaçlarda bu zaman alır ve ilerleme gösterilir.
+  - Çalışma alanı Kalfa'dan kaldırıldığında ya da Kalfa kaldırılırken geri
+    alınır.
+  - Verilen her ACE uygulama veri dizininde kayıtlıdır ve geri alma bu kayda
+    göre yapılır.
+- **Ortak durum yok:** `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` ve `TEMP`
   çalışma alanına özel dizinleri gösterir.
-- Gizli dosyalara ve korumalı yollara açık **deny** kaydı (ACE) konur.
-- *Neden tek başına kısıtlı belirteç değil:* geliştiricinin kendi hesabından
-  türetilen kısıtlı belirteç, geliştiricinin okuyabildiği her şeyi okur
-  (`~/.ssh` dahil) ve ağı kesemez; ağı kesmek için gereken güvenlik duvarı kuralı
-  zaten yönetici ister. Kalfa kısıtlı belirteci yalıtım kullanıcısının üzerine,
-  çalışma alanlarını ayırmak için kullanır. *Neden AppContainer değil:* ağı keser,
-  ama kullanıcı profilindeki araç zincirleri (cargo, rustup, npm) ancak tek tek
-  ACL verilerek okunabilir ve geliştirici araçlarıyla uyumluluğu zayıftır. Ayrı
-  kullanıcı + kısıtlayıcı SID modeli OpenAI'nin Codex CLI'da vardığı sonuca
-  dayanır.
-- *Kısıt:* kurulum bir kez yönetici yetkisi ister. Yönetici olmayan kullanıcılar
-  için kurum BT'si yalıtım kullanıcılarını önceden oluşturabilir.
+- **Gizli dosyalar ve korumalı yollar:** miras kesilir. Kaba ya hiç izin
+  verilmez ya da yalnızca okuma verilir. AppContainer, paket SID'ine verilen
+  ret (deny) izinlerini uygulamaz.
+- *Neden ayrı kullanıcı + kısıtlı belirteç değil:* bu belgenin r3.4'e kadarki
+  sürümü onu seçmişti. 2c'de ölçüldü:
+  - Kısıtlı belirteç `ALL APPLICATION PACKAGES`'ı kısıtlayıcı SID olarak kabul
+    etmiyor. Okuma sınırı her yerel kullanıcının okuyabildiği dosyalara
+    genişliyor.
+  - Schannel çalışmıyor.
+  - Güvenlik duvarı geri döngüyü süzmüyor.
+- *AppContainer için endişe* araç zinciri uyumluluğuydu. cmd, PowerShell, git,
+  node, npm, python, cargo ve rustc AppContainer'da çalıştı. Bedeli aşağıdaki
+  kök izni ve derleyici ortamıdır ([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §9).
+- *Kısıt:* kurulum bir kez yönetici yetkisi ister:
+  - `C:\` köküne kapların listeleme izni. git, cmd ve Node yolu çözerken üst
+    dizinleri listeler.
+  - Geliştiricinin sahibi olmadığı araç zinciri dizinlerine okuma izni.
 - *Aşama 2 kararları* ([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §9):
   - Kurulumu küçük bir yönetici yardımcısı (`kalfa-yalitim.exe`) yapar;
     uygulama onu UAC istemiyle başlatır, MSI da sonradan aynı yardımcıyı
     çağırır.
-  - Parolaları yükseltilmemiş uygulama üretir ve saklar; yükseltme başka bir
-    yönetici hesabıyla da yapılabilir.
-  - Komut şu zincirle çalışır: `CreateProcessWithLogonW` (yalıtım kullanıcısı)
-    → yardımcının `calistir` alt komutu → kısıtlı belirteçle
-    `CreateProcessAsUserW`. Çalışma anında yönetici yetkisi gerekmez.
+  - Komutu Kalfa doğrudan kapta başlatır. Çalışma anında yönetici yetkisi ya da
+    aracı süreç gerekmez.
   - Yardımcı, yalıtımın yazabileceği bir yerden hiçbir zaman başlatılmaz.
     Başlatılsaydı yalıtılmış bir komut onu değiştirip yükseltmeyi ele
     geçirirdi.
@@ -1393,8 +1388,8 @@ teslim edilir:
    durum çubuğu, model seçici, sıkı CSP ve pencere bazlı komut yetkileri —
    §11.1–§11.9'un temel kısmı).
 2. **Kabuk ve yalıtım:** süreç sınırları, Linux arka ucu, ardından Windows arka
-   ucu. Windows arka ucu, çalışma alanına özel kısıtlı belirteç ve okuma sınırı
-   prototipiyle başlar (§7.7). Yalıtım hazır olana kadar kabuk yalnızca yalıtımsız ve onaylı çalışır.
+   ucu. Windows arka ucu bir prototiple başladı; prototip AppContainer'ı seçtirdi
+   (§7.7). Yalıtım hazır olana kadar kabuk yalnızca yalıtımsız ve onaylı çalışır.
    Tasarımı [ayrı belgededir](2026-09-24-kalfa-2-kabuk-yalitim-design.md). Dört plana
    bölünür: **2a** kabuk aracı ve süreç sınırları · **2b** Linux arka ucu ·
    **2c** Windows prototipi · **2d** Windows arka ucu.
@@ -1494,8 +1489,8 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | 9 | Ubuntu 24.04 bubblewrap'ı AppArmor ile kısıtlıyor | `.deb` dışı kurulumda yalıtım çalışmayabilir | `.deb` profili yükler; diğer kurulumlarda uyarı ve talimat |
 | 10 | v1 kapsamı büyüdü (yalıtım, kurtarma, geri alma, gönderim günlüğü) | Teslim gecikir; en büyük tek kalem Windows yalıtımı | Dört aşamalı teslim (§12.3); her aşama kendi başına kullanılabilir |
 | 11 | Denetçi modeli reasoning'e çok token harcıyor | Denetim gecikmesi ve maliyeti yüksek | Ölçüm; gerekirse reasoning'i kapatma seçeneği araştırılır |
-| 12 | Windows'ta okuma sınırı (`ALL APPLICATION PACKAGES` ile kısıtlı belirteç) bir varsayım | Doğrulanamazsa yalıtılmış süreç yerel kullanıcıların okuyabildiği her şeyi okur | Windows aşamasının ilk adımı prototip (§12.3); olmazsa sınır belgeye ve arayüze yazılır, geniş izinli klasörde uyarı verilir |
-| 13 | Kısıtlı belirteç ve çalışma alanına özel `HOME`/`APPDATA` bazı araçları bozabilir | Bilinen klasör yolunu ortam değişkeni yerine sistemden okuyan araçlar yazamaz | Uyumluluk matrisi (§13.2); risk 7 ile aynı azaltma |
+| 12 | Windows'ta okuma sınırı (`ALL APPLICATION PACKAGES` ile kısıtlı belirteç) bir varsayım | Doğrulanamazsa yalıtılmış süreç yerel kullanıcıların okuyabildiği her şeyi okur | 2c'de ölçüldü: kısıtlı belirteçle tutmadı, AppContainer'la tuttu; Windows arka ucu AppContainer'a geçti (§7.7) |
+| 13 | AppContainer ve çalışma alanına özel `HOME`/`APPDATA` bazı araçları bozabilir | Bilinen klasör yolunu ortam değişkeni yerine sistemden okuyan araçlar yazamaz | Uyumluluk matrisi (§13.2); risk 7 ile aynı azaltma |
 
 ---
 
@@ -1525,7 +1520,7 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | Onay | İşleme bağlı (mühür), tek kullanımlık | Diff incelenirken dosya değişebilir |
 | Kabuk yalıtımı | v1'de, Linux ve Windows | Kullanıcı seçimi; çalışma alanı sınırı kabukta ancak böyle gerçek olur |
 | Linux yalıtım arka ucu | bubblewrap + seccomp | Landlock yazılabilir dizinde salt okunur/okunamaz alt yol tanımlayamaz |
-| Windows yalıtım arka ucu | Ayrı yerel kullanıcı + ACL + güvenlik duvarı | Kısıtlı belirteç ağı kesemez; AppContainer araç zincirleriyle uyumsuz |
+| Windows yalıtım arka ucu | AppContainer + ACL | Ayrı kullanıcı + kısıtlı belirteç okuma sınırını tutamadı; AppContainer'da araç zincirleri çalıştı (2c) |
 | Webview | Sıkı CSP, ham HTML yok, pencere bazlı komut yetkisi, yüksek riskli onaylar yerel iletişim kutusunda | Model çıktısı güvenilmeyen içeriktir; XSS, ajanın kendini onaylaması demektir |
 | İzin kipleri | İnceleme + Sıkı + Proje + Serbest | İnceleme kipi kullanıcı seçimi |
 | Oturum özellikleri | Kurtarma, geri alma, gönderim önizlemesi v1'de | Kullanıcı seçimi |
@@ -1643,3 +1638,11 @@ Bu belgede değişenler (§7.7, §12.3):
   dizini yazılabilir bağlanır. Gizli dosyaların hard link'leri de örtülür.
 - Süreç sınırlarının değerleri yazıldı; canlı çıktı kayıplıdır.
 - Aşama 2 dört plana bölündü.
+
+**r3.5 (2026-09-25):** 2c Windows prototipi ölçüldü
+([kısıtlı belirteç](../bulgular/2026-09-25-kalfa-2c-windows-prototip.md),
+[AppContainer](../bulgular/2026-09-25-kalfa-2c-appcontainer.md)). Bu belgede
+değişenler:
+- §7.7: Windows arka ucu ayrı kullanıcı + kısıtlı belirteç + güvenlik duvarı
+  yerine AppContainer + ACL. Okuma sınırı varsayımı artık ölçüm.
+- §12.3, risk 12–13 ve karar tablosu buna göre güncellendi.

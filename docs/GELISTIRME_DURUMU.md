@@ -26,6 +26,9 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
   yalıtımda çalışır (`kalfa-sandbox`); Ayarlar'da yalıtım durumu ve araç
   zinciri dizinleri. Windows'ta yalıtım henüz yok; komutlar yalıtımsız çalışır
   ve her biri yerel pencerede onaylanır. Ayrıntısı aşağıda.
+- **2c — Windows prototipi:** ürün kodu yok; ölçüm aracı `prototip/windows-yalitim/`.
+  Kısıtlı belirteç yolu Dal B'de kaldı; AppContainer ek ölçümüyle Dal A'ya
+  ulaşılıyor. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -637,8 +640,65 @@ PR incelemesinde düzeltilenler (Codex'in inceleme botu buldu):
   alanı vsock'u kesmez; WSL2'de bu, Windows'taki servislere giden yoldur. Soket
   aileleri artık izin listesiyle denetleniyor.
 
-Sıradaki plan 2c: Windows prototipi. Ürün koduna dokunmaz; yönetici adımlarını
-kullanıcı kendi makinesinde çalıştırır.
+### 2c — Windows prototipi (tamamlandı)
+
+Bulgular: [`2026-09-25-kalfa-2c-windows-prototip.md`](superpowers/bulgular/2026-09-25-kalfa-2c-windows-prototip.md).
+Prototip: [`prototip/windows-yalitim/`](../prototip/windows-yalitim/README.md). Ürün
+kodu değildir; Kalfa'nın workspace'ine girmez.
+
+Tasarımdaki P1–P10 geliştiricinin makinesinde (Windows 11 Home) ölçüldü:
+- Yönetici adımlarını kullanıcı çalıştırdı: `kur.ps1`, `guvenlik-duvari.ps1`, `geri-al.ps1`.
+- Deneme ağacını da kullanıcı kurdu: `agac.ps1`.
+- Ölçümleri Claude koştu: `kalfa-prototip olc`.
+
+- **Sonuç Dal B.**
+  - Windows, S-1-15 SID'lerini (ALL APPLICATION PACKAGES dahil) kısıtlayıcı SID olarak kabul
+    etmiyor.
+  - Sistem dizinlerini okutan tek kullanılabilir SID Users. Bu yüzden Users'ın okuyabildiği
+    klasörler de okunuyor.
+  - Çalışma alanları arası yazma ayrımı, profil koruması, gizli dosya ve korumalı yollar tutuyor.
+  - Araç zincirlerinin tamamı çalışıyor: cmd, PowerShell, git, node, npm, python, cargo, rustc.
+- **Tasarıma işlenen düzeltmeler:**
+  - Kısıtlayıcı küme: çalışma alanı + ortak okuma + Everyone + Users + RESTRICTED.
+  - Varsayılan DACL: kullanıcı, SYSTEM ve çalışma alanı SID'i.
+  - `SetErrorMode`: yükleyici hata kutuları UI kısıtlarına rağmen masaüstünde açılıyordu.
+  - Güvenlik duvarı kuralının kullanıcı koşuluna ortak okuma SID'i eklendi. Yoksa kural kısıtlı
+    belirteçlere uygulanmıyordu.
+  - Users grubundan çıkarma adımı kalktı: etkisiz.
+  - İzinler API'yle veriliyor: `icacls` hesaba karşılık gelmeyen SID'leri reddediyor.
+- **Kısıtlı belirteç yolunda açık kalanlar:**
+  - A8: Schannel kısıtlı belirteçte çalışmıyor; ağlı cargo crates.io'ya ulaşamıyor.
+  - A9: Geri döngü süzülmüyor.
+  - A10: Varsayılan izinli borular salt okunur açılıyor.
+
+**AppContainer ek ölçümü:**
+
+- Bulgular: [`2026-09-25-kalfa-2c-appcontainer.md`](superpowers/bulgular/2026-09-25-kalfa-2c-appcontainer.md).
+- Yönetici adımlarını (`kap-kur.ps1`) kullanıcı çalıştırdı; ölçümleri
+  (`kalfa-prototip kap olc`) Claude koştu.
+
+- **Sonuç Dal A.**
+  - Okunamayanlar: kullanıcı klasörleri, `C:\Users` ve profil.
+  - Araç zincirlerinin tamamı çalışıyor.
+  - Schannel çalışıyor, geri döngü kapalı, varsayılan izinli borular
+    açılamıyor (A8–A10).
+  - Ayrı kullanıcı ve güvenlik duvarı kuralı gerekmiyor.
+  - Çağrı başına 22–29 ms.
+- **Bedeli:**
+  - `C:\` köküne kurulumda yayılmayan bir listeleme izni.
+  - Korumalı yollar yalnızca izinle; ret izinleri AppContainer'da işlemiyor.
+  - MSVC ortamını Kalfa verir.
+  - Yönetici sahipli araç zinciri dizinlerine kurulumda izin.
+- **Açık:** A11 (profil altındaki çalışma alanının üst dizinleri), A12 (C
+  derleyen `build.rs`), A13 (LAN, ssh-agent ve docker boruları).
+
+- **Tasarım:** §9 AppContainer'a göre yeniden yazıldı; ayrı kullanıcı yolu
+  §9.7'de yedek. Üst belge r3.5.
+- **Güvenlik:** Kabın içinden başka bir paket SID'iyle süreç başlatılamıyor
+  (A14).
+- **Makine:** Prototipin kurulumu geri alındı.
+
+Sıradaki: 2d (Windows arka ucu) planı.
 
 Kabuk yalıtımı, bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi,
 güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü

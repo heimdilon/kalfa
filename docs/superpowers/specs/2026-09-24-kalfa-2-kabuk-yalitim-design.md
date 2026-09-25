@@ -16,6 +16,17 @@ profil özeti (§7.1), tarama (§7.2, A3), cargo registry'si (§7.4, A2), bwrap 
 seccomp ayrıntıları (§8.1, §8.2), algılama (§8.3), Ayarlar ve durumun kanalla
 iletilmesi (§10.3–§10.5), testler (§12.2, §12.3, §12.5, A4) ve açık noktaların
 cevapları (§14).
+2026-09-25 (2c prototipi): Windows ölçümleri işlendi; sonuç Dal B ([2c bulguları](../bulgular/2026-09-25-kalfa-2c-windows-prototip.md)).
+Kısıtlayıcı SID kümesi ve varsayılan DACL (§9.3), güvenlik duvarı kuralının
+kullanıcı koşulu ve Users grubu (§9.2), izinlerin verilişi (§9.4), dal sonucu
+(§9.5), yeni bilinen sınırlar (§9.6), A5–A7'nin cevapları ve 2d'den önce açık
+A8–A10 (§14).
+2026-09-25 (2c AppContainer ek ölçümü): aynı senaryolar AppContainer'da
+ölçüldü; P1 geçti, A8–A10 çözülüyor ([AppContainer bulguları](../bulgular/2026-09-25-kalfa-2c-appcontainer.md)). Yeni açık noktalar A11–A13
+(§14).
+2026-09-25 (§9 yeniden yazıldı): Windows arka ucu AppContainer'a göre (§9); ayrı
+kullanıcı ve kısıtlı belirteç yolu §9.7'de yedek. Ayrıca: §1.1, §2, §3.1, §6.1,
+§7.4, §11, §12.2, §12.7, §13, §14 (A14, A15), §15; üst belge r3.5.
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §7.2, §7.5–§7.7, §12.3, §13.2, §13.3 ve §14 (risk 7–9, 12, 13). Bu belgede `§`
 işaretleri bu belgenin bölümlerini gösterir; üst belgeye "üst belge §x", 1c
@@ -52,9 +63,8 @@ bittiğinde ajan komut çalıştırabilir:
    süreç sayısı sınırı, süreç ağacının sonlandırılması (§6).
 3. **Yalıtım profili:** işletim sisteminden bağımsız tanım (§7).
 4. **Linux arka ucu:** `bubblewrap` + `seccomp` (§8).
-5. **Windows arka ucu:** önce bir prototip, sonra ayrı yerel kullanıcı +
-   kısıtlı belirteç + ACL + güvenlik duvarı. Kurulumu yapan yönetici yardımcısı
-   `kalfa-yalitim.exe` (§9).
+5. **Windows arka ucu:** önce bir prototip (2c), sonra AppContainer + ACL.
+   Kurulumu yapan yönetici yardımcısı `kalfa-yalitim.exe` (§9).
 6. **Arayüz:** araç kartında terminal görünümü, kabuk onay kartı, durum
    çubuğunda yalıtım göstergesi, ayarlarda yalıtım bölümü (§10).
 
@@ -78,7 +88,7 @@ bittiğinde ajan komut çalıştırabilir:
 
 1. Üst belge §13.2'nin `kalfa-sandbox` satırındaki bütün testler gerçek
    yalıtımla geçer: Linux'ta WSL2'de, Windows'ta bu makinede kurulumdan sonra.
-   Windows'un okuma sınırı satırı prototipin sonucuna bağlıdır (§9.5).
+   Windows'ta okuma sınırı AppContainer'la tam hedefi taşır (§9.5).
 2. Üst belge §13.3'ün kabukla ilgili bütün senaryoları sınanır.
 3. Yalıtım içinde `git`, `cargo`, `npm` ve `python`, bu depoda ve küçük örnek
    projelerde çalışır. Çalışmayan her durum §14'te gerekçesiyle yazılıdır.
@@ -103,10 +113,10 @@ crates/
       ortam.rs        ortam değişkeni izin listesi (§6.1)
       tarama.rs       gizli dosya ve korumalı yol taraması (§7.2)
       linux/          bwrap argümanları, seccomp filtresi, algılama (§8)
-      windows/        çalıştırma zinciri, ACL, kurulum durumu (§9)
+      windows/        AppContainer zinciri, ACL, kurulum durumu (§9)
       yalitimsiz.rs   yalıtımsız arka uç: yalnızca süreç sınırları (§6.5)
   kalfa-yalitim/     yeni, yalnızca Windows'ta işlev görür: kur, kaldir,
-                     durum, izin-ver, calistir (§9.1)
+                     izin-ver, izin-geri-al (§9.1)
   kalfa-tools/       `kabuk` aracı eklenir (§4)
   kalfa-core/        protokol, izin kararı ve mühür eklemeleri (§3.3)
   kalfa-uygulama/    yalıtım durumu, yerel onay yolu, çalışma alanı kaydı (§5.2)
@@ -424,6 +434,7 @@ Bu bölüm yalıtımdan bağımsızdır; yalıtımsız çalıştırmada da geçe
     `LOCALAPPDATA`, `TEMP`, `TMP`.
   - Araç yapılandırması: `CARGO_HOME`, `RUSTUP_HOME`, `GIT_CONFIG_GLOBAL`,
     `NPM_CONFIG_USERCONFIG`, `NPM_CONFIG_CACHE`, `PIP_CACHE_DIR`.
+  - Windows'ta MSVC için `PATH` eki ve `LIB` (§9.3).
   - §4.3'teki sabit değerler.
 - **Hiçbir koşulda aktarılmayanlar:** EVREN anahtarı, `SSH_AUTH_SOCK`,
   `GPG_AGENT_INFO`, `DBUS_SESSION_BUS_ADDRESS`, `DISPLAY`, `WAYLAND_DISPLAY`,
@@ -623,7 +634,9 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
     0.9.0'da `--overlay` yoktur.
   - Windows'ta registry bağlanamaz: aynı dizini iki yerde göstermenin yolu
     yoktur. Çalışma alanına özel registry boş başlar ve ilk derleme ağlı bir
-    çalıştırma ister. Prototip bunu ölçer (§9.5).
+    çalıştırma ister (2c, P9). Geliştiricinin `CARGO_HOME`'u salt okunur
+    verilince bağımlı crate ağsız derlendi ama 12 sn sürdü. Yol 2d planında
+    seçilir (A15).
 - **Rustup:** `RUSTUP_HOME` kullanıcının dizinini gösterir ve salt okunurdur.
   Eksik bir araç zincirini kurmaya çalışan rustup yalıtımda başarısız olur ve
   hatası modele gider.
@@ -795,28 +808,51 @@ onaylar mühür yoluyla geçersizleşir (§3.3).
 
 ## 9. Windows arka ucu
 
+Komut, geliştiricinin kendi hesabıyla, çalışma alanına özel bir AppContainer'da
+ve bir Job Object içinde çalışır. Bu, 2c'nin ölçtüğü Dal A'dır (§9.5).
+Okunabilenler: sistem ve program dizinleri, izinli araç zinciri ve kendi
+çalışma alanı. Ayrı yerel kullanıcı, parola, oturum açma hakkı ve güvenlik
+duvarı kuralı yoktur. Önceki tasarım (ayrı kullanıcı ve kısıtlı belirteç)
+yedek olarak §9.7'de özetlidir.
+
+**Kavramlar:**
+
+- **Paket SID'i** (`S-1-15-2-…`): çalışma alanının AppContainer profilinin
+  kimliği. Çalışma alanı SID'inin yerini alır. Çalışma alanının ACL'i yazma
+  iznini ona verir.
+- **Araç zinciri yeteneği** (`S-1-15-3-1024-…`): `kalfaAracZinciri` adından
+  `DeriveCapabilitySidsFromName` ile türetilir. Her çalışma alanının kabı bu
+  yeteneği taşır. İzinli araç zinciri dizinleri ona okuma, `C:\` kökü de ona
+  listeleme izni verir.
+- **Erişim iki kez denetlenir.** Windows önce kullanıcıyı (geliştiriciyi),
+  sonra kabı denetler. Kabın denetiminde paket SID'ine, yeteneklerine ya da
+  `ALL APPLICATION PACKAGES`'a verilmiş bir izin gerekir. Sistem ve program
+  dizinleri bu gruba zaten açıktır. Kullanıcı klasörleri ve profil açık
+  değildir.
+
 ### 9.1 `kalfa-yalitim.exe`
 
-Tek bir çalıştırılabilir dosya, beş alt komut:
+Yönetici yetkisi isteyen işleri yapan yardımcı. Bütün alt komutları UAC ile
+başlar:
 
-| Alt komut | Kim çalıştırır | İş |
-|---|---|---|
-| `kur` | Yönetici (UAC) | Yalıtım grubunu ve iki kullanıcıyı oluşturur, parolaları ayarlar, güvenlik duvarı kuralını ekler, kurulum kaydını yazar |
-| `kaldir` | Yönetici (UAC) | Kurulum kaydına göre her şeyi geri alır |
-| `izin-ver` / `izin-geri-al` | Yönetici (UAC) | Geliştiricinin sahibi olmadığı bir araç zinciri dizinine okuma izni verir ya da geri alır (§9.4) |
-| `durum` | Geliştirici | Kurulumun eksiksiz olup olmadığını makine tarafından okunur biçimde bildirir |
-| `calistir` | Yalıtım kullanıcısı | Kısıtlı belirteci türetir, komutu Job Object içinde başlatır (§9.3) |
+| Alt komut | İş |
+|---|---|
+| `kur` | `C:\` köküne araç zinciri yeteneği için listeleme izni verir (§9.2), kurulum kaydını yazar |
+| `kaldir` | Kurulum kaydına göre her şeyi geri alır |
+| `izin-ver` / `izin-geri-al` | Geliştiricinin sahibi olmadığı bir araç zinciri dizinine yetenek için okuma izni verir ya da geri alır (§9.4) |
+
+Komutu çalıştırmak için yardımcı gerekmez: Kalfa kabı kendisi başlatır (§9.3).
+Durum denetimi de yükseltme istemez (§9.2).
 
 **Hangi dosya çalıştırılır.** Kalfa, `kalfa-yalitim.exe`'yi yalıtımın
 yazabileceği bir yerden hiçbir zaman başlatmaz. Başlatsaydı yalıtılmış bir komut
-dosyayı değiştirip bir sonraki UAC yükseltmesinde yönetici yetkisi, bir sonraki
-`calistir`'da kısıtsız belirteç elde ederdi.
+dosyayı değiştirip bir sonraki UAC yükseltmesinde yönetici yetkisi elde ederdi.
 
 - Açılışta Kalfa, kendi çalıştırılabilir dosyasının yanındaki
   `kalfa-yalitim.exe`'yi `%LOCALAPPDATA%\Kalfa\bin\` dizinine kopyalar. Kopyanın
   SHA-256'sı kaynağınkiyle eşleşmelidir.
-- Bütün çağrılar o kopyayı kullanır.
-- Yalıtım kullanıcıları bu dizine yazamaz; dizin geliştiricinin profilindedir.
+- Bütün çağrılar o kopyayı kullanır. Dizin geliştiricinin profilindedir ve hiçbir
+  paket SID'ine izin vermez.
 - Kopyalamadan önce kaynak dosyanın hazırlanmış bir çalışma alanının içinde
   olmadığı denetlenir. Geliştirme derlemesinde `target/` genellikle bu
   depodadır. Bu depo hazırlanmış bir çalışma alanıysa kopyalama reddedilir ve
@@ -826,113 +862,109 @@ dosyayı değiştirip bir sonraki UAC yükseltmesinde yönetici yetkisi, bir son
 
 ### 9.2 Kurulum ve kaldırma
 
-- **Neler oluşturulur:**
-  - Yerel grup `KalfaYalitim`.
-  - İki yerel kullanıcı:
-    - `KalfaAgsiz`: bütün giden trafiği engellenen kullanıcı.
-    - `KalfaAgli`: ağlı çalıştırmalar için.
+- **Kök izni.** `kur`, `C:\` köküne araç zinciri yeteneği için bir izin ekler:
+  listeleme, öznitelik okuma ve geçiş (`0x1000A1`), miras yok.
+  - **Neden gerekli:** git, cmd ve Node yolları üst dizinleri listeleyerek
+    kanonikleştiriyor. İzin yokken git çalışma dizinini çözemiyor ("unable to
+    get current working directory"). cmd'nin `dir` komutu düşüyor. npm de
+    düşüyor: Node'un `realpath`'i `C:\`'nin özniteliklerini okuyamıyor (2c).
+  - **Ne açar:** kap `C:\`'deki üst düzey adları görebilir; içlerini göremez.
+  - **Nasıl yazılır:** yalnızca kökü değiştiren `SetFileSecurityW` ile,
+    `SE_DACL_AUTO_INHERIT_REQ` bayrağı verilerek.
+    - `SetNamedSecurityInfoW` (ve .NET'in `SetAccessControl`'ü) mirası bütün
+      sürücüye yeniden yayar.
+    - Bayrak verilmezse kök DACL'inin `SE_DACL_AUTO_INHERITED` bayrağı düşer
+      (2c'de `D:PAI` → `D:P`).
+  - Aynı desen başka yalıtım araçlarınca da kullanılıyor: ölçülen makinenin
+    kökünde iki yetenek SID'i için aynı izin vardı.
+  - Başka sürücülerdeki çalışma alanları o sürücünün köküne aynı izni ister;
+    `kur` sabit disklerin hepsine uygular.
+- **Kurulum kaydı:** `%ProgramData%\Kalfa\yalitim\kurulum.json`. Kök izni
+  verilen sürücüleri ve `izin-ver` ile verilen izinleri listeler. Dosyayı
+  yalnızca Administrators yazabilir.
+- **Durum** yükseltme olmadan, uygulamanın içinde denetlenir:
+  - Sabit disklerin kökünde yeteneğin izni var mı.
+  - Deneme amaçlı bir `cmd /c exit 0` bir kapta başarılı mı. Bu deneme,
+    `Kalfa.Deneme` adlı kendi profilinde koşar.
 
-  İki kullanıcı da yalnızca `KalfaYalitim` grubundadır, `Users` grubundan
-  çıkarılır. Giriş ekranında gizlenir (`SpecialAccounts\UserList`); ağdan ve
-  uzak masaüstünden oturum açma hakları reddedilir.
-  - `Users` grubundan çıkarmanın sistem dizinlerini okumayı bozup bozmadığını
-    prototip ölçer (§9.5). Bozuyorsa grup üyeliği korunur. Okuma sınırı zaten
-    kısıtlayıcı SID'lerle çizilir.
-- **Güvenlik duvarı:** `KalfaAgsiz`'ın SID'i için bütün programları kapsayan bir
-  giden engelleme kuralı (`LocalUserAuthorizedList`, Windows 8'den beri).
-  Kuralın geri döngü (loopback) trafiğini engelleyip engellemediği prototipte
-  ölçülür (§9.5).
-- **Parolalar:**
-  - Uygulama (yükseltilmemiş) iki rastgele parola üretir: 32 bayt, base64.
-  - Parolaları geliştiricinin DPAPI'siyle (`CryptProtectData`, kullanıcı
-    kapsamı) şifreleyip `%LOCALAPPDATA%\Kalfa\yalitim\parolalar.bin`'e yazar.
-  - Yükseltilmiş `kur` parolaları uygulamadan adı rastgele bir adlandırılmış
-    boruyla alır. Borunun DACL'i geliştiriciye ve Administrators'a izin verir.
-  - Parolalar komut satırında taşınmaz.
-  - Yönetici hesabı geliştiriciden farklı olabilir ("başka bir yöneticinin
-    parolasıyla yükseltme"). Parolaları uygulamanın üretip saklaması bu yüzden
-    gerekir; yönetici tarafında saklanan bir DPAPI kaydını geliştirici
-    çözemezdi.
-- **Kurulum kaydı:** `%ProgramData%\Kalfa\yalitim\kurulum.json`. Oluşturulan
-  kullanıcıları, grubu, kuralı ve `izin-ver` ile verilen ACE'leri listeler.
-  Dosyayı yalnızca Administrators yazabilir.
-- **Kaldırma sırası:**
-  1. Uygulama, geliştiricinin kendi ACE kaydındaki bütün izinleri
-     yükseltilmeden geri alır (§9.4).
-  2. `kaldir` UAC ile başlar. Kurulum kaydına göre ACE'leri, kuralı,
-     kullanıcıları (profilleriyle), grubu ve kaydı siler.
-  3. Uygulama parola dosyasını siler.
-- **Tek geliştirici varsayımı.** Aynı makinede ikinci bir geliştirici hesabı
-  `kur`'u yeniden çalıştırırsa parolalar değişir ve ilk hesabın parola dosyası
-  geçersiz kalır. Durum `KurulumBozuk` olur ve talimat bunu söyler. Çok
-  geliştiricili makineler kapsam dışıdır (§1.2).
-- **`durum`**, yükseltme olmadan şunları denetler:
-  - Grup ve kullanıcılar var mı.
-  - Güvenlik duvarı kuralı var mı.
-  - Parola dosyası çözülebiliyor mu.
-  - Deneme amaçlı bir `calistir` (`cmd /c exit 0`) başarılı mı.
-
-  Sonuç `Hazir`, `KurulumGerekli` ya da `KurulumBozuk`'tur; bozuksa neyin eksik
+  Sonuç `Hazir`, `KurulumGerekli` ya da `KurulumBozuk`'tur. Bozuksa neyin eksik
   olduğu yazılır.
+- **Kaldırma sırası:**
+  1. Uygulama, yükseltme olmadan, her çalışma alanının izinlerini ACE kaydına
+     göre geri alır ve AppContainer profillerini siler (§9.4).
+  2. `kaldir` UAC ile başlar. Kök izinlerini ve `izin-ver` izinlerini kurulum
+     kaydına göre geri alır, sonra kaydı siler.
+  - Profiller yükseltilmemiş süreçten silinir. 2c'de yükseltilmiş geri alma
+    betiğinden sonra profiller yerinde kalmıştı; yükseltilmemiş silme onları
+    kaldırdı.
+- **Birden çok geliştirici hesabı.** AppContainer profilleri ve çalışma
+  alanlarının izinleri hesap başınadır. Kök izni ise ortaktır: bir hesabın
+  `kaldir`'ı öteki hesabın yalıtımını bozar. Çok geliştiricili makineler kapsam
+  dışıdır (§1.2); `kaldir`, kök iznini kaldırmadan önce bunu söyler.
 
 ### 9.3 Çalıştırma zinciri
 
 ```
-Kalfa (geliştirici, orta bütünlük)
-  │  CreateProcessWithLogonW(KalfaAgsiz | KalfaAgli, parola,
-  │      "…\Kalfa\bin\kalfa-yalitim.exe calistir --boru <ad>")
-  │  std tutamaçları: Kalfa'nın açtığı borular (STARTF_USESTDHANDLES)
-  ▼
-kalfa-yalitim calistir (yalıtım kullanıcısı)
-  │  istek boru üzerinden gelir: program/argv, dizin, ortam, kısıtlayıcı SID'ler, sınırlar
-  │  CreateRestrictedToken(kendi birincil belirteci,
-  │      DISABLE_MAX_PRIVILEGE, kısıtlayıcı SID'ler = [çalışma alanı SID'i,
-  │      ortak okuma SID'i, (varsayım) ALL APPLICATION PACKAGES, …])
+Kalfa (geliştirici, orta bütünlük; açılışta SetErrorMode)
+  │  profil: CreateAppContainerProfile("Kalfa.Alan.<kimlik>")  (yoksa)
+  │  CreateProcessW(komut, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED
+  │                        | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT)
+  │    SECURITY_CAPABILITIES: paket SID'i;
+  │        yetenekler = [araç zinciri, (ağlıysa) internetClient]
+  │    HANDLE_LIST: standart girdi (NUL), çıktı ve hata boruları
   │  Job Object: KILL_ON_JOB_CLOSE, ActiveProcessLimit=256, UI kısıtları
-  │  CreateProcessAsUserW(kısıtlı belirteç, CREATE_SUSPENDED) → işe ata → sürdür
+  │  işe ata → sürdür
   ▼
-komut (yalıtım kullanıcısı, kısıtlı belirteç)
+komut (geliştiricinin hesabı, AppContainer belirteci, düşük bütünlük)
 ```
 
-- **Ayrıcalık gerekmez.** `CreateProcessAsUserW`, belirteç çağıranın birincil
-  belirtecinin kısıtlı bir türeviyse `SE_ASSIGNPRIMARYTOKEN` ayrıcalığı istemez.
-  Chromium'un sandbox'ı aynı yolu kullanır. Tek yönetici işi kurulumdur.
-- **Kısıtlayıcı SID'ler:**
-  - Çalışma alanı SID'i: çalışma alanına özel, rastgele üretilir. Biçimi
-    prototipte kesinleşir.
-  - Ortak okuma SID'i: izinli araç zinciri dizinlerine okuma iznini taşır.
-  - Sistem dizinlerini okumak için gereken SID'ler.
-
-  Kesin küme prototipin çıktısıdır (§9.5).
-- **Erişim iki kez denetlenir.** Kısıtlı belirteçte Windows hem kullanıcı
-  SID'lerini hem kısıtlayıcı SID'leri ayrı ayrı denetler; ikisinin de izni
-  gerekir (üst belge §7.7). Çalışma alanının ACL'i bu yüzden iki izin taşır:
-  - `KalfaYalitim` grubuna okuma-yazma.
-  - O çalışma alanının SID'ine okuma-yazma.
-
-  A için çalışan bir süreç B'nin SID'ini taşımadığı için B'ye erişemez.
-- **UI kısıtları:** Job Object'e bütün `JOB_OBJECT_UILIMIT_*` bayrakları
-  verilir: pano, genel atomlar, masaüstü, sistem parametreleri, çıkış ve
-  kullanıcı nesnesi tutamaçları. Yalıtılmış süreç geliştiricinin pencerelerine
-  ileti gönderemez ve panoyu okuyamaz. Ayrı bir masaüstünün gerekip gerekmediği
-  prototipte ölçülür.
-- **Çıktı:** Kalfa'nın açtığı borular `calistir`'a, oradan komuta geçer.
-  `calistir` çıktıya dokunmaz.
-- **İptal:**
-  - Kalfa istek borusuna "sonlandır" yazar; `calistir` işi sonlandırır.
-  - Boru kapanırsa (Kalfa çöktüyse) `calistir` işi yine sonlandırır ve çıkar.
-  - Ayrıca Kalfa, `calistir` sürecini kendi Job Object'ine atar
-    (`KILL_ON_JOB_CLOSE`); Kalfa'nın son tutamacı kapanınca zincir ölür.
-    `CreateProcessWithLogonW`'nin döndürdüğü tutamaçla bunun yapılıp
-    yapılamadığı prototipte doğrulanır. Yapılamazsa boru yolu tek başına
-    yeterli sayılır ve bu belgelenir.
-- **Başlatma maliyeti.**
-  - `CreateProcessWithLogonW` her çağrıda bir oturum açar. İlk çağrıda profil
-    oluşturulduğu için yavaştır.
-  - Ölçülen gecikme 500 ms'den büyükse, çalışma alanı başına uzun ömürlü bir
-    `calistir` aracısı değerlendirilir. Aracı oturum boyunca açık kalır ve her
-    komut için yalnızca `CreateProcessAsUserW` yapar. Karar prototipin
-    ölçümüyle verilir.
+- **Aracı süreç yoktur.** Kap doğrudan Kalfa'dan başlar. Başlatma çağrı başına
+  22–29 ms sürer (2c, P6).
+- **Kalfa çökerse** işin son tutamacı kapanır ve ağaç ölür (§6.4).
+- **Paket SID'i** profil adından türetilir: `Kalfa.Alan.<kimlik>` (§7.3). Ad
+  gizli değildir; güvenlik adın gizliliğine dayanmaz:
+  - Kabın içinden başka bir paket SID'iyle süreç başlatılamıyor.
+    `CreateProcessW` `ERROR_INVALID_PARAMETER` dönüyor (2c).
+  - Kabın dışındaki geliştirici süreçleri çalışma alanına zaten erişebilir.
+- **İki çalışma alanı** ayrı paket SID'leri taşır. A'nın kabı B'nin dizinlerini
+  okuyamaz ve yazamaz. Kap geliştiricinin süreçlerini göremiyor (2c, P3).
+- **Hata kutuları:** Kalfa açılışta hata kutularını kapatır
+  (`SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX`).
+  Kap bu kipi devralır. Yoksa yükleyici hataları (örneğin eksik DLL) UI
+  kısıtlarına rağmen geliştiricinin masaüstünde iletişim kutusu açar ve komut
+  kutu kapanana kadar bekler (2c, P10).
+- **Ağ:**
+  - Ağsız çalıştırmada kaba hiçbir ağ yeteneği verilmez: DNS dahil bağlantı
+    kurulamaz.
+  - Ağlı çalıştırmada `internetClient` verilir. Dış HTTP ve HTTPS açılır,
+    Schannel dahil (A8).
+  - Geri döngü (127.0.0.1) iki durumda da kapalıdır (A9). Kalfa geri döngü
+    muafiyeti (`CheckNetIsolation LoopbackExempt`) vermez; yerel sunuculara
+    erişim bilinen sınırdır (§9.6).
+  - `privateNetworkClientServer` verilmez (A13).
+- **Adlandırılmış borular:** geliştiricinin varsayılan izinli boruları kaptan
+  açılamıyor (A10).
+- **UI:** kap düşük bütünlükte çalışır. Geliştiricinin penceresine ileti
+  gönderemez ve panoyu okuyamaz; Job Object'in UI kısıtları da verilir.
+  `FindWindow` engellenmez (§9.6).
+- **Çıktı:** Kalfa'nın açtığı borular doğrudan komuta geçer.
+- **İptal:** `TerminateJobObject` (§6.4).
+- **Ortam** (§6.1'e ek):
+  - Windows, AppContainer süreçlerinde `LOCALAPPDATA`'yı
+    `<verilen değer>\Packages\<profil adı>\AC` yapar (2c). Kalfa bu dizini
+    çalışma alanına özel `ev` dizininde önceden oluşturur.
+  - `TEMP` yazılabilir olmalıdır. Yoksa PowerShell ConstrainedLanguage kipinde
+    açılır (2c).
+  - **MSVC:** rustc, Visual Studio'nun `ProgramData`'daki kurulum kaydını
+    okuyamadığı için `link.exe`'yi bulamaz. Kalfa, geliştirici tarafında
+    `vswhere` ile son MSVC araç takımını ve Windows SDK'yı bulur:
+    - `PATH`'e `…\VC\Tools\MSVC\<sürüm>\bin\Hostx64\x64` eklenir.
+    - `LIB`, MSVC'nin `lib\x64`'ünü, SDK'nın `um\x64` ve `ucrt\x64`
+      dizinlerini gösterir.
+    - Bu dizinler Program Files (x86) altındadır ve kaba zaten açıktır.
+    - C derleyen `build.rs` için `INCLUDE` ve `cl.exe` A12'dir.
+- **LPAC kullanılmaz.** `ALL APPLICATION PACKAGES` dışındaki kapta PowerShell
+  ve cargo çalışmıyor (2c).
 
 ### 9.4 Çalışma alanı hazırlığı ve ACE kaydı
 
@@ -940,91 +972,105 @@ komut (yalıtım kullanıcısı, kısıtlı belirteç)
   komuttan önce.
 - **Onay:** çalışma alanının izinleri değişeceği için bu onay her kipte yerel
   iletişim kutusunda sorulur. Kutu §4.2'deki "projeye güven" uyarısıyla
-  birleşir ve şunu da söyler: "Kalfa bu klasörün izinlerine yalıtım kullanıcısı
-  için giriş ekleyecek. Klasörü ayarlardan kaldırınca geri alınır."
+  birleşir ve şunu da söyler: "Kalfa bu klasörün izinlerine yalıtım için
+  giriş ekleyecek. Klasörü ayarlardan kaldırınca geri alınır."
 - **Yapılanlar:**
-  1. Çalışma alanı SID'i üretilir ve çalışma alanı kaydına yazılır.
-  2. Kök dizine devralınan (`OI|CI`) iki izin eklenir: `KalfaYalitim` ve
-     çalışma alanı SID'i için okuma-yazma. Değişiklik ağaca yayılır. Devralmayı
-     kapatmış (korumalı DACL'li) alt dizinler izni almaz ve yalıtımda
-     erişilemez olur. Bu belgelenir.
-  3. Çalışma alanına özel dizinler (§7.3) aynı izinlerle hazırlanır.
-  4. Gizli dosyalara `KalfaYalitim` için okuma reddi (deny) konur.
-  5. Korumalı yollara `KalfaYalitim` için yazma reddi konur. Silme ve üzerine
-     taşıma da engellenir:
-     - Dosyada `DELETE` reddedilir.
-     - Üst dizinde `FILE_DELETE_CHILD` reddedilir.
-     - `.git/hooks` dizininde alt öğe oluşturma reddedilir.
+  1. AppContainer profili oluşturulur, paket SID'i çalışma alanı kaydına
+     yazılır.
+  2. Kök dizine paket SID'i için devralınan (`OI|CI`) değiştirme izni eklenir;
+     değişiklik ağaca yayılır. Devralmayı kapatmış (korumalı DACL'li) alt
+     dizinler izni almaz ve yalıtımda erişilemez olur. Bu belgelenir.
+  3. Çalışma alanına özel dizinler (§7.3) aynı izinle hazırlanır.
+  4. **Gizli dosyalar:** mirası kesilir. Yeni DACL yalnızca geliştiriciye,
+     SYSTEM'e ve Administrators'a izin verir; paket SID'ine izin yoktur.
+  5. **Korumalı yollar:**
+     - `.git`'in mirası kesilir. Paket SID'ine `.git`'in kendisi için okuma
+       ve yazma verilir (silme yok), içi için yalnızca devralınan değiştirme
+       verilir. Böylece `.git` yeniden adlandırılamaz: yoksa kap onu kenara
+       çekip kendi kancalarıyla yeni bir `.git` kurabilirdi. git'in işleyişi
+       (dosya oluşturma, yeniden adlandırma, silme) çalışır.
+     - `.git\hooks`, `.git\config` ve `core.hooksPath`'in hedefi: mirası
+       kesilir, paket SID'ine yalnızca okuma. Yazma, silme, üzerine taşıma ve
+       yeniden adlandırma reddedilir.
+     - Çalışma alanı dışındaki git dizini (§7.4) aynı izinleri alır.
+- **Ret izni kullanılmaz.** AppContainer, paket SID'ine verilen ret (deny)
+  izinlerini uygulamıyor. 2c'de ret izni DACL'de ilk sırada olduğu hâlde `.env`
+  okundu, `.git/config` değişti, `pre-commit` silindi. Korumalar yalnızca
+  mirası kesip izin vermeyerek çizilir.
+- **Bütünlük etiketi gerekmez:** kap, izinli ama etiketsiz (orta bütünlüklü)
+  dizine yazabiliyor (2c).
+- **Üst dizinler:** çalışma alanının `C:\` ile kendisi arasındaki dizinlerin
+  listelenmesi gerekip gerekmediği A11'dir. Profil altındaki bir çalışma alanı
+  için izin, profil kökündeki adları açar.
 - **İlerleme:** büyük ağaçlarda yayılma zaman alır. İlerleme araç kartında
   canlı çıktı olarak görünür (`AracCiktisiParcasi`, "İzinler hazırlanıyor:
   12 400 / 80 000").
 - **Her çalıştırmadan önce** §7.2'nin taraması yeni gizli dosyaları bulur ve
-  onlara da ret izni ekler.
+  onların da mirasını keser.
+- **İzinler Win32 API'siyle verilir** (`SetEntriesInAclW`,
+  `SetNamedSecurityInfoW`). `icacls`, hiçbir hesaba karşılık gelmeyen SID'leri
+  reddediyor; paket ve yetenek SID'leri böyledir.
 - **ACE kaydı:**
   - Konum: `%LOCALAPPDATA%\Kalfa\yalitim\ace-kaydi.jsonl`.
-  - İçerik: uygulamanın eklediği her izin (yol, SID, maske, tür, devralma).
-  - Geri alma bu kayda göre yapılır, yeniden tarama yapılmaz.
-  - Kayıt bozuksa geri alma, kökten başlayıp Kalfa SID'lerini taşıyan bütün
-    girişleri silerek yapılır. Bu yavaştır ama eksiksizdir.
+  - İçerik: uygulamanın eklediği her izin (yol, SID, maske, devralma). Mirası
+    kesilen her nesne için de önceki DACL'i (SDDL).
+  - Geri alma bu kayda göre yapılır, yeniden tarama yapılmaz. Mirası kesilen
+    nesnenin önceki DACL'i geri yazılır.
+  - Kayıt bozuksa geri alma, kökten başlayıp Kalfa'nın paket SID'lerini taşıyan
+    bütün girişleri siler ve mirası kesilmiş nesnelerde mirası yeniden açar.
+    Bu yavaştır ama eksiksizdir.
 - **Araç zinciri dizinleri:**
-  - Geliştiricinin sahibi olduğu dizinlere (örneğin `%USERPROFILE%\.cargo`)
-    uygulama yükseltmeden okuma izni verir. İzin grup ve ortak okuma SID'i
-    içindir.
-  - Sahibi olmadığı dizinler (örneğin `C:\Python314`) `izin-ver` ile UAC'yle
-    açılır. Bu izinler kurulum kaydına yazılır.
+  - Program Files ve Windows `ALL APPLICATION PACKAGES`'a zaten açıktır. Git,
+    MSVC ve Windows SDK ayrıca izin istemez.
+  - Geliştiricinin sahibi olduğu dizinlere (örneğin `%USERPROFILE%\.cargo\bin`
+    ve `.rustup`) uygulama yükseltme olmadan yetenek için okuma izni verir.
+  - Sahibi olmadığı dizinler `izin-ver` ile UAC'yle açılır. Örnekler:
+    `C:\Python314`, ya da `ALL APPLICATION PACKAGES`'a kapalı
+    `C:\Program Files\nodejs`. Bu izinler kurulum kaydına yazılır.
 - **Kaldırma:** ayarlardaki yalıtım bölümünden bir çalışma alanı kaldırılınca:
   1. İzinleri ACE kaydına göre geri alınır.
-  2. Çalışma alanı SID'i kayıttan silinir.
+  2. AppContainer profili silinir (`DeleteAppContainerProfile`) ve paket SID'i
+     kayıttan çıkarılır.
   3. Çalışma alanına özel dizinler istenirse silinir.
 
-### 9.5 Prototip ve iki dal
+### 9.5 Prototip ve sonuç
 
-Windows arka ucu bir prototiple başlar (üst belge §12.3, risk 12). Prototip ürün
-kodu değildir:
+Windows arka ucu bir prototiple başladı (üst belge §12.3, risk 12). Prototip
+ürün kodu değildir (`prototip/windows-yalitim/`):
 
-- Bir bulgu raporu üretir ve bu belgeyi günceller.
-- Senin makinende çalışır. Yönetici gerektiren adımları (kullanıcı, grup,
-  güvenlik duvarı kuralı, yönetici ACE'leri) sen çalıştırırsın.
-- Her kurulum adımının bir geri alma betiği vardır; prototip bitince makine ilk
-  hâline döner.
+- Senin makinende çalıştı. Yönetici gerektiren adımları sen çalıştırdın.
+- Her kurulum adımının bir geri alma betiği var. Prototip bittikten sonra makine
+  ilk hâline döndü.
 
-**Ölçülecekler:**
+**Ölçülenler:**
 
-| # | Soru | Nasıl |
-|---|---|---|
-| P1 | Kısıtlayıcı SID olarak `ALL APPLICATION PACKAGES` ile sistem ve program dizinleri okunuyor, `C:\projeler\` gibi kullanıcı klasörleri okunmuyor mu? | Kısıtlı belirteçle dizin listeleme ve okuma denemeleri |
-| P2 | Kısıtlayıcı SID kümesinin en küçüğü ne? Masaüstü ve pencere istasyonu erişimi, `cmd`, `powershell`, `git`, `cargo`, `npm`, `python` için ne gerekiyor? | Kümeyi daraltarak deneme |
-| P3 | A'nın SID'iyle çalışan süreç B'yi okuyup yazamıyor mu? | Aynı yalıtım kullanıcısıyla iki çalışma alanı |
-| P4 | `~\.ssh`, Credential Manager ve geliştiricinin profili okunamıyor mu? | Doğrudan okuma denemeleri |
-| P5 | Güvenlik duvarı kuralı `KalfaAgsiz`'ın giden trafiğini kesiyor mu? Geri döngü trafiğini ve adlandırılmış boruları (`docker_engine`, `openssh-ssh-agent`) ne yapıyor? | Bağlantı denemeleri |
-| P6 | `CreateProcessWithLogonW` gecikmesi (ilk ve sonraki çağrılar), std tutamaç aktarımı, dönen tutamaçla işe atama | Ölçüm |
-| P7 | Gizli dosyaya ret, korumalı yolda silme ve üzerine taşıma reddi | Deneme |
-| P8 | `Users` grubundan çıkarmanın etkisi | P1–P2'yi iki üyelikle tekrarlama |
-| P9 | Çalışma alanına özel `CARGO_HOME` ile ilk derlemenin ağ ihtiyacı | `cargo build` ağlı ve ağsız |
-| P10 | Aynı masaüstündeki yalıtılmış sürecin geliştiricinin penceresine ileti gönderip gönderemediği, panoyu okuyup okuyamadığı | UI kısıtlarıyla ve kısıtsız deneme |
+| # | Soru |
+|---|---|
+| P1 | Sistem ve program dizinleri okunuyor, `C:\projeler\` gibi kullanıcı klasörleri okunmuyor mu? |
+| P2 | `cmd`, `powershell`, `git`, `cargo`, `npm`, `python` çalışıyor mu; bunun için ne gerekiyor? |
+| P3 | A'nın yalıtımı B'yi okuyup yazamıyor mu? |
+| P4 | `~\.ssh`, Credential Manager ve geliştiricinin profili okunamıyor mu? |
+| P5 | Ağsız çalıştırmada giden trafik, geri döngü ve adlandırılmış borular |
+| P6 | Başlatma gecikmesi, std tutamaç aktarımı, işe atama |
+| P7 | Gizli dosya okunamıyor; korumalı yolda yazma, silme ve üzerine taşıma reddediliyor mu? |
+| P8 | `Users` grubundan çıkarmanın etkisi (yalnızca ayrı kullanıcı yolunda) |
+| P9 | Çalışma alanına özel `CARGO_HOME` ile derlemenin ağ ihtiyacı |
+| P10 | Yalıtılmış sürecin geliştiricinin penceresine ileti gönderip gönderemediği, panoyu okuyup okuyamadığı |
 
-**Dallar:**
+**Sonuç (2026-09-25):**
 
-- **Dal A: P1, P3 ve P4 geçer.** Okuma sınırı üst belgedeki hedefi taşır:
-  sistem, izinli araç zinciri ve kendi çalışma alanı. §9.1–§9.4 olduğu gibi
-  uygulanır.
-- **Dal B: P3 ve P4 geçer, P1 geçmez.** Kısıtlayıcı SID'ler kullanıcı
-  klasörlerini ayıramıyor demektir.
-  - Çalışma alanlarını birbirinden ayırmak yazmada korunur: yazma izni yalnızca
-    o çalışma alanının SID'inde.
-  - Okuma sınırı "bilgisayardaki her yerel kullanıcının okuyabildiği dosyalar"
-    olur.
-  - Bu durum arayüzde ve belgede yazılır.
-  - Geniş izinli bir klasördeki (Authenticated Users, Users ya da Everyone'a
-    okuma izni veren) çalışma alanı hazırlanırken uyarı gösterilir (üst belge
-    §7.7).
-  - Başarı ölçütü 1'in okuma satırı bu dalda "belgelenmiş sınır" olarak
-    kapanır.
-- **Dal C: P3 ya da P4 geçmez, ya da zincir araç zincirleriyle çalışmaz (P2).**
-  - Windows'ta kabuk yalıtımsız kalır: her çağrı yerel onaylıdır.
-  - Belge ve üst belge §14 güncellenir.
-  - Kullanıcıyla yeni bir yaklaşım konuşulur, örneğin AppContainer ya da ayrı
-    bir sanal makine.
+- **Ayrı kullanıcı ve kısıtlı belirteç: Dal B** ([bulgular](../bulgular/2026-09-25-kalfa-2c-windows-prototip.md)).
+  - S-1-15 SID'leri kısıtlayıcı olamıyor. Sistem dizinlerini okutan tek
+    kullanılabilir SID Users, bu yüzden Users'ın okuyabildiği her klasör
+    okunuyordu.
+  - Schannel çalışmıyordu, geri döngü açıktı (§9.7).
+- **AppContainer: Dal A** ([bulgular](../bulgular/2026-09-25-kalfa-2c-appcontainer.md)).
+  - P1, P3, P4 ve P7 geçti; P2'de bütün araç zincirleri çalıştı.
+  - Ağ, geri döngü ve borular için A8–A10 çözüldü.
+  - Bedeli: kök izni, yalnızca izinle korumalar ve MSVC ortamı (§9.2–§9.4).
+
+Bu bölüm AppContainer'a göre yazıldı. Başarı ölçütü 1'in okuma satırı Windows'ta
+da tam hedefi taşır.
 
 ### 9.6 Bilinen sınırlar
 
@@ -1034,7 +1080,39 @@ kodu değildir:
   hazırlanamaz; kabuk bu çalışma alanında yalıtımsız kalır ve bu söylenir.
 - **Ağ paylaşımı (SMB) üzerindeki çalışma alanı** kapsam dışıdır: ACL'ler sunucu
   tarafındadır. Hazırlık reddedilir.
+- **`ALL APPLICATION PACKAGES`'a açık her yer okunur.** Program Files ve
+  Windows'un yanında, başka uygulamaların bu gruba açtığı dizinler de okunur.
+  2c'nin taramasında profilde böyle tek bir dizin bulundu: başka bir
+  uygulamanın kendi yalıtımı için açtığı bir çalışma zamanı dizini.
+- **`C:\`'deki üst düzey adlar** görünür, içerikleri görünmez (§9.2).
+- **Yerel sunuculara erişilemez:** kap, 127.0.0.1'deki geliştirme
+  sunucularına ve veritabanlarına bağlanamaz.
+- **Pencere bulma** (`FindWindow`) engellenmez; bulunan pencereye ileti
+  gönderilemez.
 - **Tek geliştirici hesabı** (§9.2).
+
+### 9.7 Yedek: ayrı kullanıcı ve kısıtlı belirteç
+
+Bu bölümün ilk tasarımı ([2c bulguları](../bulgular/2026-09-25-kalfa-2c-windows-prototip.md)):
+
+- **Kullanıcılar ve ağ:** iki gizli yerel kullanıcı vardı, ağsız ve ağlı. Ağsız
+  kullanıcının giden trafiğini bir güvenlik duvarı kuralı engelliyordu.
+- **Zincir:** `CreateProcessWithLogonW` → yardımcının `calistir` alt komutu →
+  kısıtlı belirteçle `CreateProcessAsUserW`.
+- **Kısıtlayıcı SID'ler:** çalışma alanı, ortak okuma, Everyone, Users ve
+  RESTRICTED.
+
+Ölçülen sınırları:
+
+- **Okuma sınırı Dal B:** her yerel kullanıcının okuyabildiği dosyalar okunur.
+- Schannel kısıtlı belirteçte `SEC_E_NO_CREDENTIALS` veriyor.
+- Güvenlik duvarı geri döngüyü süzmüyor.
+- Varsayılan izinli borular salt okunur açılıyor.
+- Güvenlik duvarı kuralının kullanıcı koşulu, kısıtlı belirteçe ancak ortak
+  okuma SID'ini de içerirse uygulanıyor.
+
+AppContainer bir makinede kullanılamaz olursa bu yol yeniden değerlendirilir.
+Örneğin kurum ilkesi AppContainer profili oluşturmayı engelleyebilir.
 
 ---
 
@@ -1169,8 +1247,8 @@ Metinler 1c §9.4'teki kurallarla Türkçe yazılır. Yeni terimler:
 | Durum | Davranış |
 |---|---|
 | Program bulunamadı | `Basarisiz`; "`xyz` bulunamadı. Yalıtımın içindeki PATH: …" modele gider |
-| Yalıtım başlatılamadı (bwrap hatası, oturum açma hatası) | `Basarisiz`; algılama yeniden çalışır. Durum değiştiyse gösterge güncellenir. Komut yalıtımsız yeniden **denenmez** |
-| Windows parola dosyası çözülemiyor | Durum `KurulumBozuk`; talimat "Yalıtımı yeniden kur" |
+| Yalıtım başlatılamadı (bwrap hatası, AppContainer başlatma hatası) | `Basarisiz`; algılama yeniden çalışır. Durum değiştiyse gösterge güncellenir. Komut yalıtımsız yeniden **denenmez** |
+| Windows'ta kök izni yok ya da AppContainer profili oluşturulamıyor | Durum `KurulumGerekli` ya da `KurulumBozuk`; talimat "Yalıtımı kur" |
 | Hazırlık yarıda kaldı (iptal, çökme) | ACE kaydı o ana kadar eklenenleri tutar. Sonraki çağrı hazırlığı baştan yapar; yinelenen girdi eklenmez |
 | Gizli dosya taraması süreyi aşıyor | Tarama iptal edilmez. Süre ölçümü komutla başlar (§6.2); araç kartında "Gizli dosyalar taranıyor…" görünür |
 | Çıktı sınırı aşıldı | Kırpılır; modele söylenir (§4.4) |
@@ -1221,7 +1299,7 @@ kullanıcıyla, Windows'ta kurulumdan sonra koşar.
 | Test | Linux | Windows |
 |---|---|---|
 | `~/.ssh/id_rsa` ve `~/.cargo/credentials.toml` okunamaz | ✓ | ✓ |
-| Seçilmeyen yollar (`/srv`, `/mnt`, başka bir çalışma alanı) görünmez ya da okunamaz | ✓ | ✓ (dal A) |
+| Seçilmeyen yollar (`/srv`, `/mnt`, `C:\projeler`, başka bir çalışma alanı) görünmez ya da okunamaz | ✓ | ✓ |
 | Aynı anda açık iki çalışma alanı birbirini okuyamaz ve yazamaz | ✓ | ✓ |
 | Çalışma alanı dışına yazılamaz | ✓ | ✓ |
 | `.git/hooks/pre-commit`, `.git/config`, `core.hooksPath` hedefi yazılamaz, silinemez, üzerine taşınamaz | ✓ | ✓ |
@@ -1234,8 +1312,11 @@ kullanıcıyla, Windows'ta kurulumdan sonra koşar.
 | Kalfa'nın ölümü ağacı durdurur | ✓ | ✓ |
 | Süreç sayısı sınırı | ✓ | ✓ |
 | Yalıtılmış süreç panoyu okuyamaz, geliştiricinin penceresine ileti gönderemez | — | ✓ |
-| Kaldırılan çalışma alanının ACE'leri geri alınır | — | ✓ |
+| Kaldırılan çalışma alanının ACE'leri ve mirası kesilen DACL'leri geri alınır, profili silinir | — | ✓ |
 | `kalfa-yalitim.exe` yalıtımın yazabildiği bir yerden başlatılmaz | — | ✓ |
+| Kabın içinden başka bir çalışma alanının paket SID'iyle süreç başlatılamaz | — | ✓ |
+| Geri döngü (127.0.0.1) ağsız ve ağlı profilde açılamaz | — | ✓ |
+| `.git` yeniden adlandırılamaz; git'in `.git` içindeki işleyişi çalışır | — | ✓ |
 | Sahte `bwrap` çalışma alanında olsa da seçilmez | ✓ | — |
 
 2b'de Linux sütunu `crates/kalfa-sandbox/tests/yalitim.rs`'tedir; testler
@@ -1307,8 +1388,9 @@ cargo test -p kalfa-sandbox --features yalitim-testleri   # Windows: kurulumdan 
 
 - Windows'ta UAC akışı: kur, kaldır, yeniden kur.
 - Durum çubuğu ve ayarlar bölümünün tasarım sistemine uygunluğu.
-- Kaldırmadan sonra makinede Kalfa'ya ait kullanıcı, grup, kural ya da ACE
-  kalmadığı: `kalfa-yalitim durum` ve bir ACL taraması.
+- Kaldırmadan sonra makinede Kalfa'ya ait AppContainer profili, kök izni ya
+  da ACE kalmadığı ve kök DACL'inin `AI` bayrağının korunduğu: durum ve bir
+  ACL taraması.
 
 ---
 
@@ -1316,12 +1398,12 @@ cargo test -p kalfa-sandbox --features yalitim-testleri   # Windows: kurulumdan 
 
 Bu belge commit'lenirken üst belgeye işlenenler:
 
-- **§7.7 Windows arka ucu:**
-  - Kurulumu MSI'dan önce `kalfa-yalitim.exe` yapar; uygulama onu UAC ile
-    başlatır.
-  - Parolaları uygulama üretir ve saklar.
-  - Çalıştırma zinciri `CreateProcessWithLogonW` → `calistir` →
-    `CreateProcessAsUserW` biçimindedir (§9.3).
+- **§7.7 Windows arka ucu** (2c'den sonra, üst belge r3.5):
+  - Arka uç AppContainer + ACL'dir; ayrı kullanıcı ve kısıtlı belirteç yolu
+    bırakıldı (§9.5, §9.7).
+  - Kurulumu MSI'dan önce `kalfa-yalitim.exe` yapar (kök izni, sahibi olunmayan
+    araç zinciri dizinleri); uygulama onu UAC ile başlatır.
+  - Komutu Kalfa doğrudan kapta başlatır (§9.3).
   - Yardımcı dosya yalıtımın yazamadığı bir yerden başlatılır (§9.1).
 - **§7.7 Linux arka ucu:**
   - Ağlı profilde de `AF_UNIX` soket açmak engellenir (§8.2).
@@ -1343,9 +1425,17 @@ Plan ya da prototip aşamasında cevaplanacaklar:
 | A2 | Salt okunur bağlanan cargo registry'siyle ağsız derleme çalışıyor mu; çalışmıyorsa kopyanın biçimi ne? | 2b: çalışıyor; yeni crate ağlı çalıştırmada çalışma alanının kendi registry'sine iner (§7.4) |
 | A3 | Gizli dosya taraması 100 000 dosyada 200 ms'nin altında mı? | 2b: evet, 60–63 ms (§7.2) |
 | A4 | Hangi araçlar `/sys`'e ihtiyaç duyuyor? | 2b: git, cargo, npm, node ve python duymadı (§12.3) |
-| A5 | P1–P10 | 2c (§9.5) |
-| A6 | Uzun ömürlü `calistir` aracısı gerekli mi (P6)? | 2c |
-| A7 | Windows'ta çalışma alanı SID'inin biçimi | 2c |
+| A5 | P1–P10 | 2c: kısıtlı belirteçle Dal B, AppContainer'la Dal A (§9.5) |
+| A6 | Uzun ömürlü `calistir` aracısı gerekli mi (P6)? | 2c: hayır; AppContainer'da aracı süreç yok, çağrı başına 22–29 ms (§9.3) |
+| A7 | Windows'ta çalışma alanı SID'inin biçimi | 2c: AppContainer profilinin paket SID'i, `Kalfa.Alan.<kimlik>` adından (§9.3) |
+| A8 | Schannel kısıtlı belirteçte `SEC_E_NO_CREDENTIALS` veriyor; ağlı çalıştırmada cargo, rustup ve Schannel'li git bağlanamıyor. Yol ne (OpenSSL arka ucu, geliştiricinin önbelleği, AppContainer)? | 2c ek ölçümü: AppContainer'da Schannel çalışıyor (§9.3) |
+| A9 | Geri döngü güvenlik duvarında süzülmüyor; ağsız kullanıcı 127.0.0.1'e ulaşıyor. WFP filtresi mümkün mü? | 2c ek ölçümü: AppContainer'da geri döngü kapalı (§9.3) |
+| A10 | Varsayılan izinli borular Everyone üzerinden salt okunur açılıyor; kabul mü, önlem mi? | 2c ek ölçümü: AppContainer'da açılamıyor (§9.3) |
+| A11 | AppContainer'da çalışma alanının üst dizinleri listelenebilmeli mi? Profil altındaki çalışma alanında üst dizinlere listeleme izni mi, sürücü harfi mi? | 2d planı |
+| A12 | AppContainer'da C derleyen `build.rs` (`cl.exe`, `INCLUDE`) çalışıyor mu? | 2d planı |
+| A13 | AppContainer'da `privateNetworkClientServer` ile LAN hedefi; `openssh-ssh-agent` ve `docker_engine` boruları | 2d planı |
+| A14 | Kabın içinden başka bir paket SID'iyle süreç başlatılabiliyor mu? | 2c: hayır, `ERROR_INVALID_PARAMETER`; aynı paketle başlatılabiliyor (§9.3) |
+| A15 | Windows'ta ağsız derlemede geliştiricinin cargo registry'si nasıl kullanılır? `CARGO_HOME`'u doğrudan vermek çalıştı ama 12 sn sürdü | 2d planı (§7.4) |
 
 ---
 
@@ -1371,9 +1461,11 @@ yazar, Claude inceler ve iki platformda doğrular.
 3. **2c — Windows prototipi.** Ürün kodu yoktur. Prototip betikleri ve bulgu
    raporu hazırlanır, bu belge güncellenir (§9.5). Yönetici adımlarını
    kullanıcı çalıştırır.
-4. **2d — Windows arka ucu.** 2c'nin dalına göre:
-   - `kalfa-yalitim.exe`: kurulum, kaldırma, durum, çalıştırma zinciri.
-   - Çalışma alanı hazırlığı ve ACE kaydı.
+4. **2d — Windows arka ucu.** AppContainer'a göre (§9):
+   - `kalfa-yalitim.exe`: kök izni, araç zinciri izinleri, kaldırma.
+   - `kalfa-sandbox`'ta AppContainer zinciri ve durum denetimi.
+   - Çalışma alanı hazırlığı (profil, izinler, mirası kesilen korumalar) ve
+     ACE kaydı.
    - Ayarlardaki yalıtım bölümü.
    - §12.2'nin Windows sütunu ve §12.3 (Windows).
 
