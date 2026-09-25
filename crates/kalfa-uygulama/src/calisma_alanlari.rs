@@ -6,7 +6,6 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use kalfa_core::muhur::ozet_hex;
 use kalfa_tools::KabukGuveni;
 use serde::{Deserialize, Serialize};
 
@@ -34,9 +33,9 @@ impl CalismaAlaniKaydi {
 
     /// Çalışma alanının kimliği: kanonik yolunun SHA-256'sından 16 onaltılık
     /// karakter.
+    /// Yalıtımın çalışma alanına özel dizinleri de bu kimliği kullanır.
     pub fn kimlik(kok: &Path) -> String {
-        let kanonik = std::fs::canonicalize(kok).unwrap_or_else(|_| kok.to_path_buf());
-        ozet_hex(kanonik.to_string_lossy().as_bytes())[..16].to_string()
+        kalfa_sandbox::alan_kimligi(kok)
     }
 
     fn ile<T>(&self, is: impl FnOnce(&mut Dosya) -> T) -> T {

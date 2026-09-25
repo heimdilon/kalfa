@@ -13,6 +13,7 @@ use kalfa_core::protokol::{AktarimDurmaNedeni, BitisNedeni, Olay};
 use kalfa_core::saglayici::Saglayici;
 use kalfa_evren::tipler::{ChatMessage, ChatRequest, FunctionCall, ToolCall};
 use kalfa_evren::{AkisOlayi, EvrenError};
+use kalfa_sandbox::Yalitimsiz;
 use kalfa_uygulama::anahtar::AnahtarKasasi;
 use kalfa_uygulama::arayuz::Iletisim;
 use kalfa_uygulama::dizin::{kayit_yolu, oturum_dizini};
@@ -22,6 +23,7 @@ use kalfa_uygulama::e2e::{
 };
 use kalfa_uygulama::evren::SaglayiciUretici;
 use kalfa_uygulama::test_destek::{SahteAcici, SahteKanal, SahtePencereler};
+use kalfa_uygulama::yalitim::YalitimKaynagi;
 use kalfa_uygulama::{Bilesenler, Uygulama};
 use serde_json::json;
 
@@ -102,12 +104,12 @@ async fn sahte_iletisim_ayarlardaki_cevabi_verir() {
     let a = ayarlar(json!({"calisma_alani": "/tmp/alan", "onay": true}));
     let i = SahteIletisim::yeni(&a);
     assert_eq!(
-        i.klasor_sec().await.as_deref(),
+        i.klasor_sec("x").await.as_deref(),
         Some(std::path::Path::new("/tmp/alan"))
     );
     assert!(i.onayla("b", "m", "Evet", "Hayır").await);
     let hayir = SahteIletisim::yeni(&E2eAyarlari::default());
-    assert_eq!(hayir.klasor_sec().await, None);
+    assert_eq!(hayir.klasor_sec("x").await, None);
     assert!(!hayir.onayla("b", "m", "Evet", "Hayır").await);
 }
 
@@ -295,6 +297,8 @@ async fn uygulama(a: &E2eAyarlari, veri: &std::path::Path) -> Arc<Uygulama> {
         acici: Arc::new(SahteAcici::default()),
         pencereler: Arc::new(SahtePencereler::default()),
         aktarim: AktarimAyarlari::default(),
+        ev_dizini: std::env::temp_dir(),
+        yalitim: YalitimKaynagi::Kurucu(Box::new(|_| Arc::new(Yalitimsiz))),
     });
     u.baslat().await;
     u

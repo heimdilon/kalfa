@@ -10,12 +10,14 @@ use kalfa_core::aktarim::{AktarimAyarlari, KanalMesaji};
 use kalfa_core::saglayici::Saglayici;
 use kalfa_core::test_destek::SahteSaglayici;
 use kalfa_evren::EvrenError;
+use kalfa_sandbox::{YalitimDurumu, Yalitimsiz};
 use tokio::sync::{Semaphore, mpsc};
 use url::Url;
 
 use crate::anahtar::{AnahtarDeposu, AnahtarKasasi, BellekDeposu};
-use crate::arayuz::{Acici, Iletisim, KanalYazici, Pencereler};
+use crate::arayuz::{Acici, Iletisim, KanalYazici, Pencereler, YalitimYazici};
 use crate::evren::SaglayiciUretici;
+use crate::yalitim::YalitimKaynagi;
 use crate::{Bilesenler, Uygulama};
 
 /// Bu anahtarla üretilen sağlayıcı her isteğe 401 döner.
@@ -76,7 +78,7 @@ impl SahteIletisim {
 
 #[async_trait]
 impl Iletisim for SahteIletisim {
-    async fn klasor_sec(&self) -> Option<PathBuf> {
+    async fn klasor_sec(&self, _baslik: &str) -> Option<PathBuf> {
         self.klasor.lock().unwrap().clone()
     }
 
@@ -142,6 +144,23 @@ impl Pencereler for SahtePencereler {
     }
 }
 
+/// Ana pencerenin yalıtım kanalının yerine geçer; yazılan durumları kaydeder.
+#[derive(Clone, Default)]
+pub struct SahteYalitimYazici(Arc<Mutex<Vec<YalitimDurumu>>>);
+
+impl SahteYalitimYazici {
+    pub fn yazilanlar(&self) -> Vec<YalitimDurumu> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl YalitimYazici for SahteYalitimYazici {
+    fn gonder(&self, durum: &YalitimDurumu) -> Result<(), String> {
+        self.0.lock().unwrap().push(durum.clone());
+        Ok(())
+    }
+}
+
 /// Kanal mesajlarını bir `mpsc` kanalına aktarır.
 pub struct SahteKanal {
     tx: mpsc::UnboundedSender<KanalMesaji>,
@@ -198,11 +217,26 @@ pub struct TestUygulamasi {
 }
 
 /// `kayitli_anahtar` verilirse kalıcı depoda o anahtar kayıtlıymış gibi
-/// başlar. Veri dizini `dizin`dir.
+/// başlar. Veri dizini `dizin`dir. Kabuk yalıtımsızdır.
 pub fn test_uygulamasi(
     dizin: &Path,
     saglayici: Arc<SahteSaglayici>,
     kayitli_anahtar: Option<&str>,
+) -> TestUygulamasi {
+    test_uygulamasi_yalitimla(
+        dizin,
+        saglayici,
+        kayitli_anahtar,
+        YalitimKaynagi::Kurucu(Box::new(|_| Arc::new(Yalitimsiz))),
+    )
+}
+
+/// `test_uygulamasi`, verilen yalıtım kaynağıyla. Ev dizini `dizin/ev`dir.
+pub fn test_uygulamasi_yalitimla(
+    dizin: &Path,
+    saglayici: Arc<SahteSaglayici>,
+    kayitli_anahtar: Option<&str>,
+    yalitim: YalitimKaynagi,
 ) -> TestUygulamasi {
     let depo = Arc::new(BellekDeposu::default());
     if let Some(anahtar) = kayitli_anahtar {
@@ -221,6 +255,8 @@ pub fn test_uygulamasi(
         acici: acici.clone(),
         pencereler: pencereler.clone(),
         aktarim: AktarimAyarlari::default(),
+        ev_dizini: dizin.join("ev"),
+        yalitim,
     });
     TestUygulamasi {
         uygulama,

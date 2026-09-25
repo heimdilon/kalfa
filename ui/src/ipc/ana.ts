@@ -11,6 +11,7 @@ import type {
   OturumId,
   OturumSatiri,
   UygulamaDurumu,
+  YalitimDurumu,
 } from './tipler';
 
 export const uygulamaDurumu = () => invoke<UygulamaDurumu>('uygulama_durumu');
@@ -58,3 +59,22 @@ export const baglantiAc = (adres: string) => invoke<void>('baglanti_ac', { adres
 export const anahtarPenceresiniAc = () => invoke<void>('anahtar_penceresini_ac');
 
 export const sartPenceresiniAc = () => invoke<void>('sart_penceresini_ac');
+
+/**
+ * Yalıtım durumunu dinler (aşama 2 tasarımı §10.5): şimdiki durum hemen,
+ * sonraki değişimler geldikçe yazılır. Pencere açılınca bir kez çağrılır.
+ */
+export function yalitimiDinle(dinleyici: (durum: YalitimDurumu) => void) {
+  const kanal = new Channel<YalitimDurumu>(dinleyici);
+  return invoke<void>('yalitimi_dinle', { kanal });
+}
+
+export const yalitimiAlgila = () => invoke<YalitimDurumu>('yalitimi_algila');
+
+export const aracZinciriDizinleri = () => invoke<string[]>('arac_zinciri_dizinleri');
+
+/** Dizini Rust yerel klasör seçiciyle sorar; vazgeçilirse liste değişmez. */
+export const aracZinciriDiziniEkle = () => invoke<string[]>('arac_zinciri_dizini_ekle');
+
+export const aracZinciriDiziniKaldir = (yol: string) =>
+  invoke<string[]>('arac_zinciri_dizini_kaldir', { yol });

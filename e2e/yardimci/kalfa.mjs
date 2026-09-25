@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { remote } from 'webdriverio';
 
 /** Sahte EVREN'in geçerli saydığı herhangi bir anahtar. */
@@ -118,6 +118,16 @@ export class Kalfa {
     const alan = join(kok, 'alan');
     mkdirSync(veri);
     mkdirSync(alan);
+    // Linux'ta kabuk yalıtımda çalışır (aşama 2 tasarımı §12.5). Testlerin
+    // `node`'u sistem dizinlerinde değilse (örneğin /opt/node) yalıtıma açılır;
+    // kullanıcı bunu Ayarlar'dan yapar.
+    const nodeKoku = dirname(dirname(process.execPath));
+    if (process.platform === 'linux' && !nodeKoku.startsWith('/usr')) {
+      writeFileSync(
+        join(veri, 'yalitim.json'),
+        JSON.stringify({ arac_zinciri_dizinleri: [nodeKoku] }),
+      );
+    }
     const ayarDosyasi = join(kok, 'e2e.json');
     writeFileSync(ayarDosyasi, JSON.stringify({ calisma_alani: alan, ...ayarlar }));
 
@@ -132,6 +142,11 @@ export class Kalfa {
         KALFA_VERI_DIZINI: veri,
         KALFA_ANAHTAR_DEPOSU: 'bellek',
         KALFA_E2E: ayarDosyasi,
+        // Xvfb'de GPU yok: WebKitGTK'nın GL birleştiricisi yazılımla
+        // (llvmpipe) çalışır ve görünür her değişiklikte bir sonraki kare
+        // ~25 ms gecikir. Gecikme ölçümü birleştiricinin değil arayüzün
+        // gecikmesini sormalı; yazılım çiziminde birleştirme kapatılır.
+        ...(process.platform === 'linux' ? { WEBKIT_DISABLE_COMPOSITING_MODE: '1' } : {}),
       },
       stdio: ['ignore', gunluk, gunluk],
     });
@@ -232,6 +247,22 @@ export class Kalfa {
     const d = await this.b.$(`button=${metin}`);
     await d.waitForClickable({ timeout: 15000 });
     await d.click();
+  }
+
+  /**
+   * Onay kartındaki "İncele" ile onay sayfasını açar. İçerik o sırada büyüyüp
+   * kayıyorsa (araç kartı adım adım çizilirken) tıklama düğmenin eski konumuna
+   * düşebilir; sayfa açılana kadar yeniden basılır.
+   */
+  async onaySayfasiniAc() {
+    await sureyleBekle(
+      async () => {
+        await this.dugme('İncele');
+        return this.b.execute(() => document.querySelector('[role="dialog"]') !== null);
+      },
+      20000,
+      'onay sayfası açılmadı',
+    );
   }
 
   /**

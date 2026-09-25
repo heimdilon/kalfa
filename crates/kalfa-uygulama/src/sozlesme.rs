@@ -50,6 +50,9 @@ pub struct UygulamaDurumu {
     pub son_oturum: Option<OturumId>,
     /// Kabuk komutlarının yalıtımı (aşama 2 tasarımı §10.3).
     pub yalitim: YalitimDurumu,
+    /// İşletim sistemi (`linux`, `windows`, `macos`): Ayarlar'daki yalıtım
+    /// bölümü araç zinciri dizinlerini yalnızca Linux'ta gösterir.
+    pub platform: String,
 }
 
 /// Oturum listesinin bir satırı (1c tasarımı §5.4).

@@ -33,6 +33,7 @@ rust_decimal = { version = "1.43", features = ["serde"] }
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 regex = "1.13"
 same-file = "1.0.6"
+seccompiler = "0.5.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11"

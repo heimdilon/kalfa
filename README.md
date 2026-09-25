@@ -6,14 +6,16 @@ Kalfa, Rust ile yazılmış bir masaüstü ajan uygulamasıdır. EVREN'in model 
 kullanarak dosya okur, yazar, arama yapar ve komut çalıştırır — tamamı senin
 onayınla. Araçlarını WebAssembly eklentileriyle genişletebilirsin.
 
-> **Durum: masaüstü uygulaması Windows ve Linux'ta çalışıyor; kabuk aracı
-> var, yalıtımı henüz yok.** Rust workspace'inde EVREN istemcisi
+> **Durum: masaüstü uygulaması Windows ve Linux'ta çalışıyor; kabuk komutları
+> Linux'ta yalıtımda çalışıyor.** Rust workspace'inde EVREN istemcisi
 > (`kalfa-evren`), arayüzden bağımsız oturum çekirdeği (`kalfa-core`), dosya
-> araçları ve kabuk aracı (`kalfa-tools`), komut çalıştırma ve süreç sınırları
-> (`kalfa-sandbox`) ve masaüstü uygulaması (`kalfa-uygulama`, Tauri kabuğu
-> `kalfa`) bulunuyor; Svelte arayüzü `ui/`'dadır. Komutlar şimdilik yalıtımsız
-> çalışır ve her biri yerel pencerede onaylanır; yalıtım ve eklentiler sonraki
-> aşamalarda. [Geliştirme durumu ve devam noktası](docs/GELISTIRME_DURUMU.md).
+> araçları ve kabuk aracı (`kalfa-tools`), komut çalıştırma, süreç sınırları ve
+> Linux yalıtımı (`kalfa-sandbox`) ve masaüstü uygulaması (`kalfa-uygulama`,
+> Tauri kabuğu `kalfa`) bulunuyor; Svelte arayüzü `ui/`'dadır. Linux'ta
+> komutlar bubblewrap ve seccomp ile yalıtılır. Windows'ta yalıtım henüz yok:
+> komutlar yalıtımsız çalışır ve her biri yerel pencerede onaylanır. Windows
+> yalıtımı ve eklentiler sonraki aşamalarda.
+> [Geliştirme durumu ve devam noktası](docs/GELISTIRME_DURUMU.md).
 
 ## Geliştirme
 
@@ -32,6 +34,16 @@ Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni gerektirir.
 Linux'ta `kalfa` crate'i WebKitGTK geliştirme paketlerini ister
 (`libwebkit2gtk-4.1-dev`).
 
+Linux'ta kabuk komutlarını yalıtmak için `bubblewrap` gerekir (`sudo apt install
+bubblewrap`). Yoksa Kalfa bunu durum çubuğunda ve Ayarlar'da söyler; komutlar
+yalıtımsız çalışır ve her biri yerel pencerede onaylanır. Gerçek yalıtım
+testleri root olmayan bir kullanıcıyla koşar:
+
+```sh
+cargo test -p kalfa-sandbox --features yalitim-testleri --test yalitim
+cargo test -p kalfa-tools --features yalitim-testleri --test uyumluluk
+```
+
 Arayüz (`ui/`, Node `^22.22.2 || >=24.15.0`):
 
 ```sh
@@ -49,7 +61,7 @@ cd e2e && npm ci && npm test        # Linux'ta: xvfb-run -a npm test
 - `tauri-driver` gerekir: `cargo install tauri-driver --locked`.
 - **Windows:** WebView2 sürümüyle aynı `msedgedriver` gerekir. PATH'te değilse
   yolu `KALFA_E2E_EDGEDRIVER` ile verin.
-- **Linux:** `webkit2gtk-driver` ve `xvfb` paketleri gerekir.
+- **Linux:** `webkit2gtk-driver`, `xvfb` ve `bubblewrap` paketleri gerekir.
 
 `npm test` önce arayüzü test kancasıyla (`ui/dist-e2e`), sonra uygulamayı
 `target/e2e/` altına derler. Ölçümler `e2e/sonuclar/`'a yazılır.

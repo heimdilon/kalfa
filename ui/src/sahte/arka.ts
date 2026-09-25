@@ -20,6 +20,7 @@ import type {
   SartPenceresiDurumu,
   TurId,
   UygulamaDurumu,
+  YalitimDurumu,
 } from '../ipc/tipler';
 
 type Argumanlar = Record<string, unknown>;
@@ -79,7 +80,15 @@ export class SahteArka {
       neden: 'Desteklenmiyor',
       talimat: 'Bu sürümde komutlar yalıtımsız çalışıyor.',
     },
+    platform: 'linux',
   };
+  /** Ayarlar'daki araç zinciri dizinleri. */
+  aracZinciri: string[] = [];
+  /** `arac_zinciri_dizini_ekle`'nin klasör seçicisinin döneceği dizin; `null` vazgeçmektir. */
+  aracKlasoru: string | null = '/opt/node';
+  /** `yalitimi_algila` bu durumu bulur; `null` ise durum değişmez. */
+  sonrakiYalitim: YalitimDurumu | null = null;
+  #yalitimKanali: Channel<YalitimDurumu> | null = null;
   /** `calisma_alani_sec`'in döneceği klasör; `null` vazgeçmektir. */
   klasor: CalismaAlani | null = { kimlik: 1, yol: 'C:\\projeler\\kalfa' };
   /** İzin kipi yükseltmesinde yerel iletişim kutusunun yanıtı. */
@@ -176,6 +185,12 @@ export class SahteArka {
     return this.#no.get(oturum) ?? 1;
   }
 
+  /** Yalıtım durumu değişir ve dinleyen pencereye yazılır. */
+  yalitimDurumu(yeni: YalitimDurumu): void {
+    this.uygulama.yalitim = yeni;
+    this.#yalitimKanali?.onmessage(yeni);
+  }
+
   komutlar(ad: string): Argumanlar[] {
     return this.cagrilar.filter((c) => c.komut === ad).map((c) => c.argumanlar);
   }
@@ -262,6 +277,24 @@ export class SahteArka {
       case 'sart_metnini_goster':
         this.sart = { tip: 'SartGerekli', metin: this.sartMetni };
         return this.sart;
+      case 'yalitimi_dinle':
+        this.#yalitimKanali = a.kanal as Channel<YalitimDurumu>;
+        this.#yalitimKanali.onmessage(this.uygulama.yalitim);
+        return null;
+      case 'yalitimi_algila':
+        if (this.sonrakiYalitim) this.yalitimDurumu(this.sonrakiYalitim);
+        this.sonrakiYalitim = null;
+        return this.uygulama.yalitim;
+      case 'arac_zinciri_dizinleri':
+        return [...this.aracZinciri];
+      case 'arac_zinciri_dizini_ekle':
+        if (this.aracKlasoru && !this.aracZinciri.includes(this.aracKlasoru)) {
+          this.aracZinciri.push(this.aracKlasoru);
+        }
+        return [...this.aracZinciri];
+      case 'arac_zinciri_dizini_kaldir':
+        this.aracZinciri = this.aracZinciri.filter((d) => d !== a.yol);
+        return [...this.aracZinciri];
       default:
         // mesaj_gonder, turu_iptal_et, arac_onayi, model_degistir, paketi_isledim,
         // baglanti_ac, anahtar_penceresini_ac, sart_penceresini_ac

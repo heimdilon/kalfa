@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use kalfa_core::saglayici::Saglayici;
 use kalfa_core::test_destek::SahteSaglayici;
+use kalfa_sandbox::Yalitimsiz;
 use kalfa_uygulama::anahtar::{AnahtarDeposu, AnahtarKasasi};
 use kalfa_uygulama::sozlesme::{
     AnahtarNedeni, AnahtarSonucu, BaglantiDurumu, DepoTuru, KabulYaniti, SartPenceresiDurumu,
@@ -15,6 +16,7 @@ use kalfa_uygulama::test_destek::{
     AGSIZ_ANAHTAR, GECERSIZ_ANAHTAR, SahteAcici, SahteIletisim, SahtePencereler, SahteUretici,
     TestUygulamasi, YazilamayanDepo, test_uygulamasi,
 };
+use kalfa_uygulama::yalitim::YalitimKaynagi;
 use kalfa_uygulama::{Bilesenler, Uygulama};
 
 async fn bekle(mut kosul: impl FnMut() -> bool) {
@@ -184,6 +186,8 @@ async fn kimlik_deposu_yazilamazsa_anahtar_bellekte_tutulur() {
         acici: Arc::new(SahteAcici::default()),
         pencereler: Arc::new(SahtePencereler::default()),
         aktarim: Default::default(),
+        ev_dizini: std::env::temp_dir(),
+        yalitim: YalitimKaynagi::Kurucu(Box::new(|_| Arc::new(Yalitimsiz))),
     });
     uygulama.baslat().await;
     let sonuc = uygulama

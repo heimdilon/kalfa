@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[features]
+# Araç zinciri uyumluluğu, gerçek yalıtımla (aşama 2 tasarımı §12.3).
+yalitim-testleri = []
+
 [dependencies]
 async-trait.workspace = true
 cap-std.workspace = true

@@ -179,6 +179,71 @@ fn core_hookspath_hedefi_korunur() {
     assert_eq!(s.sinifla(&y(".husky/pre-commit")), YolSinifi::Korumali);
     assert_eq!(s.sinifla(&y(".HUSKY/pre-push")), YolSinifi::Korumali);
     assert_eq!(s.sinifla(&y("src/husky.rs")), YolSinifi::Normal);
+
+    // Yalıtımın yerleşiminde de mutlak ve gerçek yazımıyla bulunur.
+    let kok = d.path().canonicalize().unwrap();
+    let yerlesim = git_koruma::git_yerlesimi(d.path());
+    assert!(yerlesim.korumali.contains(&git_koruma::KorumaliYol {
+        yol: kok.join(".husky"),
+        dizin: true,
+    }));
+}
+
+#[test]
+fn git_yerlesimi_depoda_kanca_ve_yapilandirmayi_korur() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join(".git/hooks")).unwrap();
+    std::fs::write(d.path().join(".git/config"), "").unwrap();
+    let kok = d.path().canonicalize().unwrap();
+    let yerlesim = git_koruma::git_yerlesimi(d.path());
+    assert_eq!(
+        yerlesim.korumali,
+        vec![
+            git_koruma::KorumaliYol {
+                yol: kok.join(".git/hooks"),
+                dizin: true,
+            },
+            git_koruma::KorumaliYol {
+                yol: kok.join(".git/config"),
+                dizin: false,
+            },
+        ]
+    );
+    assert!(yerlesim.dis_dizinler.is_empty());
+
+    // Depo olmayan dizinde yerleşim boştur.
+    let bos = tempfile::tempdir().unwrap();
+    assert_eq!(
+        git_koruma::git_yerlesimi(bos.path()),
+        git_koruma::GitYerlesimi::default()
+    );
+}
+
+#[test]
+fn git_yerlesimi_worktreede_ortak_git_dizinini_bulur() {
+    let d = tempfile::tempdir().unwrap();
+    let ana = d.path().join("ana/.git");
+    std::fs::create_dir_all(ana.join("hooks")).unwrap();
+    std::fs::create_dir_all(ana.join("worktrees/dal")).unwrap();
+    std::fs::write(ana.join("config"), "").unwrap();
+    std::fs::write(ana.join("worktrees/dal/commondir"), "../..\n").unwrap();
+    std::fs::write(ana.join("worktrees/dal/config.worktree"), "").unwrap();
+    let alan = d.path().join("dal");
+    std::fs::create_dir_all(&alan).unwrap();
+    std::fs::write(alan.join(".git"), "gitdir: ../ana/.git/worktrees/dal\n").unwrap();
+
+    let ana = ana.canonicalize().unwrap();
+    let yerlesim = git_koruma::git_yerlesimi(&alan);
+    assert_eq!(yerlesim.dis_dizinler, vec![ana.clone()]);
+    let yollar: Vec<_> = yerlesim.korumali.iter().map(|k| k.yol.clone()).collect();
+    assert_eq!(
+        yollar,
+        vec![
+            ana.join("hooks"),
+            ana.join("config"),
+            ana.join("worktrees/dal/config.worktree"),
+        ]
+    );
 }
 
 fn kabuk(yalitimli: bool, ag: bool, ilk_cagri: bool) -> kalfa_core::kabuk::KabukTarifi {

@@ -92,7 +92,7 @@ impl SahteIletisim {
 
 #[async_trait]
 impl Iletisim for SahteIletisim {
-    async fn klasor_sec(&self) -> Option<PathBuf> {
+    async fn klasor_sec(&self, _baslik: &str) -> Option<PathBuf> {
         self.calisma_alani.clone()
     }
 

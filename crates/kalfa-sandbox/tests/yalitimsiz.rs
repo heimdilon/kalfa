@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use kalfa_sandbox::{
-    Akis, BaslatmaHatasi, Bitis, CalismaSonucu, CalistirmaIstegi, KomutBicimi, Yalitici,
-    Yalitimsiz, ortam,
+    Akis, AlanBilgisi, BaslatmaHatasi, Bitis, CalismaSonucu, CalistirmaIstegi, KomutBicimi,
+    Yalitici, Yalitimsiz, ortam,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -25,6 +25,7 @@ fn istek(komut: KomutBicimi) -> CalistirmaIstegi {
         dizin: std::env::temp_dir(),
         ortam: ortam::uret(std::env::vars()),
         ag: false,
+        alan: None,
     }
 }
 
@@ -97,6 +98,20 @@ async fn olmayan_program_baslatilmaz() {
         .err()
         .expect("başlamamalı");
     assert!(matches!(hata, BaslatmaHatasi::ProgramYok { .. }), "{hata}");
+}
+
+/// Yalıtımlı çalışmak üzere onaylanan komut yalıtımsız başlamaz (§6.3).
+#[test]
+fn yalitimli_onaylanan_istek_baslatilmaz() {
+    let mut i = istek(betik("echo a"));
+    i.alan = Some(AlanBilgisi {
+        kok: std::env::temp_dir(),
+        gizli: Default::default(),
+        korumali: vec![],
+        git_dizinleri: vec![],
+    });
+    let hata = Yalitimsiz.baslat(&i).err().expect("başlamamalı");
+    assert!(matches!(hata, BaslatmaHatasi::Yalitim(_)), "{hata}");
 }
 
 #[tokio::test]

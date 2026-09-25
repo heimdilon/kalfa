@@ -54,7 +54,14 @@ impl Surec {
             .args(argumanlar)
             .env_clear()
             .envs(istek.ortam.iter().map(|(a, d)| (a, d)))
-            .current_dir(&istek.dizin)
+            .current_dir(&istek.dizin);
+        Self::komutla(komut)
+    }
+
+    /// Kurulmuş bir komutu (örneğin bwrap) ağacın kökü olarak başlatır:
+    /// standart girdi kapalıdır, çıktılar okunur.
+    pub(crate) fn komutla(mut komut: Command) -> Result<Self, BaslatmaHatasi> {
+        komut
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

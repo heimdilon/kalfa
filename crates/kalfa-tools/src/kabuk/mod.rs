@@ -7,16 +7,18 @@
 
 pub mod cikti;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, CiktiGonderici, Hazirlik};
+use kalfa_core::git_koruma;
 use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
 use kalfa_core::yol::CalismaYolu;
 use kalfa_sandbox::{
-    Bitis, CalistirmaIstegi, KomutBicimi, Yalitici, YalitimDurumu, ortam, program,
+    AlanBilgisi, BaslatmaHatasi, Bitis, CalistirmaIstegi, KomutBicimi, Korumali, Yalitici,
+    YalitimDurumu, ortam, program, tarama,
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -193,13 +195,50 @@ fn alintila(a: &str) -> String {
     }
 }
 
-fn yalitim_ozeti(durum: YalitimDurumu) -> YalitimOzeti {
-    match durum {
-        YalitimDurumu::Hazir { arka_uc, surum } => YalitimOzeti::Yalitimli {
-            arka_uc,
-            profil: surum,
-        },
-        YalitimDurumu::Yok { talimat, .. } => YalitimOzeti::Yalitimsiz { talimat },
+impl KabukAraci {
+    /// Tarifteki yalıtım: arka uç ve profil özeti (§7.1). Özet mühre girer;
+    /// kullanıcı bir dizin eklerse bekleyen onay geçersizleşir.
+    fn yalitim_ozeti(&self, ag: bool) -> YalitimOzeti {
+        match self.yalitici.durum() {
+            YalitimDurumu::Hazir { arka_uc, surum } => YalitimOzeti::Yalitimli {
+                arka_uc,
+                profil: self.yalitici.profil_ozeti(ag).unwrap_or(surum),
+            },
+            YalitimDurumu::Yok { talimat, .. } => YalitimOzeti::Yalitimsiz { talimat },
+        }
+    }
+
+    /// Yalıtımın çalışma alanı bilgisi; her çalıştırmadan hemen önce üretilir
+    /// (§7.2): gizli dosya taraması ve git yerleşimi.
+    async fn alan_bilgisi(&self) -> Result<AlanBilgisi, AracHatasi> {
+        let alan = self.alan.clone();
+        tokio::task::spawn_blocking(move || {
+            let kok = alan
+                .kok()
+                .canonicalize()
+                .map_err(|e| gecersiz(format!("Çalışma alanının yolu çözülemedi: {e}")))?;
+            let gizli = tarama::tara(&kok, &|yol, _dizin| {
+                CalismaYolu::coz(&yol.to_string_lossy())
+                    .map(|y| alan.siniflandirici().gizli_mi(&y))
+                    .unwrap_or(false)
+            });
+            let git = git_koruma::git_yerlesimi(&kok);
+            Ok(AlanBilgisi {
+                kok,
+                gizli,
+                korumali: git
+                    .korumali
+                    .into_iter()
+                    .map(|k| Korumali {
+                        yol: k.yol,
+                        dizin: k.dizin,
+                    })
+                    .collect(),
+                git_dizinleri: git.dis_dizinler,
+            })
+        })
+        .await
+        .map_err(|e| gecersiz(format!("Gizli dosya taraması yarıda kaldı: {e}")))?
     }
 }
 
@@ -266,7 +305,7 @@ impl Arac for KabukAraci {
                     .as_ref()
                     .map_or_else(|| ".".to_string(), |d| d.as_str().to_string()),
                 ag: istek.ag,
-                yalitim: yalitim_ozeti(self.yalitici.durum()),
+                yalitim: self.yalitim_ozeti(istek.ag),
                 ilk_cagri: !self.guven.guvenildi_mi(),
             }),
             ..Default::default()
@@ -286,7 +325,7 @@ impl Arac for KabukAraci {
     async fn calistir_akisli(
         &self,
         a: &Value,
-        _h: &Hazirlik,
+        h: &Hazirlik,
         iptal: CancellationToken,
         gonderici: CiktiGonderici,
     ) -> Result<AracCiktisi, AracHatasi> {
@@ -294,16 +333,45 @@ impl Arac for KabukAraci {
             return Err(AracHatasi::Iptal);
         }
         let istek = self.coz(a)?;
+        // Kip onaylanan hazırlıktan alınır, şimdiki durumdan değil: mühür
+        // denetiminden sonra yeniden algılama durumu değiştirebilir. Yalıtıcı
+        // onaylanan kiple şimdiki durumu karşılaştırır; tutmazsa başlatmaz.
+        let yalitimli = match h.kabuk.as_ref().map(|t| &t.yalitim) {
+            Some(YalitimOzeti::Yalitimli { .. }) => true,
+            Some(YalitimOzeti::Yalitimsiz { .. }) => false,
+            None => return Err(gecersiz("Hazırlıkta kabuk tarifi yok.".to_string())),
+        };
+        let alan = if yalitimli {
+            Some(self.alan_bilgisi().await?)
+        } else {
+            None
+        };
+        let dizin = match (&alan, &istek.dizin) {
+            (Some(b), Some(d)) => b.kok.join(d.std_yolu()),
+            (Some(b), None) => b.kok.clone(),
+            (None, _) => self.calisma_dizini(&istek.dizin),
+        };
+        // Yalıtımda çalışma alanı kanonik yolunda bağlanır; çalışma alanındaki
+        // program da o yoldan çağrılır.
+        let mut komut = istek.komut;
+        if let (Some(b), KomutBicimi::Program { program, .. }) = (&alan, &mut komut)
+            && let Ok(goreli) = Path::new(program.as_str()).strip_prefix(self.alan.kok())
+        {
+            *program = b.kok.join(goreli).display().to_string();
+        }
         let calistirma = CalistirmaIstegi {
-            komut: istek.komut,
-            dizin: self.calisma_dizini(&istek.dizin),
+            komut,
+            dizin,
             ortam: ortam::uret(std::env::vars()),
             ag: istek.ag,
+            alan,
         };
-        let surec = self
-            .yalitici
-            .baslat(&calistirma)
-            .map_err(|e| gecersiz(e.to_string()))?;
+        let surec = self.yalitici.baslat(&calistirma).map_err(|e| {
+            if matches!(e, BaslatmaHatasi::Yalitim(_)) {
+                self.yalitici.yeniden_algila();
+            }
+            gecersiz(e.to_string())
+        })?;
         // Komut başladı; çalışma alanındaki ilk onay kaydedilir.
         self.guven.guvenildi();
         let mut tampon = BasSonTampon::default();
@@ -324,10 +392,16 @@ impl Arac for KabukAraci {
             ),
         };
         let sure = format!("{:.1}", sonuc.sure.as_secs_f64()).replace('.', ",");
+        let metin = tampon.metin();
+        // bwrap kurulum hatasını "bwrap: " önekiyle yazar ve 1 ile çıkar
+        // (§11): yalıtım bozulmuş olabilir, algılama yeniden çalışır.
+        if yalitimli && sonuc.bitis == Bitis::Cikti(Some(1)) && metin.starts_with("bwrap: ") {
+            self.yalitici.yeniden_algila();
+        }
         let govde = if tampon.toplam() == 0 {
             "--- çıktı yok ---".to_string()
         } else {
-            format!("--- çıktı ---\n{}", tampon.metin())
+            format!("--- çıktı ---\n{metin}")
         };
         let cikti = AracCiktisi {
             icerik: format!("{durum}\nSüre: {sure} sn\n{govde}"),

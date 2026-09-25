@@ -1,6 +1,6 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-09-24. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-09-25. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
 ## Mevcut uygulama
@@ -21,8 +21,11 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 - **1c — masaüstü uygulaması:** `kalfa-uygulama`, Tauri kabuğu `kalfa`,
   Svelte arayüzü `ui/`; ayrıntısı aşağıda.
 - **2a — kabuk aracı:** `kabuk` (`kalfa-tools`) ve komut çalıştırma, süreç
-  sınırları (`kalfa-sandbox`). Yalıtım henüz yok; her komut yerel pencerede
-  onaylanır. Ayrıntısı aşağıda.
+  sınırları (`kalfa-sandbox`). Ayrıntısı aşağıda.
+- **2b — Linux yalıtımı:** kabuk komutları Linux'ta bubblewrap ve seccomp ile
+  yalıtımda çalışır (`kalfa-sandbox`); Ayarlar'da yalıtım durumu ve araç
+  zinciri dizinleri. Windows'ta yalıtım henüz yok; komutlar yalıtımsız çalışır
+  ve her biri yerel pencerede onaylanır. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -561,7 +564,81 @@ Plan yazılırken bulunanlar:
   çekirdeğin bekleyen onayından okunuyor. Çekirdek de webview'ın gönderebildiği
   onay komutuyla yerel onaylı öğeyi onaylamıyor.
 
-Sıradaki plan 2b: Linux arka ucu (bubblewrap + seccomp).
+### 2b — Linux yalıtımı (tamamlandı)
+
+Plan: [`2026-09-25-kalfa-2b-yalitim.md`](superpowers/plans/2026-09-25-kalfa-2b-yalitim.md).
+
+Neler eklendi:
+- **Linux arka ucu.** Komut bubblewrap'ın içinde çalışır:
+  - Sistem yolları ve araç zinciri (`~/.cargo/bin`, `~/.rustup`, Ayarlar'dan
+    eklenenler) salt okunurdur. Ev dizini, diğer çalışma alanları ve sistemin
+    geri kalanı görünmez.
+  - Çalışma alanı yazılabilir, dışına yazılamaz. Her çalışma alanının kendi
+    ev, geçici ve önbellek dizini vardır (veri dizinindeki `yalitim/`).
+  - Gizli dosyalar ve hard link'leri okunamaz. `.git/hooks`, `.git/config` ve
+    `core.hooksPath` hedefi salt okunurdur; worktree'nin dışarıdaki git dizini
+    yazılabilir bağlanır.
+  - Ağ varsayılan olarak kapalıdır. seccomp `io_uring`, `keyctl`, `bpf` ve
+    `ptrace` gibi çağrıları engeller; soket aileleri izin listesiyle
+    denetlenir (Unix ve vsock soketleri açılamaz).
+  - Süreç sayısı sınırı (256) yalıtımın içinde konur. İptal ve Kalfa'nın ölümü
+    bütün ağacı durdurur.
+- **Algılama.** bwrap yoksa ya da kullanıcı ad alanları kısıtlıysa Kalfa bunu
+  durum çubuğunda ve Ayarlar'da talimatıyla söyler; komutlar yalıtımsız ve
+  yerel onaylı çalışır.
+- **Ayarlar.** Menüye Ayarlar eklendi: yalıtım durumu, talimat, "Yeniden dene"
+  ve araç zinciri dizinleri (Linux; yerel klasör seçiciyle eklenir).
+- **İzin kararı.** Yalıtımlı komut Sıkı ve Proje kipinde olağan onayla, Serbest
+  kipte ağsızsa onaysız çalışır. Çalışma alanındaki ilk komut ve ağlı komut her
+  kipte onay ister.
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `cargo test --workspace --locked` | 360 geçti, 0 başarısız | 369 geçti, 0 başarısız |
+| `cargo test -p kalfa-uygulama -p kalfa --features e2e` | 66 geçti | 66 geçti |
+| Clippy (normal, `e2e`; Linux'ta ayrıca `yalitim-testleri`) / fmt | Başarılı | Başarılı |
+| Yalıtım testleri (root olmayan kullanıcıyla) | — | `yalitim` 17, `uyumluluk` 4 geçti |
+| `npm run check` / `npm test` / `npm run build` | 0 hata, 0 uyarı; 20 dosya, 218 test; paket denetimi temiz | Aynı |
+| Uçtan uca (`cd e2e && npm test`) | 24 test geçti (iki koşuda) | 25 test geçti (iki koşuda; Xvfb, birleştirme kapalı) |
+| Gecikme p95 (düzenli / yığın / paralel) | 24,4–24,6 / 25,6–26,1 / 24,2–24,6 ms | 35,9–37,5 / 33,0–35,5 / 36,8–37,6 ms |
+
+Plan yazılırken bulunanlar:
+- **Süreç sayısı sınırı yalıtımın içinde konmalı.** Sınır bwrap'a dışarıda
+  verilince ad alanının üst sınırı oluyor ve kullanıcının bütün süreçleri
+  sayılıyor; komut hiç başlamıyor. İçeride (`prlimit`) konunca yalnızca
+  yalıtımdaki süreçler sayılıyor.
+- **Salt okunur cargo registry'si ağsız derlemeye yetiyor.** Yeni crate ise
+  salt okunur registry'ye inemez; ağlı çalıştırmada kullanıcının registry'si
+  bağlanmaz, cargo çalışma alanına özel registry'ye indirir.
+- **Rustup vekili her çalışmada `~/.rustup/update-hashes`'i istiyor.**
+  `~/.rustup`'ın tamamı salt okunur açıldı; dizinde kimlik bilgisi yok.
+- **x32 çağrıları seccomp listesini atlatabilirdi.** `seccompiler` bunları
+  kapsamıyor; elle yazılmış ikinci bir filtre `ENOSYS` döndürüyor.
+- **Konuşma en alttan kopuyordu (1c'den kalan hata).** Kendi kaydırma olayı,
+  onay sayfası kapanınca odağın geri dönmesi ya da konuşmadaki bir düğmeye
+  tıklamak alta yapışmayı bırakıyordu; yeni onay kartı görünüm alanının altında
+  kalıyordu. Artık yalnızca kullanıcının kaydırması bırakıyor. Linux'ta kabuk
+  testleri yalıtımla koşunca görünür oldu.
+- **Linux gecikme ölçümü Xvfb'de birleştiriciyi ölçüyordu.** Alta yapışma
+  düzelince akan metin görünür oldu ve p95 56–64 ms'ye çıktı. Karenin çizimi
+  ~5 ms sürüyor; asıl bekleme, GPU'suz Xvfb'de yazılımla (llvmpipe) çalışan GL
+  birleştiricisinde: görünür her değişiklikte bir sonraki kare ~25 ms gecikiyor.
+  Linux uçtan uca testleri `WEBKIT_DISABLE_COMPOSITING_MODE=1` ile koşar; ürün
+  kodu değişmez. 1c'deki Linux ölçümü, akan metin görünüm alanının dışındayken
+  alınmıştı.
+
+PR incelemesinde düzeltilenler (Codex'in inceleme botu buldu):
+- **Onaylanan kip çalıştırmada korunmuyordu.** Araç yalıtımı o anki durumdan
+  çıkarıyordu. Mühür denetiminden sonra yeniden algılama durumu "yok"a
+  çevirirse yalıtımlı onaylanan komut yalıtımsız başlayabilirdi. Kip artık
+  onaylanan tariften alınıyor; yalıtımsız arka uç da yalıtımlı onaylanan
+  isteği reddediyor.
+- **`AF_VSOCK` engellenmiyordu.** seccomp soket kuralı engel listesiydi ve ağ ad
+  alanı vsock'u kesmez; WSL2'de bu, Windows'taki servislere giden yoldur. Soket
+  aileleri artık izin listesiyle denetleniyor.
+
+Sıradaki plan 2c: Windows prototipi. Ürün koduna dokunmaz; yönetici adımlarını
+kullanıcı kendi makinesinde çalıştırır.
 
 Kabuk yalıtımı, bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi,
 güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü

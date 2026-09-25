@@ -57,6 +57,9 @@ export function anaSenaryosu(): SahteArka {
   const arka = new SahteArka();
   const simdi = Date.now();
   arka.uygulama.son_oturum = 'o1';
+  // Ayarlar (aşama 2 tasarımı §10.4): "Yeniden dene" yalıtımı bulur.
+  arka.aracZinciri = ['/opt/node'];
+  arka.sonrakiYalitim = { tip: 'Hazir', arka_uc: 'bwrap', surum: '0.9.0' };
   arka.oturumEkle(
     {
       oturum: 'o1',

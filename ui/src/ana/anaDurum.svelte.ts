@@ -16,6 +16,7 @@ import type {
   OturumId,
   OturumSatiri,
   UygulamaDurumu,
+  YalitimDurumu,
 } from '../ipc/tipler';
 
 export class AnaDurum {
@@ -30,6 +31,11 @@ export class AnaDurum {
   onay = $state<{ oturum: OturumId; islem: IslemId } | null>(null);
   /** Ekran okuyucuya okunan son duyuru (`aria-live`, 1c tasarımı §9.5). */
   duyuru = $state('');
+  /** Menünün seçtiği görünüm: oturumlar ya da Ayarlar (aşama 2 tasarımı §10.4). */
+  gorunum = $state<'oturumlar' | 'ayarlar'>('oturumlar');
+  /** Yalıtıma açılan araç zinciri dizinleri (Linux). */
+  aracZinciri = $state<string[]>([]);
+  algilaniyor = $state(false);
   /** Eski sayfası yüklenen oturumlar; aynı sayfa iki kez istenmez. */
   #eskiYukleniyor = new Set<OturumId>();
   #yenidenAciliyor = new Set<OturumId>();
@@ -41,6 +47,7 @@ export class AnaDurum {
     await this.#dene(async () => {
       this.uygulama = await ipc.uygulamaDurumu();
     });
+    await this.#dene(() => ipc.yalitimiDinle((d) => this.#yalitimYaz(d)));
     await this.listeyiYenile();
     const son = this.uygulama?.son_oturum;
     if (son) await this.oturumSec(son);
@@ -58,6 +65,7 @@ export class AnaDurum {
       if (acildi === undefined) return;
     }
     this.secili = oturum;
+    this.gorunum = 'oturumlar';
     this.hata = null;
   }
 
@@ -69,6 +77,7 @@ export class AnaDurum {
       const acilis = await ipc.oturumBaslat(alan.kimlik, this.uygulama.varsayilan_model);
       await this.#kur(acilis);
       this.secili = acilis.oturum;
+      this.gorunum = 'oturumlar';
       this.hata = null;
       await this.listeyiYenile();
     });
@@ -161,6 +170,45 @@ export class AnaDurum {
 
   sartPenceresiniGoster(): void {
     void this.#dene(() => ipc.sartPenceresiniAc());
+  }
+
+  /** Ayarlar'ı açar; Linux'ta araç zinciri dizinlerini okur. */
+  async ayarlariAc(): Promise<void> {
+    this.gorunum = 'ayarlar';
+    this.hata = null;
+    if (this.uygulama?.platform !== 'linux') return;
+    const dizinler = await this.#dene(() => ipc.aracZinciriDizinleri());
+    if (dizinler) this.aracZinciri = dizinler;
+  }
+
+  oturumlaraDon(): void {
+    this.gorunum = 'oturumlar';
+    this.hata = null;
+  }
+
+  /** Algılamayı yeniden çalıştırır (aşama 2 tasarımı §8.3). */
+  async yalitimiAlgila(): Promise<void> {
+    this.algilaniyor = true;
+    try {
+      const yeni = await this.#dene(() => ipc.yalitimiAlgila());
+      if (yeni) this.#yalitimYaz(yeni);
+    } finally {
+      this.algilaniyor = false;
+    }
+  }
+
+  async aracZinciriEkle(): Promise<void> {
+    const dizinler = await this.#dene(() => ipc.aracZinciriDiziniEkle());
+    if (dizinler) this.aracZinciri = dizinler;
+  }
+
+  async aracZinciriKaldir(yol: string): Promise<void> {
+    const dizinler = await this.#dene(() => ipc.aracZinciriDiziniKaldir(yol));
+    if (dizinler) this.aracZinciri = dizinler;
+  }
+
+  #yalitimYaz(yeni: YalitimDurumu): void {
+    if (this.uygulama) this.uygulama.yalitim = yeni;
   }
 
   async #ac(oturum: OturumId): Promise<void> {

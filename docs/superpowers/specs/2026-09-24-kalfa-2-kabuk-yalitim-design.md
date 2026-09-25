@@ -9,6 +9,13 @@ aşama 3'e kalır.
 arayüzü (§3.3), yerel onay yolu (§5.2), çıktı sınırları ve kaynak etiketi (§4.4),
 başarısızlık sayacı (§4.5), terminal görünümünün sınırları (§10.1) ve yalıtım
 durumunun taşınması (§10.3, §10.5).
+2026-09-24 (2b planı): Linux arka ucu yazılıp WSL2'de ölçülürken netleşenler
+işlendi: yalıtıcının yeni yöntemleri (§3.2), konuşmanın alta yapışması (§10.1), ortamın yalıtımlı çalıştırmadaki
+değerleri (§6.1), süreç sayısı sınırı (§6.3, A1), araç zinciri dizinleri ve
+profil özeti (§7.1), tarama (§7.2, A3), cargo registry'si (§7.4, A2), bwrap ve
+seccomp ayrıntıları (§8.1, §8.2), algılama (§8.3), Ayarlar ve durumun kanalla
+iletilmesi (§10.3–§10.5), testler (§12.2, §12.3, §12.5, A4) ve açık noktaların
+cevapları (§14).
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §7.2, §7.5–§7.7, §12.3, §13.2, §13.3 ve §14 (risk 7–9, 12, 13). Bu belgede `§`
 işaretleri bu belgenin bölümlerini gösterir; üst belgeye "üst belge §x", 1c
@@ -131,6 +138,20 @@ YalitimDurumu ::= Hazir { arka_uc: "bwrap" | "windows", surum: String }
 YalitimYoklukNedeni ::= BwrapYok | KullaniciAdAlaniKapali | KurulumGerekli
                       | KurulumBozuk | Desteklenmiyor
 ```
+
+- `Yalitici`'ya 2b'de eklenenler: `profil_ozeti(ag)` (§7.1), `yeniden_algila()`
+  (§8.3) ve `okunur_dizinleri_ayarla(dizinler)` (§7.1). Durum sonradan değişince
+  yalıtıcı kurulurken verilen işlev çağrılır; uygulama bunu ana pencerenin
+  kanalına yazar (§10.5).
+- `CalistirmaIstegi.alan`: yalıtımlı çalıştırmanın çalışma alanı bilgisi
+  (kanonik kök, gizli dosya taraması, korumalı yollar, dışarıdaki git
+  dizinleri). Araç bunu onaylanan tarif yalıtımlıysa, her çalıştırmadan hemen
+  önce üretir. Kip şimdiki durumdan değil onaylanan tariften alınır: mühür
+  denetiminden sonra yeniden algılama durumu değiştirebilir. Verilmişse komut
+  yalnızca yalıtımda, verilmemişse yalnızca yalıtımsız çalışır: istek
+  onaylandığı kipte çalışır. Onaydan sonra durum değiştiyse komut başlamaz;
+  yalıtımsız arka uç da `alan` verilmiş isteği reddeder. Mühür durumu zaten
+  yakalar (§3.3); bu ikinci bir kilittir.
 
 ### 3.3 Çekirdekteki değişiklikler
 
@@ -414,6 +435,10 @@ Bu bölüm yalıtımdan bağımsızdır; yalıtımsız çalıştırmada da geçe
 - Yalıtımsız çalıştırmada da aynı liste kullanılır. Yalıtımsız süreç ev dizinini
   okuyabildiği için bu tek başına bir sınır değildir, ama anahtarın ve ajan
   soketlerinin ortamdan sızmasını önler.
+- **Kalfa'nın verdikleri yalnızca yalıtımlı çalıştırmada geçerlidir** (2b).
+  Yalıtımsız süreç ev dizinini zaten okur; `HOME` ve `CARGO_HOME` gibi değerler
+  kaynaktaki hâliyle geçer (2a'daki gibi). Yalıtımda `TEMP` ve `TMP` atılır,
+  `TMPDIR` `/tmp`'dir.
 
 ### 6.2 Süre
 
@@ -427,12 +452,16 @@ Bu bölüm yalıtımdan bağımsızdır; yalıtımsız çalıştırmada da geçe
 
 - Sınır 256 süreçtir.
 - **Windows:** Job Object'in `ActiveProcessLimit` değeri.
-- **Linux:** `RLIMIT_NPROC`. Çekirdek 5.14'ten beri bu sınır kullanıcı ad alanı
-  başına sayılır. Bu yüzden yalıtımın içindeki süreçleri sınırlar ve
-  kullanıcının diğer süreçlerini saymaz. 2b planı bunu bir testle doğrular.
-  Doğrulanamazsa `systemd-run --user --scope -p TasksMax=256` kullanılır;
-  systemd kullanıcı oturumu yoksa sınır belgeye ve arayüze "uygulanamadı" diye
-  yazılır.
+- **Linux:** `RLIMIT_NPROC`, yalıtımın içinde konur (2b'de doğrulandı, A1):
+  - Komut `/usr/bin/prlimit --nproc=256:256 -- <program>` ile başlar. prlimit,
+    bwrap'ın açtığı kullanıcı ad alanının içinde çalışır.
+  - Çekirdek 5.14'ten beri sınır ad alanı başına sayılır: yalnızca yalıtımın
+    içindeki süreçler sayılır. Dışarıda 260 süreç varken içeride 100 süreç
+    açılır, 300 açılamaz (`yalitim-testleri`).
+  - Sınır bwrap'a dışarıda verilseydi ad alanının üst sınırı olurdu ve
+    kullanıcının bütün süreçleri sayılırdı; komut hiç başlamazdı. Bu da
+    denendi.
+  - `prlimit` (util-linux) yoksa sınır uygulanmaz.
 - **Yalıtımsız Linux:** `RLIMIT_NPROC` kullanıcının bütün süreçlerini sayar.
   Bu yüzden sınır uygulanmaz ve bu belgelenir.
 
@@ -491,15 +520,20 @@ Profil {
     - Linux: `/usr`, `/bin`, `/sbin`, `/lib*`, `/etc`.
     - Windows: sistem ve program dizinleri.
   - İzinli araç zinciri dizinleri:
-    - Linux: `~/.cargo/bin`, `~/.cargo/registry`, `~/.rustup/toolchains`,
-      `~/.rustup/settings.toml`.
+    - Linux: `~/.cargo/bin` ve `~/.rustup`'ın tamamı. Rustup vekili her
+      çalışmada `~/.rustup/update-hashes`'i ister; dizinde kimlik bilgisi
+      yoktur (2b'de ölçüldü). `~/.cargo/registry` §7.4'teki kurala göre
+      bağlanır.
     - Windows: bunların `%USERPROFILE%` karşılıkları.
   - Kullanıcı ayarlardan dizin ekleyebilir, örneğin `/opt/node` ya da
     `C:\Python314`.
   - Depo içindeki hiçbir dosya profili genişletemez (üst belge §7.2).
-- **Profil özeti** (mühre giren) okunur yolların, gizli ve korumalı yolların ve
-  ağ bayrağının sıralı listesinin SHA-256'sıdır. Kullanıcı bir dizin eklerse
-  bekleyen onaylar geçersizleşir.
+- **Profil özeti** (mühre giren) arka ucun, okunur yolların sıralı listesinin
+  ve ağ bayrağının SHA-256'sıdır (ilk 16 onaltılık karakter). Kullanıcı bir
+  dizin eklerse bekleyen onaylar geçersizleşir. Gizli ve korumalı yollar özete
+  girmez: her çalıştırmadan hemen önce taranırlar ve onları belirleyen kurallar
+  sabittir. Özete girselerdi, komutun kendi yazdığı bir dosya bekleyen onayları
+  bozardı.
 
 ### 7.2 Gizli dosya ve korumalı yol taraması
 
@@ -526,11 +560,16 @@ Gizli ve korumalı yollar her çalıştırmadan hemen önce taranır.
   bir `.env`) o çalıştırmada okunabilir. İçeriği komut zaten biliyordur. Sonraki
   çalıştırmanın taraması onu kapsar.
 - **Maliyet:** tarama `ignore` crate'inin paralel yürüyücüsüyle yapılır. Hedef,
-  100 000 dosyalık bir ağaçta 200 ms'nin altıdır; 2b planı bunu ölçer. Hedef
-  tutmazsa dizin değişiklik zamanına dayalı bir önbellek eklenir.
-- **Liste çok uzunsa** (2 000'den fazla yol) Linux'ta bwrap argümanları
-  `--args FD` ile verilir. Windows'ta her yol için bir ACE konur ve bu
-  hazırlığın ilerlemesinde görünür.
+  100 000 dosyalık bir ağaçta 200 ms'nin altıdır. WSL2'de 60–63 ms ölçüldü
+  (A3); önbelleğe gerek yok.
+- **Gizli dizin** (örneğin kalıba uyan bir `credentials/`) boş ve salt okunur
+  bir tmpfs'le örtülür. İçindeki dosyaların dışarıdaki hard link'leri de
+  gizlidir.
+- **Sembolik bağlantı** listelenmez: hedefi çalışma alanındaysa kendisi
+  taranır, dışındaysa yalıtımda zaten görünmez.
+- **Uzun liste:** Linux'ta bwrap seçenekleri her zaman `--args FD` ile, bir
+  bellek dosyasından verilir; yol sayısı komut satırı sınırına takılmaz.
+  Windows'ta her yol için bir ACE konur ve bu hazırlığın ilerlemesinde görünür.
 
 ### 7.3 Çalışma alanına özel dizinler
 
@@ -538,7 +577,8 @@ Gizli ve korumalı yollar her çalıştırmadan hemen önce taranır.
   kanonik yolunun SHA-256'sından türetilen 16 onaltılık karakter. Kilit
   yöneticisinin kök kimliğiyle aynı kaynaktır (1c §5.3).
 - Dizinlerin konumu:
-  - Linux: `$XDG_DATA_HOME/kalfa/yalitim/<kimlik>/`.
+  - Linux: `$XDG_DATA_HOME/kalfa/yalitim/<kimlik>/`, yani uygulamanın veri
+    dizinindeki `yalitim/` (uçtan uca testlerde `KALFA_VERI_DIZINI`).
   - Windows: `%LOCALAPPDATA%\Kalfa\yalitim\<kimlik>\`.
 - İçindeki dizinler:
   - `ev/`
@@ -556,8 +596,9 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
 
 - **Git:**
   - `ev/.gitconfig` yalnızca `user.name` ve `user.email`'i taşır. Değerler
-    kullanıcının etkin git yapılandırmasından okunur; `GIT_CONFIG_GLOBAL` bu
-    dosyayı gösterir.
+    kullanıcının genel (`--global`) git yapılandırmasından okunur; depo
+    yapılandırması yalıtımda zaten okunur. `GIT_CONFIG_GLOBAL` bu dosyayı
+    gösterir.
   - Sistem yapılandırması (`/etc/gitconfig`) okunur yollar arasındadır ve
     olduğu gibi kalır.
   - Çalışma alanının git dizini çalışma alanı dışındaysa (worktree ya da
@@ -569,15 +610,17 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
 - **Cargo:**
   - `CARGO_HOME` çalışma alanına özeldir (`onbellek/cargo`).
   - Kullanıcının `~/.cargo/bin`'i salt okunur bağlanır ve `PATH`'e eklenir.
-  - Kullanıcının `~/.cargo/registry`'si salt okunur olarak
-    `onbellek/cargo/registry` konumuna bağlanır. Böylece daha önce indirilmiş
-    crate'ler ağsız derlemede kullanılır.
+  - Kullanıcının `~/.cargo/registry`'si ağsız çalıştırmada salt okunur olarak
+    `onbellek/cargo/registry` konumuna bağlanır. Daha önce indirilmiş ve
+    açılmış crate'ler böylece ağsız derlemede kullanılır (A2: WSL2'de örnek
+    crate `cargo test --offline` ile derlendi).
   - `credentials.toml` ve `config.toml` hiç görünmez.
-  - Bilinen risk: registry salt okunur olduğu için cargo yeni bir crate'i
-    açamaz. Böyle bir derleme, ağlı ve onaylı bir çalıştırma ister. Bu durumda
-    registry'nin çalışma alanına özel bir kopyası kullanılır. bwrap 0.9.0'da
-    `--overlay` yoktur (WSL'deki Ubuntu 24.04'te doğrulandı); kopyanın biçimi
-    2b planında ölçülür.
+  - Salt okunur registry'ye yeni crate indirilemez. Ağlı çalıştırmada
+    kullanıcının registry'si bağlanmaz; cargo çalışma alanına özel, başta boş
+    registry'ye indirir. O registry bir kez dolunca ağsız çalıştırmalar da onu
+    kullanır. Kopyanın biçimi budur: kullanıcının registry'si kopyalanmaz
+    (yüzlerce MB), çalışma alanının ihtiyacı ağla bir kez indirilir. bwrap
+    0.9.0'da `--overlay` yoktur.
   - Windows'ta registry bağlanamaz: aynı dizini iki yerde göstermenin yolu
     yoktur. Çalışma alanına özel registry boş başlar ve ilk derleme ağlı bir
     çalıştırma ister. Prototip bunu ölçer (§9.5).
@@ -608,20 +651,24 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
   [--unshare-net]                            (ağsız profilde)
   --disable-userns --die-with-parent --new-session --clearenv
   --tmpfs /                                  boş kök
-  --ro-bind <okunur yol> <aynı yol> ...      sistem ve araç zinciri
+  --ro-bind <sistem yolu> <aynı yol> ...     /usr, /etc; bağlantılar --symlink
   --proc /proc --dev /dev --tmpfs /run
+  [--ro-bind <resolv.conf hedefi> ...]       (ağlı profilde)
+  --bind <ozel/gecici> /tmp
+  --ro-bind <araç zinciri> <aynı yol> ...    ~/.cargo/bin, ~/.rustup, eklenenler
   --bind <çalışma alanı> <aynı yol>
   --bind <ozel/ev> <ozel/ev>                 HOME
-  --bind <ozel/gecici> /tmp
   --bind <ozel/onbellek> <ozel/onbellek>
+  [--ro-bind ~/.cargo/registry <ozel/onbellek/cargo/registry>]   (§7.4)
   --bind <gitdir> <aynı yol> ...             (§7.4)
   --ro-bind <korumalı yol> <aynı yol> ...    çalışma alanının üstüne
   --ro-bind /dev/null <gizli dosya> ...      gizli dosyalar
-  --tmpfs <gizli dizin> ...                  gizli kalıba uyan dizinler
+  --tmpfs <gizli dizin> --remount-ro <gizli dizin> ...
+  --remount-ro /
   --setenv K V ...                           (§6.1)
   --chdir <dizin>
-  --seccomp <FD>
-  -- <program> <argümanlar>
+  --add-seccomp-fd <FD> --add-seccomp-fd <FD>   (§8.2)
+  -- [/usr/bin/prlimit --nproc=256:256 --] <program> <argümanlar>
   ```
 
 - **Yollar gerçek konumlarında bağlanır.** Çalışma alanı içeride de aynı
@@ -633,12 +680,40 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
   yalnızca gereken alt yol salt okunur eklenir (§14).
 - **`--disable-userns`** yalıtımın içinde yeni kullanıcı ad alanı açılmasını
   engeller. `--new-session`, `TIOCSTI` ile terminale karakter itmeyi önler.
+- **2b'de netleşenler:**
+  - Bağlama sırası: `/tmp` (çalışma alanına özel `gecici/`) sistem yollarından
+    hemen sonra bağlanır. Altındaki yollar, örneğin geçici dizindeki bir
+    çalışma alanı, onun üstüne gelir. Korumalı ve gizli yollar en sondadır;
+    ardından boş kök `--remount-ro /` ile salt okunur olur. Böylece çalışma
+    alanı dışına yazma denemesi sessizce bellekte kalmak yerine hata verir.
+  - Birleşik `/usr`'da `/bin` ve `/lib` gibi bağlantılar `--symlink` ile
+    kurulur.
+  - Ağlı profilde `/etc/resolv.conf`'un gösterdiği dosya (`/run/...` ya da
+    WSL'de `/mnt/wsl/...`) salt okunur bağlanır. `/run` boş olduğu için yoksa
+    ad çözümü çalışmazdı.
+  - Gizli dosya `/dev/null` ile örtülür. Kullanıcı ad alanındaki bağlama `nodev`
+    olduğu için okuma "Permission denied" verir.
+  - Eksik korumalı yol (örneğin `.git/hooks`) boş olarak oluşturulup salt
+    okunur bağlanır; yoksa komut oraya kanca yazabilirdi.
+  - Program, yalıtımın içindeki `PATH`'te aranır. Arama dışarıda yapılır ama
+    yalnızca içeride görünen yollara bakar; bulunan yol bwrap'a verilir.
+    Bulunamazsa hata içerideki `PATH`'i söyler (§11). Çalışma alanındaki bir
+    program, çalışma alanının kanonik yolundan çağrılır.
+  - Seçenekler ve seccomp programları bellek dosyalarından (`memfd`) verilir;
+    tanımlayıcılar yalnızca bwrap'a geçer.
 
 ### 8.2 seccomp
 
 - Filtre `seccompiler` crate'iyle üretilir. Saf Rust'tır, C bağımlılığı yoktur;
-  x86_64 ve aarch64'ü destekler. Derlenmiş BPF bir boru üzerinden bwrap'a
-  (`--seccomp FD`) verilir.
+  x86_64 ve aarch64'ü destekler. bwrap'a iki filtre verilir (`--add-seccomp-fd`,
+  bellek dosyasından). Çekirdek ikisini de çalıştırır ve en kısıtlayıcı sonucu
+  uygular:
+  - **Engel filtresi** (`seccompiler`): aşağıdaki çağrılar `EPERM` döner.
+    Mimari tutmazsa (örneğin x86_64'te 32 bit `int 0x80`) süreç öldürülür.
+  - **`ENOSYS` filtresi** (elle yazılmış, birkaç komut): `clone3` ve x86_64'te
+    x32 çağrıları (numarasında `0x40000000` biti olanlar). x32 çağrıları aynı
+    mimari değeriyle gelir ve numara listesini atlatabilirdi; `seccompiler` bunu
+    kapsamıyor.
 - **İki profilde de engellenenler (`EPERM`):**
   - `io_uring_setup`, `io_uring_enter`, `io_uring_register`: io_uring soket
     işlemleri filtreyi atlatabilir.
@@ -650,16 +725,22 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
   - `clone3` `ENOSYS` döner. Argümanları bir yapının içinde olduğu için
     bayrakları filtrelenemez; `ENOSYS` alan libc `clone`'a geri düşer ve o
     çağrının bayrakları denetlenir.
-- **Ağsız profilde:** `socket` çağrısı adres ailesine göre engellenir.
-  - Engellenen aileler: `AF_INET`, `AF_INET6`, `AF_UNIX`, `AF_NETLINK`
-    (`NETLINK_ROUTE` hariç), `AF_PACKET`. Ağ ad alanı zaten ayrıdır; filtre
-    derinlemesine savunmadır. Asıl işi `docker.sock` ya da `ssh-agent` gibi yerel
-    ayrıcalıklı soketlere ulaşmayı engellemektir. Bu soketler zaten bağlanmaz,
-    ama soyut Unix soketleri dosya sisteminden bağımsızdır.
+- **`socket` çağrısı adres ailesine göre izin listesiyle denetlenir;** listede
+  olmayan aile `EPERM` döner.
+  - Ağsız profilde yalnızca `AF_NETLINK` (`NETLINK_ROUTE` ile) açılabilir.
+    `AF_INET`, `AF_INET6`, `AF_UNIX` ve `AF_PACKET` de dahil gerisi engellenir.
+    Ağ ad alanı IP ağını zaten ayırır; filtre derinlemesine savunmadır. Asıl
+    işi `docker.sock` ya da `ssh-agent` gibi yerel ayrıcalıklı soketlere
+    ulaşmayı engellemektir. Bu soketler zaten bağlanmaz, ama soyut Unix
+    soketleri dosya sisteminden bağımsızdır.
+  - Neden izin listesi: ağ ad alanının kesmediği aileler var. `AF_VSOCK`
+    sanal makineden ana makinedeki servislere ulaşır; WSL2 Windows'la bu yolla
+    konuşur. Engel listesi bunları tek tek saymak zorunda kalırdı (PR
+    incelemesinde bulundu).
   - `socketpair(AF_UNIX)` serbesttir.
-- **Ağlı profilde:** `AF_INET` ve `AF_INET6` serbesttir. `AF_UNIX` soket açmak
-  yine engellenir; `socketpair` serbesttir. Ağ ad alanı ayrılmadığı için soyut
-  Unix soketleri (X11, D-Bus) ancak böyle kapatılır.
+- **Ağlı profilde:** ayrıca `AF_INET` ve `AF_INET6` açılabilir. `AF_UNIX` soket
+  açmak yine engellenir; `socketpair` serbesttir. Ağ ad alanı ayrılmadığı için
+  soyut Unix soketleri (X11, D-Bus) ancak böyle kapatılır.
 - Kesin sistem çağrısı listesi `kalfa-sandbox/src/linux/seccomp.rs`'tedir. Her
   engelin bir testi vardır (§12.2).
 
@@ -684,6 +765,19 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
 Algılama sonucu önbelleğe alınır. Bir başlatma yalıtım hatasıyla başarısız
 olursa algılama yeniden çalışır ve durum güncellenir. Durum değişince bekleyen
 onaylar mühür yoluyla geçersizleşir (§3.3).
+
+2b'de netleşenler:
+
+- Deneme çalıştırması gerçek profille, geçici bir çalışma alanında
+  `/usr/bin/true`'yu çalıştırır; bir komutla aynı yoldan geçer.
+- Hata metni "namespace", "uid map", "RTM_NEWADDR" ya da "Operation not
+  permitted" içeriyorsa durum `KullaniciAdAlaniKapali`, değilse metniyle
+  birlikte `Desteklenmiyor` olur.
+- Yalıtımlı bir komut başlatılamadıysa ya da bwrap'ın kurulum hatasıyla (çıkış
+  kodu 1, çıktı "bwrap: " ile başlıyor) bittiyse algılama yeniden çalışır.
+- Talimatlar arayüzde gösterildiği için arayüzün diliyle ("siz") yazılır.
+- Yalıtım yoksa Linux arka ucu komutu yalıtımsız çalıştırır ve durum bunu
+  söyler; kabuk her çağrıda yerel onay ister (§5.1).
 
 ### 8.4 WSL2 ve test ortamı
 
@@ -968,6 +1062,23 @@ kodu değildir:
     saniyede bitti. Görünüm izlemek içindir; tam çıktı modele gider.
 - **Kayıttan açılan oturumda** terminal görünümü `AracSonucu`'ndaki kırpılmış
   sonucu gösterir.
+- **Konuşmanın alta yapışması** (2b'de bulunan hata): konuşma, kullanıcı yukarı
+  kaydırmadıkça en altta kalır. Yapışma yalnızca kullanıcının kaydırma
+  niyetinden (tekerlek, dokunarak sürükleme, kaydırma çubuğu, kaydırma
+  tuşları) sonra bırakılır. Kendi kaydırmamızın geç gelen olayı, onay sayfası
+  kapanınca odağın geri dönmesi ya da konuşmadaki bir düğmeye tıklamak
+  bırakmaz. Hata 1c'den beri vardı; Linux'ta kabuk testleri yalıtımla koşunca
+  görünür oldu (yeni onay kartı görünüm alanının altında kalıyordu).
+  - Aynı hata 1c'nin Linux gecikme ölçümünü de etkiliyordu: konuşma akış
+    başında en alttan kopuyor, akan metin görünüm alanının dışında kalıyordu.
+    Düzeltmeden sonra metin görünür akar ve Xvfb'de p95 56–64 ms'ye çıktı.
+    Neden arayüz değil birleştirici: WebKitGTK'nın GL birleştiricisi GPU'suz
+    Xvfb'de yazılımla (llvmpipe) çalışıyor; görünür her değişiklikte bir
+    sonraki kare ~25 ms gecikiyor (çizimin kendisi ~5 ms). Kaydırmayı 100
+    ms'ye seyreltmek, `will-change` ya da `content-visibility`'yi kaldırmak
+    değiştirmedi. Linux uçtan uca testleri bu yüzden
+    `WEBKIT_DISABLE_COMPOSITING_MODE=1` ile koşar (§12.5); ürün kodu
+    değişmez.
 
 ### 10.2 Kabuk onay kartı
 
@@ -987,13 +1098,23 @@ Onay sayfasında (1c §8.2) kabuk öğesi diff yerine şunları gösterir:
   - Yalıtımlı: yeşil.
   - Yalıtımsız: sarı.
   - Kurulum gerekli ya da bozuk: sarı.
-- Üzerine gelince talimat görünür. Ayarlardaki yalıtım bölümü (§10.4) gelince
-  tıklanınca o bölüm açılır.
+- Üzerine gelince talimat (yalıtımlıysa arka uç) görünür. Tıklanınca Ayarlar
+  açılır (§10.4).
 - Gösterge uygulama düzeyindedir, oturuma bağlı değildir. Durum
-  `uygulama_durumu`'nun `yalitim` alanıyla gelir. 2a'da durum değişmez
-  (her zaman "Yalıtımsız"); değişim olayı algılamanın geldiği 2b'de eklenir.
+  `uygulama_durumu`'nun `yalitim` alanıyla gelir. Ana pencere değişimi
+  `yalitimi_dinle` ile verdiği kanaldan alır (§10.5).
 
 ### 10.4 Ayarlarda yalıtım bölümü
+
+2b'de menüye "Ayarlar" eklenir; ekranın ilk bölümü yalıtımdır. 2b'de gelenler:
+durum ve nedeni, talimat, "Yeniden dene" (Linux) ve izinli araç zinciri
+dizinleri (Linux). Hazırlanmış çalışma alanları, önbellek silme, ek ortam
+değişkenleri ve Windows düğmeleri 2d'dedir.
+
+- Eklenen dizin ev dizinini ya da Kalfa'nın veri dizinini kapsayamaz, veri
+  dizininin içinde de olamaz: sırlar ve oturum kayıtları yalıtıma açılırdı.
+- Dizinler veri dizinindeki `yalitim.json`'dadır. Eklenince ya da çıkarılınca
+  profil özeti değişir (§7.1).
 
 - **Durum ve nedeni**, talimatıyla birlikte (`YalitimDurumu`).
 - **Windows düğmeleri:** "Yalıtımı kur", "Yalıtımı kaldır". İkisi de önce yerel
@@ -1015,12 +1136,17 @@ Yeni komutlar yalnızca ana pencereye açılır (1c §6):
 
 | Komut | İş |
 |---|---|
-| `uygulama_durumu` (mevcut) | `yalitim: YalitimDurumu` alanı eklenir (2a) |
+| `uygulama_durumu` (mevcut) | `yalitim: YalitimDurumu` alanı eklenir (2a); `platform` (2b) |
+| `yalitimi_dinle` | Ana pencere açılınca kanal verir; durum değişimi oraya yazılır (2b) |
+| `yalitimi_algila` | Algılamayı yeniden çalıştırır, yeni durumu döndürür (2b) |
 | `yalitimi_kur` / `yalitimi_kaldir` | Yerel onay → UAC → sonuç (Windows); Linux'ta talimat döndürür |
 | `arac_zinciri_dizinleri` / `arac_zinciri_dizini_ekle` / `arac_zinciri_dizini_kaldir` | Ekleme yerel klasör seçiciyle yapılır; arayüz yol gönderemez |
 | `yalitim_calisma_alanlari` / `yalitim_calisma_alanini_kaldir` | Kimlikle çalışır (1c'deki gibi arayüz yol göndermez) |
 
-Durum değişiminde ana pencereye `yalitim-durumu` olayı yayılır (2b).
+Durum değişimi, ana pencerenin `yalitimi_dinle` ile verdiği kanala yazılır
+(`oturumu_dinle` gibi); kanal verilince şimdiki durum hemen yazılır. Tauri
+olayı kullanılmaz: olay dinlemek, pencereye Tauri'nin çekirdek izinlerini
+açmayı gerektirirdi (1c §6).
 `arac_onayi`'nın davranışı §5.2'de.
 
 ### 10.6 Dil
@@ -1112,6 +1238,12 @@ kullanıcıyla, Windows'ta kurulumdan sonra koşar.
 | `kalfa-yalitim.exe` yalıtımın yazabildiği bir yerden başlatılmaz | — | ✓ |
 | Sahte `bwrap` çalışma alanında olsa da seçilmez | ✓ | — |
 
+2b'de Linux sütunu `crates/kalfa-sandbox/tests/yalitim.rs`'tedir; testler
+WSL2'de sıradan kullanıcı `kalfatest` ile koşar. "Kalfa'nın ölümü" testi, test
+ikilisini yardımcı süreç olarak başlatıp `SIGKILL` ile öldürür. Seccomp
+engelleri `perl`'ün `syscall`'ıyla sınanır (`perl-base` Debian ve Ubuntu'da her
+sistemde vardır).
+
 ### 12.3 Araç zinciri uyumluluğu
 
 Yalıtım içinde, iki platformda, bu depoda ve `kalfa-sandbox/tests/ornekler/`
@@ -1124,6 +1256,18 @@ altındaki küçük projelerde:
 
 Çalışmayan her durum §14'e gerekçesiyle yazılır. Profil yalnızca açık bir
 kararla genişletilir.
+
+2b (Linux, WSL2): `crates/kalfa-tools/tests/uyumluluk.rs` kabuk aracının bütün
+yolundan (tarama, git yerleşimi, bwrap) geçer:
+
+- git: worktree'de `status`, `diff`, `add`, `commit`; commit ana deponun
+  nesnelerine yazılır.
+- cargo: örnek crate, önceden indirilmiş `hex` ile `cargo test --offline`.
+- npm: `npm ci` (ağlı) ve `npm test` (ağsız).
+- python: `python3 -c` (`json`, `sqlite3`, `ssl`).
+
+Hiçbiri `/sys`'e ihtiyaç duymadı (A4). Rustup vekili
+`~/.rustup/update-hashes`'i istedi; `~/.rustup`'ın tamamı açıldı (§7.1).
 
 ### 12.4 Arayüz (Vitest)
 
@@ -1146,6 +1290,9 @@ Sahte EVREN'e kabuk çağrısı yapan senaryolar eklenir. Komut gerçek yalıtı
 - 2a'da yalıtım yoktur; her senaryo yalıtımsız çalışır ve sahte yerel iletişim
   kutusu (`onay: true`) onaylar. Komutlar `node` ile yazılır; iki platformda
   aynı çalışır.
+- Linux'ta uygulama `WEBKIT_DISABLE_COMPOSITING_MODE=1` ile açılır: Xvfb'de
+  GPU yoktur ve yazılım GL birleştiricisi gecikme ölçümünü arayüzün değil
+  kendi kare hızının ölçümüne çevirir (§10.1).
 
 ### 12.6 Doğrulama komutları
 
@@ -1190,12 +1337,12 @@ Bu belge commit'lenirken üst belgeye işlenenler:
 
 Plan ya da prototip aşamasında cevaplanacaklar:
 
-| # | Soru | Nerede |
+| # | Soru | Nerede ve sonuç |
 |---|---|---|
-| A1 | `RLIMIT_NPROC` kullanıcı ad alanında yalnızca içerideki süreçleri mi sayıyor? | 2b |
-| A2 | Salt okunur bağlanan cargo registry'siyle ağsız derleme çalışıyor mu; çalışmıyorsa kopyanın biçimi ne? | 2b |
-| A3 | Gizli dosya taraması 100 000 dosyada 200 ms'nin altında mı? | 2b |
-| A4 | Hangi araçlar `/sys`'e ihtiyaç duyuyor? | 2b (§12.3) |
+| A1 | `RLIMIT_NPROC` kullanıcı ad alanında yalnızca içerideki süreçleri mi sayıyor? | 2b: evet, sınır içeride (`prlimit`) konunca (§6.3) |
+| A2 | Salt okunur bağlanan cargo registry'siyle ağsız derleme çalışıyor mu; çalışmıyorsa kopyanın biçimi ne? | 2b: çalışıyor; yeni crate ağlı çalıştırmada çalışma alanının kendi registry'sine iner (§7.4) |
+| A3 | Gizli dosya taraması 100 000 dosyada 200 ms'nin altında mı? | 2b: evet, 60–63 ms (§7.2) |
+| A4 | Hangi araçlar `/sys`'e ihtiyaç duyuyor? | 2b: git, cargo, npm, node ve python duymadı (§12.3) |
 | A5 | P1–P10 | 2c (§9.5) |
 | A6 | Uzun ömürlü `calistir` aracısı gerekli mi (P6)? | 2c |
 | A7 | Windows'ta çalışma alanı SID'inin biçimi | 2c |

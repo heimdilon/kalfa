@@ -98,7 +98,7 @@ fn adaylar(dizin: &Path, program: &str, ortam: &[(String, String)]) -> Vec<PathB
     adaylar
 }
 
-fn calistirilabilir(yol: &Path) -> bool {
+pub(crate) fn calistirilabilir(yol: &Path) -> bool {
     let Ok(bilgi) = std::fs::metadata(yol) else {
         return false;
     };

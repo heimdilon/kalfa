@@ -12,6 +12,7 @@
   import IconTile from '../bilesenler/IconTile.svelte';
   import { KIP_ADI, MODEL_PROFILI_ADI, m } from '../dil/tr';
   import { KIPLER, type Kip } from '../ipc/tipler';
+  import { AltaYapisma, kaydirmaNiyetiMi } from './altaYapisma';
   import type { AnaDurum } from './anaDurum.svelte';
   import { satirBasligi } from './bicim';
   import KonusmaOgesi from './KonusmaOgesi.svelte';
@@ -44,12 +45,12 @@
   let metin = $state('');
   let akis = $state<HTMLDivElement>();
   let icerik = $state<HTMLDivElement>();
-  let altta = true;
+  const yapisma = new AltaYapisma(48);
 
   // Oturum değişince en alttan başlanır.
   $effect(() => {
     void durum.secili;
-    altta = true;
+    yapisma.sifirla();
   });
 
   // İçerik büyüdüğünde (yeni öğe, akan metin, ekrana giren öğenin gerçek
@@ -57,19 +58,32 @@
   $effect(() => {
     void durum.secili;
     if (!akis) return;
-    akis.scrollTop = akis.scrollHeight;
+    yapisma.kaydir(akis);
     if (!icerik || typeof ResizeObserver === 'undefined') return;
     const kutu = akis;
-    const gozcu = new ResizeObserver(() => {
-      if (altta) kutu.scrollTop = kutu.scrollHeight;
-    });
+    const gozcu = new ResizeObserver(() => yapisma.kaydir(kutu));
     gozcu.observe(icerik);
     return () => gozcu.disconnect();
   });
 
+  // Kullanıcının kaydırma niyeti (`kaydirmaNiyetiMi`). Yalnızca gözlenir; bu
+  // yüzden şablonda değil, pasif dinleyicilerle bağlanır.
+  $effect(() => {
+    if (!akis) return;
+    const kutu = akis;
+    const niyet = (e: Event) => {
+      if (kaydirmaNiyetiMi(e as Event & { key?: string }, kutu)) yapisma.niyet();
+    };
+    const olaylar = ['wheel', 'touchmove', 'pointerdown', 'keydown'] as const;
+    for (const o of olaylar) kutu.addEventListener(o, niyet, { passive: true });
+    return () => {
+      for (const o of olaylar) kutu.removeEventListener(o, niyet);
+    };
+  });
+
   function kaydirildi() {
     if (!akis) return;
-    altta = akis.scrollHeight - akis.scrollTop - akis.clientHeight < 48;
+    yapisma.olay(akis);
     if (akis.scrollTop < 40) void eskileriYukle();
   }
 

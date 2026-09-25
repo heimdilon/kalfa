@@ -189,6 +189,8 @@ export interface UygulamaDurumu {
   varsayilan_model: string;
   son_oturum: OturumId | null;
   yalitim: YalitimDurumu;
+  /** `linux`, `windows`, `macos`: araç zinciri dizinleri yalnızca Linux'ta. */
+  platform: string;
 }
 
 export interface OturumSatiri {

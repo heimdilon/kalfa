@@ -1,7 +1,13 @@
 // Arayüzün Türkçe metin kataloğu (1c tasarımı §9.4). Kurallar: "siz" dili;
 // ünlem ve emoji yok; biten iş "Tamamlandı" ile özetlenir; hata metni ne
 // olduğunu ve ne yapılacağını söyler. Değişkenler `{ad}` biçimindedir.
-import type { AktarimDurmaNedeni, AracDurumu, Kip, ModelProfili } from '../ipc/tipler';
+import type {
+  AktarimDurmaNedeni,
+  AracDurumu,
+  Kip,
+  ModelProfili,
+  YalitimYoklukNedeni,
+} from '../ipc/tipler';
 
 export const tr = {
   'uygulama.adi': 'Kalfa',
@@ -69,6 +75,7 @@ export const tr = {
 
   'menu.ad': 'Menü',
   'menu.oturumlar': 'Oturumlar',
+  'menu.ayarlar': 'Ayarlar',
   'menu.anahtar': 'Anahtarı değiştir',
 
   'liste.baslik': 'Oturumlar',
@@ -178,6 +185,26 @@ export const tr = {
   'durum.model_ipucu': 'Yönlendirilen model',
   'durum.yalitimli': 'Yalıtımlı',
   'durum.yalitimsiz': 'Yalıtımsız',
+  'durum.yalitimli_ipucu': 'Komutlar yalıtımda çalışıyor ({arka_uc})',
+
+  'ayarlar.baslik': 'Ayarlar',
+  'ayarlar.yalitim': 'Yalıtım',
+  'ayarlar.yalitim.hazir': 'Yalıtımlı: {arka_uc} {surum}',
+  'ayarlar.yalitim.hazir_aciklama':
+    'Komutlar yalıtımda çalışır. Ev dizininiz ve diğer çalışma alanları görünmez, çalışma alanı dışına yazılamaz, ağ kapalıdır; ağ isteyen komut ayrıca onayınıza sunulur.',
+  'ayarlar.yalitim.yok': 'Yalıtımsız: {neden}',
+  'ayarlar.yalitim.neden.BwrapYok': 'bubblewrap bulunamadı',
+  'ayarlar.yalitim.neden.KullaniciAdAlaniKapali': 'sistem kullanıcı ad alanlarını kısıtlıyor',
+  'ayarlar.yalitim.neden.KurulumGerekli': 'yalıtımın kurulması gerekiyor',
+  'ayarlar.yalitim.neden.KurulumBozuk': 'yalıtımın kurulumu bozuk',
+  'ayarlar.yalitim.neden.Desteklenmiyor': 'bu sistemde kullanılamıyor',
+  'ayarlar.yalitim.yeniden_dene': 'Yeniden dene',
+  'ayarlar.arac_zinciri': 'Araç zinciri dizinleri',
+  'ayarlar.arac_zinciri.aciklama':
+    "Yalıtımda salt okunur görünen dizinler. Cargo ve rustup araç zincirleri kendiliğinden görünür; başka bir yere kurulan araçlar (örneğin /opt/node) için dizini buradan ekleyin. Ev dizininiz ve Kalfa'nın veri dizini eklenemez.",
+  'ayarlar.arac_zinciri.ekle': 'Dizin ekle',
+  'ayarlar.arac_zinciri.kaldir': '{yol} dizinini kaldır',
+  'ayarlar.arac_zinciri.bos': 'Eklenmiş dizin yok.',
 
   'duyuru.onay': 'Onay isteği: {sayi} değişiklik kararınızı bekliyor.',
   'duyuru.sart': 'EVREN şartlarının onayı bekleniyor.',
@@ -251,4 +278,12 @@ export const AKTARIM_DURMA_METNI: Record<AktarimDurmaNedeni, MetinAnahtari> = {
   TuketiciYetismedi: 'aktarim.TuketiciYetismedi',
   OlayCokBuyuk: 'aktarim.OlayCokBuyuk',
   Diger: 'aktarim.Diger',
+};
+
+export const YALITIM_NEDENI: Record<YalitimYoklukNedeni, MetinAnahtari> = {
+  BwrapYok: 'ayarlar.yalitim.neden.BwrapYok',
+  KullaniciAdAlaniKapali: 'ayarlar.yalitim.neden.KullaniciAdAlaniKapali',
+  KurulumGerekli: 'ayarlar.yalitim.neden.KurulumGerekli',
+  KurulumBozuk: 'ayarlar.yalitim.neden.KurulumBozuk',
+  Desteklenmiyor: 'ayarlar.yalitim.neden.Desteklenmiyor',
 };

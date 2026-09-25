@@ -22,6 +22,11 @@ impl Yalitici for Yalitimsiz {
     }
 
     fn baslat(&self, istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi> {
+        if istek.alan.is_some() {
+            return Err(BaslatmaHatasi::Yalitim(
+                "komut yalıtımlı çalışmak üzere onaylandı ama yalıtım kullanılamıyor".into(),
+            ));
+        }
         Surec::baslat(istek)
     }
 }

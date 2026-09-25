@@ -11,6 +11,7 @@ use kalfa_core::gecmis::GecmisSayfasi;
 use kalfa_core::izin::Kip;
 use kalfa_core::kimlik::OturumId;
 use kalfa_uygulama::Uygulama;
+use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::hata::KomutHatasi;
 use kalfa_uygulama::sozlesme::{
     AnahtarSonucu, CalismaAlani, KabulYaniti, OnayGirdisi, OturumAcilisi, OturumSatiri,
@@ -19,7 +20,7 @@ use kalfa_uygulama::sozlesme::{
 use tauri::ipc::Channel;
 use tauri::{Builder, Runtime, State};
 
-use crate::kanal::TauriKanal;
+use crate::kanal::{TauriKanal, TauriYalitimKanali};
 
 type Sonuc<T> = Result<T, KomutHatasi>;
 
@@ -45,6 +46,11 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         baglanti_ac,
         anahtar_penceresini_ac,
         sart_penceresini_ac,
+        yalitimi_dinle,
+        yalitimi_algila,
+        arac_zinciri_dizinleri,
+        arac_zinciri_dizini_ekle,
+        arac_zinciri_dizini_kaldir,
         sart_penceresi_durumu,
         anahtari_kaydet,
         sartlari_kabul_et,
@@ -177,6 +183,40 @@ pub async fn anahtar_penceresini_ac(u: State<'_, Arc<Uygulama>>) -> Sonuc<()> {
 pub async fn sart_penceresini_ac(u: State<'_, Arc<Uygulama>>) -> Sonuc<()> {
     u.sart_penceresini_ac();
     Ok(())
+}
+
+/// Ana pencere açılınca bir kez çağırır; durum değişimi bu kanala yazılır.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn yalitimi_dinle(
+    u: State<'_, Arc<Uygulama>>,
+    kanal: Channel<YalitimDurumu>,
+) -> Sonuc<()> {
+    u.yalitimi_dinle(Box::new(TauriYalitimKanali(kanal)));
+    Ok(())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn yalitimi_algila(u: State<'_, Arc<Uygulama>>) -> Sonuc<YalitimDurumu> {
+    u.yalitimi_algila().await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn arac_zinciri_dizinleri(u: State<'_, Arc<Uygulama>>) -> Sonuc<Vec<String>> {
+    Ok(u.arac_zinciri_dizinleri())
+}
+
+/// Dizin yerel klasör seçiciyle seçilir; arayüz yol gönderemez.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn arac_zinciri_dizini_ekle(u: State<'_, Arc<Uygulama>>) -> Sonuc<Vec<String>> {
+    u.arac_zinciri_dizini_ekle().await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn arac_zinciri_dizini_kaldir(
+    u: State<'_, Arc<Uygulama>>,
+    yol: String,
+) -> Sonuc<Vec<String>> {
+    u.arac_zinciri_dizini_kaldir(&yol)
 }
 
 // --- Şart penceresi ---

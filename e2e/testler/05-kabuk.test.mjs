@@ -1,10 +1,12 @@
-// Kabuk (aşama 2 tasarımı §12.5): onay sayfası → yerel onay → canlı çıktı →
-// sonuç; süren komutun iptali süreç ağacını durdurur; çıktı seli arayüzü
-// kilitlemez ve turu iptal ettirmez. 2a'da yalıtım yoktur: her komut yerel
-// pencerede onaylanır (sahte iletişim kutusu `onay: true` ile onaylar).
+// Kabuk (aşama 2 tasarımı §12.5): onay sayfası → onay → canlı çıktı → sonuç;
+// süren komutun iptali süreç ağacını durdurur; çıktı seli arayüzü kilitlemez ve
+// turu iptal ettirmez. Linux'ta komutlar gerçek yalıtımda (bwrap) çalışır;
+// Windows'ta yalıtım aşama 2d'ye kadar yoktur ve her komut yerel pencerede
+// onaylanır (sahte iletişim kutusu `onay: true` ile onaylar).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { GECERLI_ANAHTAR, Kalfa, sureyleBekle } from '../yardimci/kalfa.mjs';
 
@@ -42,6 +44,25 @@ const SENARYOLAR = {
         },
       ],
       [{ tur: 'metin', metin: 'olmamalı' }],
+    ],
+  },
+  'kabuk-gizli': {
+    yanitlar: [
+      [
+        {
+          tur: 'arac',
+          ad: 'kabuk',
+          argumanlar: node(
+            "const fs = require('fs'); " +
+              "try { console.log('env=' + fs.readFileSync('.env', 'utf8')); } " +
+              "catch (e) { console.log('env-okunamadi'); } " +
+              "require('net').connect(80, '1.1.1.1')" +
+              ".on('error', () => console.log('ag-kapali'))" +
+              ".on('connect', () => { console.log('ag-acik'); process.exit(0); });",
+          ),
+        },
+      ],
+      [{ tur: 'metin', metin: 'Yalıtım denendi.' }],
     ],
   },
   'kabuk-sel': {
@@ -93,8 +114,13 @@ async function terminalMetni(k) {
   );
 }
 
+/** Seçiciye uyan ilk öğenin metni. */
+async function sayfaMetni(k, secici) {
+  return k.b.execute((s) => document.querySelector(s)?.textContent ?? '', secici);
+}
+
 async function onayla(k) {
-  await k.dugme('İncele');
+  await k.onaySayfasiniAc();
   await k.dugme('Tümünü onayla');
 }
 
@@ -154,5 +180,41 @@ describe('kabuk', () => {
     await k.gonder('devam');
     await k.metniBekle('Yanıt: devam');
     assert.equal(await k.turSonuBekle(4), 'Normal');
+  });
+});
+
+describe('kabuk yalıtımı (Linux)', { skip: process.platform !== 'linux' }, () => {
+  let k;
+  before(async () => {
+    k = await Kalfa.ac({
+      sart: 'kabul',
+      anahtar: GECERLI_ANAHTAR,
+      onay: true,
+      senaryolar: SENARYOLAR,
+    });
+    writeFileSync(join(k.alan, '.env'), 'GIZLI_DEGER=e2e-sir\n');
+    await k.pencere('ana');
+    await k.yeniOturum();
+  });
+  after(async () => {
+    await k?.kapat();
+  });
+
+  it('komut yalıtımda çalışır: gizli dosya okunamaz, ağ kapalıdır', async () => {
+    await sureyleBekle(
+      async () => (await sayfaMetni(k, '.durum-cubugu')).includes('Yalıtımlı'),
+      10000,
+      'durum çubuğu yalıtımı göstermedi',
+    );
+    await k.gonder('kabuk-gizli');
+    await k.onaySayfasiniAc();
+    assert.match(await sayfaMetni(k, '[role="dialog"]'), /Yalıtımlı \(bwrap\)/);
+    await k.dugme('Tümünü onayla');
+    assert.equal(await k.turSonuBekle(1), 'Normal');
+    await k.metniBekle('Yalıtım denendi.');
+    const terminal = await terminalMetni(k);
+    assert.match(terminal, /env-okunamadi/);
+    assert.match(terminal, /ag-kapali/);
+    assert.doesNotMatch(terminal, /e2e-sir/);
   });
 });

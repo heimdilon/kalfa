@@ -1,7 +1,8 @@
 <!--
   Durum çubuğu (1c tasarımı §8.3): oturumun hâli, bağlantı ve kimlik deposu
   uyarıları; son gözlenen bakiye ve zamanı, token kullanımı (düşünce dökümüyle),
-  yönlendirilen model, izin kipi. Bağlam doluluğu gösterilmez.
+  yönlendirilen model, izin kipi. Bağlam doluluğu gösterilmez. Yalıtım
+  göstergesine tıklanınca Ayarlar açılır (aşama 2 tasarımı §10.3).
 -->
 <script lang="ts">
   import StatusBar from '../bilesenler/StatusBar.svelte';
@@ -30,12 +31,23 @@
     {#if durum.uygulama?.baglanti === 'Yok'}
       <StatusItem icon="wifi-off" tone="danger">{m('durum.baglanti_yok')}</StatusItem>
     {/if}
-    {#if durum.uygulama?.yalitim.tip === 'Hazir'}
-      <StatusItem icon="shield-check" tone="ok">{m('durum.yalitimli')}</StatusItem>
-    {:else if durum.uygulama?.yalitim.tip === 'Yok'}
-      <StatusItem icon="shield-alert" tone="warn" title={durum.uygulama.yalitim.talimat}>
-        {m('durum.yalitimsiz')}
-      </StatusItem>
+    {#if durum.uygulama}
+      {@const yalitim = durum.uygulama.yalitim}
+      <button type="button" class="yalitim" onclick={() => durum.ayarlariAc()}>
+        {#if yalitim.tip === 'Hazir'}
+          <StatusItem
+            icon="shield-check"
+            tone="ok"
+            title={m('durum.yalitimli_ipucu', { arka_uc: yalitim.arka_uc })}
+          >
+            {m('durum.yalitimli')}
+          </StatusItem>
+        {:else}
+          <StatusItem icon="shield-alert" tone="warn" title={yalitim.talimat}>
+            {m('durum.yalitimsiz')}
+          </StatusItem>
+        {/if}
+      </button>
     {/if}
     {#if durum.uygulama?.anahtar_deposu === 'Bellekte'}
       <StatusItem icon="key-round" tone="warn" title={m('hata.anahtar_bellekte')}>
@@ -71,3 +83,19 @@
     {/if}
   {/snippet}
 </StatusBar>
+
+<style>
+  .yalitim {
+    display: inline-flex;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    cursor: pointer;
+  }
+  .yalitim:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+</style>

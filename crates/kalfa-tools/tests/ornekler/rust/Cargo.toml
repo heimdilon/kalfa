@@ -1,0 +1,13 @@
+# Uyumluluk testinin örnek crate'i (aşama 2 tasarımı §12.3): yalıtımda,
+# ağsız, önceden indirilmiş bir bağımlılıkla derlenir. Çalışma alanının
+# parçası değildir.
+[package]
+name = "kalfa-ornek"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+hex = "0.4.3"
+
+[workspace]

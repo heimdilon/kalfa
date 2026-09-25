@@ -1,10 +1,12 @@
 <!--
   Ana pencere (1c tasarımı §8.1): menü, oturum listesi, konuşma ve en altta
-  durum çubuğu. Onay sayfası konuşmanın üstünde açılır.
+  durum çubuğu. Onay sayfası konuşmanın üstünde açılır. Menüden Ayarlar
+  seçilince liste ve konuşmanın yerine Ayarlar gelir.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
   import { AnaDurum } from './anaDurum.svelte';
+  import Ayarlar from './Ayarlar.svelte';
   import DurumCubugu from './DurumCubugu.svelte';
   import Konusma from './Konusma.svelte';
   import Menu from './Menu.svelte';
@@ -30,8 +32,12 @@
 <div class="ana">
   <div class="govde">
     <Menu {durum} />
-    <OturumListesi {durum} />
-    <Konusma {durum} />
+    {#if durum.gorunum === 'ayarlar'}
+      <Ayarlar {durum} />
+    {:else}
+      <OturumListesi {durum} />
+      <Konusma {durum} />
+    {/if}
   </div>
   <DurumCubugu {durum} />
   {#if durum.onay && onayIstegi}

@@ -1,4 +1,4 @@
-<!-- Menü (1c tasarımı §8.1): 1c'de yalnızca Oturumlar ve "Anahtarı değiştir". -->
+<!-- Menü (1c tasarımı §8.1): Oturumlar, Ayarlar (aşama 2 tasarımı §10.4) ve "Anahtarı değiştir". -->
 <script lang="ts">
   import NavItem from '../bilesenler/NavItem.svelte';
   import NavRail from '../bilesenler/NavRail.svelte';
@@ -13,7 +13,20 @@
     <div class="marka">{m('uygulama.adi')}</div>
     <div class="slogan">{m('uygulama.slogan')}</div>
   {/snippet}
-  <NavItem icon="message-square" active>{m('menu.oturumlar')}</NavItem>
+  <NavItem
+    icon="message-square"
+    active={durum.gorunum === 'oturumlar'}
+    onclick={() => durum.oturumlaraDon()}
+  >
+    {m('menu.oturumlar')}
+  </NavItem>
+  <NavItem
+    icon="settings"
+    active={durum.gorunum === 'ayarlar'}
+    onclick={() => durum.ayarlariAc()}
+  >
+    {m('menu.ayarlar')}
+  </NavItem>
   <NavItem icon="key-round" onclick={() => durum.anahtariDegistir()}>
     {m('menu.anahtar')}
   </NavItem>

@@ -16,6 +16,7 @@ use std::sync::Arc;
 use kalfa_core::aktarim::AktarimAyarlari;
 use kalfa_uygulama::anahtar::{AnahtarDeposu, AnahtarKasasi, SistemDeposu};
 use kalfa_uygulama::dizin::{VERI_DIZINI_DEGISKENI, veri_dizini};
+use kalfa_uygulama::yalitim::YalitimKaynagi;
 use kalfa_uygulama::{Bilesenler, Uygulama};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Builder, ExitRequestApi, Manager, RunEvent, Runtime, WindowEvent};
@@ -132,6 +133,8 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
         acici: Arc::new(TauriAcici(app.clone())),
         pencereler: Arc::new(TauriPencereler(app.clone())),
         aktarim: AktarimAyarlari::default(),
+        ev_dizini: app.path().home_dir()?,
+        yalitim: YalitimKaynagi::Platform,
     }))
 }
 

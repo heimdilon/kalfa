@@ -19,6 +19,11 @@
     "allow-oturumu-kapat",
     "allow-baglanti-ac",
     "allow-anahtar-penceresini-ac",
-    "allow-sart-penceresini-ac"
+    "allow-sart-penceresini-ac",
+    "allow-yalitimi-dinle",
+    "allow-yalitimi-algila",
+    "allow-arac-zinciri-dizinleri",
+    "allow-arac-zinciri-dizini-ekle",
+    "allow-arac-zinciri-dizini-kaldir"
   ]
 }

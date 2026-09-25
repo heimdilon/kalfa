@@ -58,6 +58,7 @@ impl Uygulama {
             varsayilan_model: modeller::VARSAYILAN_MODEL.to_string(),
             son_oturum: ic.son_oturum,
             yalitim: self.yalitici.durum(),
+            platform: std::env::consts::OS.to_string(),
         }
     }
 
@@ -72,7 +73,7 @@ impl Uygulama {
     /// Yerel klasör seçiciyi açar. Seçilen yol yalnızca bu çalıştırmada
     /// geçerli bir kimlikle arayüze verilir (1c tasarımı §5.1).
     pub async fn calisma_alani_sec(&self) -> Option<CalismaAlani> {
-        let yol = self.iletisim.klasor_sec().await?;
+        let yol = self.iletisim.klasor_sec("Çalışma alanı seçin").await?;
         let mut ic = self.ic();
         ic.son_alan += 1;
         let kimlik = ic.son_alan;

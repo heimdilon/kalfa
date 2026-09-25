@@ -20,9 +20,9 @@ pub struct TauriIletisim<R: Runtime>(pub AppHandle<R>);
 
 #[async_trait]
 impl<R: Runtime> Iletisim for TauriIletisim<R> {
-    async fn klasor_sec(&self) -> Option<PathBuf> {
+    async fn klasor_sec(&self, baslik: &str) -> Option<PathBuf> {
         let (gonder, al) = oneshot::channel();
-        let mut kutu = self.0.dialog().file().set_title("Çalışma alanı seçin");
+        let mut kutu = self.0.dialog().file().set_title(baslik);
         if let Some(pencere) = odakli_pencere(&self.0) {
             kutu = kutu.set_parent(&pencere);
         }

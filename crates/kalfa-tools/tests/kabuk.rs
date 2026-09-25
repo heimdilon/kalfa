@@ -10,7 +10,10 @@ use kalfa_core::izin::Siniflandirici;
 use kalfa_core::kabuk::{KabukBicimi, YalitimOzeti};
 use kalfa_core::kimlik::CagriId;
 use kalfa_core::protokol::CiktiAkisi;
-use kalfa_sandbox::Yalitimsiz;
+use kalfa_sandbox::{
+    BaslatmaHatasi, CalistirmaIstegi, Surec, Yalitici, YalitimDurumu, YalitimYoklukNedeni,
+    Yalitimsiz,
+};
 use kalfa_tools::{CalismaAlani, KabukAraci, KabukGuveni};
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -271,4 +274,184 @@ async fn olmayan_program_hata_verir() {
         0,
         "başlamayan komut güven kaydetmez"
     );
+}
+
+/// Yalıtım hazırmış gibi davranan yalıtıcı: isteği kaydeder, komutu
+/// yalıtımsız çalıştırır. `basarisiz` ise yalıtım başlatılamaz; `yok` ise
+/// durum "yalıtım yok" olur.
+#[derive(Default)]
+struct KayitliYalitici {
+    istekler: std::sync::Mutex<Vec<CalistirmaIstegi>>,
+    algilama: AtomicUsize,
+    basarisiz: AtomicBool,
+    yok: AtomicBool,
+}
+
+impl Yalitici for KayitliYalitici {
+    fn durum(&self) -> YalitimDurumu {
+        if self.yok.load(Ordering::SeqCst) {
+            return YalitimDurumu::Yok {
+                neden: YalitimYoklukNedeni::Desteklenmiyor,
+                talimat: "yok".into(),
+            };
+        }
+        YalitimDurumu::Hazir {
+            arka_uc: "bwrap".into(),
+            surum: "0.9.0".into(),
+        }
+    }
+
+    fn profil_ozeti(&self, ag: bool) -> Option<String> {
+        Some(format!("ozet-{ag}"))
+    }
+
+    fn baslat(&self, istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi> {
+        self.istekler.lock().unwrap().push(istek.clone());
+        if self.basarisiz.load(Ordering::SeqCst) {
+            return Err(BaslatmaHatasi::Yalitim("deneme".into()));
+        }
+        Yalitimsiz.baslat(&CalistirmaIstegi {
+            dizin: std::env::temp_dir(),
+            alan: None,
+            ..istek.clone()
+        })
+    }
+
+    fn yeniden_algila(&self) -> YalitimDurumu {
+        self.algilama.fetch_add(1, Ordering::SeqCst);
+        self.durum()
+    }
+}
+
+fn kur_yalitimli() -> (TempDir, KabukAraci, Arc<KayitliYalitici>) {
+    let d = TempDir::new().unwrap();
+    let s = Arc::new(Siniflandirici::yeni(d.path(), &[]).unwrap());
+    let alan = CalismaAlani::ac(s).unwrap();
+    let yalitici = Arc::new(KayitliYalitici::default());
+    let arac = KabukAraci::yeni(alan, yalitici.clone(), Arc::new(SahteGuven::default()));
+    (d, arac, yalitici)
+}
+
+#[tokio::test]
+async fn yalitim_hazirsa_tarif_profil_ozetini_tasir_ve_alan_bilgisi_verilir() {
+    let (d, arac, yalitici) = kur_yalitimli();
+    std::fs::create_dir_all(d.path().join(".git/hooks")).unwrap();
+    std::fs::write(d.path().join(".git/config"), "").unwrap();
+    std::fs::create_dir_all(d.path().join("alt")).unwrap();
+    std::fs::write(d.path().join(".env"), "x").unwrap();
+    std::fs::write(d.path().join("alt/sunucu.pem"), "x").unwrap();
+
+    let t = arac
+        .hazirla(&json!({"betik": "echo a"}))
+        .await
+        .unwrap()
+        .kabuk
+        .unwrap();
+    assert_eq!(
+        t.yalitim,
+        YalitimOzeti::Yalitimli {
+            arka_uc: "bwrap".into(),
+            profil: "ozet-false".into(),
+        }
+    );
+    let t = arac
+        .hazirla(&json!({"betik": "echo a", "ag": true}))
+        .await
+        .unwrap()
+        .kabuk
+        .unwrap();
+    assert!(matches!(t.yalitim, YalitimOzeti::Yalitimli { profil, .. } if profil == "ozet-true"));
+
+    let yazdir = if cfg!(windows) {
+        "Write-Output tamam"
+    } else {
+        "echo tamam"
+    };
+    let (sonuc, _) = calistir(&arac, &json!({"betik": yazdir, "dizin": "alt"})).await;
+    assert!(sonuc.unwrap().contains("tamam"));
+    let istek = yalitici.istekler.lock().unwrap().pop().unwrap();
+    let kok = d.path().canonicalize().unwrap();
+    let alan = istek.alan.expect("yalıtımlı istek alan bilgisi taşır");
+    assert_eq!(alan.kok, kok);
+    assert_eq!(istek.dizin, kok.join("alt"));
+    assert_eq!(
+        alan.gizli.dosyalar,
+        vec![kok.join(".env"), kok.join("alt").join("sunucu.pem")]
+    );
+    let korumali: Vec<_> = alan.korumali.iter().map(|k| k.yol.clone()).collect();
+    assert_eq!(
+        korumali,
+        vec![
+            kok.join(".git").join("hooks"),
+            kok.join(".git").join("config")
+        ]
+    );
+    assert!(alan.git_dizinleri.is_empty());
+}
+
+/// İstek, onaylanan hazırlıktaki kiple gider (§6.3): mühür denetimiyle
+/// çalıştırma arasında durum değişse de kip şimdiki durumdan çıkarılmaz;
+/// uyuşmazlığı arka uç reddeder.
+#[tokio::test]
+async fn istek_onaylanan_kiple_gider() {
+    let (_d, arac, yalitici) = kur_yalitimli();
+    let a = json!({"betik": "echo a"});
+    let son_istek = || yalitici.istekler.lock().unwrap().pop().unwrap();
+
+    let h = arac.hazirla(&a).await.unwrap();
+    yalitici.yok.store(true, Ordering::SeqCst);
+    let _ = arac
+        .calistir_akisli(&a, &h, CancellationToken::new(), CiktiGonderici::bos())
+        .await;
+    assert!(
+        son_istek().alan.is_some(),
+        "yalıtımlı onay yalıtımlı istenir"
+    );
+
+    let h = arac.hazirla(&a).await.unwrap();
+    yalitici.yok.store(false, Ordering::SeqCst);
+    let _ = arac
+        .calistir_akisli(&a, &h, CancellationToken::new(), CiktiGonderici::bos())
+        .await;
+    assert!(
+        son_istek().alan.is_none(),
+        "yalıtımsız onay yalıtımsız istenir"
+    );
+}
+
+#[tokio::test]
+async fn yalitim_baslatilamazsa_algilama_yeniden_calisir() {
+    let (_d, arac, yalitici) = kur_yalitimli();
+    yalitici.basarisiz.store(true, Ordering::SeqCst);
+    let (sonuc, _) = calistir(&arac, &json!({"betik": "echo a"})).await;
+    match sonuc {
+        Err(AracHatasi::Gecersiz(m)) => assert!(m.contains("Yalıtım başlatılamadı"), "{m}"),
+        diger => panic!("{diger:?}"),
+    }
+    assert_eq!(yalitici.algilama.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn bwrap_kurulum_hatasi_algilamayi_yeniden_calistirir() {
+    let (_d, arac, yalitici) = kur_yalitimli();
+    let (sonuc, _) = calistir(
+        &arac,
+        &betik(
+            "echo 'bwrap: Can not mount tmpfs' >&2; exit 1",
+            "[Console]::Error.WriteLine('bwrap: Can not mount tmpfs'); exit 1",
+        ),
+    )
+    .await;
+    assert!(matches!(sonuc, Err(AracHatasi::Basarisiz(_))), "{sonuc:?}");
+    assert_eq!(yalitici.algilama.load(Ordering::SeqCst), 1);
+    // Çıkış kodu 1 ama bwrap öneki yoksa algılama çalışmaz.
+    let _ = calistir(
+        &arac,
+        &betik(
+            "echo hata >&2; exit 1",
+            "[Console]::Error.WriteLine('hata'); exit 1",
+        ),
+    )
+    .await;
+    assert_eq!(yalitici.algilama.load(Ordering::SeqCst), 1);
 }

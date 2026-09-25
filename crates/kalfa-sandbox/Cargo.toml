@@ -7,14 +7,26 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[features]
+# Gerçek yalıtımla koşan testler (aşama 2 tasarımı §12.2). Yalıtım yoksa
+# atlanmaz, başarısız olur.
+yalitim-testleri = []
+
 [dependencies]
+hex.workspace = true
+ignore.workspace = true
 serde.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["process", "io-util"] }
 tokio-util.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+seccompiler.workspace = true
+tempfile.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true

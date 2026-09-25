@@ -13,6 +13,7 @@ pub mod guvenlik;
 pub mod hata;
 pub mod modeller;
 pub mod sozlesme;
+pub mod yalitim;
 
 mod kopru;
 mod oturumlar;

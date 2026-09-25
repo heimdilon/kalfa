@@ -5,13 +5,14 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use kalfa_core::aktarim::KanalMesaji;
+pub use kalfa_sandbox::YalitimDurumu;
 use url::Url;
 
 /// Yerel iletişim kutuları. Webview'daki bir betik bunları taklit edemez.
 #[async_trait]
 pub trait Iletisim: Send + Sync {
     /// Yerel klasör seçici; vazgeçilirse `None`.
-    async fn klasor_sec(&self) -> Option<PathBuf>;
+    async fn klasor_sec(&self, baslik: &str) -> Option<PathBuf>;
     /// Yerel onay kutusu; `tamam` düğmesi seçilirse `true`.
     async fn onayla(&self, baslik: &str, mesaj: &str, tamam: &str, vazgec: &str) -> bool;
 }
@@ -29,6 +30,12 @@ pub trait Pencereler: Send + Sync {
     /// açılınca durumunu `sart_penceresi_durumu` ile okur.
     fn sartlar_goster(&self);
     fn sartlar_kapat(&self);
+}
+
+/// Yalıtım durumunun ana pencereye yazıldığı yer (Tauri'de `Channel`;
+/// aşama 2 tasarımı §10.5).
+pub trait YalitimYazici: Send + Sync + 'static {
+    fn gonder(&self, durum: &YalitimDurumu) -> Result<(), String>;
 }
 
 /// Bir oturumun kanal mesajlarının yazıldığı yer (Tauri'de `Channel`).
