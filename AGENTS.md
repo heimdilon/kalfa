@@ -1,0 +1,184 @@
+# AGENTS.md — Kalfa
+
+Bu depoda çalışan kodlama ajanları (Codex, Claude Code ve benzerleri) için yönergeler.
+
+Kalfa, EVREN LLM Gateway için Türkçe, açık kaynak bir ajan harness'ı: Rust
+workspace'i, Tauri v2 masaüstü kabuğu ve Svelte 5 arayüzü. Sahibi ve telif
+sahibi Orkun Koray Güngör'dür. Lisans Apache-2.0'dır; `kalfa-plugin-sdk` ve WIT
+dosyaları Apache-2.0 WITH LLVM-exception'dır.
+
+## Önce okunacaklar
+
+1. [`docs/GELISTIRME_DURUMU.md`](docs/GELISTIRME_DURUMU.md): nerede kalındığı ve
+   sıradaki iş. Başka bir yerde çelişen bir bilgi görürseniz bu dosya ile
+   `git log` esastır.
+2. Tasarım belgeleri (`docs/superpowers/specs/`):
+   - Üst belge: `2026-09-21-kalfa-design.md`.
+   - 1c'nin tasarımı (Tauri ve Svelte kabuğu): `2026-09-22-kalfa-1c-design.md`.
+   - Aşama 2'nin tasarımı (kabuk ve yalıtım):
+     `2026-09-24-kalfa-2-kabuk-yalitim-design.md`.
+3. Uygulama planları (`docs/superpowers/plans/`). Bir plan üzerinde
+   çalışıyorsanız önce onun "Global Constraints" bölümünü okuyun.
+4. Ölçüm ve prototip raporları (`docs/superpowers/bulgular/`).
+
+## Depo yerleşimi
+
+| Yol | İçerik |
+|---|---|
+| `crates/kalfa-evren` | EVREN istemcisi: istek ve yanıt tipleri, SSE, şart uçları, kredi |
+| `crates/kalfa-core` | Arayüzden bağımsız oturum çekirdeği: izin kipleri, mühürlü onay, JSONL kayıt ve kurtarma, git koruması |
+| `crates/kalfa-tools` | Dosya araçları ve kabuk aracı |
+| `crates/kalfa-sandbox` | Komut çalıştırma, süreç sınırları, Linux yalıtımı (bwrap ve seccomp) |
+| `crates/kalfa-uygulama` | Uygulamanın Tauri'siz mantığı: oturumlar, köprü, yalıtım durumu, e2e sahteleri |
+| `crates/kalfa` | Tauri kabuğu: komutlar, pencereler, yetkiler |
+| `ui/` | Svelte 5 + TypeScript arayüzü (Vite, Vitest) |
+| `e2e/` | `tauri-driver` + WebdriverIO uçtan uca testleri |
+| `prototip/windows-yalitim/` | 2c Windows yalıtım prototipi; workspace'e girmez, ürün kodu değildir |
+| `design/`, `assets/`, `research/` | Tasarım girdileri ve araştırma; dokunmayın |
+
+## Kurulum ve doğrulama
+
+Rust sürümü `rust-toolchain.toml` ile sabittir (1.98.1). Node sürümü
+`^22.22.2 || >=24.15.0`'tır. Bağımlılıklar `--locked` ve `npm ci` ile kurulur.
+
+Her değişiklikten sonra:
+
+```sh
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo fmt --all -- --check
+```
+
+Değişikliğin dokunduğu yere göre ayrıca:
+
+- **`kalfa-uygulama` ya da `kalfa`:**
+
+  ```sh
+  cargo test -p kalfa-uygulama -p kalfa --features e2e --locked
+  cargo clippy -p kalfa -p kalfa-uygulama --features e2e --all-targets --locked -- -D warnings
+  ```
+
+- **`kalfa-sandbox` ya da `kalfa-tools`:** Aşağıdaki komutlar Linux'ta anlamlıdır
+  ve root olmayan bir kullanıcıyla koşar. WSL'de bu kullanıcı `kalfatest`'tir.
+
+  ```sh
+  cargo clippy -p kalfa-sandbox -p kalfa-tools --features "kalfa-sandbox/yalitim-testleri kalfa-tools/yalitim-testleri" --all-targets --locked -- -D warnings
+  cargo test -p kalfa-sandbox --features yalitim-testleri --test yalitim
+  cargo test -p kalfa-tools --features yalitim-testleri --test uyumluluk
+  ```
+
+- **Arayüz** (`ui/` içinde):
+
+  ```sh
+  npm ci && npm run check && npm test && npm run build
+  ```
+
+  `npm run check` 0 hata ve 0 uyarı vermelidir. `npm run build` paket
+  denetimini de içerir.
+
+- **Uçtan uca** (`e2e/` içinde):
+
+  ```sh
+  npm ci && npm test   # Linux'ta: xvfb-run -a npm test
+  ```
+
+  - `tauri-driver` gerekir.
+  - Windows'ta WebView2 sürümüyle aynı `msedgedriver` gerekir. PATH'te
+    değilse yolunu `KALFA_E2E_EDGEDRIVER` ile verin.
+
+Varsayılan testler EVREN anahtarı gerektirmez. Canlı API testleri `#[ignore]`
+ile ayrıdır; açıkça istenmedikçe çalıştırmayın. Bağlantı testleri Windows'ta
+sembolik bağlantı oluşturma izni ister.
+
+### Platform notları
+
+- **Linux:** Doğrulama WSL2'de, Ubuntu 24.04'te yapılır; dağıtımı
+  `wsl -d Ubuntu-24.04` ile seçin, çünkü varsayılan dağıtım docker-desktop
+  olabilir.
+  - Git Bash'ten çağırırken `MSYS_NO_PATHCONV=1` verin.
+  - `kalfa` crate'i `libwebkit2gtk-4.1-dev` ister. Yalıtım `bubblewrap` ister.
+  - e2e yardımcısı Linux'ta `WEBKIT_DISABLE_COMPOSITING_MODE=1` verir: Xvfb'de
+    yazılım GL birleştiricisi gecikme ölçümünü bozuyor.
+- **Windows:** Bir işi bitmiş saymak için iki platformda da yeşil olmalıdır.
+
+## Kod kuralları
+
+- **Dil:**
+  - Koddaki adlar, açıklamalar, testler ve commit mesajları Türkçedir.
+  - Kullanıcıya görünen metinler `ui/src/dil/tr.ts`'te ya da Rust'ta sabittir
+    ve "siz" diliyle yazılır.
+  - Arayüzde "sandbox" değil "yalıtım" denir.
+- **Hata işleme:** Rust'ta `unwrap()` ve `expect()` yalnızca testlerde ve
+  `test_destek.rs`'de kullanılır. Üretim kodunda `Result` ve `Option`
+  açıkça işlenir.
+- **`unsafe`:** Yalnızca planın izin verdiği dosyalarda, her blok bir
+  `// SAFETY:` açıklamasıyla yazılır.
+- **Bağımlılıklar:** Planda yazmıyorsa yeni crate ya da npm paketi eklenmez.
+- **Güvenlik sınırları:**
+  - Filtreler engel listesiyle değil izin listesiyle yazılır. Örnekler seccomp
+    soket kuralları ve ortam değişkenleridir.
+  - Araç, çalışma anındaki duruma göre değil onaylanan tarife göre çalışır.
+    Yalıtımlı onaylanan komut yalıtım yoksa başlamaz; tersi de geçerlidir.
+  - Test edilmeyen güvenlik sınırı yoktur. Yeni bir sınır testiyle gelir.
+- **Arayüz ve Tauri:**
+  - CSP sıkıdır: şablonlarda sabit `style="…"` kullanılmaz ve ham HTML
+    basılmaz. Markdown, AST üzerinden güvenli biçimde işlenir.
+  - Pencerelere Tauri'nin çekirdek izinleri verilmez; durum kanallarla iletilir.
+  - Arayüz arka uca dosya yolu göndermez. Yollar yerel klasör seçiciyle ya da
+    kimlikle gelir.
+- **Biçim:** Rust'ta `cargo fmt`. `npx prettier` kullanmayın: projede yok,
+  çalıştırılınca paketi indirir ve stili bozar.
+
+## Yapılmayacaklar
+
+- EVREN şartlarını kullanıcı adına asla kabul etmeyin (üst belge §11.8).
+  Canlı `POST /v1/terms/accept` çağrısı yapmayın.
+- `.env` dosyalarını, anahtarları ve belirteçleri commit'lemeyin.
+- Şunlara dokunmayın ve commit'lemeyin: `Screenshot*.png` (EVREN portalının
+  ekran görüntüleri; bize ait değil), `refs/shot-*.png`, kökteki `tasks.png` ve
+  `design/`.
+- Paket kurma, dosya indirme ve sistem ayarı değiştirmeden önce kullanıcıdan
+  izin alın.
+- Windows'ta yönetici gerektiren adımları (UAC, ACL, kök izni, kullanıcı ya da
+  güvenlik duvarı değişikliği) siz çalıştırmayın. Onları, geri alma betiğiyle
+  birlikte kullanıcının çalıştıracağı bir PowerShell betiğine yazın.
+- Makinedeki başka araçların yalıtım altyapısına dokunmayın. Örneğin Codex'in
+  kendi Windows sandbox kullanıcıları ve grupları.
+
+## İş akışı
+
+- **Dallar:** Varsayılan dal `kalfa-asama-1`'dir. Her iş ayrı bir dalda ve PR
+  ile yürür (`heimdilon/kalfa`, özel depo).
+- **Planlı işler:**
+  1. Claude planı yazar ve PR'ı açar. Planın kodu önceden iki platformda
+     doğrulanmıştır.
+  2. Codex PR'daki planı uygular.
+  3. Claude inceler ve Windows ile WSL'de doğrular.
+  4. Kullanıcının onayıyla PR squash olarak birleştirilir.
+- **Plana bağlılık:** Plandan sapmanız gerekirse durun, gerekçeyi PR'a yazın.
+  Plandaki bir kural kodla çelişiyorsa planı değil çelişkiyi bildirin.
+- **Commit mesajları:** Türkçe ve önekli yazılır: `sandbox:`, `çekirdek:`,
+  `araçlar:`, `uygulama:`, `ui:`, `e2e:`, `docs:`, `prototip:`.
+  - Codex'in commit'lerine Claude satırı eklenmez.
+  - Claude'un commit'leri `Co-Authored-By` satırı taşır.
+- **Paylaşılan dosyalar:** `docs/GELISTIRME_DURUMU.md` ve README'yi
+  commit'lemeden önce `git diff` ile başkasının düzenlemesi var mı bakın.
+- **Belgeler:** Bir aşama bitince `docs/GELISTIRME_DURUMU.md` ve ilgili tasarım
+  belgesi güncellenir. Ölçüm sonuçları `docs/superpowers/bulgular/`'a yazılır.
+
+## Windows yalıtımı (aşama 2d)
+
+Tasarım AppContainer'a göredir (aşama 2 tasarımı §9; 2c'de ölçüldü).
+
+- **Çalıştırma:** Komut, geliştiricinin hesabıyla, çalışma alanına özel bir
+  AppContainer'da ve bir Job Object içinde çalışır.
+- **Kimlikler:** Çalışma alanını paket SID'i ayırır. Araç zinciri dizinleri
+  bir yetenek SID'ine okuma izni verir.
+- **Korumalı yollar:** AppContainer, paket SID'ine verilen ret (deny) izinlerini
+  uygulamaz. Korumalı yollar ve gizli dosyalar, mirası kesip izin vermeyerek
+  korunur.
+- **Kök izni:** `C:\` köküne verilen listeleme izni yalnızca kökü değiştiren
+  `SetFileSecurityW` ile yazılır, `SE_DACL_AUTO_INHERIT_REQ` bayrağıyla.
+  `SetNamedSecurityInfo` mirası bütün sürücüye yayar.
+- **Prototip:** Ölçüm aracı ve betikler `prototip/windows-yalitim/`'dedir
+  (README'ye bakın).
