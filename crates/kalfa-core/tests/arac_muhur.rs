@@ -214,6 +214,7 @@ fn kabuk_muhru_tarifin_her_alanina_baglidir() {
             profil: "p1".into(),
         },
         ilk_cagri: false,
+        alan_hazirligi: false,
     };
     let h = |t: KabukTarifi| Hazirlik {
         tum_calisma_alani: true,
@@ -246,6 +247,10 @@ fn kabuk_muhru_tarifin_her_alanina_baglidir() {
         },
         KabukTarifi {
             ilk_cagri: true,
+            ..tarif.clone()
+        },
+        KabukTarifi {
+            alan_hazirligi: true,
             ..tarif.clone()
         },
     ];

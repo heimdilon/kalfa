@@ -112,6 +112,11 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
         &app.path().data_dir()?,
         std::env::var_os(VERI_DIZINI_DEGISKENI),
     );
+    let yalitim = kalfa_uygulama::dizin::yalitim_dizini(
+        &veri,
+        &app.path().local_data_dir()?,
+        std::env::var_os(VERI_DIZINI_DEGISKENI),
+    );
     let kalici: Option<Box<dyn AnahtarDeposu>> =
         if std::env::var(ANAHTAR_DEPOSU_DEGISKENI).as_deref() == Ok("bellek") {
             None
@@ -134,6 +139,7 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
         pencereler: Arc::new(TauriPencereler(app.clone())),
         aktarim: AktarimAyarlari::default(),
         ev_dizini: app.path().home_dir()?,
+        yalitim_dizini: yalitim,
         yalitim: YalitimKaynagi::Platform,
     }))
 }

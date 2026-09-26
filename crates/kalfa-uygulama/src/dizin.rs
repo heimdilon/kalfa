@@ -19,6 +19,17 @@ pub fn veri_dizini(platform_veri_dizini: &Path, ortam: Option<OsString>) -> Path
     platform_veri_dizini.join(if cfg!(windows) { "Kalfa" } else { "kalfa" })
 }
 
+/// Yalıtımın çalışma alanına özel dizinlerinin kökü (aşama 2 tasarımı §7.3).
+/// Windows'ta `%LOCALAPPDATA%\Kalfa\yalitim` (`yerel_veri`: Tauri'de
+/// `local_data_dir()`): önbellekler dolaşan profile girmez. Linux'ta ve
+/// `KALFA_VERI_DIZINI` verildiğinde veri dizinindeki `yalitim`.
+pub fn yalitim_dizini(veri: &Path, yerel_veri: &Path, ortam: Option<OsString>) -> PathBuf {
+    if cfg!(windows) && ortam.filter(|d| !d.is_empty()).is_none() {
+        return yerel_veri.join("Kalfa").join("yalitim");
+    }
+    veri.join("yalitim")
+}
+
 pub fn oturum_dizini(veri_dizini: &Path) -> PathBuf {
     veri_dizini.join("oturumlar")
 }

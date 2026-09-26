@@ -9,7 +9,7 @@ use kalfa_core::saglayici::Saglayici;
 use kalfa_core::test_destek::SahteSaglayici;
 use kalfa_evren::EvrenError;
 use kalfa_uygulama::anahtar::{AnahtarDeposu, AnahtarKasasi, BellekDeposu, DepoHatasi};
-use kalfa_uygulama::dizin::{kayit_yolu, oturum_dizini, veri_dizini};
+use kalfa_uygulama::dizin::{kayit_yolu, oturum_dizini, veri_dizini, yalitim_dizini};
 use kalfa_uygulama::evren::DegisirSaglayici;
 use kalfa_uygulama::guvenlik::{acilabilir_adres, gezinme_izinli, yukseltme_mi};
 use kalfa_uygulama::modeller::{VARSAYILAN_MODEL, bilinen_model_mi, modeller};
@@ -115,6 +115,18 @@ fn veri_dizini_platforma_gore_ve_ortamla_degisir() {
     assert_eq!(
         veri_dizini(taban, Some(OsString::from("baska"))),
         Path::new("baska")
+    );
+    // Yalıtım dizini Windows'ta yerel (dolaşmayan) veri dizinindedir.
+    let yerel = Path::new("yerel");
+    let yalitim = yalitim_dizini(Path::new("v"), yerel, None);
+    if cfg!(windows) {
+        assert_eq!(yalitim, yerel.join("Kalfa").join("yalitim"));
+    } else {
+        assert_eq!(yalitim, Path::new("v").join("yalitim"));
+    }
+    assert_eq!(
+        yalitim_dizini(Path::new("v"), yerel, Some(OsString::from("v"))),
+        Path::new("v").join("yalitim")
     );
     let oturum = OturumId::yeni();
     assert_eq!(

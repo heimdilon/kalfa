@@ -168,6 +168,7 @@ export function anaSenaryosu(): SahteArka {
                       ag: false,
                       yalitim: { tip: 'Yalitimsiz', talimat: arka.uygulama.yalitim.tip === 'Yok' ? arka.uygulama.yalitim.talimat : '' },
                       ilk_cagri: false,
+                      alan_hazirligi: false,
                     },
                     yerel_onay: true,
                   }),

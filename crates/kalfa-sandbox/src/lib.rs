@@ -13,9 +13,11 @@ pub mod profil;
 pub mod program;
 mod surec;
 pub mod tarama;
+#[cfg(windows)]
+pub mod windows;
 mod yalitimsiz;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -114,6 +116,30 @@ pub trait Yalitici: Send + Sync {
 
     /// Kullanıcının eklediği araç zinciri dizinleri (§7.1).
     fn okunur_dizinleri_ayarla(&self, _dizinler: Vec<PathBuf>) {}
+
+    /// Çalışma alanı yalıtım için hazırlanmalı mı (§9.4)? Hazırlık çalışma
+    /// alanının izinlerini değiştirir; onayı her kipte yerel pencerede
+    /// sorulur. Linux'ta hazırlık yoktur.
+    fn hazirlik_gerekli(&self, _kok: &Path) -> bool {
+        false
+    }
+
+    /// Yalıtımlı her çalıştırmadan hemen önce çağrılır (§9.4).
+    ///
+    /// - Hazırlanmamış çalışma alanı yalnızca `hazirlik_onaylandi` ise
+    ///   hazırlanır: onaylanan tarif hazırlığı içeriyordu. Değilse hata döner;
+    ///   onaydan sonra hazırlık geri alındıysa komut başlamaz.
+    /// - Hazırlanmış çalışma alanında yeni gizli dosyalar ve korumalı yollar
+    ///   işlenir.
+    /// - `ilerleme` araç kartına giden satırlardır.
+    fn alani_hazirla(
+        &self,
+        _alan: &AlanBilgisi,
+        _hazirlik_onaylandi: bool,
+        _ilerleme: &mut dyn FnMut(&str),
+    ) -> Result<(), BaslatmaHatasi> {
+        Ok(())
+    }
 }
 
 /// Platformun yalıtıcısının ayarları.
@@ -128,9 +154,8 @@ pub struct PlatformAyari {
     pub degisince: Box<dyn Fn(&YalitimDurumu) + Send + Sync>,
 }
 
-/// Platformun yalıtıcısı. Linux'ta bwrap; bwrap kullanılamıyorsa komutlar
-/// yalıtımsız çalışır ve durum bunu söyler. Diğer platformlarda şimdilik
-/// yalıtımsız (aşama 2d).
+/// Platformun yalıtıcısı. Linux'ta bwrap, Windows'ta AppContainer kullanılır;
+/// desteklenmiyorsa durum bunu söyler.
 pub fn platform_yaliticisi(ayar: PlatformAyari) -> Arc<dyn Yalitici> {
     #[cfg(target_os = "linux")]
     {
@@ -145,7 +170,19 @@ pub fn platform_yaliticisi(ayar: PlatformAyari) -> Arc<dyn Yalitici> {
             ayar.degisince,
         ))
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        Arc::new(windows::yalitici::WindowsYalitici::yeni(
+            windows::yalitici::WindowsAyari {
+                ev: ayar.ev,
+                yalitim_dizini: ayar.yalitim_dizini,
+                ek_okunur: ayar.ek_okunur,
+                git: GitKimligi::oku(),
+            },
+            ayar.degisince,
+        ))
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = ayar;
         Arc::new(Yalitimsiz)

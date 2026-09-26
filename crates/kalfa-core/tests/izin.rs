@@ -324,6 +324,7 @@ fn kabuk(yalitimli: bool, ag: bool, ilk_cagri: bool) -> kalfa_core::kabuk::Kabuk
             }
         },
         ilk_cagri,
+        alan_hazirligi: false,
     }
 }
 
@@ -363,6 +364,30 @@ fn kabuk_kararlari() {
     }
     assert!(matches!(
         kabuk_karari(Kip::Inceleme, &kabuk(true, false, false)),
+        Karar::Yasak { .. }
+    ));
+    // Windows'ta çalışma alanının hazırlığı her kipte yerel onay ister.
+    for kip in [Kip::Siki, Kip::Proje, Kip::Serbest] {
+        let tarif = kalfa_core::kabuk::KabukTarifi {
+            alan_hazirligi: true,
+            ..kabuk(true, false, true)
+        };
+        assert_eq!(
+            kabuk_karari(kip, &tarif),
+            Karar::YerelOnayli {
+                uyarilar: vec![ILK_KABUK_UYARISI.into(), ALAN_HAZIRLIGI_UYARISI.into()]
+            },
+            "{kip:?}"
+        );
+    }
+    assert!(matches!(
+        kabuk_karari(
+            Kip::Inceleme,
+            &kalfa_core::kabuk::KabukTarifi {
+                alan_hazirligi: true,
+                ..kabuk(true, false, false)
+            }
+        ),
         Karar::Yasak { .. }
     ));
     assert_eq!(

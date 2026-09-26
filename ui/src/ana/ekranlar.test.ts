@@ -228,6 +228,7 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
               ag: true,
               yalitim: { tip: 'Yalitimsiz', talimat: 'yok' },
               ilk_cagri: false,
+              alan_hazirligi: false,
             },
             yerel_onay: true,
           }),

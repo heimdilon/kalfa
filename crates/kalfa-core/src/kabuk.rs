@@ -18,6 +18,11 @@ pub struct KabukTarifi {
     pub yalitim: YalitimOzeti,
     /// Bu çalışma alanındaki ilk kabuk çağrısı (aşama 2 tasarımı §4.2).
     pub ilk_cagri: bool,
+    /// Çalışma alanı yalıtım için hazırlanacak (Windows, aşama 2 tasarımı
+    /// §9.4): klasörün izinleri değişir. Onayı her kipte yerel pencerede
+    /// sorulur.
+    #[serde(default)]
+    pub alan_hazirligi: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

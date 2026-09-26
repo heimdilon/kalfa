@@ -297,6 +297,7 @@ async fn uygulama(a: &E2eAyarlari, veri: &std::path::Path) -> Arc<Uygulama> {
         acici: Arc::new(SahteAcici::default()),
         pencereler: Arc::new(SahtePencereler::default()),
         aktarim: AktarimAyarlari::default(),
+        yalitim_dizini: veri.join("yalitim"),
         ev_dizini: std::env::temp_dir(),
         yalitim: YalitimKaynagi::Kurucu(Box::new(|_| Arc::new(Yalitimsiz))),
     });

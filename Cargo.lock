@@ -2604,6 +2604,7 @@ dependencies = [
  "libc",
  "seccompiler",
  "serde",
+ "serde_json",
  "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.20",
@@ -2651,6 +2652,13 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "kalfa-yalitim"
+version = "0.1.0"
+dependencies = [
+ "kalfa-sandbox",
 ]
 
 [[package]]

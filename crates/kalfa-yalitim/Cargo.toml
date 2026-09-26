@@ -1,0 +1,11 @@
+[package]
+name = "kalfa-yalitim"
+description = "Kalfa'nın Windows yalıtımı için yönetici yardımcısı: kök izni, araç zinciri izinleri, kaldırma"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+kalfa-sandbox = { path = "../kalfa-sandbox" }

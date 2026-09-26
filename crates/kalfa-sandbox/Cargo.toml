@@ -18,7 +18,7 @@ ignore.workspace = true
 serde.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["process", "io-util"] }
+tokio = { workspace = true, features = ["process", "io-util", "fs"] }
 tokio-util.workspace = true
 
 [target.'cfg(unix)'.dependencies]
@@ -29,6 +29,7 @@ seccompiler.workspace = true
 tempfile.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+serde_json.workspace = true
 windows-sys.workspace = true
 
 [dev-dependencies]

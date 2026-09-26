@@ -255,6 +255,7 @@ pub fn test_uygulamasi_yalitimla(
         acici: acici.clone(),
         pencereler: pencereler.clone(),
         aktarim: AktarimAyarlari::default(),
+        yalitim_dizini: dizin.join("yalitim"),
         ev_dizini: dizin.join("ev"),
         yalitim,
     });

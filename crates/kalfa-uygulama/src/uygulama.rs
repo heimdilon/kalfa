@@ -32,6 +32,8 @@ pub struct Bilesenler {
     pub aktarim: AktarimAyarlari,
     /// Kullanıcının ev dizini: araç zinciri dizinleri buna göre bulunur.
     pub ev_dizini: PathBuf,
+    /// Çalışma alanına özel dizinlerin kökü (`dizin::yalitim_dizini`).
+    pub yalitim_dizini: PathBuf,
     pub yalitim: YalitimKaynagi,
 }
 
@@ -80,7 +82,7 @@ impl Uygulama {
         let yalitim_dinleyici = Dinleyici::default();
         let yalitici = yalitici_kur(
             b.yalitim,
-            &b.veri_dizini,
+            &b.yalitim_dizini,
             &b.ev_dizini,
             &arac_zinciri,
             yalitim_dinleyici.clone(),

@@ -72,13 +72,43 @@ pub fn yukseltme_aciklamasi(yeni: Kip) -> &'static str {
     }
 }
 
-/// Yalıtımsız komutun yerel onay metni (aşama 2 tasarımı §5.2). Komut
-/// çekirdeğin bekleyen onayından gelir.
+fn yalitimsiz_var(ogeler: &[OnayOgesi]) -> bool {
+    ogeler
+        .iter()
+        .any(|o| o.kabuk.as_ref().is_some_and(|k| !k.yalitim.yalitimli_mi()))
+}
+
+/// Yerel onay penceresinin başlığı: yalıtımsız komut varsa onu, yoksa
+/// çalışma alanının hazırlığını (Windows, aşama 2 tasarımı §9.4) söyler.
+pub fn yerel_onay_basligi(ogeler: &[OnayOgesi]) -> &'static str {
+    if yalitimsiz_var(ogeler) {
+        "Komutu yalıtımsız çalıştır"
+    } else {
+        "Çalışma alanını yalıtım için hazırla"
+    }
+}
+
+/// Yerel onay metni (aşama 2 tasarımı §5.2, §9.4). Komut çekirdeğin bekleyen
+/// onayından gelir.
 pub fn yerel_onay_metni(ogeler: &[OnayOgesi]) -> String {
-    let mut metin = String::from(
-        "Aşağıdaki komut yalıtımsız çalışacak: senin bütün yetkilerinle çalışır, ev dizinindeki \
-         dosyaları okuyabilir ve ağa erişebilir.\n",
-    );
+    let mut metin = String::new();
+    if yalitimsiz_var(ogeler) {
+        metin.push_str(
+            "Aşağıdaki komut yalıtımsız çalışacak: senin bütün yetkilerinle çalışır, ev \
+             dizinindeki dosyaları okuyabilir ve ağa erişebilir.\n",
+        );
+    }
+    let hazirlik = ogeler
+        .iter()
+        .any(|o| o.kabuk.as_ref().is_some_and(|k| k.alan_hazirligi));
+    if hazirlik {
+        metin.push_str(
+            "Kalfa bu çalışma alanını yalıtım için hazırlayacak: klasörün izinlerine yalıtım için \
+             giriş ekler, gizli dosyaları ve .git'i yalıtıma kapatır. Klasörü ayarlardan \
+             kaldırınca geri alınır. Projenin betikleri (build.rs, package.json, Makefile) kod \
+             olarak çalışır.\n",
+        );
+    }
     let mut talimat = None;
     for o in ogeler {
         let Some(k) = &o.kabuk else { continue };
@@ -94,4 +124,80 @@ pub fn yerel_onay_metni(ogeler: &[OnayOgesi]) -> String {
         metin.push_str(&format!("\n{t}"));
     }
     metin
+}
+
+#[cfg(test)]
+mod tests {
+    use kalfa_core::kabuk::{KabukBicimi, KabukTarifi};
+    use kalfa_core::kimlik::CagriId;
+    use kalfa_core::muhur::OnayMuhru;
+
+    use super::*;
+
+    fn oge(yalitim: YalitimOzeti, alan_hazirligi: bool) -> OnayOgesi {
+        OnayOgesi {
+            cagri: CagriId::yeni(),
+            arac: "kabuk".into(),
+            aciklama: String::new(),
+            hedefler: Vec::new(),
+            diff: None,
+            uyarilar: Vec::new(),
+            muhur: OnayMuhru("m".into()),
+            kabuk: Some(KabukTarifi {
+                komut: "cargo test".into(),
+                bicim: KabukBicimi::Program,
+                dizin: ".".into(),
+                ag: false,
+                yalitim,
+                ilk_cagri: true,
+                alan_hazirligi,
+            }),
+            yerel_onay: true,
+        }
+    }
+
+    fn yalitimli() -> YalitimOzeti {
+        YalitimOzeti::Yalitimli {
+            arka_uc: "windows".into(),
+            profil: "p".into(),
+        }
+    }
+
+    fn yalitimsiz() -> YalitimOzeti {
+        YalitimOzeti::Yalitimsiz {
+            talimat: "Yalıtımı kurun.".into(),
+        }
+    }
+
+    #[test]
+    fn hazirlik_penceresi_izin_degisikligini_soyler() {
+        let ogeler = [oge(yalitimli(), true)];
+        assert_eq!(
+            yerel_onay_basligi(&ogeler),
+            "Çalışma alanını yalıtım için hazırla"
+        );
+        let metin = yerel_onay_metni(&ogeler);
+        assert!(
+            metin.contains("izinlerine yalıtım için giriş ekler"),
+            "{metin}"
+        );
+        assert!(metin.contains("Komut: cargo test"), "{metin}");
+        assert!(!metin.contains("yalıtımsız"), "{metin}");
+    }
+
+    #[test]
+    fn yalitimsiz_komut_basligi_ve_talimati() {
+        let ogeler = [oge(yalitimsiz(), false), oge(yalitimli(), true)];
+        assert_eq!(yerel_onay_basligi(&ogeler), "Komutu yalıtımsız çalıştır");
+        let metin = yerel_onay_metni(&ogeler);
+        assert!(
+            metin.starts_with("Aşağıdaki komut yalıtımsız çalışacak"),
+            "{metin}"
+        );
+        assert!(
+            metin.contains("izinlerine yalıtım için giriş ekler"),
+            "{metin}"
+        );
+        assert!(metin.ends_with("Yalıtımı kurun."), "{metin}");
+    }
 }

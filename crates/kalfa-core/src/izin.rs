@@ -18,6 +18,8 @@ betikleri (build.rs, package.json, Makefile) kod olarak çalışır.";
 pub const YALITIMSIZ_UYARISI: &str = "Yalıtımsız: komut senin bütün yetkilerinle çalışacak; ev \
 dizinindeki dosyaları okuyabilir ve ağa erişebilir.";
 pub const AGLI_KABUK_UYARISI: &str = "Komut ağa erişebilecek. Dosya yalıtımı sürer.";
+pub const ALAN_HAZIRLIGI_UYARISI: &str = "Kalfa bu klasörün izinlerine yalıtım için giriş \
+ekleyecek. Klasörü ayarlardan kaldırınca geri alınır.";
 
 /// Spec §7.4'teki varsayılan gizli dosya kalıpları. Her kalıp her derinlikte
 /// ve büyük-küçük harf duyarsız eşleşir.
@@ -135,6 +137,12 @@ pub fn kabuk_karari(kip: Kip, tarif: &KabukTarifi) -> Karar {
         YalitimOzeti::Yalitimli { .. } => {
             if tarif.ag {
                 uyarilar.push(AGLI_KABUK_UYARISI.to_string());
+            }
+            // Hazırlık çalışma alanının izinlerini değiştirir (aşama 2
+            // tasarımı §9.4): her kipte yerel pencerede sorulur.
+            if tarif.alan_hazirligi {
+                uyarilar.push(ALAN_HAZIRLIGI_UYARISI.to_string());
+                return Karar::YerelOnayli { uyarilar };
             }
             if kip == Kip::Serbest && uyarilar.is_empty() {
                 Karar::Serbest

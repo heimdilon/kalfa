@@ -1,6 +1,6 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-09-26. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-09-27. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
 ## Mevcut uygulama
@@ -24,11 +24,15 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
   sınırları (`kalfa-sandbox`). Ayrıntısı aşağıda.
 - **2b — Linux yalıtımı:** kabuk komutları Linux'ta bubblewrap ve seccomp ile
   yalıtımda çalışır (`kalfa-sandbox`); Ayarlar'da yalıtım durumu ve araç
-  zinciri dizinleri. Windows'ta yalıtım henüz yok; komutlar yalıtımsız çalışır
-  ve her biri yerel pencerede onaylanır. Ayrıntısı aşağıda.
+  zinciri dizinleri. Ayrıntısı aşağıda.
 - **2c — Windows prototipi:** ürün kodu yok; ölçüm aracı `prototip/windows-yalitim/`.
   Kısıtlı belirteç yolu Dal B'de kaldı; AppContainer ek ölçümüyle Dal A'ya
   ulaşılıyor. Ayrıntısı aşağıda.
+- **2d-1 — Windows arka ucu:** `kalfa-sandbox`'ta AppContainer yalıtımı,
+  yönetici yardımcısı `kalfa-yalitim.exe`, çalışma alanı hazırlığı ve ACE
+  kaydı. Kurulumu yapılmış makinede uygulama kabuk komutlarını yalıtımda
+  çalıştırır; kurulumu uygulamadan başlatmak ve Ayarlar'ın Windows bölümü
+  2d-2'dedir. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -730,8 +734,103 @@ da alt dizinlerde, yalıtımdaki komut yeni bir `.git` oluşturabilir.
 | Yalıtım testleri (`kalfatest`) | — | `yalitim` 17, `uyumluluk` 4 geçti |
 | Uçtan uca | 24 test geçti (iki koşuda); p95 24–27 ms | 25 test geçti (iki koşuda); p95 35–38 ms |
 
-Sıradaki: 2d-1 (Windows arka ucu: AppContainer, çalışma alanı hazırlığı,
-`kalfa-yalitim.exe`) planı. 2d iki plana bölündü; 2d-2 uygulama ve Ayarlar'dır.
+### 2d-1 — Windows arka ucu (PR #12)
+
+Plan: [`2026-09-26-kalfa-2d-1-windows.md`](superpowers/plans/2026-09-26-kalfa-2d-1-windows.md).
+2d iki plana bölündü; 2d-2 uygulama tarafı ve Ayarlar'dır. Görev 1–4'ü
+Codex yazdı. Görev 5'i Codex'in taslağı üzerine, Görev 6'yı ve inceleme
+düzeltmelerini Claude yazdı (Codex'in kotası bitti).
+
+Neler eklendi:
+- **AppContainer yalıtımı** (aşama 2 tasarımı §9):
+  - Komut, geliştiricinin hesabıyla, çalışma alanına özel bir AppContainer'da
+    (`Kalfa.Alan.<kimlik>`) ve bir Job Object'te çalışır.
+  - Araç zinciri dizinlerine ortak bir yetenek SID'i okuma izni taşır. Ağlı
+    çalıştırmada `internetClient` verilir.
+  - Kabın ortamı çalışma alanına özel ev, geçici ve önbellek dizinlerini
+    gösterir; MSVC ortamını Kalfa verir.
+- **`kalfa-yalitim.exe`** (yönetici): `kur` sürücü köklerine ve `C:\Users`'a
+  listeleme izni verir; `kaldir` geri alır; `izin-ver` / `izin-geri-al`
+  geliştiricinin sahibi olmadığı araç zinciri dizinlerini açar ya da kapatır
+  (örneğin `C:\Program Files\nodejs`, `C:\Python314`).
+- **Çalışma alanı hazırlığı:**
+  - Paket SID'ine çalışma alanında değiştirme izni verilir.
+  - Gizli dosyaların mirası kesilir; `.git` ve kancalar salt okunurdur.
+  - Üst dizinlere mirassız listeleme verilir (A11).
+  - Her değişiklik ACE kaydına yazılır, kaldırmada kayda göre geri alınır.
+- **Hazırlığın onayı:** hazırlanmamış çalışma alanındaki ilk yalıtımlı komutun
+  onayı her kipte yerel penceredir.
+- **Yalıtım dizini:** Windows'ta `%LOCALAPPDATA%\Kalfa\yalitim`.
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `cargo test --workspace --locked` | 414 geçti, 0 başarısız | 380 geçti, 0 başarısız (4 atlandı) |
+| `cargo test -p kalfa-uygulama -p kalfa --features e2e` | 68 geçti | 68 geçti |
+| Clippy (normal, `e2e`, `yalitim-testleri`) / fmt | Başarılı | Başarılı |
+| Yalıtım testleri | `yalitim` 27, `uyumluluk` 6 geçti (kurulumdan sonra; `yalitim` üç koşuda) | `yalitim` 17, `uyumluluk` 4 geçti (`kalfatest`) |
+| `npm run check` / `npm test` / `npm run build` | 0 hata, 0 uyarı; 20 dosya, 218 test; paket denetimi temiz | Aynı |
+| Uçtan uca (`cd e2e && npm test`) | 24 test geçti (iki koşuda); p95 24–25 ms | 25 test geçti (iki koşuda); p95 33–37 ms |
+
+Linux uçtan uca testleri Windows'takilerle aynı anda koşunca gecikme testleri
+yük altında düştü (p95 63–108 ms); tek başına koşuda geçti.
+
+Kurulumu yapılmış makinede Windows uçtan uca testlerinin kabuk senaryoları
+gerçek yalıtımla koşar ve iki koşuda iki AppContainer profili bıraktı
+(çalışma alanları kaldırılmıyor). 2d-2'nin Windows uçtan uca işinde
+kapatılır.
+
+A11–A15 (aşama 2 tasarımı §14):
+- **A11:** üst dizinlerin listelenmesi gerekiyor. Git for Windows (`getcwd`)
+  ve PowerShell (`Set-Location`) istiyor. PSDrive yalnızca PowerShell'i
+  kurtarıyor. Hazırlık üst dizinlere paket SID'ine mirassız listeleme verir;
+  `C:\Users` yöneticiye ait olduğundan izni kurulum verir. Kap bu dizinlerdeki
+  adları görür, içeriklerini göremez.
+- **A12:** C derleyen `build.rs` çalışıyor. MSVC dizini `PATH`'in başında
+  olmalı ve kabın `TEMP`'i kurulmalı (aşağıda).
+- **A13:** ölçülmedi; makinede LAN hedefi, ssh-agent ve Docker yok.
+- **A15 (bilinen sınır):** çalışma alanına özel cargo registry'si kapta
+  doldurulamıyor. cargo paketi açarken hedefi kanonikleştiriyor; DOS yol adı
+  Mount Manager'a erişim istiyor, AppContainer'da "Erişim engellendi". Windows
+  yalıtımında crates.io bağımlılığı indirilemez; bağımlılıksız derleme
+  çalışır. Yol 2d-2'de seçilir; en olası aday geliştiricinin registry'sinin
+  salt okunur verilmesi.
+
+Uygulanırken ve incelemede bulunanlar:
+- **Gerçek yalıtım testleri Codex'in ortamında koşamıyordu.** Codex'in kendi
+  yalıtımında `CreateAppContainerProfile` açılamıyor. Görev 4'ün testleri ilk
+  kez kurulu makinede koştu: 24 testten 4'ü test hatasıyla düştü (betikler
+  kendi alanına yazıyordu, `mklink` yanlış kaçışla çağrılıyordu, kabın
+  yazamadığı yere işaret konuyordu).
+- **Kabın `TEMP`'i yoktu.** Windows, AppContainer süreçlerinde `TEMP`'i
+  `%LOCALAPPDATA%\Packages\<paket>\AC\Temp`'e çeviriyor ama dizini kurmuyor.
+  PowerShell kendisi kurduğu için görünmüyordu; `link.exe` LNK1104 veriyordu.
+- **rustc Git'in `link.exe`'sini çalıştırıyordu.** Kapta Visual Studio'yu COM
+  ile bulamayınca `PATH`'teki ilk `link.exe`'ye düşüyor. MSVC dizini sondaydı;
+  Git'in MSYS `link.exe`'si kapta 0xC0000142 ile başlayamıyor.
+- **`SetNamedSecurityInfoW` üst dizinde dakikalar sürüyordu.** Her yazımda
+  mirası bütün alt ağaca yeniden yayıyor. Mirassız izinler artık kök
+  iznindeki gibi `SetFileSecurityW` ile yalnızca nesneye yazılıyor.
+- **Node ve Python dizinleri uygulama paketlerine kapalı.** Kurucuları DACL'i
+  korumalı yazıyor; `izin-ver` gerekiyor.
+- **Bir test her koşuda makinede AppContainer profili bırakıyordu** (bozuk ACE
+  kaydı testi, profili bilerek korunan durum). Test artık profilini siliyor.
+- **`kaldir` bazı hatalarda başarı bildirip kaydı silebiliyordu** (bozuk
+  kayıt, okunamayan kök ACL'i, "bulunamadı" dışındaki erişim hatası). Codex
+  düzeltti; PR'da onaylanan plandan sapma.
+- **Bozuk ACE kaydında eksiksiz geri alma güvenli değil.** Kaydı kaybolmuş bir
+  yolun kesik mirası Kalfa'nın mı geliştiricinin mi, ayırt edilemiyor.
+  Yalnızca kanıtlanan değişiklikler geri alınıyor; kayıt ve profil korunuyor
+  (kullanıcı kararı).
+
+Makine: `kalfa-yalitim kur` kurulu (C:\, D:\ ve C:\Users); `izin-ver` ile
+`C:\Program Files\nodejs` ve `C:\Python314` açık. Geri alma `kaldir` ve
+`izin-geri-al`'dır.
+
+Sıradaki: 2d-2 (uygulamanın yardımcıyı kopyalayıp UAC ile başlatması,
+Ayarlar'ın Windows bölümü, Windows'ta kabuk uçtan uca testleri, A15'in yolu).
+2d-2'den önce, AppContainer'ın yol açtığı izin sorunları nedeniyle tasarımın
+§9.7'deki yedek yolu (ayrı kullanıcı) aynı sorun listesiyle yeniden
+ölçülebilir.
 
 Kabuk yalıtımı, bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi,
 güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü

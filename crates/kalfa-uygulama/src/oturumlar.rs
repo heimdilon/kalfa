@@ -331,7 +331,7 @@ impl Uygulama {
             && self
                 .iletisim
                 .onayla(
-                    "Komutu yalıtımsız çalıştır",
+                    guvenlik::yerel_onay_basligi(&yereller),
                     &guvenlik::yerel_onay_metni(&yereller),
                     "Çalıştır",
                     "Vazgeç",

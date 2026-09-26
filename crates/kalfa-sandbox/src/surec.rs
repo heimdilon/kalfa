@@ -1,6 +1,8 @@
 //! Başlamış bir komut: çıktının okunması, süre, iptal ve süreç ağacının
 //! sonlandırılması (aşama 2 tasarımı §6.2, §6.4).
 
+use std::future::Future;
+use std::pin::Pin;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -41,8 +43,52 @@ pub struct CalismaSonucu {
 }
 
 pub struct Surec {
-    cocuk: Child,
+    cocuk: Cocuk,
     agac: Agac,
+}
+
+enum Cocuk {
+    Tokio(Box<Child>),
+    /// Windows kabı: Kalfa'nın `CreateProcessW` ile başlattığı süreç (§9.3).
+    #[cfg(windows)]
+    Kap(crate::windows::kap::Kap),
+}
+
+type Okuyucu = Box<dyn tokio::io::AsyncRead + Send + Unpin>;
+type Bitisi = Pin<Box<dyn Future<Output = Option<i32>> + Send>>;
+
+impl Cocuk {
+    /// Çıktı okuyucuları ve sürecin bitişini bekleyen gelecek.
+    fn ayir(self) -> (Option<Okuyucu>, Option<Okuyucu>, Bitisi) {
+        match self {
+            Cocuk::Tokio(mut c) => {
+                let cikti = c.stdout.take().map(|o| Box::new(o) as Okuyucu);
+                let hata = c.stderr.take().map(|o| Box::new(o) as Okuyucu);
+                (
+                    cikti,
+                    hata,
+                    Box::pin(async move { c.wait().await.ok().and_then(|d| d.code()) }),
+                )
+            }
+            #[cfg(windows)]
+            Cocuk::Kap(k) => {
+                let cikti = Box::new(tokio::fs::File::from_std(k.cikti)) as Okuyucu;
+                let hata = Box::new(tokio::fs::File::from_std(k.hata)) as Okuyucu;
+                let surec = k.surec;
+                (
+                    Some(cikti),
+                    Some(hata),
+                    Box::pin(async move {
+                        // Ağaç her durumda sonunda öldürülür; bekleme döner.
+                        tokio::task::spawn_blocking(move || crate::windows::kap::bekle(&surec))
+                            .await
+                            .ok()
+                            .flatten()
+                    }),
+                )
+            }
+        }
+    }
 }
 
 impl Surec {
@@ -67,25 +113,39 @@ impl Surec {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         let (cocuk, agac) = agac::baslat(&mut komut)?;
-        Ok(Self { cocuk, agac })
+        Ok(Self {
+            cocuk: Cocuk::Tokio(Box::new(cocuk)),
+            agac,
+        })
+    }
+
+    /// Kapta başlamış ve işe atanmış süreç.
+    #[cfg(windows)]
+    pub(crate) fn kaptan(kap: crate::windows::kap::Kap, is: agac::Is) -> Self {
+        Self {
+            cocuk: Cocuk::Kap(kap),
+            agac: Agac::isten(is),
+        }
     }
 
     /// Komut bitene, süre dolana ya da iptal gelene kadar bekler; çıktı
     /// parçalarını geldikçe `cikti`'ya verir. Döndüğünde süreç ağacı
     /// sonlandırılmıştır.
     pub async fn bekle(
-        mut self,
+        self,
         sure: Duration,
         iptal: CancellationToken,
         mut cikti: impl FnMut(Akis, &[u8]),
     ) -> CalismaSonucu {
         let baslangic = Instant::now();
         let (tx, mut rx) = mpsc::channel::<(Akis, Vec<u8>)>(16);
+        let (cikti_okuyucu, hata_okuyucu, mut bitisi) = self.cocuk.ayir();
+        let agac = self.agac;
         let mut okuyucular = Vec::new();
-        if let Some(o) = self.cocuk.stdout.take() {
+        if let Some(o) = cikti_okuyucu {
             okuyucular.push(tokio::spawn(oku(o, Akis::Standart, tx.clone())));
         }
-        if let Some(o) = self.cocuk.stderr.take() {
+        if let Some(o) = hata_okuyucu {
             okuyucular.push(tokio::spawn(oku(o, Akis::Hata, tx.clone())));
         }
         drop(tx);
@@ -108,34 +168,34 @@ impl Surec {
                     Some((akis, veri)) => cikti(akis, &veri),
                     None => boru_kapali = true,
                 },
-                durum = self.cocuk.wait(), if !cikis_alindi => {
+                kod = &mut bitisi, if !cikis_alindi => {
                     cikis_alindi = true;
                     if bitis.is_none() {
-                        bitis = Some(Bitis::Cikti(durum.ok().and_then(|d| d.code())));
+                        bitis = Some(Bitis::Cikti(kod));
                     }
                     // Komut bitti; geride kalan torunlar da durur.
-                    self.agac.durdur();
+                    agac.durdur();
                     oldurme.get_or_insert(Instant::now() + KIBAR_SURE);
                     bosaltma = Some(Instant::now() + BOSALTMA_SURESI);
                 }
                 _ = sleep_until(son), if bitis.is_none() => {
                     bitis = Some(Bitis::ZamanAsimi);
-                    self.agac.durdur();
+                    agac.durdur();
                     oldurme = Some(Instant::now() + KIBAR_SURE);
                 }
                 _ = iptal.cancelled(), if bitis.is_none() => {
                     bitis = Some(Bitis::Iptal);
-                    self.agac.durdur();
+                    agac.durdur();
                     oldurme = Some(Instant::now() + KIBAR_SURE);
                 }
                 _ = sleep_until(oldurme.unwrap_or(uzak)), if oldurme.is_some() => {
-                    self.agac.oldur();
+                    agac.oldur();
                     oldurme = None;
                 }
                 _ = sleep_until(bosaltma.unwrap_or(uzak)), if bosaltma.is_some() => break,
             }
         }
-        self.agac.oldur();
+        agac.oldur();
         for okuyucu in okuyucular {
             okuyucu.abort();
         }

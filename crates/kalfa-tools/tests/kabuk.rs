@@ -11,8 +11,8 @@ use kalfa_core::kabuk::{KabukBicimi, YalitimOzeti};
 use kalfa_core::kimlik::CagriId;
 use kalfa_core::protokol::CiktiAkisi;
 use kalfa_sandbox::{
-    BaslatmaHatasi, CalistirmaIstegi, Surec, Yalitici, YalitimDurumu, YalitimYoklukNedeni,
-    Yalitimsiz,
+    AlanBilgisi, BaslatmaHatasi, CalistirmaIstegi, Surec, Yalitici, YalitimDurumu,
+    YalitimYoklukNedeni, Yalitimsiz,
 };
 use kalfa_tools::{CalismaAlani, KabukAraci, KabukGuveni};
 use serde_json::{Value, json};
@@ -285,6 +285,10 @@ struct KayitliYalitici {
     algilama: AtomicUsize,
     basarisiz: AtomicBool,
     yok: AtomicBool,
+    /// Çalışma alanı hazırlanmamış (Windows, §9.4).
+    hazirlanmamis: AtomicBool,
+    /// `alani_hazirla` çağrılarının `hazirlik_onaylandi` değerleri.
+    hazirliklar: std::sync::Mutex<Vec<bool>>,
 }
 
 impl Yalitici for KayitliYalitici {
@@ -321,6 +325,29 @@ impl Yalitici for KayitliYalitici {
         self.algilama.fetch_add(1, Ordering::SeqCst);
         self.durum()
     }
+
+    fn hazirlik_gerekli(&self, _kok: &std::path::Path) -> bool {
+        self.hazirlanmamis.load(Ordering::SeqCst)
+    }
+
+    fn alani_hazirla(
+        &self,
+        _alan: &AlanBilgisi,
+        hazirlik_onaylandi: bool,
+        ilerleme: &mut dyn FnMut(&str),
+    ) -> Result<(), BaslatmaHatasi> {
+        self.hazirliklar.lock().unwrap().push(hazirlik_onaylandi);
+        if self.hazirlanmamis.load(Ordering::SeqCst) {
+            if !hazirlik_onaylandi {
+                return Err(BaslatmaHatasi::Yalitim(
+                    "çalışma alanı hazırlanmamış".into(),
+                ));
+            }
+            ilerleme("İzinler hazırlanıyor…");
+            self.hazirlanmamis.store(false, Ordering::SeqCst);
+        }
+        Ok(())
+    }
 }
 
 fn kur_yalitimli() -> (TempDir, KabukAraci, Arc<KayitliYalitici>) {
@@ -330,6 +357,67 @@ fn kur_yalitimli() -> (TempDir, KabukAraci, Arc<KayitliYalitici>) {
     let yalitici = Arc::new(KayitliYalitici::default());
     let arac = KabukAraci::yeni(alan, yalitici.clone(), Arc::new(SahteGuven::default()));
     (d, arac, yalitici)
+}
+
+fn yazdir() -> Value {
+    if cfg!(windows) {
+        json!({"betik": "Write-Output tamam"})
+    } else {
+        json!({"betik": "echo tamam"})
+    }
+}
+
+/// Windows'ta çalışma alanı ilk yalıtımlı çağrıda hazırlanır (§9.4): hazırlık
+/// tarife girer (yerel onay), komuttan önce yapılır, ilerlemesi araç kartında
+/// görünür.
+#[tokio::test]
+async fn hazirlik_tarife_girer_ve_komuttan_once_yapilir() {
+    let (_d, arac, yalitici) = kur_yalitimli();
+    yalitici.hazirlanmamis.store(true, Ordering::SeqCst);
+    let t = arac.hazirla(&yazdir()).await.unwrap().kabuk.unwrap();
+    assert!(t.alan_hazirligi);
+
+    let (sonuc, parcalar) = calistir(&arac, &yazdir()).await;
+    assert!(sonuc.unwrap().contains("tamam"));
+    assert_eq!(*yalitici.hazirliklar.lock().unwrap(), vec![true]);
+    assert!(
+        parcalar
+            .iter()
+            .any(|(_, m)| m.contains("İzinler hazırlanıyor")),
+        "{parcalar:?}"
+    );
+    assert_eq!(yalitici.istekler.lock().unwrap().len(), 1);
+
+    // Hazırlanmış çalışma alanında sonraki çağrı hazırlık istemez; araç yine
+    // her çalıştırmadan önce yalıtıcıya sorar (yeni gizli dosyalar).
+    let t = arac.hazirla(&yazdir()).await.unwrap().kabuk.unwrap();
+    assert!(!t.alan_hazirligi);
+    let (sonuc, _) = calistir(&arac, &yazdir()).await;
+    sonuc.unwrap();
+    assert_eq!(*yalitici.hazirliklar.lock().unwrap(), vec![true, false]);
+}
+
+/// Onaylanan tarif hazırlık içermiyorsa (onaydan sonra hazırlık geri
+/// alındıysa) komut başlamaz.
+#[tokio::test]
+async fn hazirlik_onaylanmadiysa_komut_baslamaz() {
+    let (_d, arac, yalitici) = kur_yalitimli();
+    let h = arac.hazirla(&yazdir()).await.unwrap();
+    assert!(!h.kabuk.as_ref().unwrap().alan_hazirligi);
+    yalitici.hazirlanmamis.store(true, Ordering::SeqCst);
+    let sonuc = arac.calistir(&yazdir(), &h, CancellationToken::new()).await;
+    assert!(sonuc.is_err());
+    assert_eq!(*yalitici.hazirliklar.lock().unwrap(), vec![false]);
+    assert!(yalitici.istekler.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn yalitimsizken_hazirlik_tarife_girmez() {
+    let (_d, arac, yalitici) = kur_yalitimli();
+    yalitici.yok.store(true, Ordering::SeqCst);
+    yalitici.hazirlanmamis.store(true, Ordering::SeqCst);
+    let t = arac.hazirla(&yazdir()).await.unwrap().kabuk.unwrap();
+    assert!(!t.alan_hazirligi);
 }
 
 #[tokio::test]

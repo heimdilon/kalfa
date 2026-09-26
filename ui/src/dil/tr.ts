@@ -162,7 +162,7 @@ export const tr = {
   'onay.kabuk.yalitimli': 'Yalıtımlı ({arka_uc})',
   'onay.kabuk.yalitimsiz': 'Yalıtımsız',
   'onay.kabuk.yerel':
-    'Yalıtımsız komutlar, onayınızdan sonra yerel bir pencerede bir kez daha sorulur.',
+    'Yalıtımsız komutlar ve çalışma alanının yalıtım için hazırlığı, onayınızdan sonra yerel bir pencerede bir kez daha sorulur.',
 
   'sart.kart.baslik': 'EVREN şartları (sürüm {surum})',
   'sart.kart.bekliyor':

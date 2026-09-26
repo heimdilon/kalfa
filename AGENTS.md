@@ -179,6 +179,11 @@ Tasarım AppContainer'a göredir (aşama 2 tasarımı §9; 2c'de ölçüldü).
   korunur.
 - **Kök izni:** `C:\` köküne verilen listeleme izni yalnızca kökü değiştiren
   `SetFileSecurityW` ile yazılır, `SE_DACL_AUTO_INHERIT_REQ` bayrağıyla.
-  `SetNamedSecurityInfo` mirası bütün sürücüye yayar.
+  `SetNamedSecurityInfo` mirası bütün sürücüye yayar. Mirassız her izin
+  (örneğin üst dizinlere listeleme) aynı yolla yazılır ve silinir.
+- **Gerçek yalıtım testleri** Codex'in Windows yalıtımının içinde koşamaz
+  (`CreateAppContainerProfile` açılamıyor); kurulu makinede Claude koşturur.
+  Testler makinede Kalfa AppContainer profili ya da `S-1-15-2-` ACE'si
+  bırakmamalıdır.
 - **Prototip:** Ölçüm aracı ve betikler `prototip/windows-yalitim/`'dedir
   (README'ye bakın).

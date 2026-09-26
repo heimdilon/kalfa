@@ -76,6 +76,7 @@ impl Arac for SahteKabuk {
                 ag: false,
                 yalitim,
                 ilk_cagri: false,
+                alan_hazirligi: false,
             }),
             ..Default::default()
         })

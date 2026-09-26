@@ -1,5 +1,6 @@
-//! Gerçek yalıtımla testler (aşama 2 tasarımı §12.2, Linux sütunu). Yalıtım
-//! yoksa atlanmaz, başarısız olur. Sıradan bir kullanıcıyla koşar:
+//! Gerçek yalıtımla testler (aşama 2 tasarımı §12.2). Yalıtım yoksa atlanmaz,
+//! başarısız olur. Windows'ta kurulumdan sonra, Linux'ta sıradan kullanıcıyla
+//! koşar:
 //!
 //! ```text
 //! cargo test -p kalfa-sandbox --features yalitim-testleri
@@ -7,7 +8,21 @@
 //!
 //! Komutlar `sh` ve `perl` (Debian/Ubuntu'da `perl-base`, her sistemde var)
 //! ile yazılır.
-#![cfg(all(target_os = "linux", feature = "yalitim-testleri"))]
+#![cfg(feature = "yalitim-testleri")]
+
+#[cfg(target_os = "windows")]
+#[path = "yalitim/windows.rs"]
+mod windows;
+
+#[cfg(target_os = "linux")]
+macro_rules! linux_gercek_yalitim_testleri {
+    ($($item:item)*) => {
+        $($item)*
+    };
+}
+
+#[cfg(target_os = "linux")]
+linux_gercek_yalitim_testleri! {
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -662,4 +677,5 @@ fn tarama_yuz_bin_dosyada_olculur() {
     let sure = bas.elapsed();
     println!("tarama: 100 000 dosya, {} ms", sure.as_millis());
     assert_eq!(t.dosyalar, vec![d.path().join("d7/.env")]);
+}
 }

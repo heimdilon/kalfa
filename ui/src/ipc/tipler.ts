@@ -54,6 +54,8 @@ export interface KabukTarifi {
   ag: boolean;
   yalitim: YalitimOzeti;
   ilk_cagri: boolean;
+  /** Çalışma alanı yalıtım için hazırlanacak (Windows, aşama 2 tasarımı §9.4). */
+  alan_hazirligi: boolean;
 }
 
 export interface OnayOgesi {

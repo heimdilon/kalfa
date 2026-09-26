@@ -32,6 +32,12 @@ bütünüyle salt okunur; çalışma alanı dışındaki git dizinleri yalnızca
 doğrulanırsa ve salt okunur açılır; Kalfa'nın çalışma alanına özel dizinlere
 yazması bağlantı izlemez. §7.2, §7.3, §7.4, §8.1, §9.4, §12.1–§12.3, §13; üst
 belge r3.6.
+2026-09-27 (2d-1): Windows arka ucu gerçek oturumda ölçülürken netleşenler
+işlendi: A15'in sonucu (§7.4), profiller dizininin kurulum izni ve
+`kaldir`'ın hata durumları (§9.2), kabın `TEMP`'i ve MSVC `PATH`'i (§9.3),
+üst dizinlere listeleme, mirassız izinlerin yayılmadan yazılması ve bozuk ACE
+kaydında geri alma (§9.4), yeni bilinen sınırlar (§9.6), A11–A13 ve A15'in
+cevapları (§14).
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §7.2, §7.5–§7.7, §12.3, §13.2, §13.3 ve §14 (risk 7–9, 12, 13). Bu belgede `§`
 işaretleri bu belgenin bölümlerini gösterir; üst belgeye "üst belge §x", 1c
@@ -658,10 +664,13 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
     (yüzlerce MB), çalışma alanının ihtiyacı ağla bir kez indirilir. bwrap
     0.9.0'da `--overlay` yoktur.
   - Windows'ta registry bağlanamaz: aynı dizini iki yerde göstermenin yolu
-    yoktur. Çalışma alanına özel registry boş başlar ve ilk derleme ağlı bir
-    çalıştırma ister (2c, P9). Geliştiricinin `CARGO_HOME`'u salt okunur
-    verilince bağımlı crate ağsız derlendi ama 12 sn sürdü. Yol 2d planında
-    seçilir (A15).
+    yoktur. Çalışma alanına özel registry boş başlar (2c, P9) ve **kapta
+    doldurulamaz** (2d-1, A15). cargo indirdiği paketi açarken hedef dizini
+    kanonikleştirir. DOS yol adı Mount Manager'a erişim ister, AppContainer'da
+    bu "Erişim engellendi" verir. Ağlı `cargo fetch` bile düşer. Bağımlılıksız
+    derleme çalışır. Geliştiricinin `CARGO_HOME`'u salt okunur verilince
+    bağımlı crate ağsız derlendi ama 12 sn sürdü (2c). Yol 2d-2'de seçilir
+    (§9.6).
 - **Rustup:** `RUSTUP_HOME` kullanıcının dizinini gösterir ve salt okunurdur.
   Eksik bir araç zincirini kurmaya çalışan rustup yalıtımda başarısız olur ve
   hatası modele gider.
@@ -905,11 +914,16 @@ dosyayı değiştirip bir sonraki UAC yükseltmesinde yönetici yetkisi elde ede
     kökünde iki yetenek SID'i için aynı izin vardı.
   - Başka sürücülerdeki çalışma alanları o sürücünün köküne aynı izni ister;
     `kur` sabit disklerin hepsine uygular.
-- **Kurulum kaydı:** `%ProgramData%\Kalfa\yalitim\kurulum.json`. Kök izni
-  verilen sürücüleri ve `izin-ver` ile verilen izinleri listeler. Dosyayı
-  yalnızca Administrators yazabilir.
+- **Profiller dizini** (2d-1, A11). `kur`, `C:\Users`'a da (bilinen dizin
+  `FOLDERID_UserProfiles`) aynı listeleme iznini aynı yolla verir. Profil
+  altındaki çalışma alanının yolu çözülürken kap `C:\Users`'ı listeler. Dizin
+  yöneticiye aittir; hazırlık oraya izin veremez (§9.4). Kap hesap adlarını
+  görür.
+- **Kurulum kaydı:** `%ProgramData%\Kalfa\yalitim\kurulum.json`. Listeleme
+  izni verilen dizinleri (sürücü kökleri ve profiller dizini) ve `izin-ver`
+  ile verilen izinleri listeler. Dosyayı yalnızca Administrators yazabilir.
 - **Durum** yükseltme olmadan, uygulamanın içinde denetlenir:
-  - Sabit disklerin kökünde yeteneğin izni var mı.
+  - Sabit disklerin kökünde ve profiller dizininde yeteneğin izni var mı.
   - Deneme amaçlı bir `cmd /c exit 0` bir kapta başarılı mı. Bu deneme,
     `Kalfa.Deneme` adlı kendi profilinde koşar.
 
@@ -919,7 +933,11 @@ dosyayı değiştirip bir sonraki UAC yükseltmesinde yönetici yetkisi elde ede
   1. Uygulama, yükseltme olmadan, her çalışma alanının izinlerini ACE kaydına
      göre geri alır ve AppContainer profillerini siler (§9.4).
   2. `kaldir` UAC ile başlar. Kök izinlerini ve `izin-ver` izinlerini kurulum
-     kaydına göre geri alır, sonra kaydı siler.
+     kaydına göre geri alır, sonra kaydı siler. Kök izinlerini kayda ek olarak
+     sabit disklerde ve profiller dizininde de arar. Bir izin geri
+     alınamadıysa ya da durumu bilinemiyorsa (bozuk kayıt, okunamayan ACL,
+     "bulunamadı" dışındaki erişim hatası) kaydı silmez, başarı bildirmez ve
+     hatayla çıkar (2d-1).
   - Profiller yükseltilmemiş süreçten silinir. 2c'de yükseltilmiş geri alma
     betiğinden sonra profiller yerinde kalmıştı; yükseltilmemiş silme onları
     kaldırdı.
@@ -981,14 +999,22 @@ komut (geliştiricinin hesabı, AppContainer belirteci, düşük bütünlük)
     çalışma alanına özel `ev` dizininde önceden oluşturur.
   - `TEMP` yazılabilir olmalıdır. Yoksa PowerShell ConstrainedLanguage kipinde
     açılır (2c).
+  - Windows, `TEMP` ve `TMP`'yi de verilen değerden bağımsız olarak
+    `%LOCALAPPDATA%\Packages\<profil adı>\AC\Temp`'e çevirir ama dizini
+    kurmaz (2d-1). PowerShell onu kendisi kurar; `link.exe` kurmaz ve LNK1104
+    verir. Kalfa her çalıştırmadan önce bu dizini de kurar. Dizin çalışma
+    alanına özel `ev`'in altındadır.
   - **MSVC:** rustc, Visual Studio'nun `ProgramData`'daki kurulum kaydını
     okuyamadığı için `link.exe`'yi bulamaz. Kalfa, geliştirici tarafında
     `vswhere` ile son MSVC araç takımını ve Windows SDK'yı bulur:
-    - `PATH`'e `…\VC\Tools\MSVC\<sürüm>\bin\Hostx64\x64` eklenir.
+    - `…\VC\Tools\MSVC\<sürüm>\bin\Hostx64\x64`, `PATH`'in **başına**
+      eklenir. rustc bağlayıcıyı bulamayınca `PATH`'teki ilk `link.exe`'yi
+      çalıştırır; sonda kalsaydı bu Git'in `usr\bin\link.exe`'si (MSYS)
+      olurdu, o da kapta 0xC0000142 ile başlayamaz (2d-1).
     - `LIB`, MSVC'nin `lib\x64`'ünü, SDK'nın `um\x64` ve `ucrt\x64`
-      dizinlerini gösterir.
+      dizinlerini; `INCLUDE`, MSVC ve SDK başlıklarını gösterir.
     - Bu dizinler Program Files (x86) altındadır ve kaba zaten açıktır.
-    - C derleyen `build.rs` için `INCLUDE` ve `cl.exe` A12'dir.
+    - C derleyen `build.rs` `cl.exe` ve `INCLUDE` ile çalışır (A12).
 - **LPAC kullanılmaz.** `ALL APPLICATION PACKAGES` dışındaki kapta PowerShell
   ve cargo çalışmıyor (2c).
 
@@ -1021,9 +1047,19 @@ komut (geliştiricinin hesabı, AppContainer belirteci, düşük bütünlük)
   mirası kesip izin vermeyerek çizilir.
 - **Bütünlük etiketi gerekmez:** kap, izinli ama etiketsiz (orta bütünlüklü)
   dizine yazabiliyor (2c).
-- **Üst dizinler:** çalışma alanının `C:\` ile kendisi arasındaki dizinlerin
-  listelenmesi gerekip gerekmediği A11'dir. Profil altındaki bir çalışma alanı
-  için izin, profil kökündeki adları açar.
+- **Üst dizinler (A11):** Git for Windows (`getcwd`), PowerShell
+  (`Set-Location`) ve yolu kanonikleştiren araçlar üst dizinleri listeler.
+  İzin yokken PowerShell `C:\`'de başlar, git "Unable to read current working
+  directory" ile düşer (2d-1).
+  - Hazırlık, çalışma alanının ve özel kökün (§7.3) sürücü kökü ile
+    arasındaki her üst dizinine yalnız paket SID'ine, mirassız listeleme
+    (`0x1000A1`) verir. İzinler ACE kaydına girer, kaldırmada geri alınır.
+  - Yeteneğin zaten listeleyebildiği dizin atlanır: sürücü kökü ve profiller
+    dizini kurulumdadır (§9.2).
+  - Üst dizinler alanlar arasında ortaktır. DACL'lerini oku-değiştir-yaz ile
+    güncelleyen adımlar süreçler arası adlı bir kilitle sıralanır.
+  - Geliştiricinin sahibi olmadığı bir üst dizin varsa hazırlık reddedilir.
+  - Kap bu dizinlerdeki adları görür, içeriklerini göremez (kullanıcı kararı).
 - **İlerleme:** büyük ağaçlarda yayılma zaman alır. İlerleme araç kartında
   canlı çıktı olarak görünür (`AracCiktisiParcasi`, "İzinler hazırlanıyor:
   12 400 / 80 000").
@@ -1032,15 +1068,22 @@ komut (geliştiricinin hesabı, AppContainer belirteci, düşük bütünlük)
 - **İzinler Win32 API'siyle verilir** (`SetEntriesInAclW`,
   `SetNamedSecurityInfoW`). `icacls`, hiçbir hesaba karşılık gelmeyen SID'leri
   reddediyor; paket ve yetenek SID'leri böyledir.
+  - Mirassız bir izin yalnızca nesnenin kendisine, kök iznindeki gibi
+    `SetFileSecurityW` ile yazılır ve silinir. `SetNamedSecurityInfoW` her
+    yazımda mirası bütün alt ağaca yeniden yayar: `AppData\Local` gibi bir
+    üst dizinde dakikalar sürüyordu (2d-1).
 - **ACE kaydı:**
   - Konum: `%LOCALAPPDATA%\Kalfa\yalitim\ace-kaydi.jsonl`.
   - İçerik: uygulamanın eklediği her izin (yol, SID, maske, devralma). Mirası
     kesilen her nesne için de önceki DACL'i (SDDL).
   - Geri alma bu kayda göre yapılır, yeniden tarama yapılmaz. Mirası kesilen
     nesnenin önceki DACL'i geri yazılır.
-  - Kayıt bozuksa geri alma, kökten başlayıp Kalfa'nın paket SID'lerini taşıyan
-    bütün girişleri siler ve mirası kesilmiş nesnelerde mirası yeniden açar.
-    Bu yavaştır ama eksiksizdir.
+  - Kayıt bozuksa yalnızca kanıtlanan değişiklikler geri alınır: kaydın
+    sağlam satırlarındaki izinler ve çalışma alanının içinde, önceki DACL'i
+    kayıtta olan nesneler. Kaydı tamamen kaybolmuş bir yolun kesik mirası
+    Kalfa'nın mı geliştiricinin mi, ayırt edilemez; ona dokunulmaz. Geri alma
+    tamamlanmamış sayılır; ACE kaydı ve AppContainer profili silinmez
+    (2d-1, kullanıcı kararıyla eksiksiz geri almadan güvenlik lehine sapma).
 - **Araç zinciri dizinleri:**
   - Program Files ve Windows `ALL APPLICATION PACKAGES`'a zaten açıktır. Git,
     MSVC ve Windows SDK ayrıca izin istemez.
@@ -1107,6 +1150,13 @@ da tam hedefi taşır.
   2c'nin taramasında profilde böyle tek bir dizin bulundu: başka bir
   uygulamanın kendi yalıtımı için açtığı bir çalışma zamanı dizini.
 - **`C:\`'deki üst düzey adlar** görünür, içerikleri görünmez (§9.2).
+  `C:\Users`'taki hesap adları ve çalışma alanının üst dizinlerindeki adlar
+  da görünür (A11, §9.4).
+- **Yolun DOS adı çözülemez.** `GetFinalPathNameByHandleW`, DOS ve GUID hacim
+  adlarıyla kapta her yolda "Erişim engellendi" veriyor (Mount Manager'a
+  erişim ister); NT ve hacimsiz adlarla çalışıyor. Rust'ın `canonicalize`'ı
+  DOS adını ister. Bu yüzden cargo kapta crate açamaz: crates.io bağımlılığı
+  Windows yalıtımında indirilemez (A15). Yol 2d-2'de seçilir.
 - **Yerel sunuculara erişilemez:** kap, 127.0.0.1'deki geliştirme
   sunucularına ve veritabanlarına bağlanamaz.
 - **Pencere bulma** (`FindWindow`) engellenmez; bulunan pencereye ileti
@@ -1460,11 +1510,11 @@ Plan ya da prototip aşamasında cevaplanacaklar:
 | A8 | Schannel kısıtlı belirteçte `SEC_E_NO_CREDENTIALS` veriyor; ağlı çalıştırmada cargo, rustup ve Schannel'li git bağlanamıyor. Yol ne (OpenSSL arka ucu, geliştiricinin önbelleği, AppContainer)? | 2c ek ölçümü: AppContainer'da Schannel çalışıyor (§9.3) |
 | A9 | Geri döngü güvenlik duvarında süzülmüyor; ağsız kullanıcı 127.0.0.1'e ulaşıyor. WFP filtresi mümkün mü? | 2c ek ölçümü: AppContainer'da geri döngü kapalı (§9.3) |
 | A10 | Varsayılan izinli borular Everyone üzerinden salt okunur açılıyor; kabul mü, önlem mi? | 2c ek ölçümü: AppContainer'da açılamıyor (§9.3) |
-| A11 | AppContainer'da çalışma alanının üst dizinleri listelenebilmeli mi? Profil altındaki çalışma alanında üst dizinlere listeleme izni mi, sürücü harfi mi? | 2d planı |
-| A12 | AppContainer'da C derleyen `build.rs` (`cl.exe`, `INCLUDE`) çalışıyor mu? | 2d planı |
-| A13 | AppContainer'da `privateNetworkClientServer` ile LAN hedefi; `openssh-ssh-agent` ve `docker_engine` boruları | 2d planı |
+| A11 | AppContainer'da çalışma alanının üst dizinleri listelenebilmeli mi? Profil altındaki çalışma alanında üst dizinlere listeleme izni mi, sürücü harfi mi? | 2d-1: evet; git ve PowerShell istiyor, PSDrive yalnızca PowerShell'i kurtarıyor. Üst dizinlere paket SID'ine mirassız listeleme, `C:\Users`'a kurulumda (§9.2, §9.4) |
+| A12 | AppContainer'da C derleyen `build.rs` (`cl.exe`, `INCLUDE`) çalışıyor mu? | 2d-1: evet; MSVC dizini `PATH`'in başında olmalı ve kabın `TEMP`'i kurulmalı (§9.3) |
+| A13 | AppContainer'da `privateNetworkClientServer` ile LAN hedefi; `openssh-ssh-agent` ve `docker_engine` boruları | 2d-1: ölçülmedi; geliştiricinin makinesinde LAN hedefi, ssh-agent ve Docker yok. Yetenek verilmez (§9.3); 2d-2'de ya da ilk ihtiyaçta ölçülür |
 | A14 | Kabın içinden başka bir paket SID'iyle süreç başlatılabiliyor mu? | 2c: hayır, `ERROR_INVALID_PARAMETER`; aynı paketle başlatılabiliyor (§9.3) |
-| A15 | Windows'ta ağsız derlemede geliştiricinin cargo registry'si nasıl kullanılır? `CARGO_HOME`'u doğrudan vermek çalıştı ama 12 sn sürdü | 2d planı (§7.4) |
+| A15 | Windows'ta ağsız derlemede geliştiricinin cargo registry'si nasıl kullanılır? `CARGO_HOME`'u doğrudan vermek çalıştı ama 12 sn sürdü | 2d-1: çalışma alanına özel registry kapta doldurulamıyor (cargo'nun paket açması DOS yol adı istiyor, §9.6). Bilinen sınır; yol 2d-2'de seçilir (§7.4) |
 
 ---
 
@@ -1497,6 +1547,13 @@ yazar, Claude inceler ve iki platformda doğrular.
      ACE kaydı.
    - Ayarlardaki yalıtım bölümü.
    - §12.2'nin Windows sütunu ve §12.3 (Windows).
+
+   2026-09-26'da iki plana bölündü:
+   - **2d-1:** `kalfa-sandbox`'ın Windows arka ucu, `kalfa-yalitim.exe`,
+     çalışma alanı hazırlığı ve ACE kaydı, hazırlığın yerel onayı, §12.2'nin
+     Windows sütunu, §12.3 (Windows), A11–A13 ve A15.
+   - **2d-2:** uygulamanın yardımcıyı kopyalayıp UAC ile başlatması (§9.1),
+     Ayarlar'ın Windows bölümü (§10.4), Windows'ta kabuk uçtan uca testleri.
 
 2a ve 2b iki platformun ortak kodunu değiştirdiği için sırayla yürür. 2c, 2a ve
 2b'yle paralel yürüyebilir: ürün koduna dokunmaz.

@@ -7,6 +7,9 @@ use std::io;
 
 use tokio::process::{Child, Command};
 
+#[cfg(windows)]
+pub(crate) use windows::Is;
+
 pub(crate) struct Agac {
     #[cfg(unix)]
     grup: i32,
@@ -29,7 +32,7 @@ pub(crate) fn baslat(komut: &mut Command) -> io::Result<(Child, Agac)> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
-        let is = windows::Is::yeni()?;
+        let is = windows::Is::yeni(false)?;
         komut.creation_flags(CREATE_SUSPENDED | CREATE_NO_WINDOW);
         let cocuk = komut.spawn()?;
         let hazir = (|| {
@@ -52,6 +55,12 @@ pub(crate) fn baslat(komut: &mut Command) -> io::Result<(Child, Agac)> {
 }
 
 impl Agac {
+    /// Kalfa'nın kendisinin başlattığı ve işe atadığı ağaç (Windows kabı).
+    #[cfg(windows)]
+    pub(crate) fn isten(is: Is) -> Self {
+        Self { is }
+    }
+
     /// Ağaca kibarca durmasını söyler (Linux'ta `SIGTERM`). Windows'ta
     /// kibar sonlandırma yoktur; ağaç hemen ölür.
     pub(crate) fn durdur(&self) {
@@ -97,7 +106,12 @@ mod windows {
     };
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_UILIMIT_DESKTOP,
+        JOB_OBJECT_UILIMIT_DISPLAYSETTINGS, JOB_OBJECT_UILIMIT_EXITWINDOWS,
+        JOB_OBJECT_UILIMIT_GLOBALATOMS, JOB_OBJECT_UILIMIT_HANDLES,
+        JOB_OBJECT_UILIMIT_READCLIPBOARD, JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS,
+        JOB_OBJECT_UILIMIT_WRITECLIPBOARD, JOBOBJECT_BASIC_UI_RESTRICTIONS,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicUIRestrictions,
         JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
     };
     use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
@@ -105,7 +119,7 @@ mod windows {
     use crate::AZAMI_SUREC;
 
     /// Kapanınca içindeki bütün süreçleri öldüren Job Object.
-    pub(super) struct Is(HANDLE);
+    pub(crate) struct Is(HANDLE);
 
     // Tutamaç yalnızca çekirdek nesnesine bir başvurudur; iş parçacıkları
     // arasında taşınabilir.
@@ -116,7 +130,9 @@ mod windows {
     // tutamaçlar ve sıfırla başlatılıp boyutu doğru verilmiş yapılar geçer.
     // `Is`'in tutamacı değer yaşadıkça açıktır; `Drop`'ta bir kez kapanır.
     impl Is {
-        pub(super) fn yeni() -> io::Result<Self> {
+        /// `ui_kisiti`: yalıtılmış komutlarda pano, genel atomlar, masaüstü ve
+        /// başka süreçlerin kullanıcı arayüzü tutamaçları kapatılır (§9.3).
+        pub(crate) fn yeni(ui_kisiti: bool) -> io::Result<Self> {
             let is = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
             if is.is_null() {
                 return Err(io::Error::last_os_error());
@@ -137,17 +153,40 @@ mod windows {
             if tamam == 0 {
                 return Err(io::Error::last_os_error());
             }
+            if ui_kisiti {
+                let kisit = JOBOBJECT_BASIC_UI_RESTRICTIONS {
+                    UIRestrictionsClass: JOB_OBJECT_UILIMIT_DESKTOP
+                        | JOB_OBJECT_UILIMIT_DISPLAYSETTINGS
+                        | JOB_OBJECT_UILIMIT_EXITWINDOWS
+                        | JOB_OBJECT_UILIMIT_GLOBALATOMS
+                        | JOB_OBJECT_UILIMIT_HANDLES
+                        | JOB_OBJECT_UILIMIT_READCLIPBOARD
+                        | JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS
+                        | JOB_OBJECT_UILIMIT_WRITECLIPBOARD,
+                };
+                let tamam = unsafe {
+                    SetInformationJobObject(
+                        is.0,
+                        JobObjectBasicUIRestrictions,
+                        (&raw const kisit).cast(),
+                        size_of::<JOBOBJECT_BASIC_UI_RESTRICTIONS>() as u32,
+                    )
+                };
+                if tamam == 0 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
             Ok(is)
         }
 
-        pub(super) fn ata(&self, surec: RawHandle) -> io::Result<()> {
+        pub(crate) fn ata(&self, surec: RawHandle) -> io::Result<()> {
             if unsafe { AssignProcessToJobObject(self.0, surec as HANDLE) } == 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())
         }
 
-        pub(super) fn sonlandir(&self) {
+        pub(crate) fn sonlandir(&self) {
             unsafe {
                 TerminateJobObject(self.0, 1);
             }

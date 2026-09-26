@@ -179,6 +179,7 @@ fn kabuk_ogesi(cagri: CagriId) -> OnayOgesi {
                 talimat: "yok".into(),
             },
             ilk_cagri: true,
+            alan_hazirligi: false,
         }),
         yerel_onay: true,
     }
@@ -198,7 +199,8 @@ fn kabuk_json_bicimi() {
             "dizin": ".",
             "ag": false,
             "yalitim": {"tip": "Yalitimsiz", "talimat": "yok"},
-            "ilk_cagri": true
+            "ilk_cagri": true,
+            "alan_hazirligi": false
         })
     );
     let parca = serde_json::to_value(Olay::AracCiktisiParcasi {

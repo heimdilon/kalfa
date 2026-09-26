@@ -15,6 +15,7 @@ use async_trait::async_trait;
 use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, CiktiGonderici, Hazirlik};
 use kalfa_core::git_koruma;
 use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
+use kalfa_core::protokol::CiktiAkisi;
 use kalfa_core::yol::CalismaYolu;
 use kalfa_sandbox::{
     AlanBilgisi, BaslatmaHatasi, Bitis, CalistirmaIstegi, KomutBicimi, Korumali, Yalitici,
@@ -242,6 +243,29 @@ impl KabukAraci {
     }
 }
 
+impl KabukAraci {
+    /// Çalışma alanını yalıtım için hazırlar (§9.4); ilerleme araç kartında
+    /// görünür, modele gitmez.
+    async fn alani_hazirla(
+        &self,
+        alan: &AlanBilgisi,
+        onaylandi: bool,
+        gonderici: &CiktiGonderici,
+    ) -> Result<(), AracHatasi> {
+        let yalitici = self.yalitici.clone();
+        let alan = alan.clone();
+        let gonderici = gonderici.clone();
+        tokio::task::spawn_blocking(move || {
+            yalitici.alani_hazirla(&alan, onaylandi, &mut |satir| {
+                gonderici.gonder(CiktiAkisi::Standart, format!("{satir}\n"));
+            })
+        })
+        .await
+        .map_err(|e| gecersiz(format!("Çalışma alanının hazırlığı yarıda kaldı: {e}")))?
+        .map_err(|e| gecersiz(e.to_string()))
+    }
+}
+
 /// Açıklamadaki kısa gösterim: ilk satır, en çok 80 karakter.
 fn kisa(gosterim: &str) -> String {
     let ilk = gosterim.lines().next().unwrap_or("");
@@ -294,6 +318,10 @@ impl Arac for KabukAraci {
                 yorumlayici: program::yorumlayici_adi().to_string(),
             },
         };
+        let yalitim = self.yalitim_ozeti(istek.ag);
+        // Windows'ta çalışma alanı ilk yalıtımlı çağrıda hazırlanır (§9.4).
+        let alan_hazirligi =
+            yalitim.yalitimli_mi() && self.yalitici.hazirlik_gerekli(self.alan.kok());
         Ok(Hazirlik {
             aciklama: format!("`{}` komutunu çalıştırmak istiyor.", kisa(&istek.gosterim)),
             tum_calisma_alani: true,
@@ -305,8 +333,9 @@ impl Arac for KabukAraci {
                     .as_ref()
                     .map_or_else(|| ".".to_string(), |d| d.as_str().to_string()),
                 ag: istek.ag,
-                yalitim: self.yalitim_ozeti(istek.ag),
+                yalitim,
                 ilk_cagri: !self.guven.guvenildi_mi(),
+                alan_hazirligi,
             }),
             ..Default::default()
         })
@@ -342,7 +371,10 @@ impl Arac for KabukAraci {
             None => return Err(gecersiz("Hazırlıkta kabuk tarifi yok.".to_string())),
         };
         let alan = if yalitimli {
-            Some(self.alan_bilgisi().await?)
+            let bilgi = self.alan_bilgisi().await?;
+            let onaylandi = h.kabuk.as_ref().is_some_and(|t| t.alan_hazirligi);
+            self.alani_hazirla(&bilgi, onaylandi, &gonderici).await?;
+            Some(bilgi)
         } else {
             None
         };
