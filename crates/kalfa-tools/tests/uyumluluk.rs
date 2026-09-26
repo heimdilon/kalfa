@@ -136,8 +136,10 @@ fn ornek_yaz(dosyalar: &[(&str, &str)], hedef: &Path) {
     }
 }
 
+/// `.git` ve worktree'nin ortak git dizini yalıtımda salt okunurdur
+/// (aşama 2 tasarımı §7.4): okuyan komutlar çalışır, yazanlar çalışmaz.
 #[tokio::test]
-async fn git_worktreede_durum_fark_ekleme_ve_commit() {
+async fn git_worktreede_durum_ve_fark_calisir_ekleme_calismaz() {
     let d = TempDir::new().unwrap();
     let ana = d.path().join("ana");
     std::fs::create_dir_all(&ana).unwrap();
@@ -152,21 +154,21 @@ async fn git_worktreede_durum_fark_ekleme_ve_commit() {
     let cikti = k
         .calistir(betik(
             "echo ikinci >> benioku.md && git status --short && git diff --stat && \
-             git add benioku.md && \
-             git -c user.name=Kalfa -c user.email=kalfa@example.com commit -q -m yalitimdan && \
-             git log --oneline -1",
+             git log --oneline -1; \
+             git add benioku.md; echo \"ekle=$?\"",
         ))
         .await;
-    assert!(cikti.contains("benioku.md"), "{cikti}");
-    assert!(cikti.contains("yalitimdan"), "{cikti}");
-    // Commit ana deponun nesnelerine yazıldı.
-    let log = Command::new("git")
+    assert!(cikti.contains("M benioku.md"), "{cikti}");
+    assert!(cikti.contains("ilk"), "{cikti}");
+    assert!(!cikti.contains("ekle=0"), "{cikti}");
+    // Ana deponun dizini değişmedi.
+    let durum = Command::new("git")
         .args(["-C"])
-        .arg(&ana)
-        .args(["log", "--oneline", "dal", "-1"])
+        .arg(&dal)
+        .args(["diff", "--cached", "--name-only"])
         .output()
         .unwrap();
-    assert!(String::from_utf8_lossy(&log.stdout).contains("yalitimdan"));
+    assert!(String::from_utf8_lossy(&durum.stdout).trim().is_empty());
 }
 
 #[tokio::test]

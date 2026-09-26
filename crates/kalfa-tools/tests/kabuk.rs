@@ -379,13 +379,7 @@ async fn yalitim_hazirsa_tarif_profil_ozetini_tasir_ve_alan_bilgisi_verilir() {
         vec![kok.join(".env"), kok.join("alt").join("sunucu.pem")]
     );
     let korumali: Vec<_> = alan.korumali.iter().map(|k| k.yol.clone()).collect();
-    assert_eq!(
-        korumali,
-        vec![
-            kok.join(".git").join("hooks"),
-            kok.join(".git").join("config")
-        ]
-    );
+    assert_eq!(korumali, vec![kok.join(".git")]);
     assert!(alan.git_dizinleri.is_empty());
 }
 

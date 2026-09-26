@@ -106,7 +106,7 @@ pub(crate) fn secenekler(k: &Kurulum) -> Vec<OsString> {
         s.yolla("--ro-bind", &[registry, &k.ozel.cargo().join("registry")]);
     }
     for git in &k.alan.git_dizinleri {
-        s.ayni("--bind", git);
+        s.ayni("--ro-bind", git);
     }
     for korumali in &k.alan.korumali {
         s.ayni("--ro-bind", &korumali.yol);
@@ -240,7 +240,7 @@ mod tests {
                 "/veri/yalitim/abc/onbellek/cargo/registry",
             ],
         );
-        konum(&s, &["--bind", "/depo/.git", "/depo/.git"]);
+        konum(&s, &["--ro-bind", "/depo/.git", "/depo/.git"]);
         konum(&s, &["--setenv", "HOME", "/veri/yalitim/abc/ev"]);
         konum(
             &s,

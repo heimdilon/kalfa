@@ -18,11 +18,11 @@ pub struct AlanBilgisi {
     pub kok: PathBuf,
     /// Okunamayacak dosyalar ve dizinler (§7.2).
     pub gizli: Tarama,
-    /// Salt okunur kalacak yollar: `.git/hooks`, `.git/config`,
-    /// `core.hooksPath` (§7.2).
+    /// Salt okunur kalacak yollar: `.git`'in kendisi ve `core.hooksPath`
+    /// hedefi (§7.2).
     pub korumali: Vec<Korumali>,
-    /// Çalışma alanı dışındaki git dizinleri (worktree, submodule);
-    /// yazılabilir bağlanır (§7.4).
+    /// Çalışma alanı dışındaki, doğrulanmış git dizinleri (worktree'nin ortak
+    /// git dizini, alt modülün git dizini); salt okunur açılır (§7.4).
     pub git_dizinleri: Vec<PathBuf>,
 }
 
@@ -139,20 +139,81 @@ impl OzelDizinler {
     /// Dizinleri oluşturur ve en küçük araç yapılandırmasını yazar (§7.4).
     /// Her çalıştırmadan önce çağrılır; kullanıcının git kimliği değiştiyse
     /// yeni hâli yazılır. `.npmrc` boştur: kullanıcınınki token taşıyabilir.
+    ///
+    /// Bu dizinlere yalıtımdaki komut yazabilir. Kalfa'nın yazması bu yüzden
+    /// bağlantı izlemez: komut `ev/.gitconfig`'i ya da `ev`'i dışarıya bir
+    /// bağlantıya (Windows'ta junction) çevirmiş olabilir; izlenseydi Kalfa
+    /// geliştiricinin kendi dosyasının üzerine yazardı. Bağlantı silinir,
+    /// yerine dizin ya da dosya konur.
     pub fn hazirla(&self, git: &GitKimligi) -> io::Result<()> {
-        for dizin in [
-            &self.ev,
-            &self.gecici,
-            &self.cargo().join("registry"),
-            &self.npm(),
-            &self.pip(),
+        std::fs::create_dir_all(&self.kok)?;
+        for goreli in [
+            Path::new("ev"),
+            Path::new("gecici"),
+            Path::new("onbellek/cargo/registry"),
+            Path::new("onbellek/npm"),
+            Path::new("onbellek/pip"),
         ] {
-            std::fs::create_dir_all(dizin)?;
+            guvenli_dizin(&self.kok, goreli)?;
         }
-        std::fs::write(self.gitconfig(), git.gitconfig())?;
-        std::fs::write(self.npmrc(), "")?;
+        guvenli_yaz(&self.ev, ".gitconfig", git.gitconfig().as_bytes())?;
+        guvenli_yaz(&self.ev, ".npmrc", b"")?;
         Ok(())
     }
+}
+
+/// Bağlantıyı (sembolik bağlantı ya da junction) siler; hedefine dokunmaz.
+fn baglantiyi_sil(yol: &Path) -> io::Result<()> {
+    // Windows'ta dizine giden bağlantı `remove_dir` ile, dosyaya giden
+    // `remove_file` ile silinir; Unix'te ikisi de `remove_file`'dır.
+    std::fs::remove_file(yol).or_else(|_| std::fs::remove_dir(yol))
+}
+
+/// `taban/goreli`'yi bileşen bileşen, bağlantı izlemeden dizin olarak kurar.
+/// `taban` yalıtımın değiştiremediği bir dizindir. Yolda bağlantı ya da dosya
+/// varsa silinir.
+pub(crate) fn guvenli_dizin(taban: &Path, goreli: &Path) -> io::Result<PathBuf> {
+    let mut yol = taban.to_path_buf();
+    for bilesen in goreli.components() {
+        yol.push(bilesen);
+        match std::fs::symlink_metadata(&yol) {
+            Ok(m) if m.file_type().is_symlink() => {
+                baglantiyi_sil(&yol)?;
+                std::fs::create_dir(&yol)?;
+            }
+            Ok(m) if m.is_dir() => {}
+            Ok(_) => {
+                std::fs::remove_file(&yol)?;
+                std::fs::create_dir(&yol)?;
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => std::fs::create_dir(&yol)?,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(yol)
+}
+
+/// `dizin/ad`'ı bağlantı izlemeden yazar: önce yeni bir geçici dosyaya, sonra
+/// yerine taşır. Yerindeki bağlantı ya da dizin silinir.
+pub(crate) fn guvenli_yaz(dizin: &Path, ad: &str, icerik: &[u8]) -> io::Result<()> {
+    use std::io::Write;
+    let hedef = dizin.join(ad);
+    let gecici = dizin.join(format!("{ad}.kalfa-yeni"));
+    for yol in [&hedef, &gecici] {
+        match std::fs::symlink_metadata(yol) {
+            Ok(m) if m.file_type().is_symlink() => baglantiyi_sil(yol)?,
+            Ok(m) if m.is_dir() => std::fs::remove_dir_all(yol)?,
+            Ok(_) if yol == &gecici => std::fs::remove_file(yol)?,
+            _ => {}
+        }
+    }
+    let mut dosya = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&gecici)?;
+    dosya.write_all(icerik)?;
+    drop(dosya);
+    std::fs::rename(&gecici, &hedef)
 }
 
 /// Profil özeti (§7.1): yalıtımın arka ucu, okunur yolların sıralı listesi ve
@@ -210,6 +271,89 @@ mod tests {
             "[user]\n\tname = \"Ada \\\"Kalfa\\\"\"\n\temail = \"ada@example.com[core]\"\n"
         );
         assert_eq!(std::fs::read_to_string(o.npmrc()).unwrap(), "");
+    }
+
+    /// `baglanti`'yı `hedef` dizinine bağlar: Unix'te sembolik bağlantı,
+    /// Windows'ta junction (yönetici gerektirmez).
+    fn dizin_bagla(hedef: &Path, baglanti: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(hedef, baglanti).unwrap();
+        #[cfg(windows)]
+        {
+            let durum = Command::new("cmd")
+                .args(["/d", "/c", "mklink", "/J"])
+                .arg(baglanti)
+                .arg(hedef)
+                .output()
+                .unwrap();
+            assert!(durum.status.success(), "{durum:?}");
+        }
+    }
+
+    #[test]
+    fn hazirlik_yalitimin_kurdugu_baglantilari_izlemez() {
+        let d = tempfile::tempdir().unwrap();
+        let disari = d.path().join("gelistiricinin-evi");
+        std::fs::create_dir(&disari).unwrap();
+        std::fs::write(disari.join(".gitconfig"), "DOKUNMA").unwrap();
+        std::fs::write(disari.join(".npmrc"), "//kayit/:_authToken=GIZLI").unwrap();
+        let o = OzelDizinler::yol(&d.path().join("yalitim"), "abc");
+        o.hazirla(&GitKimligi::default()).unwrap();
+
+        // Yalıtımdaki komut `ev`'i ve `onbellek/cargo`'yu dışarıya bağlar.
+        std::fs::remove_dir_all(&o.ev).unwrap();
+        dizin_bagla(&disari, &o.ev);
+        std::fs::remove_dir_all(o.cargo()).unwrap();
+        dizin_bagla(&disari, &o.cargo());
+        o.hazirla(&GitKimligi {
+            ad: Some("Ada".into()),
+            eposta: None,
+        })
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(disari.join(".gitconfig")).unwrap(),
+            "DOKUNMA"
+        );
+        assert_eq!(
+            std::fs::read_to_string(disari.join(".npmrc")).unwrap(),
+            "//kayit/:_authToken=GIZLI"
+        );
+        assert!(!disari.join("registry").exists());
+        assert!(
+            !std::fs::symlink_metadata(&o.ev)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(o.cargo().join("registry").is_dir());
+        assert_eq!(
+            std::fs::read_to_string(o.gitconfig()).unwrap(),
+            "[user]\n\tname = \"Ada\"\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hazirlik_dosya_baglantisini_izlemez() {
+        let d = tempfile::tempdir().unwrap();
+        let disari = d.path().join("bashrc");
+        std::fs::write(&disari, "DOKUNMA").unwrap();
+        let o = OzelDizinler::yol(&d.path().join("yalitim"), "abc");
+        o.hazirla(&GitKimligi::default()).unwrap();
+        for ad in [".gitconfig", ".npmrc", ".npmrc.kalfa-yeni"] {
+            let _ = std::fs::remove_file(o.ev.join(ad));
+            std::os::unix::fs::symlink(&disari, o.ev.join(ad)).unwrap();
+        }
+        o.hazirla(&GitKimligi::default()).unwrap();
+        assert_eq!(std::fs::read_to_string(&disari).unwrap(), "DOKUNMA");
+        assert_eq!(std::fs::read_to_string(o.npmrc()).unwrap(), "");
+        assert!(
+            !std::fs::symlink_metadata(o.npmrc())
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
     }
 
     #[test]

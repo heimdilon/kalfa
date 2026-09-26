@@ -1,6 +1,6 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-09-25. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-09-26. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
 ## Mevcut uygulama
@@ -698,7 +698,40 @@ Tasarımdaki P1–P10 geliştiricinin makinesinde (Windows 11 Home) ölçüldü:
   (A14).
 - **Makine:** Prototipin kurulumu geri alındı.
 
-Sıradaki: 2d (Windows arka ucu) planı.
+### Güvenlik düzeltmesi: yalıtımda `.git` salt okunur (2026-09-26)
+
+2d-1 planlanırken 2b'nin Linux yalıtımında üç açık bulundu. Üçü de
+Windows arka ucunu da ilgilendirdiği için 2d'den önce ayrı bir PR'la kapatıldı
+(aşama 2 tasarımı §7.2–§7.4, üst belge r3.6):
+
+- **`.git` yalnızca kısmen korunuyordu.** Kancalar ve yapılandırma salt
+  okunurdu, ama yalıtımdaki komut `.git`'in kendisini yeniden adlandırıp yerine
+  yenisini kurabiliyordu (WSL'de doğrulandı). Artık `.git`'in tamamı (dizin ya
+  da worktree'nin `.git` dosyası) salt okunur bağlanır. Kullanıcı kararıyla
+  yalıtımda `git status`, `git diff` ve `git log` çalışır; `git add` ve
+  `git commit` çalışmaz.
+- **Dış git dizini doğrulanmıyordu.** `.git` dosyasının `gitdir:`'i ve
+  `commondir` çalışma alanındadır; gösterdikleri dizin doğrulanmadan
+  yazılabilir bağlanıyordu. Artık geri başvurusu tutmayan dizin açılmaz,
+  tutan da salt okunur açılır.
+- **Kalfa'nın özel dizinlere yazması bağlantı izliyordu.** `ev/.gitconfig` ve
+  `ev/.npmrc` her çalıştırmadan önce yazılır; bu dizinlere yalıtımdaki komut da
+  yazabilir. Artık bağlantılar (Windows'ta junction'lar da) izlenmez.
+  Windows'ta junction'lı test eski kodda düştü.
+
+Bilinen sınır: `.git` sembolik bağlantıysa, çalışma alanı git deposu değilse ya
+da alt dizinlerde, yalıtımdaki komut yeni bir `.git` oluşturabilir.
+
+| Kontrol | Windows | Linux |
+| --- | --- | --- |
+| `cargo test --workspace --locked` | 365 geçti, 0 başarısız | 375 geçti, 0 başarısız |
+| `cargo test -p kalfa-uygulama -p kalfa --features e2e` | 66 geçti | 66 geçti |
+| Clippy / fmt | Başarılı | Başarılı (üç derleme) |
+| Yalıtım testleri (`kalfatest`) | — | `yalitim` 17, `uyumluluk` 4 geçti |
+| Uçtan uca | 24 test geçti (iki koşuda); p95 24–27 ms | 25 test geçti (iki koşuda); p95 35–38 ms |
+
+Sıradaki: 2d-1 (Windows arka ucu: AppContainer, çalışma alanı hazırlığı,
+`kalfa-yalitim.exe`) planı. 2d iki plana bölündü; 2d-2 uygulama ve Ayarlar'dır.
 
 Kabuk yalıtımı, bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi,
 güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü

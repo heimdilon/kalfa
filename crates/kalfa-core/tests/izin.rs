@@ -190,7 +190,7 @@ fn core_hookspath_hedefi_korunur() {
 }
 
 #[test]
-fn git_yerlesimi_depoda_kanca_ve_yapilandirmayi_korur() {
+fn git_yerlesimi_depoda_git_dizininin_tamamini_korur() {
     let d = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(d.path().join(".git/hooks")).unwrap();
     std::fs::write(d.path().join(".git/config"), "").unwrap();
@@ -198,16 +198,10 @@ fn git_yerlesimi_depoda_kanca_ve_yapilandirmayi_korur() {
     let yerlesim = git_koruma::git_yerlesimi(d.path());
     assert_eq!(
         yerlesim.korumali,
-        vec![
-            git_koruma::KorumaliYol {
-                yol: kok.join(".git/hooks"),
-                dizin: true,
-            },
-            git_koruma::KorumaliYol {
-                yol: kok.join(".git/config"),
-                dizin: false,
-            },
-        ]
+        vec![git_koruma::KorumaliYol {
+            yol: kok.join(".git"),
+            dizin: true,
+        }]
     );
     assert!(yerlesim.dis_dizinler.is_empty());
 
@@ -232,18 +226,84 @@ fn git_yerlesimi_worktreede_ortak_git_dizinini_bulur() {
     std::fs::create_dir_all(&alan).unwrap();
     std::fs::write(alan.join(".git"), "gitdir: ../ana/.git/worktrees/dal\n").unwrap();
 
+    std::fs::write(
+        ana.join("worktrees/dal/gitdir"),
+        format!("{}\n", alan.join(".git").display()),
+    )
+    .unwrap();
+
     let ana = ana.canonicalize().unwrap();
+    let alan_k = alan.canonicalize().unwrap();
     let yerlesim = git_koruma::git_yerlesimi(&alan);
     assert_eq!(yerlesim.dis_dizinler, vec![ana.clone()]);
-    let yollar: Vec<_> = yerlesim.korumali.iter().map(|k| k.yol.clone()).collect();
     assert_eq!(
-        yollar,
-        vec![
-            ana.join("hooks"),
-            ana.join("config"),
-            ana.join("worktrees/dal/config.worktree"),
-        ]
+        yerlesim.korumali,
+        vec![git_koruma::KorumaliYol {
+            yol: alan_k.join(".git"),
+            dizin: false,
+        }]
     );
+}
+
+/// `.git` dosyası ve `commondir` çalışma alanındadır: yalıtımdaki komut
+/// yazabilir. Geri başvurusu tutmayan dış dizin açılmaz.
+#[test]
+fn git_yerlesimi_dogrulanmayan_dis_dizini_acmaz() {
+    let d = tempfile::tempdir().unwrap();
+    let ev = d.path().join("ev");
+    std::fs::create_dir_all(ev.join(".ssh")).unwrap();
+
+    // `.git` dosyası ev dizinini gösteriyor.
+    let alan = d.path().join("alan");
+    std::fs::create_dir_all(&alan).unwrap();
+    std::fs::write(alan.join(".git"), format!("gitdir: {}\n", ev.display())).unwrap();
+    let yerlesim = git_koruma::git_yerlesimi(&alan);
+    assert!(yerlesim.dis_dizinler.is_empty(), "{yerlesim:?}");
+    assert_eq!(yerlesim.korumali.len(), 1);
+
+    // Sahte worktree: ortak dizinin `worktrees/` altında ama `gitdir` dosyası
+    // yok.
+    std::fs::create_dir_all(ev.join("worktrees/x")).unwrap();
+    std::fs::write(ev.join("worktrees/x/commondir"), "../..\n").unwrap();
+    std::fs::write(
+        alan.join(".git"),
+        format!("gitdir: {}\n", ev.join("worktrees/x").display()),
+    )
+    .unwrap();
+    assert!(git_koruma::git_yerlesimi(&alan).dis_dizinler.is_empty());
+
+    // `.git` dizinindeki `commondir` dışarıyı gösteriyor.
+    let depo = d.path().join("depo");
+    std::fs::create_dir_all(depo.join(".git/hooks")).unwrap();
+    std::fs::write(depo.join(".git/commondir"), format!("{}\n", ev.display())).unwrap();
+    let yerlesim = git_koruma::git_yerlesimi(&depo);
+    assert!(yerlesim.dis_dizinler.is_empty(), "{yerlesim:?}");
+    assert_eq!(
+        yerlesim.korumali,
+        vec![git_koruma::KorumaliYol {
+            yol: depo.canonicalize().unwrap().join(".git"),
+            dizin: true,
+        }]
+    );
+}
+
+#[test]
+fn git_yerlesimi_alt_modulun_git_dizinini_dogrular() {
+    let d = tempfile::tempdir().unwrap();
+    let ust = d.path().join("ust");
+    let modul = ust.join(".git/modules/alt");
+    std::fs::create_dir_all(&modul).unwrap();
+    std::fs::write(modul.join("config"), "[core]\n\tworktree = ../../../alt\n").unwrap();
+    let alan = ust.join("alt");
+    std::fs::create_dir_all(&alan).unwrap();
+    std::fs::write(alan.join(".git"), "gitdir: ../.git/modules/alt\n").unwrap();
+    // Çalışma alanı alt modülün kendisi; git dizini onun dışında.
+    let yerlesim = git_koruma::git_yerlesimi(&alan);
+    assert_eq!(yerlesim.dis_dizinler, vec![modul.canonicalize().unwrap()]);
+
+    // `core.worktree` başka yeri gösterirse açılmaz.
+    std::fs::write(modul.join("config"), "[core]\n\tworktree = ../../..\n").unwrap();
+    assert!(git_koruma::git_yerlesimi(&alan).dis_dizinler.is_empty());
 }
 
 fn kabuk(yalitimli: bool, ag: bool, ilk_cagri: bool) -> kalfa_core::kabuk::KabukTarifi {

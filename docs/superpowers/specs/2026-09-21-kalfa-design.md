@@ -1,7 +1,7 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Revizyon:** r3.5 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
+**Revizyon:** r3.6 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
 **Durum:** 1a, 1b ve 1c uygulandı; aşama 2'de 2a ve 2b uygulandı, 2c (Windows prototipi) ölçüldü, 2d bekliyor
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
@@ -688,7 +688,7 @@ iki arka uç onu uygular.
 | **Okunabilir** | Seçilmiş sistem yolları (Linux: `/usr`, `/bin`, `/sbin`, `/lib*`, `/etc`; Windows: sistem ve program dizinleri) · izinli araç zincirlerinin yalnızca çalıştırılabilir ve kütüphane alt dizinleri (örn. `~/.cargo/bin`, `~/.cargo/registry`, `~/.rustup/toolchains`) · çalışma alanı |
 | **Okunamaz** | Açıkça seçilmeyen her şey: ev dizininin geri kalanı (`~/.ssh`, `~/.gnupg`, tarayıcı profilleri, kimlik depoları), `/srv`, `/mnt`, `/media`, başka kullanıcıların dizinleri, **diğer çalışma alanları**, Kalfa'nın kendi veri dizini · nerede olursa olsun kimlik bilgisi dosyaları (§7.4 kalıpları ve `credentials.toml`, `hosts.yml`, `.docker/config.json` gibi bilinen adlar) |
 | **Yazılabilir** | Çalışma alanı · bu çalışma alanına özel geçici ve önbellek dizini |
-| **Salt okunur** | Korumalı yollar (§7.3): `.git/hooks`, `.git/config`, `core.hooksPath` hedefi |
+| **Salt okunur** | Korumalı yollar (§7.3): `.git`'in tamamı (aşama 2 tasarımı §7.2), `core.hooksPath` hedefi |
 | **Ağ** | Kapalı |
 
 Dört ilke:
@@ -729,8 +729,9 @@ yerel ayrıcalıklı soketlere de ulaşılamaz (`socketpair` serbesttir).
 - *Aşama 2 kararları* ([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §7, §8):
   - Ağlı profilde de `AF_UNIX` soket açmak engellenir. Ağ ad alanı
     ayrılmadığında soyut Unix soketleri (X11, D-Bus) ancak böyle kapanır.
-  - Çalışma alanının git dizini dışarıdaysa (worktree, submodule) yazılabilir
-    bağlanır; korumaları aynen uygulanır.
+  - Yalıtımda `.git` bütünüyle salt okunurdur. Çalışma alanının git dizini
+    dışarıdaysa (worktree, submodule) geri başvurusu doğrulanır ve salt okunur
+    bağlanır (r3.6).
   - Gizli bir dosyanın çalışma alanındaki hard link'i de örtülür.
 - *Neden Landlock değil:* Landlock yalnızca izin listesiyle çalışır; yazılabilir
   bir dizinin içinde salt okunur ya da okunamaz alt yol (`.git/hooks`, `.env`)
@@ -1646,3 +1647,10 @@ değişenler:
 - §7.7: Windows arka ucu ayrı kullanıcı + kısıtlı belirteç + güvenlik duvarı
   yerine AppContainer + ACL. Okuma sınırı varsayımı artık ölçüm.
 - §12.3, risk 12–13 ve karar tablosu buna göre güncellendi.
+
+**r3.6 (2026-09-26):** 2d-1 planlanırken 2b'nin Linux yalıtımında bulunan
+açıklar kapatıldı ([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md)
+§7.2–§7.4). Bu belgede değişenler:
+- §7.7: yalıtımda `.git` bütünüyle salt okunur (önce yalnızca kancalar ve
+  yapılandırma); dış git dizinleri doğrulanır ve salt okunur açılır. Yalıtımda
+  `git commit` çalışmaz.

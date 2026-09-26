@@ -27,6 +27,11 @@ A8–A10 (§14).
 2026-09-25 (§9 yeniden yazıldı): Windows arka ucu AppContainer'a göre (§9); ayrı
 kullanıcı ve kısıtlı belirteç yolu §9.7'de yedek. Ayrıca: §1.1, §2, §3.1, §6.1,
 §7.4, §11, §12.2, §12.7, §13, §14 (A14, A15), §15; üst belge r3.5.
+2026-09-26 (güvenlik düzeltmesi, 2d-1 planlanırken bulundu): yalıtımda `.git`
+bütünüyle salt okunur; çalışma alanı dışındaki git dizinleri yalnızca
+doğrulanırsa ve salt okunur açılır; Kalfa'nın çalışma alanına özel dizinlere
+yazması bağlantı izlemez. §7.2, §7.3, §7.4, §8.1, §9.4, §12.1–§12.3, §13; üst
+belge r3.6.
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §7.2, §7.5–§7.7, §12.3, §13.2, §13.3 ve §14 (risk 7–9, 12, 13). Bu belgede `§`
 işaretleri bu belgenin bölümlerini gösterir; üst belgeye "üst belge §x", 1c
@@ -557,8 +562,23 @@ Gizli ve korumalı yollar her çalıştırmadan hemen önce taranır.
   - Kalıplar üst belge §7.4'teki listedir; kullanıcının eklediği kalıplar
     dahildir (`Siniflandirici`).
 - **Korumalı yollar** git koruma çözücüsünden (`git_koruma.rs`) gelir:
-  `.git/hooks`, `.git/config` ve `core.hooksPath`'in etkin değeri. `.git` bir
-  dosyaysa gerçek git dizini çözülür.
+  `.git`'in kendisi ve `core.hooksPath`'in etkin değeri (`.git`'in dışındaysa).
+  - `.git` (dizin ya da worktree'nin `.git` dosyası) yalıtımda bütünüyle salt
+    okunurdur: yeniden adlandırılamaz, silinemez, içine yazılamaz. Kancalar ve
+    yapılandırma onunla korunur. Yalnızca kanca ve yapılandırmayı korumak
+    yetmiyordu: git'in yalıtım dışında kod çalıştırmasına yol açan başka
+    dosyalar da `.git`'in içindedir (2026-09-26).
+  - `git status`, `git diff` ve `git log` yalıtımda çalışır; `git add` ve
+    `git commit` çalışmaz. Commit'i geliştirici yapar.
+  - `.git` bir dosyaysa gösterdiği git dizini ve `commondir` ancak geri
+    başvurusu tutarsa kullanılır: worktree'de ortak dizinin
+    `worktrees/<ad>/gitdir` dosyası bu `.git`'i, alt modülde git dizininin
+    `core.worktree`'si bu çalışma alanını gösterir. İkisi de çalışma alanında,
+    yani yalıtımın yazabildiği yerdedir; doğrulanmasalardı yalıtımdaki komut
+    başka bir dizini açtırabilirdi.
+  - **Bilinen sınır:** `.git` sembolik bağlantıysa, çalışma alanı bir git
+    deposu değilse ya da alt dizinlerde, yalıtımdaki komut yeni bir `.git`
+    oluşturabilir. Git o dizinlerde bunu kullanır.
 - **Linux'ta hard link.** Taramada bağlantı sayısı birden büyük olan normal
   dosyaların (aygıt, inode) çifti gizli dosyalarınkiyle karşılaştırılır.
   Eşleşen dosya da gizli sayılır. `a.txt`, `.env`'nin hard link'iyse o da
@@ -599,6 +619,12 @@ Gizli ve korumalı yollar her çalıştırmadan hemen önce taranır.
   indirilen paketler bu önbelleğe yazılır.
 - **Temizlik:** ayarlardaki yalıtım bölümü bir çalışma alanının dizinlerini
   silebilir (§10.4). Kalfa kendiliğinden silmez.
+- **Bağlantı izlenmez.** Bu dizinlere yalıtımdaki komut yazabilir. Kalfa her
+  çalıştırmadan önce dizinleri kurar ve `ev/.gitconfig` ile `ev/.npmrc`'yi
+  yazar; bunu yaparken sembolik bağlantıları ve junction'ları izlemez. Yolda
+  bağlantı varsa silinir, yerine dizin kurulur; dosya yeni bir geçici dosyaya
+  yazılıp yerine taşınır. Böylece Kalfa'nın yazması yalıtım dışına ulaşmaz
+  (2026-09-26).
 
 ### 7.4 Araç yapılandırması
 
@@ -613,11 +639,10 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
   - Sistem yapılandırması (`/etc/gitconfig`) okunur yollar arasındadır ve
     olduğu gibi kalır.
   - Çalışma alanının git dizini çalışma alanı dışındaysa (worktree ya da
-    submodule), çözülen `gitdir` ve `commondir` yazılabilir bağlanır.
-    Korumaları aynen uygulanır. Böylece bu depodaki `.worktrees/` gibi
-    worktree'lerde `git commit` çalışır. Bu, "çalışma alanı dışına yazılamaz"
-    kuralının tek ve bilinçli istisnasıdır: yazılan yer çalışma alanının kendi
-    deposudur.
+    submodule), doğrulanan `gitdir` ve `commondir` salt okunur açılır (§7.2).
+    Worktree'de `git status` ve `git diff` çalışır; commit yalıtımda
+    çalışmaz. Önceki tasarımda bu dizinler yazılabilirdi; 2026-09-26'da
+    `.git`'in tamamıyla birlikte salt okunur oldu.
 - **Cargo:**
   - `CARGO_HOME` çalışma alanına özeldir (`onbellek/cargo`).
   - Kullanıcının `~/.cargo/bin`'i salt okunur bağlanır ve `PATH`'e eklenir.
@@ -706,8 +731,9 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
     ad çözümü çalışmazdı.
   - Gizli dosya `/dev/null` ile örtülür. Kullanıcı ad alanındaki bağlama `nodev`
     olduğu için okuma "Permission denied" verir.
-  - Eksik korumalı yol (örneğin `.git/hooks`) boş olarak oluşturulup salt
-    okunur bağlanır; yoksa komut oraya kanca yazabilirdi.
+  - Eksik korumalı yol (örneğin `core.hooksPath`'in gösterdiği dizin) boş
+    olarak oluşturulup salt okunur bağlanır; yoksa komut oraya kanca
+    yazabilirdi. `.git` bağlama noktası olduğu için yeniden adlandırılamaz.
   - Program, yalıtımın içindeki `PATH`'te aranır. Arama dışarıda yapılır ama
     yalnızca içeride görünen yollara bakar; bulunan yol bwrap'a verilir.
     Bulunamazsa hata içerideki `PATH`'i söyler (§11). Çalışma alanındaki bir
@@ -983,16 +1009,12 @@ komut (geliştiricinin hesabı, AppContainer belirteci, düşük bütünlük)
   3. Çalışma alanına özel dizinler (§7.3) aynı izinle hazırlanır.
   4. **Gizli dosyalar:** mirası kesilir. Yeni DACL yalnızca geliştiriciye,
      SYSTEM'e ve Administrators'a izin verir; paket SID'ine izin yoktur.
-  5. **Korumalı yollar:**
-     - `.git`'in mirası kesilir. Paket SID'ine `.git`'in kendisi için okuma
-       ve yazma verilir (silme yok), içi için yalnızca devralınan değiştirme
-       verilir. Böylece `.git` yeniden adlandırılamaz: yoksa kap onu kenara
-       çekip kendi kancalarıyla yeni bir `.git` kurabilirdi. git'in işleyişi
-       (dosya oluşturma, yeniden adlandırma, silme) çalışır.
-     - `.git\hooks`, `.git\config` ve `core.hooksPath`'in hedefi: mirası
-       kesilir, paket SID'ine yalnızca okuma. Yazma, silme, üzerine taşıma ve
-       yeniden adlandırma reddedilir.
-     - Çalışma alanı dışındaki git dizini (§7.4) aynı izinleri alır.
+  5. **Korumalı yollar** (§7.2):
+     - `.git` (dizin ya da dosya) ve `core.hooksPath`'in hedefi: mirası
+       kesilir, paket SID'ine yalnızca okuma (dizinde devralınan). Yazma,
+       silme, üzerine taşıma ve yeniden adlandırma reddedilir.
+     - Çalışma alanı dışındaki doğrulanmış git dizinine (§7.4) paket SID'i
+       için yalnızca okuma verilir.
 - **Ret izni kullanılmaz.** AppContainer, paket SID'ine verilen ret (deny)
   izinlerini uygulamıyor. 2c'de ret izni DACL'de ilk sırada olduğu hâlde `.env`
   okundu, `.git/config` değişti, `pre-commit` silindi. Korumalar yalnızca
@@ -1284,6 +1306,12 @@ Metinler 1c §9.4'teki kurallarla Türkçe yazılır. Yeni terimler:
   araya giren olay birleştirmeyi keser.
 - **Kurtarma:** başlamış, sonucu yazılmamış kabuk çağrısı `SonucuBilinmiyor`
   olur ve yeniden çalışmaz.
+- **Git yerleşimi (§7.2):** `.git` korumalıdır; geri başvurusu tutmayan
+  `gitdir:` ya da `commondir` dış dizin açtırmaz; worktree ve alt modül
+  doğrulanır.
+- **Çalışma alanına özel dizinler (§7.3):** yalıtımın kurduğu bağlantılar
+  (Unix'te sembolik bağlantı, Windows'ta junction) üzerinden Kalfa dışarıya
+  yazmaz.
 - **Algılama:** sahte algılayıcıyla her `YalitimYoklukNedeni` ve talimatı.
 - **Ortam:** izin listesi dışındaki, özellikle adında `KEY` ya da `TOKEN` geçen
   değişkenler komuta ulaşmaz. Bu, yalıtımsız arka uçla gerçek süreçte sınanır.
@@ -1302,7 +1330,7 @@ kullanıcıyla, Windows'ta kurulumdan sonra koşar.
 | Seçilmeyen yollar (`/srv`, `/mnt`, `C:\projeler`, başka bir çalışma alanı) görünmez ya da okunamaz | ✓ | ✓ |
 | Aynı anda açık iki çalışma alanı birbirini okuyamaz ve yazamaz | ✓ | ✓ |
 | Çalışma alanı dışına yazılamaz | ✓ | ✓ |
-| `.git/hooks/pre-commit`, `.git/config`, `core.hooksPath` hedefi yazılamaz, silinemez, üzerine taşınamaz | ✓ | ✓ |
+| `.git` (dizin ya da worktree dosyası) ve `core.hooksPath` hedefi yazılamaz, silinemez, yeniden adlandırılamaz; içlerine yeni dosya konamaz | ✓ | ✓ |
 | Çalışma alanındaki `.env` ve onun hard link'i okunamaz | ✓ | ✓ |
 | Ağsız profilde TCP bağlantısı ve Unix soketi (soyut dahil) açılamaz | ✓ | ✓ (TCP) |
 | Ağlı profilde TCP açılır | ✓ | ✓ |
@@ -1316,7 +1344,6 @@ kullanıcıyla, Windows'ta kurulumdan sonra koşar.
 | `kalfa-yalitim.exe` yalıtımın yazabildiği bir yerden başlatılmaz | — | ✓ |
 | Kabın içinden başka bir çalışma alanının paket SID'iyle süreç başlatılamaz | — | ✓ |
 | Geri döngü (127.0.0.1) ağsız ve ağlı profilde açılamaz | — | ✓ |
-| `.git` yeniden adlandırılamaz; git'in `.git` içindeki işleyişi çalışır | — | ✓ |
 | Sahte `bwrap` çalışma alanında olsa da seçilmez | ✓ | — |
 
 2b'de Linux sütunu `crates/kalfa-sandbox/tests/yalitim.rs`'tedir; testler
@@ -1330,7 +1357,8 @@ sistemde vardır).
 Yalıtım içinde, iki platformda, bu depoda ve `kalfa-sandbox/tests/ornekler/`
 altındaki küçük projelerde:
 
-- `git status`, `git diff`, `git add`, `git commit` (worktree'de dahil).
+- `git status`, `git diff`, `git log` (worktree'de dahil); `git add` ve
+  `git commit` yalıtımda çalışmaz (§7.2).
 - `cargo build`, `cargo test` (önceden indirilmiş crate'lerle, ağsız).
 - `npm ci` (ağlı), `npm test` (ağsız).
 - `python -m pytest` ya da `python -c` (ağsız).
@@ -1341,8 +1369,8 @@ kararla genişletilir.
 2b (Linux, WSL2): `crates/kalfa-tools/tests/uyumluluk.rs` kabuk aracının bütün
 yolundan (tarama, git yerleşimi, bwrap) geçer:
 
-- git: worktree'de `status`, `diff`, `add`, `commit`; commit ana deponun
-  nesnelerine yazılır.
+- git: worktree'de `status`, `diff`, `log` çalışır; `add` reddedilir ve ana
+  deponun dizini değişmez (2026-09-26'dan beri; önce commit de çalışıyordu).
 - cargo: örnek crate, önceden indirilmiş `hex` ile `cargo test --offline`.
 - npm: `npm ci` (ağlı) ve `npm test` (ağsız).
 - python: `python3 -c` (`json`, `sqlite3`, `ssl`).
@@ -1407,7 +1435,8 @@ Bu belge commit'lenirken üst belgeye işlenenler:
   - Yardımcı dosya yalıtımın yazamadığı bir yerden başlatılır (§9.1).
 - **§7.7 Linux arka ucu:**
   - Ağlı profilde de `AF_UNIX` soket açmak engellenir (§8.2).
-  - Çalışma alanının git dizini dışarıdaysa yazılabilir bağlanır (§7.4).
+  - `.git` bütünüyle salt okunurdur; çalışma alanının git dizini dışarıdaysa
+    doğrulanır ve salt okunur bağlanır (§7.2, §7.4; r3.6).
   - Hard link'li gizli dosyalar da örtülür (§7.2).
 - **§7.7 Süreç sınırları:** değerler: 120/1800 sn, 30 000 bayt, 256 süreç.
   Canlı çıktı kayıplıdır (§4.4).

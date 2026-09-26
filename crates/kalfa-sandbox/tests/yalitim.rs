@@ -97,17 +97,14 @@ fn gizli_mi(yol: &Path, dizin: bool) -> bool {
     }
 }
 
-/// Git koruma çözücüsünün (kalfa-core) bu testlerdeki karşılığı.
+/// Git koruma çözücüsünün (kalfa-core) bu testlerdeki karşılığı: `.git`'in
+/// tamamı ve `core.hooksPath` hedefi.
 fn korumali(kok: &Path) -> Vec<Korumali> {
     let mut k = Vec::new();
-    if kok.join(".git").is_dir() {
+    if let Ok(bilgi) = std::fs::symlink_metadata(kok.join(".git")) {
         k.push(Korumali {
-            yol: kok.join(".git/hooks"),
-            dizin: true,
-        });
-        k.push(Korumali {
-            yol: kok.join(".git/config"),
-            dizin: false,
+            yol: kok.join(".git"),
+            dizin: bilgi.is_dir(),
         });
     }
     if kok.join(".githooks").is_dir() {
@@ -298,9 +295,10 @@ async fn calisma_alani_disina_yazilamaz() {
 }
 
 #[tokio::test]
-async fn git_korumali_yollar_yazilamaz_silinemez_uzerine_tasinamaz() {
+async fn git_dizini_ve_hooks_yolu_salt_okunur() {
     let k = kurgu();
     yaz(&k.kok.join(".git/config"), "[core]\n\tbare = false\n");
+    yaz(&k.kok.join(".git/HEAD"), "ref: refs/heads/ana\n");
     yaz(&k.kok.join(".git/hooks/pre-commit.sample"), "#!/bin/sh\n");
     yaz(&k.kok.join(".githooks/.gitkeep"), "");
     let s = k
@@ -308,40 +306,49 @@ async fn git_korumali_yollar_yazilamaz_silinemez_uzerine_tasinamaz() {
             &k.kok,
             "echo x > .git/hooks/pre-commit; echo \"kanca=$?\"; \
              rm -f .git/config; echo \"sil=$?\"; \
-             echo x > /tmp/c; mv /tmp/c .git/config; echo \"tasi=$?\"; \
-             mv .git/hooks .git/h2; echo \"dizin=$?\"; \
-             echo x > .githooks/pre-push; echo \"yol=$?\"; \
-             echo x > .git/HEAD; echo \"head=$?\"",
+             echo x > .git/HEAD; echo \"head=$?\"; \
+             echo x > .git/yeni; echo \"yeni=$?\"; \
+             mv .git .git-2; echo \"ad=$?\"; \
+             echo x > .githooks/pre-push; echo \"yol=$?\"",
             false,
         )
         .await;
-    for ad in ["kanca", "sil", "tasi", "dizin", "yol"] {
+    for ad in ["kanca", "sil", "head", "yeni", "ad", "yol"] {
         assert_ne!(deger(&s.standart, ad), "0", "{ad}: {}", s.standart);
     }
-    // Korumalı olmayan git dosyaları yazılabilir.
-    assert_eq!(deger(&s.standart, "head"), "0");
     assert_eq!(
         std::fs::read_to_string(k.kok.join(".git/config")).unwrap(),
         "[core]\n\tbare = false\n"
     );
+    assert_eq!(
+        std::fs::read_to_string(k.kok.join(".git/HEAD")).unwrap(),
+        "ref: refs/heads/ana\n"
+    );
+    assert!(!k.kok.join(".git-2").exists());
+    assert!(!k.kok.join(".git/yeni").exists());
     assert!(!k.kok.join(".git/hooks/pre-commit").exists());
     assert!(!k.kok.join(".githooks/pre-push").exists());
 }
 
+/// Worktree'nin `.git` dosyası da salt okunurdur.
 #[tokio::test]
-async fn eksik_hooks_dizini_olusturulur_ve_yazilamaz() {
+async fn git_dosyasi_salt_okunur() {
     let k = kurgu();
-    yaz(&k.kok.join(".git/config"), "[core]\n");
+    yaz(&k.kok.join(".git"), "gitdir: ../baska\n");
     let s = k
         .betik(
             &k.kok,
-            "mkdir -p .git/hooks; echo x > .git/hooks/pre-commit; echo \"kanca=$?\"",
+            "echo x > .git; echo \"yaz=$?\"; mv .git .git-2; echo \"ad=$?\"",
             false,
         )
         .await;
-    assert_ne!(deger(&s.standart, "kanca"), "0");
-    assert!(k.kok.join(".git/hooks").is_dir());
-    assert!(!k.kok.join(".git/hooks/pre-commit").exists());
+    for ad in ["yaz", "ad"] {
+        assert_ne!(deger(&s.standart, ad), "0", "{ad}: {}", s.standart);
+    }
+    assert_eq!(
+        std::fs::read_to_string(k.kok.join(".git")).unwrap(),
+        "gitdir: ../baska\n"
+    );
 }
 
 #[tokio::test]
