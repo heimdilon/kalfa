@@ -1,14 +1,14 @@
 // Kabuk (aşama 2 tasarımı §12.5): onay sayfası → onay → canlı çıktı → sonuç;
 // süren komutun iptali süreç ağacını durdurur; çıktı seli arayüzü kilitlemez ve
-// turu iptal ettirmez. Linux'ta komutlar gerçek yalıtımda (bwrap) çalışır;
-// Windows'ta yalıtım aşama 2d'ye kadar yoktur ve her komut yerel pencerede
-// onaylanır (sahte iletişim kutusu `onay: true` ile onaylar).
+// turu iptal ettirmez. Kurulumlu Windows'ta komutlar AppContainer'da,
+// Linux'ta bwrap ile çalışır. Kurulum yoksa yalıtımsız anahtar açıktır;
+// yerel pencereleri sahte iletişim kutusu `onay: true` ile onaylar.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { GECERLI_ANAHTAR, Kalfa, sureyleBekle } from '../yardimci/kalfa.mjs';
+import { GECERLI_ANAHTAR, Kalfa, kalfaProfilSayisi, sureyleBekle } from '../yardimci/kalfa.mjs';
 
 /** İptal testindeki süreçleri bulmak için komut satırına eklenen işaret. */
 const ISARET = `kalfa-e2e-kabuk-${process.pid}`;
@@ -126,7 +126,9 @@ async function onayla(k) {
 
 describe('kabuk', () => {
   let k;
+  let ilkProfilSayisi;
   before(async () => {
+    ilkProfilSayisi = kalfaProfilSayisi();
     k = await Kalfa.ac({
       sart: 'kabul',
       anahtar: GECERLI_ANAHTAR,
@@ -137,7 +139,16 @@ describe('kabuk', () => {
     await k.yeniOturum();
   });
   after(async () => {
-    await k?.kapat();
+    let temiz = false;
+    try {
+      await k?.hazirlananAlanlariKaldir();
+      if (ilkProfilSayisi !== null) {
+        assert.equal(kalfaProfilSayisi(), ilkProfilSayisi, 'Kalfa AppContainer profili kalmamalı');
+      }
+      temiz = true;
+    } finally {
+      await k?.kapat({ veriyiKoru: !temiz });
+    }
   });
 
   it('onaylanan komutun çıktısı canlı akar, sonucu modele gider', async () => {
@@ -150,6 +161,13 @@ describe('kabuk', () => {
     assert.match(terminal, /uyari-satiri/);
     await k.metniBekle('Çıkış kodu: 0');
     await k.metniBekle('[kaynak: kabuk:node]');
+    if (
+      process.platform === 'win32' &&
+      ilkProfilSayisi !== null &&
+      (await k.invoke('yalitimi_algila')).tip === 'Hazir'
+    ) {
+      assert.ok(kalfaProfilSayisi() > ilkProfilSayisi, 'yalıtımlı komut profil oluşturmalı');
+    }
   });
 
   it('süren komut iptal edilir; torunuyla birlikte durur', async () => {
@@ -183,9 +201,11 @@ describe('kabuk', () => {
   });
 });
 
-describe('kabuk yalıtımı (Linux)', { skip: process.platform !== 'linux' }, () => {
+describe('kabuk yalıtımı', { skip: !['linux', 'win32'].includes(process.platform) }, () => {
   let k;
+  let ilkProfilSayisi;
   before(async () => {
+    ilkProfilSayisi = kalfaProfilSayisi();
     k = await Kalfa.ac({
       sart: 'kabul',
       anahtar: GECERLI_ANAHTAR,
@@ -197,10 +217,24 @@ describe('kabuk yalıtımı (Linux)', { skip: process.platform !== 'linux' }, ()
     await k.yeniOturum();
   });
   after(async () => {
-    await k?.kapat();
+    let temiz = false;
+    try {
+      await k?.hazirlananAlanlariKaldir();
+      if (ilkProfilSayisi !== null) {
+        assert.equal(kalfaProfilSayisi(), ilkProfilSayisi, 'Kalfa AppContainer profili kalmamalı');
+      }
+      temiz = true;
+    } finally {
+      await k?.kapat({ veriyiKoru: !temiz });
+    }
   });
 
-  it('komut yalıtımda çalışır: gizli dosya okunamaz, ağ kapalıdır', async () => {
+  it('komut yalıtımda çalışır: gizli dosya okunamaz, ağ kapalıdır', async (t) => {
+    const durum = await k.invoke('yalitimi_algila');
+    if (durum.tip !== 'Hazir') {
+      t.skip('bu makinede yalıtım kurulu değil');
+      return;
+    }
     await sureyleBekle(
       async () => (await sayfaMetni(k, '.durum-cubugu')).includes('Yalıtımlı'),
       10000,
@@ -208,7 +242,7 @@ describe('kabuk yalıtımı (Linux)', { skip: process.platform !== 'linux' }, ()
     );
     await k.gonder('kabuk-gizli');
     await k.onaySayfasiniAc();
-    assert.match(await sayfaMetni(k, '[role="dialog"]'), /Yalıtımlı \(bwrap\)/);
+    assert.match(await sayfaMetni(k, '[role="dialog"]'), new RegExp(`Yalıtımlı \\(${durum.arka_uc}\\)`));
     await k.dugme('Tümünü onayla');
     assert.equal(await k.turSonuBekle(1), 'Normal');
     await k.metniBekle('Yalıtım denendi.');
@@ -216,5 +250,8 @@ describe('kabuk yalıtımı (Linux)', { skip: process.platform !== 'linux' }, ()
     assert.match(terminal, /env-okunamadi/);
     assert.match(terminal, /ag-kapali/);
     assert.doesNotMatch(terminal, /e2e-sir/);
+    if (process.platform === 'win32' && ilkProfilSayisi !== null) {
+      assert.ok(kalfaProfilSayisi() > ilkProfilSayisi, 'yalıtımlı komut profil oluşturmalı');
+    }
   });
 });

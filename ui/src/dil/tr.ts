@@ -185,6 +185,11 @@ export const tr = {
   'durum.model_ipucu': 'Yönlendirilen model',
   'durum.yalitimli': 'Yalıtımlı',
   'durum.yalitimsiz': 'Yalıtımsız',
+  'durum.komutlar_kapali': 'Komutlar kapalı',
+  'durum.komutlar_kapali_ipucu':
+    'Bu bilgisayarda komutlar güvenle çalıştırılamıyor. Ayrıntı için tıklayın.',
+  'durum.yalitimsiz_ipucu':
+    'Yalıtım yok; komutlar onayınızla yalıtımsız çalışıyor. Ayrıntı için tıklayın.',
   'durum.yalitimli_ipucu': 'Komutlar yalıtımda çalışıyor ({arka_uc})',
 
   'ayarlar.baslik': 'Ayarlar',
@@ -193,6 +198,33 @@ export const tr = {
   'ayarlar.yalitim.hazir_aciklama':
     'Komutlar yalıtımda çalışır. Ev dizininiz ve diğer çalışma alanları görünmez, çalışma alanı dışına yazılamaz, ağ kapalıdır; ağ isteyen komut ayrıca onayınıza sunulur.',
   'ayarlar.yalitim.yok': 'Yalıtımsız: {neden}',
+  'ayarlar.yalitim.kapali': 'Komutlar kapalı: {neden}',
+  'ayarlar.yalitim.sade.BwrapYok':
+    'Komutları güvenle çalıştırmak için gereken bubblewrap bileşeni bu bilgisayarda kurulu değil.',
+  'ayarlar.yalitim.sade.KullaniciAdAlaniKapali':
+    "Bu bilgisayarın güvenlik ayarları, Kalfa'nın komutları güvenle çalıştırmasını engelliyor.",
+  'ayarlar.yalitim.sade.KurulumGerekli':
+    "Kalfa'nın komutları güvenle çalıştırması için gereken kurulum tamamlanmamış.",
+  'ayarlar.yalitim.sade.KurulumBozuk':
+    "Bu bilgisayarda Kalfa'nın komutları güvenle çalıştırması engellenmiş ya da kurulumu bozulmuş.",
+  'ayarlar.yalitim.sade.Desteklenmiyor': 'Bu sistemde Kalfa komutları güvenle çalıştıramıyor.',
+  'ayarlar.yalitim.sade.kapali':
+    'Kalfa sohbet edebilir ve dosyaları düzenleyebilir, ama komut çalıştıramaz. BT departmanınızla ya da bilgisayarınızı yöneten kişiyle görüşün ve teknik ayrıntıları iletin.',
+  'ayarlar.yalitim.sade.acik':
+    'Yalıtımsız çalıştırma açık: her komut yerel pencerede onayınızı ister ve sizin bütün yetkilerinizle çalışır.',
+  'ayarlar.yalitim.kopyala': 'Teknik ayrıntıları kopyala',
+  'ayarlar.yalitim.kopyalandi': 'Teknik ayrıntılar panoya kopyalandı.',
+  'ayarlar.yalitim.kopyalanamadi':
+    'Panoya kopyalanamadı. Aşağıdaki teknik ayrıntıları seçip kopyalayın.',
+  'ayarlar.yalitim.teknik': 'Teknik ayrıntılar',
+  'ayarlar.yalitim.onar': 'Onar',
+  'ayarlar.yalitim.onar_ipucu':
+    'Önce "Onar"ı deneyin: Kalfa kurulumu yineler, Windows sizden yönetici izni ister.',
+  'ayarlar.yalitim.onarildi': 'Yalıtım onarıldı; komutlar yeniden güvenle çalışabilir.',
+  'ayarlar.yalitim.onarim_yetmedi':
+    'Kurulum yinelendi ama yalıtım hâlâ kullanılamıyor. BT departmanınızla görüşün ve teknik ayrıntıları iletin.',
+  'ayarlar.yalitim.onarim_basarisiz':
+    'Onarım tamamlanamadı: {mesaj} BT departmanınızla görüşün ve teknik ayrıntıları iletin.',
   'ayarlar.yalitim.neden.BwrapYok': 'bubblewrap bulunamadı',
   'ayarlar.yalitim.neden.KullaniciAdAlaniKapali': 'sistem kullanıcı ad alanlarını kısıtlıyor',
   'ayarlar.yalitim.neden.KurulumGerekli': 'yalıtımın kurulması gerekiyor',
@@ -205,6 +237,18 @@ export const tr = {
   'ayarlar.arac_zinciri.ekle': 'Dizin ekle',
   'ayarlar.arac_zinciri.kaldir': '{yol} dizinini kaldır',
   'ayarlar.arac_zinciri.bos': 'Eklenmiş dizin yok.',
+  'ayarlar.yalitim.calisma_alanlari': 'Hazırlanmış çalışma alanları',
+  'ayarlar.yalitim.calisma_alanlari.aciklama':
+    'Yalıtım için hazırlanmış çalışma alanlarının izinlerini buradan geri alabilirsiniz.',
+  'ayarlar.yalitim.calisma_alanlari.kaldir':
+    '{yol} izinlerini geri al ve kaldır',
+  'ayarlar.yalitim.calisma_alanlari.bos': 'Hazırlanmış çalışma alanı yok.',
+  'ayarlar.yalitim.calisma_alanlari.yukleniyor': 'Çalışma alanları yükleniyor…',
+  'ayarlar.yalitim.calisma_alanlari.yuklenemedi': 'Çalışma alanları yüklenemedi.',
+  'ayarlar.gelismis': 'Gelişmiş',
+  'ayarlar.yalitimsiz': 'Yalıtım yokken komutların yalıtımsız çalışmasına izin ver',
+  'ayarlar.yalitimsiz.aciklama':
+    'Kapalıyken, yalıtım kullanılamadığında Kalfa komut çalıştırmaz; sohbet ve dosya düzenleme sürer. Açıkken her komut yerel pencerede onayınızı ister ve sizin bütün yetkilerinizle çalışır.',
 
   'duyuru.onay': 'Onay isteği: {sayi} değişiklik kararınızı bekliyor.',
   'duyuru.sart': 'EVREN şartlarının onayı bekleniyor.',
@@ -286,4 +330,13 @@ export const YALITIM_NEDENI: Record<YalitimYoklukNedeni, MetinAnahtari> = {
   KurulumGerekli: 'ayarlar.yalitim.neden.KurulumGerekli',
   KurulumBozuk: 'ayarlar.yalitim.neden.KurulumBozuk',
   Desteklenmiyor: 'ayarlar.yalitim.neden.Desteklenmiyor',
+};
+
+/** Yalıtım yokken kullanıcıya giden sade açıklama (aşama 2 tasarımı §9.8). */
+export const YALITIM_SADE: Record<YalitimYoklukNedeni, MetinAnahtari> = {
+  BwrapYok: 'ayarlar.yalitim.sade.BwrapYok',
+  KullaniciAdAlaniKapali: 'ayarlar.yalitim.sade.KullaniciAdAlaniKapali',
+  KurulumGerekli: 'ayarlar.yalitim.sade.KurulumGerekli',
+  KurulumBozuk: 'ayarlar.yalitim.sade.KurulumBozuk',
+  Desteklenmiyor: 'ayarlar.yalitim.sade.Desteklenmiyor',
 };

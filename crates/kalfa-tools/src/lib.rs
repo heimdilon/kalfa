@@ -17,7 +17,7 @@ pub mod yaz;
 pub use ara::IcerikAra;
 pub use calisma_alani::CalismaAlani;
 pub use duzenle::DosyaDuzenle;
-pub use kabuk::{KabukAraci, KabukGuveni};
+pub use kabuk::{KabukAraci, KabukGuveni, YalitimsizIzni};
 pub use listele::DosyaListele;
 pub use oku::DosyaOku;
 pub use yaz::DosyaYaz;

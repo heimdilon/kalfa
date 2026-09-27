@@ -145,6 +145,12 @@ pub trait Arac: Send + Sync {
     /// Dosya yazar ya da yan etkisi olan bir iş yapar mı? İnceleme kipinde
     /// yazan araçlar modele hiç sunulmaz (spec §7.5).
     fn yazar_mi(&self) -> bool;
+    /// Araç şu an modele sunulur mu? Her turda sorulur: sunulmayan araç
+    /// tanımlanmaz ve çağrılırsa çalışmaz. Örneğin yalıtım yokken ve
+    /// yalıtımsız çalıştırma kapalıyken kabuk (aşama 2 tasarımı §9.8).
+    fn sunulur_mu(&self) -> bool {
+        true
+    }
     async fn hazirla(&self, argumanlar: &Value) -> Result<Hazirlik, AracHatasi>;
     async fn calistir(
         &self,
@@ -204,7 +210,7 @@ impl AracKayitDefteri {
     pub fn tanimlar(&self, kip: Kip) -> Vec<ToolDef> {
         self.araclar
             .iter()
-            .filter(|a| kip != Kip::Inceleme || !a.yazar_mi())
+            .filter(|a| a.sunulur_mu() && (kip != Kip::Inceleme || !a.yazar_mi()))
             .map(|a| ToolDef::function(a.ad(), a.aciklama(), a.parametre_semasi()))
             .collect()
     }

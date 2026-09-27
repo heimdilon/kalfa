@@ -14,8 +14,8 @@ use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::hata::KomutHatasi;
 use kalfa_uygulama::sozlesme::{
-    AnahtarSonucu, CalismaAlani, KabulYaniti, OnayGirdisi, OturumAcilisi, OturumSatiri,
-    SartPenceresiDurumu, UygulamaDurumu,
+    AnahtarSonucu, CalismaAlani, KabulYaniti, OnarimSonucu, OnayGirdisi, OturumAcilisi,
+    OturumSatiri, SartPenceresiDurumu, UygulamaDurumu, YalitimCalismaAlani,
 };
 use tauri::ipc::Channel;
 use tauri::{Builder, Runtime, State};
@@ -51,6 +51,11 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         arac_zinciri_dizinleri,
         arac_zinciri_dizini_ekle,
         arac_zinciri_dizini_kaldir,
+        yalitimsizi_ayarla,
+        yalitim_teknik_raporu,
+        yalitimi_onar,
+        yalitim_calisma_alanlari,
+        yalitim_calisma_alanini_kaldir,
         sart_penceresi_durumu,
         anahtari_kaydet,
         sartlari_kabul_et,
@@ -217,6 +222,43 @@ pub async fn arac_zinciri_dizini_kaldir(
     yol: String,
 ) -> Sonuc<Vec<String>> {
     u.arac_zinciri_dizini_kaldir(&yol)
+}
+
+/// Yalıtımsız çalıştırma anahtarı (aşama 2 tasarımı §9.8); açmak yerel
+/// pencerede onaylanır. Yeni değeri döner.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn yalitimsizi_ayarla(u: State<'_, Arc<Uygulama>>, acik: bool) -> Sonuc<bool> {
+    u.yalitimsizi_ayarla(acik).await
+}
+
+/// BT için teknik rapor (aşama 2 tasarımı §9.8); arayüz panoya kopyalar.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn yalitim_teknik_raporu(u: State<'_, Arc<Uygulama>>) -> Sonuc<String> {
+    Ok(u.yalitim_teknik_raporu())
+}
+
+/// "Onar" (aşama 2 tasarımı §9.8): yerel onay, sonra kurulu yardımcı UAC ile.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn yalitimi_onar(u: State<'_, Arc<Uygulama>>) -> Sonuc<OnarimSonucu> {
+    u.yalitimi_onar().await
+}
+
+/// Yalıtım için hazırlanmış çalışma alanlarını kimlik ve gösterim yoluyla
+/// listeler. Yol, arayüzün arka uca gönderebildiği bir girdi değildir.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn yalitim_calisma_alanlari(
+    u: State<'_, Arc<Uygulama>>,
+) -> Sonuc<Vec<YalitimCalismaAlani>> {
+    Ok(u.yalitim_calisma_alanlari())
+}
+
+/// İzinleri yerel onaydan sonra geri alır; açık oturumu olan alan reddedilir.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn yalitim_calisma_alanini_kaldir(
+    u: State<'_, Arc<Uygulama>>,
+    kimlik: String,
+) -> Sonuc<bool> {
+    u.yalitim_calisma_alanini_kaldir(&kimlik).await
 }
 
 // --- Şart penceresi ---

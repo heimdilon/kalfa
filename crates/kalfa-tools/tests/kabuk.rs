@@ -40,7 +40,12 @@ fn kur() -> (TempDir, KabukAraci, Arc<SahteGuven>) {
     let s = Arc::new(Siniflandirici::yeni(d.path(), &[]).unwrap());
     let alan = CalismaAlani::ac(s).unwrap();
     let guven = Arc::new(SahteGuven::default());
-    let arac = KabukAraci::yeni(alan, Arc::new(Yalitimsiz), guven.clone());
+    let arac = KabukAraci::yeni(
+        alan,
+        Arc::new(Yalitimsiz),
+        guven.clone(),
+        Arc::new(AtomicBool::new(true)),
+    );
     (d, arac, guven)
 }
 
@@ -297,6 +302,7 @@ impl Yalitici for KayitliYalitici {
             return YalitimDurumu::Yok {
                 neden: YalitimYoklukNedeni::Desteklenmiyor,
                 talimat: "yok".into(),
+                ayrinti: "denetim=deneme".into(),
             };
         }
         YalitimDurumu::Hazir {
@@ -355,7 +361,12 @@ fn kur_yalitimli() -> (TempDir, KabukAraci, Arc<KayitliYalitici>) {
     let s = Arc::new(Siniflandirici::yeni(d.path(), &[]).unwrap());
     let alan = CalismaAlani::ac(s).unwrap();
     let yalitici = Arc::new(KayitliYalitici::default());
-    let arac = KabukAraci::yeni(alan, yalitici.clone(), Arc::new(SahteGuven::default()));
+    let arac = KabukAraci::yeni(
+        alan,
+        yalitici.clone(),
+        Arc::new(SahteGuven::default()),
+        Arc::new(AtomicBool::new(true)),
+    );
     (d, arac, yalitici)
 }
 
@@ -536,4 +547,68 @@ async fn bwrap_kurulum_hatasi_algilamayi_yeniden_calistirir() {
     )
     .await;
     assert_eq!(yalitici.algilama.load(Ordering::SeqCst), 1);
+}
+
+/// Aşama 2 tasarımı §9.8: yalıtım yokken kabuk ancak yalıtımsız çalıştırma
+/// anahtarı açıksa sunulur.
+fn kur_izinle(yalitici: Arc<dyn Yalitici>, izin: bool) -> (TempDir, KabukAraci, Arc<AtomicBool>) {
+    let d = TempDir::new().unwrap();
+    let s = Arc::new(Siniflandirici::yeni(d.path(), &[]).unwrap());
+    let alan = CalismaAlani::ac(s).unwrap();
+    let izin = Arc::new(AtomicBool::new(izin));
+    let arac = KabukAraci::yeni(
+        alan,
+        yalitici,
+        Arc::new(SahteGuven::default()),
+        izin.clone(),
+    );
+    (d, arac, izin)
+}
+
+#[tokio::test]
+async fn kabuk_yalitim_yokken_ve_anahtar_kapaliyken_sunulmaz() {
+    let (_d, arac, izin) = kur_izinle(Arc::new(Yalitimsiz), false);
+    assert!(!arac.sunulur_mu());
+    match arac.hazirla(&json!({"betik": "echo a"})).await {
+        Err(AracHatasi::Gecersiz(m)) => assert!(m.contains("yalıtımsız çalıştırma kapalı"), "{m}"),
+        diger => panic!("{diger:?}"),
+    }
+    izin.store(true, Ordering::SeqCst);
+    assert!(arac.sunulur_mu());
+    let t = arac
+        .hazirla(&json!({"betik": "echo a"}))
+        .await
+        .unwrap()
+        .kabuk
+        .unwrap();
+    assert!(matches!(t.yalitim, YalitimOzeti::Yalitimsiz { .. }));
+}
+
+#[tokio::test]
+async fn kabuk_yalitim_hazirsa_anahtar_kapaliyken_de_sunulur() {
+    let (_d, arac, _izin) = kur_izinle(Arc::new(KayitliYalitici::default()), false);
+    assert!(arac.sunulur_mu());
+    let t = arac.hazirla(&yazdir()).await.unwrap().kabuk.unwrap();
+    assert!(matches!(t.yalitim, YalitimOzeti::Yalitimli { .. }));
+}
+
+/// Onaydan sonra anahtar kapatılırsa yalıtımsız onaylanan komut başlamaz:
+/// araç onaylanan tarife göre ve çalışma anındaki izinle çalışır.
+#[tokio::test]
+async fn yalitimsiz_onaylanan_komut_anahtar_kapaninca_baslamaz() {
+    let (d, arac, izin) = kur_izinle(Arc::new(Yalitimsiz), true);
+    let a = betik(
+        "echo x > isaret.txt",
+        "Set-Content -Path isaret.txt -Value x",
+    );
+    let h = arac.hazirla(&a).await.unwrap();
+    izin.store(false, Ordering::SeqCst);
+    let sonuc = arac
+        .calistir_akisli(&a, &h, CancellationToken::new(), CiktiGonderici::bos())
+        .await;
+    match sonuc {
+        Err(AracHatasi::Gecersiz(m)) => assert!(m.contains("yalıtımsız çalıştırma kapalı"), "{m}"),
+        diger => panic!("{diger:?}"),
+    }
+    assert!(!d.path().join("isaret.txt").exists(), "komut başlamamalı");
 }

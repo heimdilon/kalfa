@@ -37,14 +37,37 @@ pub const ARKA_UC: &str = "bwrap";
 // Talimatlar arayüzde gösterilir; arayüzün diliyle ("siz") yazılır.
 pub const TALIMAT_BWRAP_YOK: &str = "Komutları yalıtmak için `bubblewrap` paketini kurun \
 (`sudo apt install bubblewrap` ya da dağıtımınızın paket yöneticisiyle), sonra Ayarlar'da \
-\"Yeniden dene\"yi seçin. O zamana kadar her komut yerel pencerede onayınıza sunulur.";
+\"Yeniden dene\"yi seçin. O zamana kadar Kalfa komut çalıştırmaz.";
 pub const TALIMAT_AD_ALANI: &str = "Sistem, ayrıcalıksız kullanıcı ad alanlarını kısıtlıyor \
 (Ubuntu 24.04 ve sonrasında AppArmor). Kalfa'nın paketi bunu kendi AppArmor profiliyle \
 çözecek. O zamana kadar bwrap için bir profil ekleyebilirsiniz: /etc/apparmor.d/bwrap \
 dosyasına `abi <abi/4.0>, include <tunables/global> profile bwrap /usr/bin/bwrap \
 flags=(unconfined) { userns, }` yazın, `sudo systemctl reload apparmor` çalıştırın ve \
 Ayarlar'da \"Yeniden dene\"yi seçin. Sistem genelindeki kısıtı kapatmanızı önermiyoruz: \
-bütün sistemi etkiler. O zamana kadar her komut yerel pencerede onayınıza sunulur.";
+bütün sistemi etkiler. O zamana kadar Kalfa komut çalıştırmaz.";
+
+/// BT için gereksinim paragrafı (aşama 2 tasarımı §9.8).
+pub const GEREKSINIM: &str = "Kalfa, yapay zekânın önerdiği komutları kullanıcının kendi \
+hesabıyla, bubblewrap (bwrap) ve seccomp ile yalıtır: ayrıcalıksız kullanıcı ad alanlarında, \
+çalışma alanı dışı salt okunur ya da görünmez, ağ varsayılan olarak kapalı. Gerekenler: \
+/usr/bin/bwrap ya da /usr/local/bin/bwrap (bubblewrap paketi) ve ayrıcalıksız kullanıcı ad \
+alanları. Ubuntu 24.04 ve sonrasında AppArmor bunları kısıtlar \
+(kernel.apparmor_restrict_unprivileged_userns); bwrap için `userns` izni veren bir AppArmor \
+profili gerekir. Kalfa açılışta kısa bir bwrap denemesiyle yalıtımı doğrular.";
+
+/// Dağıtımın adı ve çekirdek sürümü (§9.8).
+pub fn sistem_surumu() -> String {
+    let dagitim = std::fs::read_to_string("/etc/os-release")
+        .ok()
+        .and_then(|m| {
+            m.lines()
+                .find_map(|s| s.strip_prefix("PRETTY_NAME="))
+                .map(|d| d.trim_matches('"').to_string())
+        })
+        .unwrap_or_else(|| "Linux".into());
+    let cekirdek = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
+    format!("{dagitim} (çekirdek {})", cekirdek.trim())
+}
 
 /// Linux arka ucunun ayarları.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -96,12 +119,17 @@ pub struct BwrapAlgilayici;
 impl Algilayici for BwrapAlgilayici {
     fn algila(&self, ayar: &LinuxAyari) -> YalitimDurumu {
         let Some(bwrap) = bwrap_yolu() else {
-            return yok(YalitimYoklukNedeni::BwrapYok, TALIMAT_BWRAP_YOK);
+            return yok(
+                YalitimYoklukNedeni::BwrapYok,
+                TALIMAT_BWRAP_YOK,
+                &format!("denetim=bwrap-yolu; aranan={}", BWRAP_YOLLARI.join(", ")),
+            );
         };
         if let Err(e) = seccomp::engel_filtresi(false).and(seccomp::enosys_filtresi()) {
             return yok(
                 YalitimYoklukNedeni::Desteklenmiyor,
-                &format!("{e}. Her komut yerel pencerede onayınıza sunulur."),
+                &format!("{e}. Kalfa komut çalıştırmaz."),
+                &format!("denetim=seccomp; {e}"),
             );
         }
         match deneme(bwrap, ayar) {
@@ -114,10 +142,11 @@ impl Algilayici for BwrapAlgilayici {
     }
 }
 
-fn yok(neden: YalitimYoklukNedeni, talimat: &str) -> YalitimDurumu {
+fn yok(neden: YalitimYoklukNedeni, talimat: &str, ayrinti: &str) -> YalitimDurumu {
     YalitimDurumu::Yok {
         neden,
         talimat: talimat.to_string(),
+        ayrinti: ayrinti.to_string(),
     }
 }
 
@@ -134,14 +163,16 @@ fn durum_hatadan(hata: &str) -> YalitimDurumu {
         return yok(
             YalitimYoklukNedeni::KullaniciAdAlaniKapali,
             TALIMAT_AD_ALANI,
+            &format!("denetim=bwrap-deneme; {}", hata.trim()),
         );
     }
     yok(
         YalitimYoklukNedeni::Desteklenmiyor,
         &format!(
-            "Yalıtım bu sistemde başlatılamadı: {}. Her komut yerel pencerede onayınıza sunulur.",
+            "Yalıtım bu sistemde başlatılamadı: {}. Kalfa komut çalıştırmaz.",
             hata.trim()
         ),
+        &format!("denetim=bwrap-deneme; {}", hata.trim()),
     )
 }
 
@@ -558,9 +589,15 @@ mod tests {
             ),
         ] {
             match durum_hatadan(hata) {
-                YalitimDurumu::Yok { neden: n, talimat } => {
+                YalitimDurumu::Yok {
+                    neden: n,
+                    talimat,
+                    ayrinti,
+                } => {
                     assert_eq!(n, neden, "{hata}");
                     assert!(!talimat.is_empty());
+                    // BT için ayrıntı düşen denetimi ve hatanın kendisini taşır (§9.8).
+                    assert_eq!(ayrinti, format!("denetim=bwrap-deneme; {hata}"));
                 }
                 d => panic!("{hata}: {d:?}"),
             }
@@ -572,6 +609,7 @@ mod tests {
         let sahte = Arc::new(Sahte(RwLock::new(yok(
             YalitimYoklukNedeni::BwrapYok,
             TALIMAT_BWRAP_YOK,
+            "denetim=bwrap-yolu",
         ))));
         let bildirim = Arc::new(AtomicUsize::new(0));
         let b = bildirim.clone();

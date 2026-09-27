@@ -38,7 +38,13 @@
     class="gizli-erisilebilir"
     {checked}
     {disabled}
-    onchange={(e) => onchange?.(e.currentTarget.checked)}
+    onchange={(e) => {
+      // Denetimli: kutunun durumunu `checked` belirler. Üst bileşen değeri
+      // değiştirmezse (ör. yerel pencerede vazgeçildi) kutu eski hâline döner.
+      const istenen = e.currentTarget.checked;
+      e.currentTarget.checked = checked;
+      onchange?.(istenen);
+    }}
   />
   <span class={['kutu', { dolu: checked || indeterminate }]} aria-hidden="true">
     {#if indeterminate}

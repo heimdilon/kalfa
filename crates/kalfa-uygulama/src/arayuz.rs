@@ -1,7 +1,7 @@
 //! Uygulamanın dış dünyaya açılan uçları. `kalfa` crate'i bunları Tauri ile
 //! uygular; testler sahteleriyle (`test_destek`).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use kalfa_core::aktarim::KanalMesaji;
@@ -11,10 +11,24 @@ use url::Url;
 /// Yerel iletişim kutuları. Webview'daki bir betik bunları taklit edemez.
 #[async_trait]
 pub trait Iletisim: Send + Sync {
-    /// Yerel klasör seçici; vazgeçilirse `None`.
-    async fn klasor_sec(&self, baslik: &str) -> Option<PathBuf>;
+    /// Yerel klasör seçici; `baslangic` verilirse orada açılır. Vazgeçilirse
+    /// `None`.
+    async fn klasor_sec(&self, baslik: &str, baslangic: Option<&Path>) -> Option<PathBuf>;
     /// Yerel onay kutusu; `tamam` düğmesi seçilirse `true`.
     async fn onayla(&self, baslik: &str, mesaj: &str, tamam: &str, vazgec: &str) -> bool;
+}
+
+/// Yalıtımın kurulumunu yönetici olarak yineleyen uç, "Onar" (aşama 2
+/// tasarımı §9.8). Gerçeği Windows'ta kurulu `kalfa-yalitim.exe`'yi UAC ile
+/// başlatır.
+#[async_trait]
+pub trait Yukseltici: Send + Sync {
+    /// Kalfa kurulu sürüm mü: yardımcı Program Files'ta, Kalfa'nın yanında mı?
+    /// Değilse (geliştirme derlemesi, Linux) Onar yoktur.
+    fn kurulu_mu(&self) -> bool;
+    /// `kalfa-yalitim kur`'u UAC ile çalıştırır ve bekler; çıkış kodunu döner.
+    /// Kullanıcı UAC'de vazgeçerse `Ok(None)`.
+    async fn kur(&self) -> Result<Option<u32>, String>;
 }
 
 /// Adresi sistem tarayıcısında açar.

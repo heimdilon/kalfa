@@ -108,13 +108,26 @@ fn ana_pencere_gitti<R: Runtime>(app: &AppHandle<R>) {
 }
 
 fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> {
-    let veri = veri_dizini(
-        &app.path().data_dir()?,
-        std::env::var_os(VERI_DIZINI_DEGISKENI),
-    );
+    let platform_veri = app
+        .path()
+        .data_dir()
+        .map_err(|e| std::io::Error::other(format!("Kullanıcı veri dizini bulunamadı: {e}")))?;
+    let platform_yerel_veri = app.path().local_data_dir().map_err(|e| {
+        std::io::Error::other(format!("Yerel kullanıcı veri dizini bulunamadı: {e}"))
+    })?;
+    let veri = veri_dizini(&platform_veri, std::env::var_os(VERI_DIZINI_DEGISKENI));
+    // Windows test yalıtımında evin işletim sistemi kaydı görünmeyebilir.
+    // E2e derlemesi evini kendi geçici veri dizininde tutar.
+    #[cfg(all(feature = "e2e", windows))]
+    let ev_dizini = veri.join("ev");
+    #[cfg(not(all(feature = "e2e", windows)))]
+    let ev_dizini = app
+        .path()
+        .home_dir()
+        .map_err(|e| std::io::Error::other(format!("Kullanıcı ev dizini bulunamadı: {e}")))?;
     let yalitim = kalfa_uygulama::dizin::yalitim_dizini(
         &veri,
-        &app.path().local_data_dir()?,
+        &platform_yerel_veri,
         std::env::var_os(VERI_DIZINI_DEGISKENI),
     );
     let kalici: Option<Box<dyn AnahtarDeposu>> =
@@ -137,8 +150,9 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
         iletisim,
         acici: Arc::new(TauriAcici(app.clone())),
         pencereler: Arc::new(TauriPencereler(app.clone())),
+        yukseltici: Arc::new(kalfa_uygulama::yukseltici::KuruluYukseltici),
         aktarim: AktarimAyarlari::default(),
-        ev_dizini: app.path().home_dir()?,
+        ev_dizini,
         yalitim_dizini: yalitim,
         yalitim: YalitimKaynagi::Platform,
     }))

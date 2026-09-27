@@ -6,7 +6,7 @@
 //! (`e2e`); orada `TauriIletisim` kullanılmaz.
 #![cfg_attr(feature = "e2e", allow(dead_code))]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use kalfa_uygulama::arayuz::{Acici, Iletisim};
@@ -20,9 +20,12 @@ pub struct TauriIletisim<R: Runtime>(pub AppHandle<R>);
 
 #[async_trait]
 impl<R: Runtime> Iletisim for TauriIletisim<R> {
-    async fn klasor_sec(&self, baslik: &str) -> Option<PathBuf> {
+    async fn klasor_sec(&self, baslik: &str, baslangic: Option<&Path>) -> Option<PathBuf> {
         let (gonder, al) = oneshot::channel();
         let mut kutu = self.0.dialog().file().set_title(baslik);
+        if let Some(dizin) = baslangic {
+            kutu = kutu.set_directory(dizin);
+        }
         if let Some(pencere) = odakli_pencere(&self.0) {
             kutu = kutu.set_parent(&pencere);
         }

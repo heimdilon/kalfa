@@ -168,7 +168,12 @@ fn kurgu(kok: &Path) -> Kurgu {
     let alan = CalismaAlani::ac(s).unwrap();
     Kurgu {
         _veri: veri,
-        arac: KabukAraci::yeni(alan, Arc::new(yalitici), Arc::new(Guven::default())),
+        arac: KabukAraci::yeni(
+            alan,
+            Arc::new(yalitici),
+            Arc::new(Guven::default()),
+            Arc::new(AtomicBool::new(false)),
+        ),
     }
 }
 
@@ -231,7 +236,12 @@ fn kurgu(kok: &Path) -> Kurgu {
     let s = Arc::new(Siniflandirici::yeni(kok, &[]).unwrap());
     let alan = CalismaAlani::ac(s).unwrap();
     Kurgu {
-        arac: KabukAraci::yeni(alan, yalitici.clone(), Arc::new(Guven::default())),
+        arac: KabukAraci::yeni(
+            alan,
+            yalitici.clone(),
+            Arc::new(Guven::default()),
+            Arc::new(AtomicBool::new(false)),
+        ),
         ilk_cagri: AtomicBool::new(true),
         _temizlik: temizlik,
     }

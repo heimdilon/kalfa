@@ -9,6 +9,7 @@ pub mod cikti;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -38,10 +39,27 @@ pub trait KabukGuveni: Send + Sync {
     fn guvenildi(&self);
 }
 
+/// Yalıtım yokken komutların yalıtımsız çalışmasına izin var mı (aşama 2
+/// tasarımı §9.8)? Ayarlardaki anahtardır; varsayılanı kapalıdır. Her
+/// hazırlıkta ve her çalıştırmadan hemen önce sorulur.
+pub trait YalitimsizIzni: Send + Sync {
+    fn izinli_mi(&self) -> bool;
+}
+
+impl YalitimsizIzni for AtomicBool {
+    fn izinli_mi(&self) -> bool {
+        self.load(Ordering::SeqCst)
+    }
+}
+
+const YALITIMSIZ_KAPALI: &str =
+    "Yalıtım kullanılamıyor ve yalıtımsız çalıştırma kapalı; komut çalıştırılamaz.";
+
 pub struct KabukAraci {
     alan: Arc<CalismaAlani>,
     yalitici: Arc<dyn Yalitici>,
     guven: Arc<dyn KabukGuveni>,
+    izin: Arc<dyn YalitimsizIzni>,
 }
 
 impl KabukAraci {
@@ -49,11 +67,13 @@ impl KabukAraci {
         alan: Arc<CalismaAlani>,
         yalitici: Arc<dyn Yalitici>,
         guven: Arc<dyn KabukGuveni>,
+        izin: Arc<dyn YalitimsizIzni>,
     ) -> Self {
         Self {
             alan,
             yalitici,
             guven,
+            izin,
         }
     }
 }
@@ -310,6 +330,11 @@ impl Arac for KabukAraci {
         true
     }
 
+    /// Yalıtım hazırsa ya da yalıtımsız çalıştırma açıksa (§9.8).
+    fn sunulur_mu(&self) -> bool {
+        self.yalitici.durum().hazir_mi() || self.izin.izinli_mi()
+    }
+
     async fn hazirla(&self, a: &Value) -> Result<Hazirlik, AracHatasi> {
         let istek = self.coz(a)?;
         let bicim = match istek.komut {
@@ -319,6 +344,9 @@ impl Arac for KabukAraci {
             },
         };
         let yalitim = self.yalitim_ozeti(istek.ag);
+        if !yalitim.yalitimli_mi() && !self.izin.izinli_mi() {
+            return Err(gecersiz(YALITIMSIZ_KAPALI));
+        }
         // Windows'ta çalışma alanı ilk yalıtımlı çağrıda hazırlanır (§9.4).
         let alan_hazirligi =
             yalitim.yalitimli_mi() && self.yalitici.hazirlik_gerekli(self.alan.kok());
@@ -370,6 +398,10 @@ impl Arac for KabukAraci {
             Some(YalitimOzeti::Yalitimsiz { .. }) => false,
             None => return Err(gecersiz("Hazırlıkta kabuk tarifi yok.".to_string())),
         };
+        // Onaydan sonra anahtar kapatıldıysa yalıtımsız komut başlamaz.
+        if !yalitimli && !self.izin.izinli_mi() {
+            return Err(gecersiz(YALITIMSIZ_KAPALI));
+        }
         let alan = if yalitimli {
             let bilgi = self.alan_bilgisi().await?;
             let onaylandi = h.kabuk.as_ref().is_some_and(|t| t.alan_hazirligi);

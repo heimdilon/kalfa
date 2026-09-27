@@ -15,7 +15,7 @@ use tokio::sync::{Semaphore, mpsc};
 use url::Url;
 
 use crate::anahtar::{AnahtarDeposu, AnahtarKasasi, BellekDeposu};
-use crate::arayuz::{Acici, Iletisim, KanalYazici, Pencereler, YalitimYazici};
+use crate::arayuz::{Acici, Iletisim, KanalYazici, Pencereler, YalitimYazici, Yukseltici};
 use crate::evren::SaglayiciUretici;
 use crate::yalitim::YalitimKaynagi;
 use crate::{Bilesenler, Uygulama};
@@ -49,6 +49,8 @@ impl SaglayiciUretici for SahteUretici {
 #[derive(Default)]
 pub struct SahteIletisim {
     klasor: Mutex<Option<PathBuf>>,
+    /// Son klasör seçicinin başlangıç dizini.
+    baslangic: Mutex<Option<PathBuf>>,
     onay: AtomicBool,
     onay_bekleme: Mutex<Option<Arc<Semaphore>>>,
     sorulanlar: Mutex<Vec<String>>,
@@ -74,11 +76,17 @@ impl SahteIletisim {
     pub fn sorulanlar(&self) -> Vec<String> {
         self.sorulanlar.lock().unwrap().clone()
     }
+
+    /// Son açılan klasör seçicinin başlangıç dizini.
+    pub fn son_baslangic(&self) -> Option<PathBuf> {
+        self.baslangic.lock().unwrap().clone()
+    }
 }
 
 #[async_trait]
 impl Iletisim for SahteIletisim {
-    async fn klasor_sec(&self, _baslik: &str) -> Option<PathBuf> {
+    async fn klasor_sec(&self, _baslik: &str, baslangic: Option<&Path>) -> Option<PathBuf> {
+        *self.baslangic.lock().unwrap() = baslangic.map(Path::to_path_buf);
         self.klasor.lock().unwrap().clone()
     }
 
@@ -92,6 +100,42 @@ impl Iletisim for SahteIletisim {
             let _ = izin.acquire().await;
         }
         self.onay.load(Ordering::SeqCst)
+    }
+}
+
+/// "Onar"ın sahtesi: kurulu sürüm gibi davranır, `kur` verilen sonucu döner
+/// ve çağrıları sayar.
+pub struct SahteYukseltici {
+    pub kurulu: AtomicBool,
+    pub sonuc: Mutex<Result<Option<u32>, String>>,
+    pub cagri: std::sync::atomic::AtomicUsize,
+}
+
+impl Default for SahteYukseltici {
+    fn default() -> Self {
+        Self {
+            kurulu: AtomicBool::new(true),
+            sonuc: Mutex::new(Ok(Some(0))),
+            cagri: Default::default(),
+        }
+    }
+}
+
+impl SahteYukseltici {
+    pub fn cagri_sayisi(&self) -> usize {
+        self.cagri.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl Yukseltici for SahteYukseltici {
+    fn kurulu_mu(&self) -> bool {
+        self.kurulu.load(Ordering::SeqCst)
+    }
+
+    async fn kur(&self) -> Result<Option<u32>, String> {
+        self.cagri.fetch_add(1, Ordering::SeqCst);
+        self.sonuc.lock().unwrap().clone()
     }
 }
 
@@ -214,15 +258,23 @@ pub struct TestUygulamasi {
     pub iletisim: Arc<SahteIletisim>,
     pub acici: Arc<SahteAcici>,
     pub pencereler: Arc<SahtePencereler>,
+    pub yukseltici: Arc<SahteYukseltici>,
 }
 
 /// `kayitli_anahtar` verilirse kalıcı depoda o anahtar kayıtlıymış gibi
-/// başlar. Veri dizini `dizin`dir. Kabuk yalıtımsızdır.
+/// başlar. Veri dizini `dizin`dir. Kabuk yalıtımsızdır ve yalıtımsız
+/// çalıştırma anahtarı açık başlar (aşama 2 tasarımı §9.8); veri dizininde
+/// `yalitim.json` varsa ona dokunulmaz.
 pub fn test_uygulamasi(
     dizin: &Path,
     saglayici: Arc<SahteSaglayici>,
     kayitli_anahtar: Option<&str>,
 ) -> TestUygulamasi {
+    let ayar = dizin.join("yalitim.json");
+    if !ayar.exists() {
+        std::fs::create_dir_all(dizin).unwrap();
+        std::fs::write(&ayar, r#"{"yalitimsiz_izinli": true}"#).unwrap();
+    }
     test_uygulamasi_yalitimla(
         dizin,
         saglayici,
@@ -245,6 +297,7 @@ pub fn test_uygulamasi_yalitimla(
     let iletisim = Arc::new(SahteIletisim::default());
     let acici = Arc::new(SahteAcici::default());
     let pencereler = Arc::new(SahtePencereler::default());
+    let yukseltici = Arc::new(SahteYukseltici::default());
     let uygulama = Uygulama::yeni(Bilesenler {
         veri_dizini: dizin.to_path_buf(),
         kasa: AnahtarKasasi::yeni(Some(Box::new(PaylasilanDepo(depo.clone())))),
@@ -254,6 +307,7 @@ pub fn test_uygulamasi_yalitimla(
         iletisim: iletisim.clone(),
         acici: acici.clone(),
         pencereler: pencereler.clone(),
+        yukseltici: yukseltici.clone(),
         aktarim: AktarimAyarlari::default(),
         yalitim_dizini: dizin.join("yalitim"),
         ev_dizini: dizin.join("ev"),
@@ -266,5 +320,6 @@ pub fn test_uygulamasi_yalitimla(
         iletisim,
         acici,
         pencereler,
+        yukseltici,
     }
 }

@@ -33,6 +33,10 @@ pub const SAYFA_TURU: usize = 20;
 /// Kapatılan oturumun görevinin bitmesi için beklenen en uzun süre.
 const KAPANIS_SURESI: Duration = Duration::from_secs(5);
 
+/// Varsayılan proje klasörü, ev dizininde (aşama 2 tasarımı §9.8). OneDrive'a
+/// yönlendirilen `Belgeler` ya da `Masaüstü`'nün altında değildir.
+pub const PROJE_KLASORU: &str = "Kalfa Projeleri";
+
 pub(crate) struct AcikOturum {
     tutamac: OturumTutamaci,
     /// `oturumu_dinle` çağrılana kadar burada durur.
@@ -41,8 +45,17 @@ pub(crate) struct AcikOturum {
     kip: Kip,
     kip_kilidi: Arc<AsyncMutex<()>>,
     yol: PathBuf,
-    calisma_alani: PathBuf,
+    pub(crate) calisma_alani: PathBuf,
+    pub(crate) calisma_alani_kimligi: String,
 }
+
+pub(crate) struct KapananOturum {
+    tutamac: OturumTutamaci,
+    pub(crate) calisma_alani_kimligi: String,
+}
+
+const ALAN_KALDIRILIYOR: &str =
+    "Bu çalışma alanının yalıtım izinleri kaldırılıyor. İşlem bitince yeniden deneyin.";
 
 fn ic_hata(e: impl std::fmt::Display) -> KomutHatasi {
     KomutHatasi::ic(e.to_string())
@@ -58,6 +71,7 @@ impl Uygulama {
             varsayilan_model: modeller::VARSAYILAN_MODEL.to_string(),
             son_oturum: ic.son_oturum,
             yalitim: self.yalitici.durum(),
+            yalitimsiz_izinli: self.yalitimsiz_izinli(),
             platform: std::env::consts::OS.to_string(),
         }
     }
@@ -71,9 +85,16 @@ impl Uygulama {
     }
 
     /// Yerel klasör seçiciyi açar. Seçilen yol yalnızca bu çalıştırmada
-    /// geçerli bir kimlikle arayüze verilir (1c tasarımı §5.1).
+    /// geçerli bir kimlikle arayüze verilir (1c tasarımı §5.1). Seçici ev
+    /// dizinindeki "Kalfa Projeleri"nde açılır; klasör yoksa oluşturulur,
+    /// oluşturulamazsa başlangıç verilmez (aşama 2 tasarımı §9.8).
     pub async fn calisma_alani_sec(&self) -> Option<CalismaAlani> {
-        let yol = self.iletisim.klasor_sec("Çalışma alanı seçin").await?;
+        let projeler = self.ev_dizini.join(PROJE_KLASORU);
+        let baslangic = std::fs::create_dir_all(&projeler).ok().map(|()| projeler);
+        let yol = self
+            .iletisim
+            .klasor_sec("Çalışma alanı seçin", baslangic.as_deref())
+            .await?;
         let mut ic = self.ic();
         ic.son_alan += 1;
         let kimlik = ic.son_alan;
@@ -107,18 +128,20 @@ impl Uygulama {
         let mut ayarlar = OturumAyarlari::yeni(model.clone(), &kok);
         ayarlar.kayit_yolu = Some(yol.clone());
         let (tutamac, alici) = oturum::baslat_kimlikle(oturum, ayarlar, baglam)?;
-        self.tabloya_ekle(
-            oturum,
-            AcikOturum {
-                tutamac,
-                alici: Some(alici),
-                kopru: None,
-                kip: Kip::Siki,
-                kip_kilidi: Arc::new(AsyncMutex::new(())),
-                yol,
-                calisma_alani: kok.clone(),
-            },
-        );
+        let acik = AcikOturum {
+            tutamac,
+            alici: Some(alici),
+            kopru: None,
+            kip: Kip::Siki,
+            kip_kilidi: Arc::new(AsyncMutex::new(())),
+            yol,
+            calisma_alani: kok.clone(),
+            calisma_alani_kimligi: CalismaAlaniKaydi::kimlik(&kok),
+        };
+        if let Err(acik) = self.tabloya_ekle(oturum, acik) {
+            Self::eklenemeyen_oturumu_kapat(acik).await;
+            return Err(KomutHatasi::gecersiz(ALAN_KALDIRILIYOR));
+        }
         Ok(OturumAcilisi {
             oturum,
             calisma_alani: Some(kok.display().to_string()),
@@ -178,18 +201,20 @@ impl Uygulama {
                 return Err(e.into());
             }
         };
-        self.tabloya_ekle(
-            oturum,
-            AcikOturum {
-                tutamac,
-                alici: Some(alici),
-                kopru: None,
-                kip: kurtarilan.kip,
-                kip_kilidi: Arc::new(AsyncMutex::new(())),
-                yol: yol.clone(),
-                calisma_alani: kok.clone(),
-            },
-        );
+        let acik = AcikOturum {
+            tutamac,
+            alici: Some(alici),
+            kopru: None,
+            kip: kurtarilan.kip,
+            kip_kilidi: Arc::new(AsyncMutex::new(())),
+            yol: yol.clone(),
+            calisma_alani: kok.clone(),
+            calisma_alani_kimligi: CalismaAlaniKaydi::kimlik(&kok),
+        };
+        if let Err(acik) = self.tabloya_ekle(oturum, acik) {
+            Self::eklenemeyen_oturumu_kapat(acik).await;
+            return Err(KomutHatasi::gecersiz(ALAN_KALDIRILIYOR));
+        }
         self.acilis(oturum, yol, Some(kok), None).await
     }
 
@@ -460,7 +485,7 @@ impl Uygulama {
             .ic()
             .kapaniyor
             .iter()
-            .map(|(oturum, tutamac)| (*oturum, tutamac.clone()))
+            .map(|(oturum, kapanan)| (*oturum, kapanan.tutamac.clone()))
             .collect();
         self.kapanislari_bekle(kapananlar).await;
     }
@@ -469,7 +494,13 @@ impl Uygulama {
         let acik = {
             let mut ic = self.ic();
             let acik = ic.oturumlar.remove(&oturum)?;
-            ic.kapaniyor.insert(oturum, acik.tutamac.clone());
+            ic.kapaniyor.insert(
+                oturum,
+                KapananOturum {
+                    tutamac: acik.tutamac.clone(),
+                    calisma_alani_kimligi: acik.calisma_alani_kimligi.clone(),
+                },
+            );
             acik
         };
         acik.tutamac.iptal_et();
@@ -482,21 +513,49 @@ impl Uygulama {
     }
 
     async fn kapanisi_bekle(&self, oturum: OturumId, tutamac: OturumTutamaci) {
-        let _ = tokio::time::timeout(KAPANIS_SURESI, tutamac.kapanmasini_bekle()).await;
-        self.ic().kapaniyor.remove(&oturum);
-    }
-
-    async fn kapanmayi_bekle(&self, oturum: OturumId) {
-        let tutamac = self.ic().kapaniyor.get(&oturum).cloned();
-        if let Some(tutamac) = tutamac {
-            let _ = tokio::time::timeout(KAPANIS_SURESI, tutamac.kapanmasini_bekle()).await;
+        if tokio::time::timeout(KAPANIS_SURESI, tutamac.kapanmasini_bekle())
+            .await
+            .is_ok()
+        {
+            self.ic().kapaniyor.remove(&oturum);
         }
     }
 
-    fn tabloya_ekle(&self, oturum: OturumId, acik: AcikOturum) {
+    async fn kapanmayi_bekle(&self, oturum: OturumId) {
+        let tutamac = self
+            .ic()
+            .kapaniyor
+            .get(&oturum)
+            .map(|kapanan| kapanan.tutamac.clone());
+        if let Some(tutamac) = tutamac
+            && tokio::time::timeout(KAPANIS_SURESI, tutamac.kapanmasini_bekle())
+                .await
+                .is_ok()
+        {
+            self.ic().kapaniyor.remove(&oturum);
+        }
+    }
+
+    fn tabloya_ekle(&self, oturum: OturumId, acik: AcikOturum) -> Result<(), Box<AcikOturum>> {
         let mut ic = self.ic();
+        if ic
+            .yalitim_kaldirma_rezervleri
+            .contains(&acik.calisma_alani_kimligi)
+        {
+            return Err(Box::new(acik));
+        }
         ic.son_oturum = Some(oturum);
         ic.oturumlar.insert(oturum, acik);
+        Ok(())
+    }
+
+    async fn eklenemeyen_oturumu_kapat(acik: Box<AcikOturum>) {
+        let tutamac = acik.tutamac.clone();
+        tutamac.iptal_et();
+        // Olay alıcısını bırakmak, çekirdeğin kapanış belirtecini tamamlar ve
+        // kayıt kilidini çözmeden önce görevin bitmesini sağlar.
+        drop(acik);
+        let _ = tokio::time::timeout(KAPANIS_SURESI, tutamac.kapanmasini_bekle()).await;
     }
 
     /// Çalışma alanının araçları ve ortak kilitleriyle oturum bağlamı.
@@ -512,6 +571,7 @@ impl Uygulama {
             alan,
             self.yalitici.clone(),
             guven,
+            self.yalitim_ayarlari.clone(),
         )));
         let araclar = Arc::new(AracKayitDefteri::yeni(araclar).map_err(ic_hata)?);
         Ok(OturumBaglami {

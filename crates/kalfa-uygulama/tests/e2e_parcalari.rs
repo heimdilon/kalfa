@@ -104,12 +104,12 @@ async fn sahte_iletisim_ayarlardaki_cevabi_verir() {
     let a = ayarlar(json!({"calisma_alani": "/tmp/alan", "onay": true}));
     let i = SahteIletisim::yeni(&a);
     assert_eq!(
-        i.klasor_sec("x").await.as_deref(),
+        i.klasor_sec("x", None).await.as_deref(),
         Some(std::path::Path::new("/tmp/alan"))
     );
     assert!(i.onayla("b", "m", "Evet", "Hayır").await);
     let hayir = SahteIletisim::yeni(&E2eAyarlari::default());
-    assert_eq!(hayir.klasor_sec("x").await, None);
+    assert_eq!(hayir.klasor_sec("x", None).await, None);
     assert!(!hayir.onayla("b", "m", "Evet", "Hayır").await);
 }
 
@@ -296,6 +296,7 @@ async fn uygulama(a: &E2eAyarlari, veri: &std::path::Path) -> Arc<Uygulama> {
         iletisim: Arc::new(SahteIletisim::yeni(a)),
         acici: Arc::new(SahteAcici::default()),
         pencereler: Arc::new(SahtePencereler::default()),
+        yukseltici: Arc::new(kalfa_uygulama::test_destek::SahteYukseltici::default()),
         aktarim: AktarimAyarlari::default(),
         yalitim_dizini: veri.join("yalitim"),
         ev_dizini: std::env::temp_dir(),

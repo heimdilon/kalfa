@@ -11,6 +11,7 @@ import { komutHatasi } from '../ipc/hata';
 import type {
   IslemId,
   Kip,
+  OnarimSonucu,
   OnayGirdisi,
   OturumAcilisi,
   OturumId,
@@ -36,6 +37,12 @@ export class AnaDurum {
   /** Yalıtıma açılan araç zinciri dizinleri (Linux). */
   aracZinciri = $state<string[]>([]);
   algilaniyor = $state(false);
+  /** Son alınan teknik rapor ve panoya kopyalamanın sonucu (§9.8). */
+  teknikRapor = $state<string | null>(null);
+  kopyalama = $state<'kopyalandi' | 'kopyalanamadi' | null>(null);
+  /** "Onar" sürüyor mu ve son sonucu (§9.8). */
+  onariliyor = $state(false);
+  onarim = $state<OnarimSonucu | null>(null);
   /** Eski sayfası yüklenen oturumlar; aynı sayfa iki kez istenmez. */
   #eskiYukleniyor = new Set<OturumId>();
   #yenidenAciliyor = new Set<OturumId>();
@@ -176,6 +183,9 @@ export class AnaDurum {
   async ayarlariAc(): Promise<void> {
     this.gorunum = 'ayarlar';
     this.hata = null;
+    this.teknikRapor = null;
+    this.kopyalama = null;
+    this.onarim = null;
     if (this.uygulama?.platform !== 'linux') return;
     const dizinler = await this.#dene(() => ipc.aracZinciriDizinleri());
     if (dizinler) this.aracZinciri = dizinler;
@@ -200,6 +210,42 @@ export class AnaDurum {
   async aracZinciriEkle(): Promise<void> {
     const dizinler = await this.#dene(() => ipc.aracZinciriDiziniEkle());
     if (dizinler) this.aracZinciri = dizinler;
+  }
+
+  /**
+   * BT için teknik raporu panoya kopyalar (aşama 2 tasarımı §9.8). Pano
+   * kullanılamazsa rapor Ayarlar'da açık gösterilir; kullanıcı seçip kopyalar.
+   */
+  async teknikRaporuKopyala(): Promise<void> {
+    const rapor = await this.#dene(() => ipc.yalitimTeknikRaporu());
+    if (rapor === undefined) return;
+    this.teknikRapor = rapor;
+    try {
+      await navigator.clipboard.writeText(rapor);
+      this.kopyalama = 'kopyalandi';
+    } catch {
+      this.kopyalama = 'kopyalanamadi';
+    }
+  }
+
+  /** "Onar" (aşama 2 tasarımı §9.8): onay ve UAC Rust'ta; sonuç Ayarlar'da. */
+  async yalitimiOnar(): Promise<void> {
+    this.onariliyor = true;
+    this.onarim = null;
+    try {
+      const sonuc = await this.#dene(() => ipc.yalitimiOnar());
+      if (!sonuc) return;
+      this.onarim = sonuc;
+      if (sonuc.tip === 'Tamam') this.#yalitimYaz(sonuc.yalitim);
+    } finally {
+      this.onariliyor = false;
+    }
+  }
+
+  /** Yalıtımsız çalıştırma anahtarı (aşama 2 tasarımı §9.8). */
+  async yalitimsiziAyarla(acik: boolean): Promise<void> {
+    const yeni = await this.#dene(() => ipc.yalitimsiziAyarla(acik));
+    if (yeni !== undefined && this.uygulama) this.uygulama.yalitimsiz_izinli = yeni;
   }
 
   async aracZinciriKaldir(yol: string): Promise<void> {

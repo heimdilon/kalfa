@@ -893,16 +893,10 @@ yazabileceği bir yerden hiçbir zaman başlatmaz. Başlatsaydı yalıtılmış 
 dosyayı değiştirip bir sonraki UAC yükseltmesinde yönetici yetkisi elde ederdi.
 
 - Açılışta Kalfa, kendi çalıştırılabilir dosyasının yanındaki
-  `kalfa-yalitim.exe`'yi `%LOCALAPPDATA%\Kalfa\bin\` dizinine kopyalar. Kopyanın
-  SHA-256'sı kaynağınkiyle eşleşmelidir.
-- Bütün çağrılar o kopyayı kullanır. Dizin geliştiricinin profilindedir ve hiçbir
-  paket SID'ine izin vermez.
-- Kopyalamadan önce kaynak dosyanın hazırlanmış bir çalışma alanının içinde
-  olmadığı denetlenir. Geliştirme derlemesinde `target/` genellikle bu
-  depodadır. Bu depo hazırlanmış bir çalışma alanıysa kopyalama reddedilir ve
-  yalıtım durumu `KurulumBozuk` olur. Talimat `CARGO_TARGET_DIR`'i çalışma alanı
-  dışına almayı söyler.
-- Kurulu sürümde kaynak Program Files'tadır ve bu denetim kendiliğinden geçer.
+  `kalfa-yalitim.exe`'yi Program Files'ta bulur. "Onar" yalnızca bu
+  kurulu sürümde görünür ve yardımcıyı yerinden UAC ile başlatır.
+- Geliştirme derlemesindeki `target/` yardımcısı "Onar" için güvenilir
+  kaynak sayılmaz; uygulama kurucuyla kurulmasını söyler.
 
 ### 9.2 Kurulum ve kaldırma
 
@@ -1219,8 +1213,8 @@ kurucunun sorduğu UAC'dir.
   - `kur` başarısız olursa kurulum sürer. Uygulama ilk açılışta durumu
     gösterir.
   - `kalfa-yalitim.exe` Program Files'tadır. Kullanıcı ve yalıtım oraya
-    yazamaz; uygulama onu yerinden UAC ile başlatır. §9.1'deki kopyalama
-    yalnızca geliştirme derlemesinde gerekir.
+    yazamaz; uygulama onu yerinden UAC ile başlatır. Geliştirme derlemesinde
+    "Onar" kurucuya yönlendirir.
 - **Araç zinciri kurucudadır:** Python, Node ve Git (MinGit), Program
   Files'taki Kalfa dizininin altında durur.
   - Program Files'a `ALL APPLICATION PACKAGES` zaten okuyabilir. Bu yüzden
@@ -1338,9 +1332,9 @@ Onay sayfasında (1c §8.2) kabuk öğesi diff yerine şunları gösterir:
 ### 10.4 Ayarlarda yalıtım bölümü
 
 2b'de menüye "Ayarlar" eklenir; ekranın ilk bölümü yalıtımdır. 2b'de gelenler:
-durum ve nedeni, talimat, "Yeniden dene" (Linux) ve izinli araç zinciri
-dizinleri (Linux). Hazırlanmış çalışma alanları, önbellek silme, ek ortam
-değişkenleri ve Windows düğmeleri 2d'dedir.
+durum ve nedeni, talimat, "Yeniden dene" ve izinli araç zinciri dizinleri.
+2d-2'de sade durum iletisi, teknik rapor, yalıtımsız anahtarı, kurulu Windows
+sürümünde "Onar" ve hazırlanmış çalışma alanları eklenir.
 
 - Eklenen dizin ev dizinini ya da Kalfa'nın veri dizinini kapsayamaz, veri
   dizininin içinde de olamaz: sırlar ve oturum kayıtları yalıtıma açılırdı.
@@ -1348,18 +1342,17 @@ değişkenleri ve Windows düğmeleri 2d'dedir.
   profil özeti değişir (§7.1).
 
 - **Durum ve nedeni**, talimatıyla birlikte (`YalitimDurumu`).
-- **Windows düğmeleri:** "Yalıtımı kur", "Yalıtımı kaldır". İkisi de önce yerel
-  iletişim kutusunda ne yapılacağını söyler, sonra UAC'yi açar.
+- **Windows düğmesi:** Yalıtım hazır değilse kurulu sürümde "Onar". Önce yerel
+  iletişim kutusunda ne yapılacağını söyler, sonra UAC'yi açar. Kurulum ve
+  kaldırma NSIS kurucusunun görevleridir.
 - **İzinli araç zinciri dizinleri:** liste, "Ekle" (yerel klasör seçici) ve
   "Kaldır". Windows'ta sahibi olunmayan dizin için UAC istenir.
-- **Hazırlanmış çalışma alanları** (Windows) ve çalışma alanına özel dizinleri
-  olanlar (iki platform). Her satırda:
-  - Yol.
-  - Hazırlık tarihi.
-  - Gizli dosya sayısı.
-  - "İzinleri geri al ve kaldır" düğmesi.
-  - "Önbelleği sil" düğmesi.
-- **Ek ortam değişkenleri:** izin listesine değişken ekleme (§6.1).
+- **Hazırlanmış çalışma alanları** (Windows): yalıtıcının ACE kaydından
+  kimlik ve gösterim yolu gelir. Her satırda yol ve "İzinleri geri al ve
+  kaldır" düğmesi vardır. İşlem yerel onay ister; açık ya da kapanmakta olan
+  oturumu bulunan alan reddedilir. Arayüz yalnızca kimlik gönderir.
+- Hazırlık tarihi, gizli dosya sayısı, önbellek silme ve ek ortam değişkenleri
+  2d-2 planının dışında kaldı; ayrı karar ve test gerektirir.
 
 ### 10.5 Komutlar ve yetkiler
 
@@ -1370,7 +1363,9 @@ Yeni komutlar yalnızca ana pencereye açılır (1c §6):
 | `uygulama_durumu` (mevcut) | `yalitim: YalitimDurumu` alanı eklenir (2a); `platform` (2b) |
 | `yalitimi_dinle` | Ana pencere açılınca kanal verir; durum değişimi oraya yazılır (2b) |
 | `yalitimi_algila` | Algılamayı yeniden çalıştırır, yeni durumu döndürür (2b) |
-| `yalitimi_kur` / `yalitimi_kaldir` | Yerel onay → UAC → sonuç (Windows); Linux'ta talimat döndürür |
+| `yalitimi_onar` | Yerel onay → kurulu yardımcıyı UAC ile çalıştırma → yeni durum; kurulu değilse kurucu talimatı |
+| `yalitim_teknik_raporu` | BT için sürüm, düşen denetim ve gereksinim metni |
+| `yalitimsizi_ayarla` | Risk için yerel onayla gelişmiş anahtarı açar; kapatma onaysızdır |
 | `arac_zinciri_dizinleri` / `arac_zinciri_dizini_ekle` / `arac_zinciri_dizini_kaldir` | Ekleme yerel klasör seçiciyle yapılır; arayüz yol gönderemez |
 | `yalitim_calisma_alanlari` / `yalitim_calisma_alanini_kaldir` | Kimlikle çalışır (1c'deki gibi arayüz yol göndermez) |
 
@@ -1527,9 +1522,14 @@ Sahte EVREN'e kabuk çağrısı yapan senaryolar eklenir. Komut gerçek yalıtı
 - Uzun süren komutun iptali; süreç ağacının durduğu süreç listesinden doğrulanır.
 - Çıktı seli (`yes` ya da eşdeğeri, süre sınırıyla): arayüz yanıt vermeye devam
   eder, tur iptal edilmez.
-- 2a'da yalıtım yoktur; her senaryo yalıtımsız çalışır ve sahte yerel iletişim
-  kutusu (`onay: true`) onaylar. Komutlar `node` ile yazılır; iki platformda
-  aynı çalışır.
+- Kurulumlu Windows'ta komut AppContainer'da, Linux'ta bwrap varsa onun
+  içinde çalışır. Yalıtım yoksa gelişmiş yalıtımsız anahtar test ayarında
+  açıktır; sahte yerel iletişim kutusu (`onay: true`) onaylar. Komutlar
+  `node` ile yazılır.
+- Windows kabuk testleri başlamadan ve bittikten sonra `Kalfa.Alan.*`
+  AppContainer profillerini sayar. Her dosya, kendi hazırladığı çalışma
+  alanlarını yerel onaylı komutla kaldırır; sonraki profil sayısı ilk sayıyla
+  eşit olmalıdır.
 - Linux'ta uygulama `WEBKIT_DISABLE_COMPOSITING_MODE=1` ile açılır: Xvfb'de
   GPU yoktur ve yazılım GL birleştiricisi gecikme ölçümünü arayüzün değil
   kendi kare hızının ölçümüne çevirir (§10.1).
@@ -1634,8 +1634,9 @@ yazar, Claude inceler ve iki platformda doğrular.
    - **2d-1:** `kalfa-sandbox`'ın Windows arka ucu, `kalfa-yalitim.exe`,
      çalışma alanı hazırlığı ve ACE kaydı, hazırlığın yerel onayı, §12.2'nin
      Windows sütunu, §12.3 (Windows), A11–A13 ve A15.
-   - **2d-2:** uygulamanın yardımcıyı kopyalayıp UAC ile başlatması (§9.1),
-     Ayarlar'ın Windows bölümü (§10.4), Windows'ta kabuk uçtan uca testleri.
+   - **2d-2 (ilk taslak):** yardımcıyı kopyalama, Ayarlar'ın Windows bölümü
+     ve Windows kabuk uçtan uca testleri. Kopyalama kararı aşağıdaki
+     2026-09-27 son kullanıcı kararında kaldırıldı (§9.1).
 
    2026-09-27'de son kullanıcı hedefiyle yeniden bölündü (§9.8):
    - **2d-2 — son kullanıcı akışı:**

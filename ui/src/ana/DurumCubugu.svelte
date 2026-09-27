@@ -42,9 +42,13 @@
           >
             {m('durum.yalitimli')}
           </StatusItem>
-        {:else}
-          <StatusItem icon="shield-alert" tone="warn" title={yalitim.talimat}>
+        {:else if durum.uygulama.yalitimsiz_izinli}
+          <StatusItem icon="shield-alert" tone="warn" title={m('durum.yalitimsiz_ipucu')}>
             {m('durum.yalitimsiz')}
+          </StatusItem>
+        {:else}
+          <StatusItem icon="shield-alert" tone="warn" title={m('durum.komutlar_kapali_ipucu')}>
+            {m('durum.komutlar_kapali')}
           </StatusItem>
         {/if}
       </button>

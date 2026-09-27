@@ -12,6 +12,7 @@ import type {
   Kip,
   KomutHatasi,
   Olay,
+  OnarimSonucu,
   OnayOgesi,
   OturumAcilisi,
   OturumId,
@@ -20,6 +21,7 @@ import type {
   SartPenceresiDurumu,
   TurId,
   UygulamaDurumu,
+  YalitimCalismaAlani,
   YalitimDurumu,
 } from '../ipc/tipler';
 
@@ -78,12 +80,25 @@ export class SahteArka {
     yalitim: {
       tip: 'Yok',
       neden: 'Desteklenmiyor',
-      talimat: 'Bu sürümde komutlar yalıtımsız çalışıyor.',
+      talimat: "Bu platformda Kalfa'nın yalıtımı yok.",
+      ayrinti: 'denetim=platform; yalıtım arka ucu yok',
     },
+    yalitimsiz_izinli: false,
     platform: 'linux',
+  };
+  /** `yalitimsizi_ayarla`'nın yerel penceresinin yanıtı. */
+  yalitimsizOnayi = true;
+  /** `yalitimi_onar`'ın sonucu; `Tamam` ise yeni durum da yazılır. */
+  onarimSonucu: OnarimSonucu = {
+    tip: 'Tamam',
+    yalitim: { tip: 'Hazir', arka_uc: 'windows', surum: 'AppContainer' },
   };
   /** Ayarlar'daki araç zinciri dizinleri. */
   aracZinciri: string[] = [];
+  /** Ayarlar'daki Windows yalıtım çalışma alanları. */
+  hazirAlanlar: YalitimCalismaAlani[] = [];
+  /** `yalitim_calisma_alanini_kaldir` için yerel onay yanıtı. */
+  yalitimKaldirmaOnayi = true;
   /** `arac_zinciri_dizini_ekle`'nin klasör seçicisinin döneceği dizin; `null` vazgeçmektir. */
   aracKlasoru: string | null = '/opt/node';
   /** `yalitimi_algila` bu durumu bulur; `null` ise durum değişmez. */
@@ -295,6 +310,21 @@ export class SahteArka {
       case 'arac_zinciri_dizini_kaldir':
         this.aracZinciri = this.aracZinciri.filter((d) => d !== a.yol);
         return [...this.aracZinciri];
+      case 'yalitim_calisma_alanlari':
+        return [...this.hazirAlanlar];
+      case 'yalitim_calisma_alanini_kaldir':
+        if (!this.yalitimKaldirmaOnayi) return false;
+        if (!this.hazirAlanlar.some((alan) => alan.kimlik === a.kimlik)) return false;
+        this.hazirAlanlar = this.hazirAlanlar.filter((alan) => alan.kimlik !== a.kimlik);
+        return true;
+      case 'yalitimi_onar':
+        if (this.onarimSonucu.tip === 'Tamam') this.yalitimDurumu(this.onarimSonucu.yalitim);
+        return this.onarimSonucu;
+      case 'yalitim_teknik_raporu':
+        return `Kalfa yalıtım raporu\nDurum: ${this.uygulama.yalitim.tip}\n`;
+      case 'yalitimsizi_ayarla':
+        if (!a.acik || this.yalitimsizOnayi) this.uygulama.yalitimsiz_izinli = Boolean(a.acik);
+        return this.uygulama.yalitimsiz_izinli;
       default:
         // mesaj_gonder, turu_iptal_et, arac_onayi, model_degistir, paketi_isledim,
         // baglanti_ac, anahtar_penceresini_ac, sart_penceresini_ac

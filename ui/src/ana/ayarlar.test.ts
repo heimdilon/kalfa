@@ -13,6 +13,7 @@ const BWRAP_YOK: YalitimDurumu = {
   tip: 'Yok',
   neden: 'BwrapYok',
   talimat: 'Komutları yalıtmak için bubblewrap paketini kurun.',
+  ayrinti: 'denetim=bwrap-yolu; aranan=/usr/bin/bwrap',
 };
 
 async function ciz(ayar: (a: SahteArka) => void = () => {}) {
@@ -39,14 +40,21 @@ function durumCubugu() {
 }
 
 describe('Ayarlar: yalıtım (aşama 2 tasarımı §10.3, §10.4)', () => {
-  it('menüden açılır; durum, neden ve talimat görünür; Oturumlar\'a dönülür', async () => {
+  it('menüden açılır; sade açıklama ve teknik ayrıntı görünür; Oturumlar\'a dönülür', async () => {
     await ciz();
     const ayarlar = await ayarlariAc();
     expect(within(menu()).getByRole('button', { name: 'Ayarlar' }).getAttribute('aria-current')).toBe(
       'page',
     );
-    expect(within(ayarlar).getByText('Yalıtımsız: bubblewrap bulunamadı')).toBeTruthy();
-    expect(within(ayarlar).getByText(BWRAP_YOK.talimat)).toBeTruthy();
+    // Anahtar kapalıyken yalıtım yoksa komutlar kapalıdır (§9.8).
+    expect(within(ayarlar).getByText('Komutlar kapalı: bubblewrap bulunamadı')).toBeTruthy();
+    expect(within(ayarlar).getByText(/bubblewrap bileşeni bu bilgisayarda kurulu değil/)).toBeTruthy();
+    expect(within(ayarlar).getByText(/BT departmanınızla/)).toBeTruthy();
+    // Talimat ve ayrıntı yalnızca "Teknik ayrıntılar"dadır.
+    const teknik = within(ayarlar).getByText('Teknik ayrıntılar').closest('details')!;
+    expect(teknik.open).toBe(false);
+    expect(teknik.textContent).toContain('denetim=bwrap-yolu');
+    expect(teknik.textContent).toContain(BWRAP_YOK.talimat);
     expect(screen.queryByRole('region', { name: 'Konuşma' })).toBeNull();
 
     await fireEvent.click(within(menu()).getByRole('button', { name: 'Oturumlar' }));
@@ -56,7 +64,7 @@ describe('Ayarlar: yalıtım (aşama 2 tasarımı §10.3, §10.4)', () => {
 
   it('durum çubuğundaki gösterge Ayarlar\'ı açar', async () => {
     await ciz();
-    await fireEvent.click(within(durumCubugu()).getByRole('button', { name: 'Yalıtımsız' }));
+    await fireEvent.click(within(durumCubugu()).getByRole('button', { name: 'Komutlar kapalı' }));
     expect(await screen.findByRole('region', { name: 'Ayarlar' })).toBeTruthy();
   });
 
@@ -116,19 +124,199 @@ describe('Ayarlar: yalıtım (aşama 2 tasarımı §10.3, §10.4)', () => {
     );
   });
 
-  it('Windows\'ta araç zinciri bölümü ve "Yeniden dene" yok', async () => {
+  it('Windows\'ta araç zinciri bölümü yok; "Yeniden dene" var', async () => {
     const { arka } = await ciz((a) => {
       a.uygulama.platform = 'windows';
       a.uygulama.yalitim = {
         tip: 'Yok',
         neden: 'Desteklenmiyor',
-        talimat: 'Bu sürümde komutlar yalıtımsız çalışıyor.',
+        talimat: 'Windows yalıtımı hazır değil.',
+        ayrinti: 'denetim=appcontainer-deneme; erişim engellendi',
       };
     });
     const ayarlar = await ayarlariAc();
-    expect(within(ayarlar).getByText('Yalıtımsız: bu sistemde kullanılamıyor')).toBeTruthy();
+    expect(within(ayarlar).getByText('Komutlar kapalı: bu sistemde kullanılamıyor')).toBeTruthy();
     expect(within(ayarlar).queryByText('Araç zinciri dizinleri')).toBeNull();
-    expect(within(ayarlar).queryByRole('button', { name: 'Yeniden dene' })).toBeNull();
+    // BT izin verdikten sonra kullanıcı yeniden dener.
+    expect(within(ayarlar).getByRole('button', { name: 'Yeniden dene' })).toBeTruthy();
     expect(arka.komutlar('arac_zinciri_dizinleri')).toHaveLength(0);
+  });
+});
+
+describe('Ayarlar: BT için teknik ayrıntı (aşama 2 tasarımı §9.8)', () => {
+  it('"Teknik ayrıntıları kopyala" raporu panoya yazar', async () => {
+    const yazilan: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (m: string) => void yazilan.push(m) },
+    });
+    const { arka } = await ciz();
+    const ayarlar = await ayarlariAc();
+    await fireEvent.click(within(ayarlar).getByRole('button', { name: 'Teknik ayrıntıları kopyala' }));
+    expect(await within(ayarlar).findByText('Teknik ayrıntılar panoya kopyalandı.')).toBeTruthy();
+    expect(arka.komutlar('yalitim_teknik_raporu')).toHaveLength(1);
+    expect(yazilan).toEqual(['Kalfa yalıtım raporu\nDurum: Yok\n']);
+  });
+
+  it('pano kullanılamazsa rapor açık gösterilir', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    await ciz();
+    const ayarlar = await ayarlariAc();
+    await fireEvent.click(within(ayarlar).getByRole('button', { name: 'Teknik ayrıntıları kopyala' }));
+    expect(await within(ayarlar).findByText(/Panoya kopyalanamadı/)).toBeTruthy();
+    const teknik = within(ayarlar).getByText('Teknik ayrıntılar').closest('details')!;
+    expect(teknik.open).toBe(true);
+    expect(teknik.textContent).toContain('Kalfa yalıtım raporu');
+  });
+});
+
+describe('Ayarlar: Onar (aşama 2 tasarımı §9.8)', () => {
+  const kurulumBozuk = (a: SahteArka) => {
+    a.uygulama.platform = 'windows';
+    a.uygulama.yalitim = {
+      tip: 'Yok',
+      neden: 'KurulumBozuk',
+      talimat: 'Windows yalıtımı hazır değil.',
+      ayrinti: 'denetim=kok-izni; C:\\ sürücüsünün kök izni eksik.',
+    };
+  };
+
+  it('Linux\'ta Onar yok', async () => {
+    await ciz();
+    const ayarlar = await ayarlariAc();
+    expect(within(ayarlar).queryByRole('button', { name: 'Onar' })).toBeNull();
+  });
+
+  it('Windows\'ta Onar kurulumu yineler; durum hazır olur ve bildirilir', async () => {
+    const { arka } = await ciz(kurulumBozuk);
+    const ayarlar = await ayarlariAc();
+    expect(within(ayarlar).getByText(/Önce "Onar"ı deneyin/)).toBeTruthy();
+    await fireEvent.click(within(ayarlar).getByRole('button', { name: 'Onar' }));
+    expect(await within(ayarlar).findByText('Yalıtımlı: windows AppContainer')).toBeTruthy();
+    expect(within(ayarlar).getByText(/Yalıtım onarıldı/)).toBeTruthy();
+    expect(arka.komutlar('yalitimi_onar')).toHaveLength(1);
+    const gosterge = within(durumCubugu()).getByText('Yalıtımlı', { selector: '.durum-ogesi' });
+    expect(gosterge).toBeTruthy();
+  });
+
+  it('başarısız onarım BT\'ye yönlendirir', async () => {
+    await ciz((a) => {
+      kurulumBozuk(a);
+      a.onarimSonucu = { tip: 'Basarisiz', mesaj: 'kalfa-yalitim kur 1 koduyla bitti.' };
+    });
+    const ayarlar = await ayarlariAc();
+    await fireEvent.click(within(ayarlar).getByRole('button', { name: 'Onar' }));
+    const ileti = await within(ayarlar).findByText(/Onarım tamamlanamadı/);
+    expect(ileti.textContent).toContain('1 koduyla bitti');
+    expect(ileti.textContent).toContain('BT departmanınızla');
+  });
+
+  it('kurulu sürüm değilse talimat gösterilir', async () => {
+    await ciz((a) => {
+      kurulumBozuk(a);
+      a.onarimSonucu = { tip: 'KuruluDegil', talimat: 'kalfa-yalitim.exe kur komutunu çalıştırın.' };
+    });
+    const ayarlar = await ayarlariAc();
+    await fireEvent.click(within(ayarlar).getByRole('button', { name: 'Onar' }));
+    expect(await within(ayarlar).findByText('kalfa-yalitim.exe kur komutunu çalıştırın.')).toBeTruthy();
+  });
+});
+
+describe('Ayarlar: yalıtımsız çalıştırma (aşama 2 tasarımı §9.8)', () => {
+  it('anahtar varsayılan kapalıdır; açınca komut çağrılır ve durum güncellenir', async () => {
+    const { arka, durum } = await ciz();
+    const ayarlar = await ayarlariAc();
+    const kutu = within(ayarlar).getByRole('checkbox', {
+      name: 'Yalıtım yokken komutların yalıtımsız çalışmasına izin ver',
+    }) as HTMLInputElement;
+    expect(kutu.checked).toBe(false);
+
+    await fireEvent.click(kutu);
+    await waitFor(() => expect(durum.uygulama?.yalitimsiz_izinli).toBe(true));
+    expect(arka.komutlar('yalitimsizi_ayarla')).toEqual([{ acik: true }]);
+    expect(kutu.checked).toBe(true);
+  });
+
+  it('anahtar açıkken durum çubuğu ve Ayarlar "Yalıtımsız" der', async () => {
+    await ciz((a) => (a.uygulama.yalitimsiz_izinli = true));
+    const oge = within(durumCubugu()).getByText('Yalıtımsız', { selector: '.durum-ogesi' });
+    expect(oge.getAttribute('title')).toContain('onayınızla yalıtımsız');
+    const ayarlar = await ayarlariAc();
+    expect(within(ayarlar).getByText('Yalıtımsız: bubblewrap bulunamadı')).toBeTruthy();
+    expect(within(ayarlar).getByText(/Yalıtımsız çalıştırma açık/)).toBeTruthy();
+  });
+
+  it('yerel pencerede vazgeçilirse kapalı kalır', async () => {
+    const { arka, durum } = await ciz((a) => (a.yalitimsizOnayi = false));
+    const ayarlar = await ayarlariAc();
+    const kutu = within(ayarlar).getByRole('checkbox', {
+      name: 'Yalıtım yokken komutların yalıtımsız çalışmasına izin ver',
+    }) as HTMLInputElement;
+    await fireEvent.click(kutu);
+    await waitFor(() => expect(arka.komutlar('yalitimsizi_ayarla')).toHaveLength(1));
+    expect(durum.uygulama?.yalitimsiz_izinli).toBe(false);
+    await waitFor(() => expect(kutu.checked).toBe(false));
+  });
+});
+
+describe('Ayarlar: hazırlanmış çalışma alanları (aşama 2 tasarımı §9.8)', () => {
+  it('Windows çalışma alanlarını listeler ve yalnızca kimlikle kaldırır', async () => {
+    const { arka } = await ciz((a) => {
+      a.uygulama.platform = 'windows';
+      a.hazirAlanlar = [
+        { kimlik: 'Kalfa.Alan.bir', yol: 'C:\\projeler\\bir' },
+        { kimlik: 'Kalfa.Alan.iki', yol: 'C:\\projeler\\iki' },
+      ];
+    });
+    const ayarlar = await ayarlariAc();
+    const liste = await within(ayarlar).findByRole('list', { name: 'Hazırlanmış çalışma alanları' });
+    expect(within(liste).getByText('C:\\projeler\\bir')).toBeTruthy();
+    expect(within(liste).getByText('C:\\projeler\\iki')).toBeTruthy();
+    expect(arka.komutlar('yalitim_calisma_alanlari')).toEqual([{}]);
+
+    await fireEvent.click(
+      within(liste).getByRole('button', {
+        name: 'C:\\projeler\\bir izinlerini geri al ve kaldır',
+      }),
+    );
+    await waitFor(() => expect(within(liste).queryByText('C:\\projeler\\bir')).toBeNull());
+    expect(within(liste).getByText('C:\\projeler\\iki')).toBeTruthy();
+    expect(arka.komutlar('yalitim_calisma_alanini_kaldir')).toEqual([
+      { kimlik: 'Kalfa.Alan.bir' },
+    ]);
+    expect(arka.komutlar('yalitim_calisma_alanlari')).toEqual([{}, {}]);
+
+    arka.yalitimKaldirmaOnayi = false;
+    await fireEvent.click(
+      within(liste).getByRole('button', {
+        name: 'C:\\projeler\\iki izinlerini geri al ve kaldır',
+      }),
+    );
+    await waitFor(() =>
+      expect(arka.komutlar('yalitim_calisma_alanini_kaldir')).toHaveLength(2),
+    );
+    expect(within(liste).getByText('C:\\projeler\\iki')).toBeTruthy();
+    expect(arka.komutlar('yalitim_calisma_alanlari')).toEqual([{}, {}]);
+  });
+
+  it('Linux\'ta çalışma alanı bölümü görünmez; kaldırma hatası listeyi korur', async () => {
+    const { arka, durum } = await ciz();
+    const linuxAyarlari = await ayarlariAc();
+    expect(within(linuxAyarlari).queryByText('Hazırlanmış çalışma alanları')).toBeNull();
+    expect(arka.komutlar('yalitim_calisma_alanlari')).toHaveLength(0);
+
+    arka.uygulama.platform = 'windows';
+    durum.uygulama!.platform = 'windows';
+    arka.hazirAlanlar = [{ kimlik: 'Kalfa.Alan.bir', yol: 'C:\\projeler\\bir' }];
+    arka.hatalar.set('yalitim_calisma_alanini_kaldir', {
+      kod: 'GecersizGirdi',
+      mesaj: 'Bu çalışma alanının açık bir oturumu var.',
+    });
+    await fireEvent.click(within(menu()).getByRole('button', { name: 'Oturumlar' }));
+    const ayarlar = await ayarlariAc();
+    const liste = await within(ayarlar).findByRole('list', { name: 'Hazırlanmış çalışma alanları' });
+    await fireEvent.click(within(liste).getByRole('button', { name: /izinlerini geri al ve kaldır/ }));
+    expect((await within(ayarlar).findByRole('alert')).textContent).toContain('açık bir oturumu');
+    expect(within(liste).getByText('C:\\projeler\\bir')).toBeTruthy();
   });
 });

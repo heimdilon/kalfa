@@ -6,11 +6,13 @@ import type {
   GecmisSayfasi,
   KanalMesaji,
   Kip,
+  OnarimSonucu,
   OnayGirdisi,
   OturumAcilisi,
   OturumId,
   OturumSatiri,
   UygulamaDurumu,
+  YalitimCalismaAlani,
   YalitimDurumu,
 } from './tipler';
 
@@ -78,3 +80,21 @@ export const aracZinciriDiziniEkle = () => invoke<string[]>('arac_zinciri_dizini
 
 export const aracZinciriDiziniKaldir = (yol: string) =>
   invoke<string[]>('arac_zinciri_dizini_kaldir', { yol });
+
+/** Yalıtımsız çalıştırma anahtarı; açmayı Rust yerel pencerede sorar. Yeni değeri döner. */
+export const yalitimsiziAyarla = (acik: boolean) =>
+  invoke<boolean>('yalitimsizi_ayarla', { acik });
+
+/** BT için teknik rapor (aşama 2 tasarımı §9.8), düz metin. */
+export const yalitimTeknikRaporu = () => invoke<string>('yalitim_teknik_raporu');
+
+/** "Onar": Rust yerel pencerede sorar, sonra kurulu yardımcıyı UAC ile çalıştırır. */
+export const yalitimiOnar = () => invoke<OnarimSonucu>('yalitimi_onar');
+
+/** Windows yalıtımı için hazırlanmış çalışma alanlarını kimlikleriyle listeler. */
+export const yalitimCalismaAlanlari = () =>
+  invoke<YalitimCalismaAlani[]>('yalitim_calisma_alanlari');
+
+/** Yerel onayı Rust sorar; arayüz yalnızca çalışma alanı kimliğini gönderir. */
+export const yalitimCalismaAlaniniKaldir = (kimlik: string) =>
+  invoke<boolean>('yalitim_calisma_alanini_kaldir', { kimlik });

@@ -242,6 +242,9 @@ impl Oturum {
         if kip == Kip::Inceleme && arac.yazar_mi() {
             return Err("İnceleme kipinde bu araç kullanılamaz; bu kip yalnızca okur.".into());
         }
+        if !arac.sunulur_mu() {
+            return Err(format!("`{ad}` aracı şu an kullanılamıyor."));
+        }
         let argumanlar = self.baglam.araclar.dogrula(ad, &tc.function.arguments)?;
         let siniflandirici = self.baglam.siniflandirici.clone();
         // Hazırlık beklerken komut kanalını da işle. Politika sürümünü

@@ -144,8 +144,9 @@ describe('ana pencere (1c tasarımı §8.1)', () => {
 
   it('durum çubuğu yalıtım durumunu gösterir', async () => {
     await ciz();
-    const oge = screen.getByText('Yalıtımsız', { selector: '.durum-ogesi' });
-    expect(oge.getAttribute('title')).toContain('yalıtımsız çalışıyor');
+    // Yalıtım yok ve yalıtımsız çalıştırma kapalı: komutlar kapalıdır (§9.8).
+    const oge = screen.getByText('Komutlar kapalı', { selector: '.durum-ogesi' });
+    expect(oge.getAttribute('title')).toContain('güvenle çalıştırılamıyor');
   });
 
   it('oturum ortasında anahtar geçersizleşirse hata kartında "Anahtarı değiştir" (§10)', async () => {

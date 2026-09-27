@@ -11,7 +11,8 @@ use std::sync::{Mutex, RwLock};
 
 use crate::profil::{self, AlanBilgisi, GitKimligi, Korumali, OzelDizinler, alan_kimligi};
 use crate::{
-    BaslatmaHatasi, CalistirmaIstegi, Surec, Yalitici, YalitimDurumu, YalitimYoklukNedeni, program,
+    BaslatmaHatasi, CalistirmaIstegi, HazirAlan, Surec, Yalitici, YalitimDurumu,
+    YalitimYoklukNedeni, program,
 };
 
 use super::ace_kaydi::{self, AceKaydi, Girdi};
@@ -73,55 +74,79 @@ impl WindowsAlgilayici {
     pub fn algila(&self, _ayar: &WindowsAyari) -> YalitimDurumu {
         let dizin = match kurulum::kayit_dizini() {
             Ok(d) => d,
-            Err(e) => return kurulum_bozuk(&format!("Kurulum dizini okunamadı: {e}")),
+            Err(e) => {
+                return kurulum_bozuk("kurulum-dizini", &format!("Kurulum dizini okunamadı: {e}"));
+            }
         };
         let kayit = match KurulumKaydi::oku(&dizin) {
             Ok(Some(k)) => k,
-            Ok(None) => return kurulum_gerekli("Kalfa Windows yalıtımı kurulu değil."),
-            Err(e) => return kurulum_bozuk(&format!("Kurulum kaydı okunamadı: {e}")),
+            Ok(None) => {
+                return kurulum_gerekli("kurulum-kaydi", "Kalfa Windows yalıtımı kurulu değil.");
+            }
+            Err(e) => {
+                return kurulum_bozuk("kurulum-kaydi", &format!("Kurulum kaydı okunamadı: {e}"));
+            }
         };
         let kokler = guvenlik::sabit_diskler();
         if kokler.is_empty() {
-            return kurulum_gerekli("ACL destekleyen sabit disk bulunamadı.");
+            return kurulum_gerekli("sabit-disk", "ACL destekleyen sabit disk bulunamadı.");
         }
         let yetenek = match guvenlik::arac_zinciri_sidi() {
             Ok(s) => s,
-            Err(e) => return kurulum_bozuk(&format!("Araç zinciri yeteneği bulunamadı: {e}")),
+            Err(e) => {
+                return kurulum_bozuk(
+                    "yetenek-sid",
+                    &format!("Araç zinciri yeteneği bulunamadı: {e}"),
+                );
+            }
         };
         for kok in kokler {
             if !kayit.kok_izinleri.iter().any(|k| ayni_yol(k, &kok)) {
-                return kurulum_gerekli(&format!(
-                    "{} sürücüsü kurulum kaydında yok.",
-                    kok.display()
-                ));
+                return kurulum_gerekli(
+                    "kurulum-kaydi",
+                    &format!("{} sürücüsü kurulum kaydında yok.", kok.display()),
+                );
             }
             match guvenlik::kok_izni_var_mi(&kok, &yetenek) {
                 Ok(true) => {}
                 Ok(false) => {
-                    return kurulum_gerekli(&format!(
-                        "{} sürücüsünün kök izni eksik.",
-                        kok.display()
-                    ));
+                    return kurulum_gerekli(
+                        "kok-izni",
+                        &format!("{} sürücüsünün kök izni eksik.", kok.display()),
+                    );
                 }
-                Err(e) => return kurulum_bozuk(&format!("{} denetlenemedi: {e}", kok.display())),
+                Err(e) => {
+                    return kurulum_bozuk(
+                        "kok-izni",
+                        &format!("{} denetlenemedi: {e}", kok.display()),
+                    );
+                }
             }
         }
         // Profil altındaki çalışma alanının yolu çözülürken kap profiller
         // dizinini listeler (A11); izni kurulum verir.
         let profiller = match guvenlik::profiller_dizini() {
             Ok(p) => p,
-            Err(e) => return kurulum_bozuk(&format!("Profiller dizini bulunamadı: {e}")),
+            Err(e) => {
+                return kurulum_bozuk(
+                    "profiller-dizini",
+                    &format!("Profiller dizini bulunamadı: {e}"),
+                );
+            }
         };
         match guvenlik::kok_izni_var_mi(&profiller, &yetenek) {
             Ok(true) => {}
             Ok(false) => {
-                return kurulum_gerekli(&format!(
-                    "{} dizininin listeleme izni eksik.",
-                    profiller.display()
-                ));
+                return kurulum_gerekli(
+                    "profiller-dizini",
+                    &format!("{} dizininin listeleme izni eksik.", profiller.display()),
+                );
             }
             Err(e) => {
-                return kurulum_bozuk(&format!("{} denetlenemedi: {e}", profiller.display()));
+                return kurulum_bozuk(
+                    "profiller-dizini",
+                    &format!("{} denetlenemedi: {e}", profiller.display()),
+                );
             }
         }
         match deneme_baslat(&yetenek) {
@@ -129,7 +154,10 @@ impl WindowsAlgilayici {
                 arka_uc: ARKA_UC.into(),
                 surum: "AppContainer".into(),
             },
-            Err(e) => kurulum_bozuk(&format!("AppContainer denemesi başarısız: {e}")),
+            Err(e) => kurulum_bozuk(
+                "appcontainer-deneme",
+                &format!("AppContainer denemesi başarısız: {e}"),
+            ),
         }
     }
 }
@@ -253,17 +281,20 @@ fn temel_ortam() -> Vec<(String, String)> {
     ortam
 }
 
-fn kurulum_gerekli(neden: &str) -> YalitimDurumu {
+/// `denetim` BT için teknik ayrıntıya girer (§9.8): hangi denetimin düştüğü.
+fn kurulum_gerekli(denetim: &str, neden: &str) -> YalitimDurumu {
     YalitimDurumu::Yok {
         neden: YalitimYoklukNedeni::KurulumGerekli,
         talimat: format!("{neden} {TALIMAT}"),
+        ayrinti: format!("denetim={denetim}; {neden}"),
     }
 }
 
-fn kurulum_bozuk(neden: &str) -> YalitimDurumu {
+fn kurulum_bozuk(denetim: &str, neden: &str) -> YalitimDurumu {
     YalitimDurumu::Yok {
         neden: YalitimYoklukNedeni::KurulumBozuk,
         talimat: format!("{neden} {TALIMAT}"),
+        ayrinti: format!("denetim={denetim}; {neden}"),
     }
 }
 
@@ -297,7 +328,7 @@ impl WindowsYalitici {
                 .map(|hata| format!("İzinli araç zinciri dizinleri güvenle hazırlanamadı: {hata}"))
         };
         if let Some(neden) = &okunur_izin_hatasi {
-            durum = kurulum_bozuk(neden);
+            durum = kurulum_bozuk("arac-zinciri-izni", neden);
         }
         Self {
             ayar: RwLock::new(ayar),
@@ -321,12 +352,18 @@ impl WindowsYalitici {
     /// (§9.2, §9.4). Uygulama bu metodu çalışma alanı kaldırılırken çağırır.
     pub fn alani_kaldir(&self, alan: &AlanBilgisi) -> io::Result<()> {
         let kimlik = alan_kimligi(&alan.kok);
-        let ad = profil_adi(&kimlik);
-        let paket = guvenlik::profil_sidi(&ad)?;
         let mut ace = self.ace();
+        self.alani_kaldir_kilitli(&mut ace, &kimlik, &alan.kok)
+    }
+
+    /// ACE kilidi alınmışken geri alır. Kimlikten kaldırma aynı kilit altında
+    /// kayıttaki kökü çözüp bu işleve geçer; araya yeni hazırlık giremez.
+    fn alani_kaldir_kilitli(&self, ace: &mut AceKaydi, kimlik: &str, kok: &Path) -> io::Result<()> {
+        let ad = profil_adi(kimlik);
+        let paket = guvenlik::profil_sidi(&ad)?;
         let hatali = ace.bozuk_mu();
         if hatali {
-            taramali_geri_al(&mut ace, alan, &kimlik, &paket)?;
+            taramali_geri_al(ace, kok, kimlik, &paket)?;
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "ACE kaydı bozuk; kanıtlanan izinler geri alındı ancak çalışma alanı kaldırılamadı",
@@ -338,10 +375,10 @@ impl WindowsYalitici {
             ace.dacl_oncelerini_guncelle(|onceki| {
                 guvenlik::dacl_sddl_sidini_kaldir(onceki, &paket)
             })?;
-            kayda_gore_geri_al(&mut ace, &kimlik)?;
+            kayda_gore_geri_al(ace, kimlik)?;
         }
         guvenlik::profil_sil(&ad)?;
-        ace.alani_cikar(&kimlik, &[])?;
+        ace.alani_cikar(kimlik, &[])?;
         *ace = AceKaydi::oku(&self.ace_yolu);
         Ok(())
     }
@@ -355,9 +392,32 @@ impl Yalitici for WindowsYalitici {
             .unwrap_or_else(|z| z.into_inner())
             .as_ref()
         {
-            return kurulum_bozuk(neden);
+            return kurulum_bozuk("arac-zinciri-izni", neden);
         }
         self.durum.read().unwrap_or_else(|z| z.into_inner()).clone()
+    }
+
+    fn hazirlanmis_alanlar(&self) -> Vec<HazirAlan> {
+        self.ace()
+            .hazir_alanlar()
+            .into_iter()
+            .filter(|(kimlik, kok)| kayitli_kok_kimligi(kok).eq(kimlik))
+            .map(|(kimlik, kok)| HazirAlan { kimlik, kok })
+            .collect()
+    }
+
+    fn alani_kaldir_kimlikle(&self, kimlik: &str) -> Result<(), String> {
+        let mut ace = self.ace();
+        let kok = ace
+            .hazir_alanlar()
+            .into_iter()
+            .find_map(|(alan, kok)| (alan == kimlik).then_some(kok))
+            .ok_or_else(|| "Hazırlanmış çalışma alanı bulunamadı".to_string())?;
+        if kayitli_kok_kimligi(&kok) != kimlik {
+            return Err("Çalışma alanının kayıtlı kimliği artık köküyle eşleşmiyor".into());
+        }
+        self.alani_kaldir_kilitli(&mut ace, kimlik, &kok)
+            .map_err(|hata| hata.to_string())
     }
 
     fn profil_ozeti(&self, ag: bool) -> Option<String> {
@@ -411,7 +471,7 @@ impl Yalitici for WindowsYalitici {
             .read()
             .unwrap_or_else(|z| z.into_inner())
             .as_ref()
-            .map_or(algilanan, |neden| kurulum_bozuk(neden));
+            .map_or(algilanan, |neden| kurulum_bozuk("arac-zinciri-izni", neden));
         let degisti = {
             let mut durum = self.durum.write().unwrap_or_else(|z| z.into_inner());
             let degisti = *durum != yeni;
@@ -461,7 +521,7 @@ impl Yalitici for WindowsYalitici {
                 let Some(neden) = hata_nedeni else {
                     return;
                 };
-                let yeni = kurulum_bozuk(&neden);
+                let yeni = kurulum_bozuk("arac-zinciri-izni", &neden);
                 let degisti = {
                     let mut durum = self.durum.write().unwrap_or_else(|z| z.into_inner());
                     let degisti = *durum != yeni;
@@ -515,7 +575,7 @@ impl Yalitici for WindowsYalitici {
         if ace.bozuk_mu() {
             ilerleme("Bozuk izin kaydı taranıyor ve geri alınıyor…");
             let paket = guvenlik::profil_sidi(&ad).map_err(yalitim_hatasi)?;
-            taramali_geri_al(&mut ace, alan, &kimlik, &paket).map_err(yalitim_hatasi)?;
+            taramali_geri_al(&mut ace, &alan.kok, &kimlik, &paket).map_err(yalitim_hatasi)?;
             return Err(yalitim_hatasi(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "ACE kaydı bozuk; bilinen izinler geri alındı ancak kayıtta olmayan miras değişiklikleri bilinmiyor. Kayıt ve profil korundu; çalışma alanı hazırlanmadı",
@@ -1357,12 +1417,7 @@ fn kaldirilan_ic_alan_siniri(girdiler: &[Girdi], kimlik: &str, yol: &Path) -> bo
         })
 }
 
-fn taramali_geri_al(
-    ace: &mut AceKaydi,
-    alan: &AlanBilgisi,
-    kimlik: &str,
-    paket: &Sid,
-) -> io::Result<()> {
+fn taramali_geri_al(ace: &mut AceKaydi, kok: &Path, kimlik: &str, paket: &Sid) -> io::Result<()> {
     let _kilit = AdliKilit::kilitle(UST_DIZIN_KILIDI)?;
     let girdiler = ace.girdiler().to_vec();
     let mut ilk_hata = None;
@@ -1421,7 +1476,7 @@ fn taramali_geri_al(
             continue;
         };
         if kayit_alani != kimlik
-            || !altinda(yol, &alan.kok)
+            || !altinda(yol, kok)
             || diger_miras_var(&girdiler, kimlik, yol)
             || geri_yazilan.iter().any(|y| ayni_yol(y, yol))
         {
@@ -1632,12 +1687,69 @@ fn normal_yol(yol: &Path) -> String {
         .to_string()
 }
 
+/// ACE kaydındaki kökün kimliği. Kimlik hazırlıkta kanonik (`\\?\…`) yoldan
+/// hesaplanır, kayıt ise kökü `sade` biçimde saklar. Kök silinmiş ya da
+/// taşınmışsa kanonikleştirme başarısız olur; kimlik o zaman `sade`'nin
+/// kaldırdığı önek geri eklenerek bulunur. Yoksa silinen çalışma alanının
+/// izinleri Ayarlar'dan hiç kaldırılamazdı.
+fn kayitli_kok_kimligi(kok: &Path) -> String {
+    if std::fs::canonicalize(kok).is_ok() {
+        return alan_kimligi(kok);
+    }
+    let metin = kok.to_string_lossy();
+    let uzun = if metin.starts_with(r"\\?\") {
+        kok.to_path_buf()
+    } else if let Some(kalan) = metin.strip_prefix(r"\\") {
+        PathBuf::from(format!(r"\\?\UNC\{kalan}"))
+    } else {
+        PathBuf::from(format!(r"\\?\{metin}"))
+    };
+    alan_kimligi(&uzun)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::mpsc;
     use std::thread;
     use std::time::Duration;
+
+    /// BT için ayrıntı düşen denetimi taşır; kullanıcıya giden talimattan
+    /// ayrıdır (§9.8).
+    #[test]
+    fn yalitim_yokken_ayrinti_denetimi_ve_nedeni_tasir() {
+        for (durum, beklenen) in [
+            (
+                kurulum_gerekli("kok-izni", r"C:\ sürücüsünün kök izni eksik."),
+                YalitimYoklukNedeni::KurulumGerekli,
+            ),
+            (
+                kurulum_bozuk("appcontainer-deneme", "AppContainer denemesi başarısız: x"),
+                YalitimYoklukNedeni::KurulumBozuk,
+            ),
+        ] {
+            let YalitimDurumu::Yok {
+                neden,
+                talimat,
+                ayrinti,
+            } = durum
+            else {
+                panic!("{durum:?}");
+            };
+            assert_eq!(neden, beklenen);
+            assert!(ayrinti.starts_with("denetim="), "{ayrinti}");
+            assert!(!talimat.contains("denetim="), "{talimat}");
+        }
+        let YalitimDurumu::Yok { ayrinti, .. } =
+            kurulum_gerekli("kok-izni", r"C:\ sürücüsünün kök izni eksik.")
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            ayrinti,
+            r"denetim=kok-izni; C:\ sürücüsünün kök izni eksik."
+        );
+    }
 
     #[test]
     fn deneme_profili_mutexu_eszamanli_tutulmasini_engeller() {
@@ -1788,6 +1900,126 @@ mod tests {
             Girdi::Profil { alan, ad: kayitli_ad } if alan == &kimlik && kayitli_ad == &ad)));
         assert!(kalan.girdiler().iter().any(|girdi| matches!(girdi,
             Girdi::Izin { alan, yol, .. } if alan == &kimlik && yol == &paylasilan)));
+    }
+
+    #[test]
+    fn kimlikle_kaldirma_kayitsiz_ve_uyusmayan_kimligi_reddeder() {
+        let gecici = tempfile::tempdir().unwrap();
+        let kok = gecici.path().join("calisma");
+        std::fs::create_dir(&kok).unwrap();
+        let ace_yolu = gecici.path().join("ace-kaydi.jsonl");
+        let mut ace = AceKaydi::oku(&ace_yolu);
+        ace.ekle(Girdi::Hazir {
+            alan: "yanlis-kimlik".into(),
+            kok: kok.clone(),
+        })
+        .unwrap();
+        let kayit_onceki = std::fs::read(&ace_yolu).unwrap();
+        let y = WindowsYalitici {
+            ayar: RwLock::new(WindowsAyari::default()),
+            durum: RwLock::new(YalitimDurumu::Hazir {
+                arka_uc: ARKA_UC.into(),
+                surum: "AppContainer".into(),
+            }),
+            degisince: Box::new(|_| {}),
+            ace_yolu: ace_yolu.clone(),
+            ace: Mutex::new(ace),
+            okunur_izin_hatasi: RwLock::new(None),
+        };
+
+        assert!(y.alani_kaldir_kimlikle("kayitsiz").is_err());
+        assert!(y.alani_kaldir_kimlikle("yanlis-kimlik").is_err());
+        assert_eq!(std::fs::read(&ace_yolu).unwrap(), kayit_onceki);
+        assert!(y.hazirlanmis_alanlar().is_empty());
+    }
+
+    #[test]
+    fn silinen_kok_kayittaki_kimligini_korur_ve_listede_kalir() {
+        let gecici = tempfile::tempdir().unwrap();
+        let kok = gecici.path().join("calisma");
+        std::fs::create_dir(&kok).unwrap();
+        let kimlik = alan_kimligi(&kok);
+        let kayitli_kok = guvenlik::sade(&std::fs::canonicalize(&kok).unwrap());
+        assert_eq!(kayitli_kok_kimligi(&kayitli_kok), kimlik);
+        std::fs::remove_dir(&kok).unwrap();
+        assert_eq!(kayitli_kok_kimligi(&kayitli_kok), kimlik);
+
+        let ace_yolu = gecici.path().join("ace-kaydi.jsonl");
+        let mut ace = AceKaydi::oku(&ace_yolu);
+        ace.ekle(Girdi::Hazir {
+            alan: kimlik.clone(),
+            kok: kayitli_kok.clone(),
+        })
+        .unwrap();
+        let y = WindowsYalitici {
+            ayar: RwLock::new(WindowsAyari::default()),
+            durum: RwLock::new(YalitimDurumu::Hazir {
+                arka_uc: ARKA_UC.into(),
+                surum: "AppContainer".into(),
+            }),
+            degisince: Box::new(|_| {}),
+            ace_yolu,
+            ace: Mutex::new(ace),
+            okunur_izin_hatasi: RwLock::new(None),
+        };
+        assert_eq!(
+            y.hazirlanmis_alanlar(),
+            vec![HazirAlan {
+                kimlik,
+                kok: kayitli_kok,
+            }]
+        );
+    }
+
+    #[test]
+    fn olmayan_uzun_bicimli_kokun_kimligi_degismez() {
+        assert_eq!(
+            kayitli_kok_kimligi(Path::new(r"\\?\C:\kalfa-yok\calisma")),
+            alan_kimligi(Path::new(r"\\?\C:\kalfa-yok\calisma"))
+        );
+    }
+
+    #[test]
+    fn kimlikle_kaldirma_bozuk_ace_kaydini_koruyup_hata_verir() {
+        let gecici = tempfile::tempdir().unwrap();
+        let kok = gecici.path().join("calisma");
+        std::fs::create_dir(&kok).unwrap();
+        let kimlik = alan_kimligi(&kok);
+        let ace_yolu = gecici.path().join("ace-kaydi.jsonl");
+        let mut ace = AceKaydi::oku(&ace_yolu);
+        ace.ekle(Girdi::Hazir {
+            alan: kimlik.clone(),
+            kok: kok.clone(),
+        })
+        .unwrap();
+        let mut kayit_onceki = std::fs::read(&ace_yolu).unwrap();
+        kayit_onceki.extend_from_slice(b"gecersiz-kayit\n");
+        std::fs::write(&ace_yolu, &kayit_onceki).unwrap();
+        let ace = AceKaydi::oku(&ace_yolu);
+        assert!(ace.bozuk_mu());
+        let y = WindowsYalitici {
+            ayar: RwLock::new(WindowsAyari::default()),
+            durum: RwLock::new(YalitimDurumu::Hazir {
+                arka_uc: ARKA_UC.into(),
+                surum: "AppContainer".into(),
+            }),
+            degisince: Box::new(|_| {}),
+            ace_yolu: ace_yolu.clone(),
+            ace: Mutex::new(ace),
+            okunur_izin_hatasi: RwLock::new(None),
+        };
+
+        assert_eq!(
+            y.hazirlanmis_alanlar(),
+            vec![HazirAlan {
+                kimlik: kimlik.clone(),
+                kok,
+            }]
+        );
+        let hata = y.alani_kaldir_kimlikle(&kimlik).unwrap_err();
+        assert!(hata.contains("ACE kaydı bozuk"), "{hata}");
+        assert_eq!(std::fs::read(&ace_yolu).unwrap(), kayit_onceki);
+        assert_eq!(y.hazirlanmis_alanlar().len(), 1);
     }
 
     #[test]

@@ -6,4 +6,5 @@ pub(crate) mod kap;
 pub(crate) mod komut_satiri;
 pub mod kurulum;
 pub mod msvc;
+pub mod sistem;
 pub mod yalitici;

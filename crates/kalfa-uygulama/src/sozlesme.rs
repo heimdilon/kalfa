@@ -33,6 +33,20 @@ pub enum ModelProfili {
     Otomatik,
 }
 
+/// "Onar"ın sonucu (aşama 2 tasarımı §9.8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "tip")]
+pub enum OnarimSonucu {
+    /// Kurulum yinelendi; yeni durum ana pencerenin kanalına da yazıldı.
+    Tamam { yalitim: YalitimDurumu },
+    /// Yerel pencerede ya da UAC'de vazgeçildi.
+    Vazgecildi,
+    /// Kurulum başarısız oldu; mesaj teknik ayrıntıdır.
+    Basarisiz { mesaj: String },
+    /// Kurulu sürüm değil (geliştirme derlemesi ya da Linux): Onar yok.
+    KuruluDegil { talimat: String },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ModelSecenegi {
     pub kimlik: String,
@@ -50,6 +64,9 @@ pub struct UygulamaDurumu {
     pub son_oturum: Option<OturumId>,
     /// Kabuk komutlarının yalıtımı (aşama 2 tasarımı §10.3).
     pub yalitim: YalitimDurumu,
+    /// Yalıtım yokken komutlar yalıtımsız çalışabilir mi (§9.8); Ayarlar'daki
+    /// anahtar, varsayılan kapalı.
+    pub yalitimsiz_izinli: bool,
     /// İşletim sistemi (`linux`, `windows`, `macos`): Ayarlar'daki yalıtım
     /// bölümü araç zinciri dizinlerini yalnızca Linux'ta gösterir.
     pub platform: String,
@@ -91,6 +108,13 @@ impl From<OturumOzeti> for OturumSatiri {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CalismaAlani {
     pub kimlik: u64,
+    pub yol: String,
+}
+
+/// Yalıtım için hazırlanmış çalışma alanının Ayarlar'da gösterilen satırı.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct YalitimCalismaAlani {
+    pub kimlik: String,
     pub yol: String,
 }
 

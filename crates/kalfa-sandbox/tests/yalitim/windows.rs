@@ -170,6 +170,10 @@ impl Kurgu {
 impl Drop for Kurgu {
     fn drop(&mut self) {
         for kok in [&self.kok, &self.baska_kok] {
+            // Klasörü silen test alanını kimlikle kendisi kaldırır.
+            if !kok.exists() {
+                continue;
+            }
             let alan = alan_bilgisi(kok, Vec::new());
             let _ = self.y.alani_kaldir(&alan);
         }
@@ -183,6 +187,58 @@ fn deger<'a>(metin: &'a str, ad: &str) -> &'a str {
         .lines()
         .find_map(|satir| satir.strip_prefix(&format!("{ad}=")))
         .unwrap_or_else(|| panic!("{ad} yok: {metin}"))
+}
+
+/// Ayarlar yalnızca ACE kaydında hazırlığı tamamlanan alanları gösterir;
+/// kaldırma arayüzden yol almadan kimliği kayıttaki köke çözer.
+#[test]
+fn hazirlanmis_alanlar_ace_kaydindan_gelir() {
+    let k = kurgu();
+    assert!(k.y.hazirlanmis_alanlar().is_empty());
+
+    let alan = k.hazirla(&k.kok, Vec::new());
+    let kimlik = alan_kimligi(&alan.kok);
+    // Kayıt kökü `\\?\` öneki olmadan, arayüzde gösterilecek biçimde tutar.
+    assert_eq!(
+        k.y.hazirlanmis_alanlar(),
+        vec![kalfa_sandbox::HazirAlan {
+            kimlik: kimlik.clone(),
+            kok: guvenlik::sade(&alan.kok.canonicalize().unwrap()),
+        }]
+    );
+    assert!(k.y.alani_kaldir_kimlikle("kayitsiz").is_err());
+    assert_eq!(k.y.hazirlanmis_alanlar().len(), 1);
+
+    k.y.alani_kaldir_kimlikle(&kimlik).unwrap();
+    assert!(k.y.hazirlanmis_alanlar().is_empty());
+    assert!(k.y.hazirlik_gerekli(&alan.kok));
+    assert_eq!(
+        appcontainer_profil_sonucu(&format!("Kalfa.Alan.{kimlik}"), true),
+        0,
+        "AppContainer profili kaldırılmamış: {kimlik}"
+    );
+}
+
+/// Kullanıcı proje klasörünü sildikten sonra da alan Ayarlar'da görünür ve
+/// kaldırılınca profili ile kayıttaki izinleri gider.
+#[test]
+fn silinen_calisma_alani_listelenir_ve_kaldirilir() {
+    let k = kurgu();
+    let alan = k.hazirla(&k.kok, Vec::new());
+    let kimlik = alan_kimligi(&alan.kok);
+    std::fs::remove_dir_all(&k.kok).unwrap();
+
+    let alanlar = k.y.hazirlanmis_alanlar();
+    assert_eq!(alanlar.len(), 1, "{alanlar:?}");
+    assert_eq!(alanlar[0].kimlik, kimlik);
+
+    k.y.alani_kaldir_kimlikle(&kimlik).unwrap();
+    assert!(k.y.hazirlanmis_alanlar().is_empty());
+    assert_eq!(
+        appcontainer_profil_sonucu(&format!("Kalfa.Alan.{kimlik}"), true),
+        0,
+        "AppContainer profili kaldırılmamış: {kimlik}"
+    );
 }
 
 fn ps(yol: &Path) -> String {

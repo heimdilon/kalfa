@@ -33,6 +33,11 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
   kaydı. Kurulumu yapılmış makinede uygulama kabuk komutlarını yalıtımda
   çalıştırır; kurulumu uygulamadan başlatmak ve Ayarlar'ın Windows bölümü
   2d-2'dedir. Ayrıntısı aşağıda.
+- **2d-2 — son kullanıcı akışı (tamamlandı):** yalıtım yokken kapalı kabuk,
+  sade ileti ve BT raporu, yalıtımsız anahtarı, "Onar", Kalfa Projeleri
+  klasörü, Ayarlar'da hazırlanmış alanlar, Windows kabuk e2e'si gerçek
+  yalıtımda ve makine geneli NSIS kurucusu. Kurucu kurulu makinede UAC ile
+  kabul edildi. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -843,11 +848,69 @@ Bulgular: [`2026-09-27-kalfa-2d-ayri-kullanici-karsilastirma.md`](superpowers/bu
     ayrıntı verilir. Yalıtımsız çalıştırma yalnızca Ayarlar'dan açılır.
 - **Tasarım:** aşama 2 tasarımı §9.8 ve §15; üst belge r3.7.
 
-Sıradaki: 2d-2 (son kullanıcı akışı: NSIS kurucusu, "Onar", kapalı kabuk ve
-BT iletisi, yalıtımsız anahtarı, varsayılan proje klasörü, Ayarlar'ın Windows
-bölümü, Windows kabuk uçtan uca testleri). Ardından 2d-3 (Kalfa'nın getirdiği
-araç zinciri, A15'in gelişmiş yolu, A16).
+### Dış kaynak incelemesi: awesome-harness-engineering (2026-09-27)
 
-Kabuk yalıtımı, bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi,
-güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü
+Bulgular: [`2026-09-27-awesome-harness-engineering-inceleme.md`](superpowers/bulgular/2026-09-27-awesome-harness-engineering-inceleme.md).
+Liste bir okuma dizini; alınacak kod ya da bağımlılık yok. 2d-2'nin kapsamı
+değişmez. Aşağıdakiler 2d-3 ve aşama 3 planlarına girecek:
+
+- **Sınır matrisi (2d-3):** onaylanan tarife × çalışma anı durumu (yalıtım
+  var/yok, izin kipi, ağ, yalıtımsız anahtarı) için tablo biçiminde test.
+  Uyuşmazlık olan her hücrede süreç başlamaz. 2d-2 incelemesinde kontrol
+  listesi olarak da kullanılır.
+- **A15/A16 için önce okuma (2d-3):** OpenAI'nin Codex Windows yalıtımı yazısı
+  AppContainer'ı kendi iş yükü için uygun bulmuyor. Tasarım kararı değişmez;
+  plan yazılmadan önce hangi araçlarda benzer sorun çıkacağını görmek için
+  okunur.
+- **Senaryo testleri (aşama 3):** sahte EVREN ile çok turlu, betikli model
+  yanıtları. Her senaryo iki şeyi ayrı sınar: son durum (çalışma alanı, JSONL)
+  ve iz (onay, tarife, yalıtım). İlk adaylar: sunulmayan kabuğun çağrılması,
+  onaydan sonra durum değişmesi, onay beklerken kapanma, kurtarmada yan etkinin
+  yinelenmemesi. Komut dizisi değil güvenlik değişmezleri sınanır. Bağlam
+  özetlemenin onay kapsamını genişletmediği de bu altyapıyla sınanır.
+- **Araç sonuçları (aşama 3):** modele dönen hata ve kırpma sonuçları "ne oldu,
+  şimdi ne yapabilirsiniz" biçiminde yazılır; kullanıcıya sade ileti, BT'ye
+  teknik rapor ayrımı korunur.
+- **Uymayanlar:** Claude API'nin sunucu tarafı özetlemesi (EVREN üzerinden
+  gidiyoruz; özetleme bizde), yeni ajan çatıları, vektör veritabanı, onayı
+  sınıflayıcıyla gevşetmek.
+
+### 2d-2 devam noktası (2026-09-27)
+
+Plan: [son kullanıcı akışı](superpowers/plans/2026-09-27-kalfa-2d-2-son-kullanici.md).
+Görev 1–8'in kodu PR dalında. Görev 6 hazırlanmış alanları, Görev 7 profil
+sayımı ve alan temizliğini, Görev 8 NSIS kancalarını ve kullanıcı kabul/geri
+alma betiklerini ekledi. Görev 9 bu doğrulama kaydını güncelledi.
+
+Claude'un incelemesi ve iki platformdaki doğrulaması (kurulu Windows makinesi):
+
+| Doğrulama | Windows | WSL Ubuntu-24.04 |
+|---|---|---|
+| Biçim ve Clippy (tam, `e2e`, yalıtım özellikli) | Geçti | Geçti |
+| `cargo test --workspace --locked`, `e2e` özellikli testler | Geçti | Geçti |
+| Gerçek yalıtım testleri | 29/29 (AppContainer) | 17/17 (bwrap); uyumluluk 4/4 |
+| Arayüz denetim, test ve üretim derlemesi | 0 hata/uyarı; 229/229 test; paket denetimi temiz | — |
+| Uçtan uca | 25/25; "kabuk yalıtımı" gerçek AppContainer'da koştu; `Kalfa.Alan.*` profil sayısı koşudan önce ve sonra aynı | 25/25 (Codex) |
+
+İncelemede düzeltilenler plandaki inceleme notunda. Sürüm yükseltmede araç
+zinciri dizinlerinin izinlerinin gitmesi kullanıcı kararıyla bilinen sınırdır
+(2d-3'te yeniden ele alınır). §9.8'deki araç zinciri kurucuda kararı plan
+gereği 2d-3'tedir.
+
+Kullanıcının açık izniyle `@tauri-apps/cli@2.11.4` ve Tauri'nin NSIS araçları
+indirildi. Windows x64 kurucusu
+`target/release/bundle/nsis/Kalfa_0.1.0_x64-setup.exe` üretildi.
+
+**Kurucu kabulü (kullanıcı, UAC):** kurulum, kurulu sürümde `Hazir` durumu,
+bozulan kurulumu "Onar"la düzeltme ve kaldırma denendi. Kaldırmadan sonra
+kök ve araç zinciri izinleri, kurulum kaydı ve Program Files dizini kalmadı.
+Ayrıntı plandaki kabul notunda. 2d-2 tamamlandı.
+
+Sıradaki: 2d-3 (Kalfa'nın getirdiği araç zinciri, A15'in gelişmiş yolu, A16;
+sınır matrisi; yükseltmede araç zinciri izinleri; kaldırmada oturum
+kayıtları).
+Ardından 2d-3 (Kalfa'nın getirdiği araç zinciri, A15'in gelişmiş yolu, A16).
+
+Bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi, güvenlik
+denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü
 uygulaması Windows ve Linux'ta çalışıyor; tamamlanmış bir v1 sürümü yoktur.

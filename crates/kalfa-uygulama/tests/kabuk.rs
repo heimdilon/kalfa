@@ -217,3 +217,32 @@ async fn yerel_pencerede_vazgecilirse_komut_calismaz() {
     assert_eq!(durum, AracDurumu::Reddedildi);
     assert!(icerik.contains("yerel pencerede vazgeçti"), "{icerik}");
 }
+
+/// Aşama 2 tasarımı §9.8: yalıtım yokken ve yalıtımsız çalıştırma kapalıyken
+/// kabuk modele tanımlanmaz; çağrılırsa çalışmaz.
+#[tokio::test]
+async fn yalitimsiz_anahtari_kapaliyken_kabuk_sunulmaz() {
+    let o = ortam(vec![
+        SahteYanit::arac("kabuk", echo("calismamali")),
+        SahteYanit::metin("peki"),
+    ])
+    .await;
+    assert!(!o.t.uygulama.yalitimsizi_ayarla(false).await.unwrap());
+    let (oturum, mut rx) = o.yeni_oturum().await;
+    o.t.uygulama
+        .mesaj_gonder(oturum, "çalıştır".into())
+        .await
+        .unwrap();
+    let olaylar = o
+        .bekle(oturum, &mut rx, |o| matches!(o, Olay::AracSonucu { .. }))
+        .await;
+    let (durum, icerik) = sonuc(&olaylar);
+    assert_eq!(durum, AracDurumu::Basarisiz);
+    assert!(icerik.contains("şu an kullanılamıyor"), "{icerik}");
+    let araclar: Vec<String> = o.t.saglayici.istekler()[0]
+        .tools
+        .iter()
+        .map(|t| t.function.name.clone())
+        .collect();
+    assert!(!araclar.iter().any(|a| a == "kabuk"), "{araclar:?}");
+}

@@ -40,8 +40,47 @@ pub enum YalitimDurumu {
     },
     Yok {
         neden: YalitimYoklukNedeni,
+        /// Geliştiriciye ya da BT'ye yönelik talimat.
         talimat: String,
+        /// BT için teknik ayrıntı (§9.8): düşen denetim ve işletim sisteminin
+        /// hatası, örneğin `denetim=kok-izni; C:\ sürücüsünün kök izni eksik.`
+        ayrinti: String,
     },
+}
+
+/// İşletim sisteminin sürümü (§9.8); BT için teknik raporda yazılır.
+pub fn sistem_surumu() -> String {
+    #[cfg(windows)]
+    {
+        windows::sistem::surum()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux::sistem_surumu()
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        std::env::consts::OS.to_string()
+    }
+}
+
+/// Yalıtımın bu platformda neye ihtiyaç duyduğu (§9.8); BT için teknik
+/// raporda yazılır.
+pub fn gereksinim() -> String {
+    #[cfg(windows)]
+    {
+        windows::sistem::gereksinim()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux::GEREKSINIM.to_string()
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        "Bu platformda Kalfa'nın yalıtım arka ucu yok; komutlar yalnızca Ayarlar'da \
+         yalıtımsız çalıştırma açıkken, her biri ayrıca onaylanarak çalışır."
+            .to_string()
+    }
 }
 
 impl YalitimDurumu {
@@ -97,6 +136,14 @@ pub enum BaslatmaHatasi {
     Yalitim(String),
 }
 
+/// Yalıtım için hazırlanmış çalışma alanı. Kimlik, kullanıcı arayüzünden yol
+/// kabul etmeden alanı kaldırmak için kullanılır.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HazirAlan {
+    pub kimlik: String,
+    pub kok: PathBuf,
+}
+
 /// Bir komutu başlatan arka uç (aşama 2 tasarımı §3.2).
 pub trait Yalitici: Send + Sync {
     fn durum(&self) -> YalitimDurumu;
@@ -112,6 +159,17 @@ pub trait Yalitici: Send + Sync {
     /// yalıtım başlatılamayınca.
     fn yeniden_algila(&self) -> YalitimDurumu {
         self.durum()
+    }
+
+    /// ACE kaydındaki tamamlanmış hazırlıklar. Linux'ta hazırlık gerekmez.
+    fn hazirlanmis_alanlar(&self) -> Vec<HazirAlan> {
+        Vec::new()
+    }
+
+    /// Yalnızca ACE kaydında bulunan kimliği kaldırır. Desteklenmeyen arka
+    /// uçlar başarı bildirmez.
+    fn alani_kaldir_kimlikle(&self, _kimlik: &str) -> Result<(), String> {
+        Err("Bu platformda hazırlanmış çalışma alanı kaldırılamıyor".into())
     }
 
     /// Kullanıcının eklediği araç zinciri dizinleri (§7.1).

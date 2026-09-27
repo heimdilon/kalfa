@@ -553,3 +553,34 @@ async fn ayni_dosyaya_yazmalar_seri_okumalar_paralel() {
         "aynı dosyayı iki okuma paralel okur"
     );
 }
+
+/// Aşama 2 tasarımı §9.8: şu an sunulmayan araç (yalıtım yokken kabuk) modele
+/// tanımlanmaz; model yine de çağırırsa çağrı çalışmadan başarısız olur.
+#[tokio::test]
+async fn sunulmayan_arac_tanimlanmaz_ve_cagrisi_calismaz() {
+    let yaz = Arc::new(SahteArac::yazan("yaz"));
+    yaz.sunulur_ayarla(false);
+    let oku = Arc::new(SahteArac::okuyan("oku"));
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac("yaz", yol("a.txt")),
+        SahteYanit::metin("peki"),
+    ]);
+    let mut d = oturum(&s, vec![a(&yaz), a(&oku)], ayarlar(Kip::Serbest));
+    d.gonder(mesaj("yaz")).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    let adlar: Vec<String> = s.istekler()[0]
+        .tools
+        .iter()
+        .map(|t| t.function.name.clone())
+        .collect();
+    assert_eq!(adlar, vec!["oku"]);
+    assert_eq!(yaz.cagri_sayisi(), 0);
+    assert_eq!(sonuc_durumlari(&d), vec![AracDurumu::Basarisiz]);
+    assert!(
+        d.gecmis.iter().any(|z| matches!(
+            &z.yuk,
+            Olay::AracSonucu { icerik, .. } if icerik.contains("şu an kullanılamıyor")
+        )),
+        "sonuç modele nedeni söylemeli"
+    );
+}

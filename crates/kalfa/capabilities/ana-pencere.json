@@ -24,6 +24,11 @@
     "allow-yalitimi-algila",
     "allow-arac-zinciri-dizinleri",
     "allow-arac-zinciri-dizini-ekle",
-    "allow-arac-zinciri-dizini-kaldir"
+    "allow-arac-zinciri-dizini-kaldir",
+    "allow-yalitimsizi-ayarla",
+    "allow-yalitim-teknik-raporu",
+    "allow-yalitimi-onar",
+    "allow-yalitim-calisma-alanlari",
+    "allow-yalitim-calisma-alanini-kaldir"
   ]
 }

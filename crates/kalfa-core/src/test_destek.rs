@@ -3,7 +3,7 @@
 
 use std::collections::VecDeque;
 use std::io;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -198,6 +198,7 @@ pub struct SahteArac {
     cagrilar: Mutex<Vec<Value>>,
     aktif: AtomicU32,
     azami_aktif: AtomicU32,
+    sunulur: AtomicBool,
 }
 
 impl SahteArac {
@@ -212,6 +213,7 @@ impl SahteArac {
             cagrilar: Mutex::new(Vec::new()),
             aktif: AtomicU32::new(0),
             azami_aktif: AtomicU32::new(0),
+            sunulur: AtomicBool::new(true),
         }
     }
 
@@ -250,6 +252,11 @@ impl SahteArac {
     pub fn azami_eszamanli(&self) -> u32 {
         self.azami_aktif.load(Ordering::SeqCst)
     }
+
+    /// Aracın modele sunulup sunulmadığını değiştirir (`Arac::sunulur_mu`).
+    pub fn sunulur_ayarla(&self, sunulur: bool) {
+        self.sunulur.store(sunulur, Ordering::SeqCst);
+    }
 }
 
 #[async_trait]
@@ -273,6 +280,10 @@ impl Arac for SahteArac {
 
     fn yazar_mi(&self) -> bool {
         self.yazar
+    }
+
+    fn sunulur_mu(&self) -> bool {
+        self.sunulur.load(Ordering::SeqCst)
     }
 
     async fn hazirla(&self, argumanlar: &Value) -> Result<Hazirlik, AracHatasi> {

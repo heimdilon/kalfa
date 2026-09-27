@@ -14,6 +14,7 @@ pub mod hata;
 pub mod modeller;
 pub mod sozlesme;
 pub mod yalitim;
+pub mod yukseltici;
 
 mod kopru;
 mod oturumlar;

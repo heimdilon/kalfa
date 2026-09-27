@@ -3,6 +3,7 @@
 // dosyasıyla yeni bir süreç başlatır; `kapat` süreci bitirir ve dizini siler.
 import { execFileSync, spawn } from 'node:child_process';
 import {
+  closeSync,
   mkdirSync,
   mkdtempSync,
   openSync,
@@ -89,6 +90,35 @@ export function surecler() {
   return bulunan;
 }
 
+/** Geçerli kullanıcının Kalfa çalışma alanı AppContainer profilleri. */
+export function kalfaProfilSayisi() {
+  if (!WINDOWS) return 0;
+  const betik = `
+$kok = 'Registry::HKEY_CURRENT_USER\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppContainer\\Mappings'
+if (-not (Test-Path -LiteralPath $kok)) { '0'; exit 0 }
+try {
+  $profiller = @(Get-ChildItem -LiteralPath $kok -ErrorAction Stop | Where-Object {
+    $kayit = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction Stop
+    $kayit.Moniker -like 'Kalfa.Alan.*'
+  })
+  $profiller.Count
+} catch [System.Security.SecurityException] {
+  'ERISIM_YOK'
+} catch [System.UnauthorizedAccessException] {
+  'ERISIM_YOK'
+}
+`;
+  const cikti = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', betik], {
+    encoding: 'utf8',
+  }).trim();
+  if (cikti === 'ERISIM_YOK') return null;
+  const sayi = Number(cikti);
+  if (!Number.isSafeInteger(sayi) || sayi < 0) {
+    throw new Error(`Kalfa AppContainer profilleri sayılamadı: ${cikti}`);
+  }
+  return sayi;
+}
+
 /** Önceki testten kalan süreç yenisinin tek süreç kilidine takılır. */
 async function sureclerBitsin(sure = 10000) {
   try {
@@ -121,13 +151,14 @@ export class Kalfa {
     // Linux'ta kabuk yalıtımda çalışır (aşama 2 tasarımı §12.5). Testlerin
     // `node`'u sistem dizinlerinde değilse (örneğin /opt/node) yalıtıma açılır;
     // kullanıcı bunu Ayarlar'dan yapar.
+    // Yalıtım kurulu olmayan makinede kabuk testleri yalıtımsız koşar; bunun
+    // için Ayarlar'daki yalıtımsız çalıştırma anahtarı açık verilir (§9.8).
     const nodeKoku = dirname(dirname(process.execPath));
+    const yalitim = { yalitimsiz_izinli: true };
     if (process.platform === 'linux' && !nodeKoku.startsWith('/usr')) {
-      writeFileSync(
-        join(veri, 'yalitim.json'),
-        JSON.stringify({ arac_zinciri_dizinleri: [nodeKoku] }),
-      );
+      yalitim.arac_zinciri_dizinleri = [nodeKoku];
     }
+    writeFileSync(join(veri, 'yalitim.json'), JSON.stringify(yalitim));
     const ayarDosyasi = join(kok, 'e2e.json');
     writeFileSync(ayarDosyasi, JSON.stringify({ calisma_alani: alan, ...ayarlar }));
 
@@ -150,17 +181,37 @@ export class Kalfa {
       },
       stdio: ['ignore', gunluk, gunluk],
     });
-    await sureyleBekle(() => portAcik(SURUCU_PORTU), 15000, 'tauri-driver başlamadı');
-    const b = await remote({
-      hostname: '127.0.0.1',
-      port: SURUCU_PORTU,
-      logLevel: 'silent',
-      capabilities: {
-        'tauri:options': { application: uygulama },
-        'wdio:enforceWebDriverClassic': true,
-      },
-    });
-    return new Kalfa(b, surucu, { kok, veri, alan });
+    closeSync(gunluk);
+    try {
+      await sureyleBekle(() => portAcik(SURUCU_PORTU), 15000, 'tauri-driver başlamadı');
+      const b = await remote({
+        hostname: '127.0.0.1',
+        port: SURUCU_PORTU,
+        logLevel: 'silent',
+        capabilities: {
+          'tauri:options': { application: uygulama },
+          'wdio:enforceWebDriverClassic': true,
+        },
+      });
+      return new Kalfa(b, surucu, { kok, veri, alan });
+    } catch (hata) {
+      // Oturum oluşmadan başarısız olursa `kapat` çağrılamaz. Yalnızca bu
+      // denemenin başlattığı sürücü ağacını durdurup tanı günlüğünü koruruz.
+      if (WINDOWS && surucu.pid) {
+        try {
+          execFileSync('taskkill.exe', ['/PID', String(surucu.pid), '/T', '/F'], {
+            stdio: 'ignore',
+          });
+        } catch {
+          surucu.kill();
+        }
+      } else {
+        surucu.kill();
+      }
+      await sureclerBitsin();
+      const gunlukMetni = readFileSync(join(kok, 'surucu.log'), 'utf8').trim();
+      throw new Error(`${hata.message}\nSürücü günlüğü: ${gunlukMetni || '(boş)'}\nGeçici alan: ${kok}`);
+    }
   }
 
   constructor(b, surucu, dizinler) {
@@ -171,11 +222,28 @@ export class Kalfa {
     this.alan = dizinler.alan;
   }
 
-  async kapat() {
+  async kapat({ veriyiKoru = false } = {}) {
     await this.b.deleteSession().catch(() => {});
     this.surucu.kill();
     await sureclerBitsin();
-    rmSync(this.kok, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+    if (!veriyiKoru) {
+      rmSync(this.kok, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+    }
+  }
+
+  /** Bu testin ACE kaydındaki alanları yerel onayla geri alır. */
+  async hazirlananAlanlariKaldir() {
+    const alanlar = await this.invoke('yalitim_calisma_alanlari');
+    if (alanlar.length === 0) return;
+    const oturum = await this.seciliOturum();
+    if (oturum) await this.invoke('oturumu_kapat', { oturum });
+    for (const { kimlik } of alanlar) {
+      await this.invoke('yalitim_calisma_alanini_kaldir', { kimlik });
+    }
+    const kalan = await this.invoke('yalitim_calisma_alanlari');
+    if (kalan.length > 0) {
+      throw new Error(`Kalfa çalışma alanları kaldırılamadı: ${kalan.map((a) => a.kimlik).join(', ')}`);
+    }
   }
 
   /** Pencereye geçer: `ana` ya da `sartlar`. Açılmasını bekler. */

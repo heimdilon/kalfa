@@ -5,10 +5,11 @@ use crate::{
     BaslatmaHatasi, CalistirmaIstegi, Surec, Yalitici, YalitimDurumu, YalitimYoklukNedeni,
 };
 
-/// 2a'da yalıtım yoktur; durum bunu ve kullanıcının ne beklemesi gerektiğini
-/// söyler.
-pub const TALIMAT: &str = "Bu sürümde komutlar yalıtımsız çalışıyor; yalıtım sonraki sürümde \
-gelecek. Her komut, çalışmadan önce yerel pencerede onayınıza sunulur.";
+/// Yalıtım arka ucu olmayan platformda durum bunu ve kullanıcının ne
+/// beklemesi gerektiğini söyler (aşama 2 tasarımı §9.8).
+pub const TALIMAT: &str = "Bu platformda Kalfa'nın yalıtımı yok; Kalfa komut çalıştırmaz. \
+Ayarlar'da yalıtımsız çalıştırmayı açarsanız her komut, çalışmadan önce yerel pencerede \
+onayınıza sunulur.";
 
 #[derive(Debug, Default)]
 pub struct Yalitimsiz;
@@ -18,6 +19,7 @@ impl Yalitici for Yalitimsiz {
         YalitimDurumu::Yok {
             neden: YalitimYoklukNedeni::Desteklenmiyor,
             talimat: TALIMAT.to_string(),
+            ayrinti: "denetim=platform; yalıtım arka ucu yok".to_string(),
         }
     }
 

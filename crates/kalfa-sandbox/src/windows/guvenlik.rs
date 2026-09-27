@@ -42,7 +42,8 @@ use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::SystemServices::SECURITY_DESCRIPTOR_REVISION;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows_sys::Win32::UI::Shell::{
-    FOLDERID_ProgramData, FOLDERID_UserProfiles, SHGetKnownFolderPath,
+    FOLDERID_ProgramData, FOLDERID_ProgramFiles, FOLDERID_ProgramFilesX86, FOLDERID_UserProfiles,
+    SHGetKnownFolderPath,
 };
 
 /// Kalfa'nın bütün kaplarının taşıdığı araç zinciri yeteneğinin adı (§9).
@@ -1033,6 +1034,15 @@ pub fn program_data() -> io::Result<PathBuf> {
 /// olduğundan izni kurulum verir (§9.2).
 pub fn profiller_dizini() -> io::Result<PathBuf> {
     bilinen_dizin(&FOLDERID_UserProfiles)
+}
+
+/// Program Files dizinleri (64 ve 32 bit); bulunabilenler. Yalnızca
+/// yöneticinin yazabildiği yerlerdir (aşama 2 tasarımı §9.8).
+pub fn program_files_dizinleri() -> Vec<PathBuf> {
+    [&FOLDERID_ProgramFiles, &FOLDERID_ProgramFilesX86]
+        .into_iter()
+        .filter_map(|k| bilinen_dizin(k).ok())
+        .collect()
 }
 
 fn bilinen_dizin(kimlik: &windows_sys::core::GUID) -> io::Result<PathBuf> {

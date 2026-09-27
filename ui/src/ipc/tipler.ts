@@ -182,7 +182,21 @@ export type YalitimYoklukNedeni =
 
 export type YalitimDurumu =
   | { tip: 'Hazir'; arka_uc: string; surum: string }
-  | { tip: 'Yok'; neden: YalitimYoklukNedeni; talimat: string };
+  | {
+      tip: 'Yok';
+      neden: YalitimYoklukNedeni;
+      /** Geliştiriciye ya da BT'ye yönelik talimat. */
+      talimat: string;
+      /** BT için teknik ayrıntı: düşen denetim ve hata (§9.8). */
+      ayrinti: string;
+    };
+
+/** "Onar"ın sonucu (aşama 2 tasarımı §9.8). */
+export type OnarimSonucu =
+  | { tip: 'Tamam'; yalitim: YalitimDurumu }
+  | { tip: 'Vazgecildi' }
+  | { tip: 'Basarisiz'; mesaj: string }
+  | { tip: 'KuruluDegil'; talimat: string };
 
 export interface UygulamaDurumu {
   baglanti: 'Var' | 'Yok';
@@ -191,6 +205,8 @@ export interface UygulamaDurumu {
   varsayilan_model: string;
   son_oturum: OturumId | null;
   yalitim: YalitimDurumu;
+  /** Yalıtım yokken komutlar yalıtımsız çalışabilir mi (aşama 2 tasarımı §9.8). */
+  yalitimsiz_izinli: boolean;
   /** `linux`, `windows`, `macos`: araç zinciri dizinleri yalnızca Linux'ta. */
   platform: string;
 }
@@ -206,6 +222,12 @@ export interface OturumSatiri {
 
 export interface CalismaAlani {
   kimlik: number;
+  yol: string;
+}
+
+/** Windows yalıtımı için hazırlanmış çalışma alanı. */
+export interface YalitimCalismaAlani {
+  kimlik: string;
   yol: string;
 }
 

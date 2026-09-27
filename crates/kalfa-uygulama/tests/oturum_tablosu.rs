@@ -512,3 +512,19 @@ async fn turu_iptal_etmek_tamamlandi_iptal_uretir() {
         })
     ));
 }
+
+/// Aşama 2 tasarımı §9.8: çalışma alanı seçici ev dizinindeki "Kalfa
+/// Projeleri"nde açılır; klasör yoksa oluşturulur. Araç zinciri seçicisi
+/// başlangıç vermez.
+#[tokio::test]
+async fn calisma_alani_secici_kalfa_projeleri_ile_acilir() {
+    let o = ortam(Vec::new()).await;
+    let projeler = o.veri.path().join("ev").join("Kalfa Projeleri");
+    assert!(!projeler.exists());
+    o.t.uygulama.calisma_alani_sec().await.unwrap();
+    assert!(projeler.is_dir(), "klasör oluşturulmalı");
+    assert_eq!(o.t.iletisim.son_baslangic(), Some(projeler));
+
+    o.t.uygulama.arac_zinciri_dizini_ekle().await.ok();
+    assert_eq!(o.t.iletisim.son_baslangic(), None);
+}
