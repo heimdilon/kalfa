@@ -826,11 +826,27 @@ Makine: `kalfa-yalitim kur` kurulu (C:\, D:\ ve C:\Users); `izin-ver` ile
 `C:\Program Files\nodejs` ve `C:\Python314` açık. Geri alma `kaldir` ve
 `izin-geri-al`'dır.
 
-Sıradaki: 2d-2 (uygulamanın yardımcıyı kopyalayıp UAC ile başlatması,
-Ayarlar'ın Windows bölümü, Windows'ta kabuk uçtan uca testleri, A15'in yolu).
-2d-2'den önce, AppContainer'ın yol açtığı izin sorunları nedeniyle tasarımın
-§9.7'deki yedek yolu (ayrı kullanıcı) aynı sorun listesiyle yeniden
-ölçülebilir.
+### Ayrı kullanıcı karşılaştırması ve son kullanıcı kararları (2026-09-27)
+
+Bulgular: [`2026-09-27-kalfa-2d-ayri-kullanici-karsilastirma.md`](superpowers/bulgular/2026-09-27-kalfa-2d-ayri-kullanici-karsilastirma.md).
+
+- **Ölçüm:** yönetici gerekmedi.
+  - Kısıtlı belirteçte DOS yol adı çözülüyor ve cargo paketi açıyor (A15
+    yok). Ama Schannel `SEC_E_NO_CREDENTIALS` veriyor, cargo indiremiyor (A8).
+  - AppContainer'da A15 bir sınıf. Python `realpath` sessizce yanlış yol
+    döndürüyor; Node `realpathSync.native` EPERM veriyor (A16).
+- **Kullanıcı kararları.** Hedef, teknik olmayan birinin kolay kurulumu:
+  - AppContainer kesinleşti.
+  - Araç zincirini (Python, Node, Git) Kalfa'nın kurucusu getirir.
+  - Rust ve MSVC gelişmiş özelliktir.
+  - Yalıtım yoksa kabuk kapalıdır. Kullanıcıya sade ileti, BT'ye teknik
+    ayrıntı verilir. Yalıtımsız çalıştırma yalnızca Ayarlar'dan açılır.
+- **Tasarım:** aşama 2 tasarımı §9.8 ve §15; üst belge r3.7.
+
+Sıradaki: 2d-2 (son kullanıcı akışı: NSIS kurucusu, "Onar", kapalı kabuk ve
+BT iletisi, yalıtımsız anahtarı, varsayılan proje klasörü, Ayarlar'ın Windows
+bölümü, Windows kabuk uçtan uca testleri). Ardından 2d-3 (Kalfa'nın getirdiği
+araç zinciri, A15'in gelişmiş yolu, A16).
 
 Kabuk yalıtımı, bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi,
 güvenlik denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü

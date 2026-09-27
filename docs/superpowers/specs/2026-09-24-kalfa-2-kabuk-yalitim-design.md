@@ -38,6 +38,11 @@ işlendi: A15'in sonucu (§7.4), profiller dizininin kurulum izni ve
 üst dizinlere listeleme, mirassız izinlerin yayılmadan yazılması ve bozuk ACE
 kaydında geri alma (§9.4), yeni bilinen sınırlar (§9.6), A11–A13 ve A15'in
 cevapları (§14).
+2026-09-27 (ayrı kullanıcı karşılaştırması ve son kullanıcı kararları):
+AppContainer kesinleşti (§9.7). Yeni §9.8: son kullanıcı kurulumu (NSIS
+kurucusu, kurucudaki araç zinciri, varsayılan proje klasörü, "Onar", yalıtım
+yokken kabuğun kapanması ve BT için teknik ayrıntı). Ayrıca §1.2, §5.1, §11,
+§14 (A15, A16), §15 (2d-2 ve 2d-3); üst belge r3.7.
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §7.2, §7.5–§7.7, §12.3, §13.2, §13.3 ve §14 (risk 7–9, 12, 13). Bu belgede `§`
 işaretleri bu belgenin bölümlerini gösterir; üst belgeye "üst belge §x", 1c
@@ -87,7 +92,8 @@ bittiğinde ajan komut çalıştırabilir:
 | Tur özeti: kabuğun değiştirdiği dosyaların listesi (üst belge §6.7) | Aşama 3 |
 | Onay kartının tam hâli (veri çıkışı, geri alınabilirlik) | Aşama 3 |
 | Linux dağıtım matrisi (Debian 12, Pardus, Fedora, AppArmor'lu Ubuntu masaüstü) | Dağıtım aşaması (`.deb`/`.rpm`, AppArmor profili) |
-| MSI yükleyicisi | Dağıtım aşaması; yükleyici §9.2'deki yardımcıyı çağırır |
+| Windows kurucusu | 2d-2 (NSIS, §9.8); imzalama ve güncelleme kanalı dağıtım aşamasında |
+| Linux paketleri ve Linux'ta Kalfa'nın getirdiği araç zinciri | Dağıtım aşaması (`.deb`/`.rpm` bubblewrap'a bağımlı olur) |
 | Bellek ve CPU sınırı | Sonraki bir aşama; üst belge süreç sınırları arasında saymıyor |
 | Etkileşimli komutlar (TTY, standart girdi) | v1 dışında; standart girdi her zaman kapalıdır |
 | Aynı Windows makinesinde birden çok geliştirici hesabı | Sonraki bir aşama (§9.2) |
@@ -377,6 +383,9 @@ yeniden çalıştırılmaz; `SonucuBilinmiyor` olur.
 
 Her satıra eklenen kurallar:
 
+- **Yalıtımsız sütunu** yalnızca Ayarlar'da yalıtımsız çalıştırma açıkken
+  geçerlidir. Anahtar kapalıysa ve yalıtım yoksa kabuk aracı modele hiç
+  sunulmaz (§9.8, 2026-09-27).
 - Çalışma alanındaki ilk kabuk çağrısı onay ister (§4.2).
 - **Ağlı çalıştırmada uyarı:** "Komut ağa erişebilecek. Dosya yalıtımı sürer."
 - **Yalıtımsız çalıştırmada uyarı:** "Yalıtımsız: komut senin bütün yetkilerinle
@@ -1186,6 +1195,78 @@ Bu bölümün ilk tasarımı ([2c bulguları](../bulgular/2026-09-25-kalfa-2c-wi
 AppContainer bir makinede kullanılamaz olursa bu yol yeniden değerlendirilir.
 Örneğin kurum ilkesi AppContainer profili oluşturmayı engelleyebilir.
 
+2026-09-27'de yeniden ölçüldü
+([karşılaştırma](../bulgular/2026-09-27-kalfa-2d-ayri-kullanici-karsilastirma.md)).
+Kısıtlı belirteçte DOS yol adı çözülüyor, yani A15 yok; ama Schannel yine
+çalışmıyor (A8). Kullanıcı kararıyla AppContainer kesinleşti. Makine
+AppContainer'ı engelliyorsa bu yola geçilmez; kabuk kapalı kalır (§9.8).
+
+### 9.8 Son kullanıcı kurulumu
+
+Kalfa'yı teknik olmayan biri kurabilmeli (kullanıcı kararı, 2026-09-27).
+Kullanıcı yalıtımı bir ayar olarak görmez. Gördüğü tek yükseltme,
+kurucunun sorduğu UAC'dir.
+
+- **Kurucu:** Tauri'nin NSIS kurucusu, makine geneli kurulum
+  (`bundle.windows.nsis.installMode: "perMachine"`). Kurucu zaten
+  yükseltilmiş çalışır:
+  - Kurulum sonrası kancası (`NSIS_HOOK_POSTINSTALL`) `kalfa-yalitim kur`'u
+    çalıştırır (§9.2).
+  - Kaldırma öncesi kancası (`NSIS_HOOK_PREUNINSTALL`) `kalfa-yalitim
+    kaldir`'ı çalıştırır. Çalışma alanlarının izinleri ve AppContainer
+    profilleri hesap başınadır. Uygulama onları kaldırıcıdan önce geri
+    alamadıysa, kaldırıcı sonrasında kalanları kullanıcıya söyler.
+  - `kur` başarısız olursa kurulum sürer. Uygulama ilk açılışta durumu
+    gösterir.
+  - `kalfa-yalitim.exe` Program Files'tadır. Kullanıcı ve yalıtım oraya
+    yazamaz; uygulama onu yerinden UAC ile başlatır. §9.1'deki kopyalama
+    yalnızca geliştirme derlemesinde gerekir.
+- **Araç zinciri kurucudadır:** Python, Node ve Git (MinGit), Program
+  Files'taki Kalfa dizininin altında durur.
+  - Program Files'a `ALL APPLICATION PACKAGES` zaten okuyabilir. Bu yüzden
+    izin, `izin-ver` ya da A11 hazırlığı gerekmez.
+  - Kullanıcı ve yalıtım bu dizine yazamaz, araçlar değiştirilemez.
+  - Güncellemeleri Kalfa'nın güncellemesiyle gelir.
+  - Kabın `PATH`'inde bu dizinler önce gelir.
+  - Bilgisayarda kurulu araçlar (`C:\Python314`, `.cargo`, Visual Studio)
+    Ayarlar'ın gelişmiş bölümünden açılır. Bugünkü `izin-ver` ve MSVC yolu
+    oradadır.
+  - Rust ve MSVC gelişmiş özelliktir (A15).
+- **Varsayılan proje klasörü:** `%USERPROFILE%\Kalfa Projeleri`. Klasör
+  OneDrive'ın altına konmaz: `Belgeler` ve `Masaüstü` çoğu zaman OneDrive'a
+  yönlendirilmiştir. Klasörün üst dizini (`C:\Users\<hesap>`) ilk
+  hazırlıkta bir kez listelemeye açılır (A11). Başka bir klasör seçmek
+  serbesttir.
+- **Onar:** durum `Hazir` değilse Ayarlar'da ve durum çubuğunun
+  açıklamasında "Onar" düğmesi çıkar. Düğme önce yerel pencerede ne
+  yapılacağını söyler. Sonra UAC ile `kur`'u yeniden çalıştırır ve durumu
+  yeniden denetler. `kur` yinelenince zararsızdır.
+- **Yalıtım kurulamıyorsa kabuk kapalıdır.** Bu kural iki platformda
+  geçerlidir. Örneğin kurum ilkesi AppContainer'ı engelliyor, kök izni
+  silinmiş ya da Linux'ta bubblewrap yok.
+  - Kabuk aracı modele sunulmaz. Dosya araçları ve sohbet çalışır.
+  - Kullanıcıya giden ileti sadedir: "Bu bilgisayarda Kalfa'nın komutları
+    güvenle çalıştırması engellenmiş. Kalfa sohbet edebilir ve dosyaları
+    düzenleyebilir, ama komut çalıştıramaz. BT departmanınızla görüşün ve
+    teknik ayrıntıları iletin."
+  - "Teknik ayrıntıları kopyala" düğmesi BT için metni panoya koyar:
+    - Kalfa sürümü; Windows sürümü, yapısı ve baskısı.
+    - Düşen denetim: sürücü kökü izni, `C:\Users` izni, profil oluşturma
+      (`CreateAppContainerProfile`) ya da kapta deneme komutu (§9.2).
+    - Win32 hata kodu ve adı; kurulum kaydının durumu.
+    - Kalfa'nın gereksinimi, kısa bir paragrafla: Komutlar kullanıcının
+      kendi hesabıyla, çalışma alanına özel bir AppContainer'da çalışır. Kurulum,
+      sürücü köklerine ve `C:\Users`'a yetenek SID'i `<sid>` için mirassız
+      listeleme (`0x1000A1`) ekler. Engelleyebilecekler: uygulama denetimi
+      ilkeleri (AppLocker, WDAC) ya da sürücü köklerinin izinlerini yeniden
+      yazan yapılandırma yönetimi.
+    - Ayrıntılı belgeye bağlantı.
+  - BT izni verince kullanıcı "Onar"a ya da "Yeniden dene"ye basar.
+  - **Yalıtımsız çalıştırma** Ayarlar'ın gelişmiş bölümündeki bir
+    anahtarla açılır; varsayılan kapalıdır. Açılırken yerel pencere
+    riski anlatır. Açıkken §5.1'deki "Yalıtımsız" sütunu geçerlidir: her
+    komut yerel onay ister. Uçtan uca testler anahtarı açarak koşar.
+
 ---
 
 ## 10. Arayüz
@@ -1320,7 +1401,7 @@ Metinler 1c §9.4'teki kurallarla Türkçe yazılır. Yeni terimler:
 |---|---|
 | Program bulunamadı | `Basarisiz`; "`xyz` bulunamadı. Yalıtımın içindeki PATH: …" modele gider |
 | Yalıtım başlatılamadı (bwrap hatası, AppContainer başlatma hatası) | `Basarisiz`; algılama yeniden çalışır. Durum değiştiyse gösterge güncellenir. Komut yalıtımsız yeniden **denenmez** |
-| Windows'ta kök izni yok ya da AppContainer profili oluşturulamıyor | Durum `KurulumGerekli` ya da `KurulumBozuk`; talimat "Yalıtımı kur" |
+| Windows'ta kök izni yok ya da AppContainer profili oluşturulamıyor | Durum `KurulumGerekli` ya da `KurulumBozuk`. Kabuk sunulmaz; kullanıcıya sade ileti, "Onar" ve BT için teknik ayrıntı (§9.8) |
 | Hazırlık yarıda kaldı (iptal, çökme) | ACE kaydı o ana kadar eklenenleri tutar. Sonraki çağrı hazırlığı baştan yapar; yinelenen girdi eklenmez |
 | Gizli dosya taraması süreyi aşıyor | Tarama iptal edilmez. Süre ölçümü komutla başlar (§6.2); araç kartında "Gizli dosyalar taranıyor…" görünür |
 | Çıktı sınırı aşıldı | Kırpılır; modele söylenir (§4.4) |
@@ -1514,7 +1595,8 @@ Plan ya da prototip aşamasında cevaplanacaklar:
 | A12 | AppContainer'da C derleyen `build.rs` (`cl.exe`, `INCLUDE`) çalışıyor mu? | 2d-1: evet; MSVC dizini `PATH`'in başında olmalı ve kabın `TEMP`'i kurulmalı (§9.3) |
 | A13 | AppContainer'da `privateNetworkClientServer` ile LAN hedefi; `openssh-ssh-agent` ve `docker_engine` boruları | 2d-1: ölçülmedi; geliştiricinin makinesinde LAN hedefi, ssh-agent ve Docker yok. Yetenek verilmez (§9.3); 2d-2'de ya da ilk ihtiyaçta ölçülür |
 | A14 | Kabın içinden başka bir paket SID'iyle süreç başlatılabiliyor mu? | 2c: hayır, `ERROR_INVALID_PARAMETER`; aynı paketle başlatılabiliyor (§9.3) |
-| A15 | Windows'ta ağsız derlemede geliştiricinin cargo registry'si nasıl kullanılır? `CARGO_HOME`'u doğrudan vermek çalıştı ama 12 sn sürdü | 2d-1: çalışma alanına özel registry kapta doldurulamıyor (cargo'nun paket açması DOS yol adı istiyor, §9.6). Bilinen sınır; yol 2d-2'de seçilir (§7.4) |
+| A15 | Windows'ta ağsız derlemede geliştiricinin cargo registry'si nasıl kullanılır? `CARGO_HOME`'u doğrudan vermek çalıştı ama 12 sn sürdü | 2d-1: çalışma alanına özel registry kapta doldurulamıyor (cargo'nun paket açması DOS yol adı istiyor, §9.6). Bilinen sınır; yol 2d-2'de seçilir (§7.4). 2026-09-27: Rust gelişmiş özellik oldu (§9.8); kısıtlı belirteçte A15 yok ama Schannel çalışmıyor (§9.7) |
+| A16 | A15'in sınıfı: kapta DOS yol adı isteyen öteki araçlar. Python `realpath` sessizce yanlış yol döndürüyor, açılışta "Failed to find real location" uyarısı veriyor; Node `realpathSync.native` EPERM (2026-09-27). Kalfa'nın getireceği Python'la `pip`, `venv` ve `pytest`; yaygın Node araçları | 2d-3'te ölçülür; düşenler §9.6'ya yazılır |
 
 ---
 
@@ -1554,6 +1636,24 @@ yazar, Claude inceler ve iki platformda doğrular.
      Windows sütunu, §12.3 (Windows), A11–A13 ve A15.
    - **2d-2:** uygulamanın yardımcıyı kopyalayıp UAC ile başlatması (§9.1),
      Ayarlar'ın Windows bölümü (§10.4), Windows'ta kabuk uçtan uca testleri.
+
+   2026-09-27'de son kullanıcı hedefiyle yeniden bölündü (§9.8):
+   - **2d-2 — son kullanıcı akışı:**
+     - NSIS kurucusu ve kurulum/kaldırma kancaları.
+     - "Onar" ve UAC.
+     - Yalıtım yokken kabuğun kapanması (iki platform), sade ileti ve BT
+       için teknik ayrıntı.
+     - Yalıtımsız çalıştırma anahtarı.
+     - Varsayılan proje klasörü.
+     - Ayarlar'ın Windows bölümü: hazırlanmış çalışma alanları ve onların
+       kaldırılması.
+     - Windows'ta kabuk uçtan uca testleri ve bıraktıkları profillerin
+       temizliği.
+   - **2d-3 — Kalfa'nın getirdiği araç zinciri:**
+     - Kurucuya Python, Node ve MinGit eklenir; kabın `PATH`'i onları gösterir.
+     - Bilgisayardaki araçlar ve Rust/MSVC gelişmiş ayar olur.
+     - A15'in gelişmiş yolu: geliştiricinin registry'si salt okunur.
+     - A16 ölçülür.
 
 2a ve 2b iki platformun ortak kodunu değiştirdiği için sırayla yürür. 2c, 2a ve
 2b'yle paralel yürüyebilir: ürün koduna dokunmaz.

@@ -1,7 +1,7 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Revizyon:** r3.6 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
+**Revizyon:** r3.7 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
 **Durum:** 1a, 1b ve 1c uygulandı; aşama 2'de 2a ve 2b uygulandı, 2c (Windows prototipi) ölçüldü, 2d bekliyor
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
@@ -792,8 +792,12 @@ yerel ayrıcalıklı soketlere de ulaşılamaz (`socketpair` serbesttir).
   - Geliştiricinin sahibi olmadığı araç zinciri dizinlerine okuma izni.
 - *Aşama 2 kararları* ([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §9):
   - Kurulumu küçük bir yönetici yardımcısı (`kalfa-yalitim.exe`) yapar;
-    uygulama onu UAC istemiyle başlatır, MSI da sonradan aynı yardımcıyı
-    çağırır.
+    kurucu (NSIS, makine geneli) kurulumda ve kaldırmada onu çağırır;
+    uygulama onarım için UAC istemiyle başlatır (r3.7).
+  - Son kullanıcı yalıtımı ayar olarak görmez: araç zinciri (Python, Node,
+    Git) kurucudadır. Yalıtım kurulamıyorsa kabuk kapalıdır; kullanıcıya sade
+    ileti, BT'ye teknik ayrıntı verilir. Yalıtımsız çalıştırma yalnızca
+    Ayarlar'dan bilerek açılır (r3.7; aşama 2 tasarımı §9.8).
   - Komutu Kalfa doğrudan kapta başlatır. Çalışma anında yönetici yetkisi ya da
     aracı süreç gerekmez.
   - Yardımcı, yalıtımın yazabileceği bir yerden hiçbir zaman başlatılmaz.
@@ -1361,7 +1365,7 @@ kendi araç çağrısını onaylayabilir. Bu yüzden:
 | Plugin | wasmtime + WIT 0.1 (`world`, listeleme, depo, ilerleme, iptal) + SDK + manifest zorlaması + kaynak sınırları |
 | Örnek plugin | `kalfa-rag` (kaynaklı yanıtlar) |
 | UI | Svelte 5 + Tauri; akış, düşünce paneli, durum çubuğu, "neden izin gerekiyor" onay kartı, gönderim günlüğü ve önizleme, sıkı CSP |
-| Dağıtım | Windows (MSI, yalıtım kurulumu dahil) + Linux (`.deb`/`.rpm`, AppArmor profili dahil); imzasız sürüm; `SHA256SUMS`, CI'da `cargo-audit`, `SECURITY.md` |
+| Dağıtım | Windows (NSIS kurucusu, yalıtım kurulumu ve araç zinciri dahil) + Linux (`.deb`/`.rpm`, AppArmor profili dahil); imzasız sürüm; `SHA256SUMS`, CI'da `cargo-audit`, `SECURITY.md` |
 
 Git için ayrı araç yazılmaz — kabuk aracı yeterlidir.
 
@@ -1486,7 +1490,7 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | 5 | Tauri IPC verimi ölçülmedi | Toplama penceresi yetmeyebilir | Pencere ölçümle belirlenir; gecikme hedefi p95 < 50 ms (§11.1) |
 | 6 | KVKK: prompt/completion metinleri işleniyor | Savunma bağlamında hassas | Gizli dosya kuralı (§7.4), gönderim günlüğü ve önizleme (§11.10) |
 | 7 | Kabuk yalıtımı araç zincirleriyle uyumsuz olabilir | `cargo`/`npm`/`pip` yalıtım içinde bozulabilir | Uyumluluk matrisi (§13.2); izinli dizin listesi ayarlanabilir; son çare onaylı yalıtımsız çalıştırma |
-| 8 | Windows yalıtımı yönetici yetkisi ister | Yöneticisi olmayan kullanıcıda yalıtım yok | MSI kurulumu zaten yönetici ister; BT önceden kurabilir; yoksa yalıtımsız ve her çağrıda onaylı |
+| 8 | Windows yalıtımı yönetici yetkisi ister | Yöneticisi olmayan kullanıcıda yalıtım yok | Kurucu zaten yönetici ister ve yalıtımı kurar; BT önceden kurabilir; yoksa kabuk kapalı, BT için teknik ayrıntı (r3.7) |
 | 9 | Ubuntu 24.04 bubblewrap'ı AppArmor ile kısıtlıyor | `.deb` dışı kurulumda yalıtım çalışmayabilir | `.deb` profili yükler; diğer kurulumlarda uyarı ve talimat |
 | 10 | v1 kapsamı büyüdü (yalıtım, kurtarma, geri alma, gönderim günlüğü) | Teslim gecikir; en büyük tek kalem Windows yalıtımı | Dört aşamalı teslim (§12.3); her aşama kendi başına kullanılabilir |
 | 11 | Denetçi modeli reasoning'e çok token harcıyor | Denetim gecikmesi ve maliyeti yüksek | Ölçüm; gerekirse reasoning'i kapatma seçeneği araştırılır |
@@ -1654,3 +1658,12 @@ açıklar kapatıldı ([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-de
 - §7.7: yalıtımda `.git` bütünüyle salt okunur (önce yalnızca kancalar ve
   yapılandırma); dış git dizinleri doğrulanır ve salt okunur açılır. Yalıtımda
   `git commit` çalışmaz.
+
+**r3.7 (2026-09-27):** Ayrı kullanıcı yolu 2d-1'in sorun listesiyle yeniden
+karşılaştırıldı ([bulgular](../bulgular/2026-09-27-kalfa-2d-ayri-kullanici-karsilastirma.md));
+AppContainer kesinleşti. Hedef son kullanıcının kolay kurulumu
+([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §9.8). Bu
+belgede değişenler:
+- §7.7: kurucu yalıtımı kurar ve araç zincirini getirir; yalıtım yoksa kabuk
+  kapalıdır, yalıtımsız çalıştırma Ayarlar'dan bilerek açılır.
+- Dağıtım satırı ve risk 8 buna göre güncellendi.
