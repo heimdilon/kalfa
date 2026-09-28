@@ -607,6 +607,15 @@ fn hedefler(h: &Hazirlik) -> Vec<String> {
         .collect()
 }
 
+/// Taze hazırlığın kabuk tarifini onaylanana göre düzeltir
+/// ([`crate::kabuk::KabukTarifi::onayla_kapsanan`]).
+fn onayla_kapsanan(mut taze: Hazirlik, onaylanan: &Hazirlik) -> Hazirlik {
+    if let Some(o) = &onaylanan.kabuk {
+        taze.kabuk = taze.kabuk.map(|t| t.onayla_kapsanan(o));
+    }
+    taze
+}
+
 async fn tek_calistir(
     p: &Planlanan,
     kilitler: &crate::kilit::KaynakKilitleri,
@@ -632,8 +641,16 @@ async fn tek_calistir(
         _ = iptal.cancelled() => return Err(AracHatasi::Iptal),
         h = p.arac.hazirla(&p.argumanlar) => h?,
     };
+    // Kabukta tükenen tek seferlik koşullar onaylı sayılır; araç da
+    // onaylanan tarife göre çalışır.
+    let taze = onayla_kapsanan(taze, &p.hazirlik);
     if muhur_hesapla(p.cagri, p.arac.ad(), &p.argumanlar, &taze) != p.muhur {
-        return Err(AracHatasi::OnayEskidi);
+        return Err(match (&p.hazirlik.kabuk, &taze.kabuk) {
+            (Some(onaylanan), Some(t)) => {
+                AracHatasi::KomutKosuluDegisti(onaylanan.degisiklik_nedeni(t).to_string())
+            }
+            _ => AracHatasi::OnayEskidi,
+        });
     }
     // Etkin git koruması değişmiş olabilir; yeni karar eski onayla geçmez.
     if Oturum::karar(p.kip, siniflandirici, &taze) != p.karar {
@@ -671,7 +688,7 @@ fn sonuc_olustur(
         Err(AracHatasi::Iptal) => {
             CagriSonucu::plandan(p, AracDurumu::IptalEdildi, "[iptal edildi]".into())
         }
-        Err(e @ AracHatasi::PolitikaDegisti) => {
+        Err(e @ (AracHatasi::PolitikaDegisti | AracHatasi::KomutKosuluDegisti(_))) => {
             CagriSonucu::plandan(p, AracDurumu::IptalEdildi, format!("[çalıştırılmadı] {e}"))
         }
         Err(e) => CagriSonucu::plandan(p, AracDurumu::Basarisiz, format!("[hata] {e}")),

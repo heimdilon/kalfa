@@ -209,7 +209,14 @@ YalitimYoklukNedeni ::= BwrapYok | KullaniciAdAlaniKapali | KurulumGerekli
   bunu çalışma alanının özel kilidi olarak alır (1c §5.3).
 - **Mühür** (üst belge §7.6) tarifin bütün alanlarını içerir. Yürütme anında
   yeniden hesaplanır. Yalıtım durumu arada değiştiyse (örneğin kurulum
-  kaldırıldıysa) mühür tutmaz ve `AracHatasi::PolitikaDegisti` döner.
+  kaldırıldıysa) mühür tutmaz ve `AracHatasi::KomutKosuluDegisti` nedeni
+  söyler; komut çalıştırılmaz.
+  - İlk çağrı (§4.2) ve alan hazırlığı (§9.4) tek seferliktir. Aynı turda
+    birden çok kabuk çağrısı onaylanınca ilki çalışıp bunları tüketir;
+    ötekilerin taze tarifinde yoktur. Onaylanan tarifte olup taze tarifte
+    tükenmiş koşul onaylı sayılır (`KabukTarifi::onayla_kapsanan`) ve araç
+    onaylanan tarifle çalışır. Tersi gevşemez: onaylanmayan hazırlık ya da ilk
+    çağrı sonradan belirirse mühür tutmaz.
 - **İzin kararı.** `izin::kabuk_karari(kip, &KabukTarifi)` §5.1'in tablosudur.
   `Karar::YerelOnayli { uyarilar }` eklenir: onay yalnızca yerel iletişim
   kutusundan gelebilir (§5.2). Birleştirmede sıra Yasak > Yerel onaylı > Onaylı

@@ -638,6 +638,43 @@ async fn python_calisir() {
     assert!(cikti.contains("py-ok"), "{cikti}");
 }
 
+/// Aynı turda iki komut hazırlanmamış çalışma alanında onaylanır; ikisinin
+/// tarifi de hazırlığı içerir. İlki alanı hazırlar. İkincisinin taze tarifinde
+/// hazırlık yoktur; çekirdek onu onaylanan tarifle çalıştırır. Gerçek
+/// yalıtıcı hazırlanmış alanda hazırlık onayını kabul eder ve yeniden
+/// hazırlamaz.
+#[cfg(windows)]
+#[tokio::test]
+async fn ayni_turdaki_ikinci_komut_hazirlanmis_alanda_onaylanan_tarifle_calisir() {
+    let d = TempDir::new().unwrap();
+    let k = kurgu(d.path());
+    k.ilk_cagri.store(false, Ordering::SeqCst);
+    let a = betik("Write-Output bir");
+    let b = betik("Write-Output iki");
+    let ha = k.arac.hazirla(&a).await.expect("hazırlık");
+    let hb = k.arac.hazirla(&b).await.expect("hazırlık");
+    for h in [&ha, &hb] {
+        assert!(h.kabuk.as_ref().is_some_and(|t| t.alan_hazirligi));
+    }
+    let bir = k
+        .arac
+        .calistir_akisli(&a, &ha, CancellationToken::new(), CiktiGonderici::bos())
+        .await
+        .expect("ilk komut");
+    assert!(bir.icerik.contains("bir"), "{}", bir.icerik);
+    let taze = k.arac.hazirla(&b).await.expect("hazırlık");
+    assert!(
+        taze.kabuk.as_ref().is_some_and(|t| !t.alan_hazirligi),
+        "hazırlık tükenmeli"
+    );
+    let iki = k
+        .arac
+        .calistir_akisli(&b, &hb, CancellationToken::new(), CiktiGonderici::bos())
+        .await
+        .expect("ikinci komut");
+    assert!(iki.icerik.contains("iki"), "{}", iki.icerik);
+}
+
 /// Bağımlılık dizinlerindeki `.pem` ve `credentials*` kitaplık dosyaları
 /// kapta okunur (2d-3, Görev 2b); çalışma alanının kökündeki gizli dosyalar
 /// okunamaz.

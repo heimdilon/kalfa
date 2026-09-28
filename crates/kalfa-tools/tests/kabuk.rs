@@ -425,6 +425,86 @@ async fn hazirlik_onaylanmadiysa_komut_baslamaz() {
     assert!(yalitici.istekler.lock().unwrap().is_empty());
 }
 
+/// Aynı turda birden çok kabuk çağrısı hazırlanmamış çalışma alanında yerel
+/// pencerede onaylanır (paralel araç çağrıları). İlki alanı hazırlar;
+/// ötekiler "onaydan sonra değişti" ile düşmez, onaylanan tarifle çalışır.
+/// Alan bir kez hazırlanır.
+#[tokio::test]
+async fn ayni_turdaki_kabuklar_hazirliktan_sonra_da_calisir() {
+    use kalfa_core::izin::Kip;
+    use kalfa_core::oturum::OturumAyarlari;
+    use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, Olay};
+    use kalfa_core::test_destek as td;
+
+    let (d, arac, yalitici) = kur_yalitimli();
+    yalitici.hazirlanmamis.store(true, Ordering::SeqCst);
+    let s = td::SahteSaglayici::yeni(vec![
+        td::SahteYanit::araclar(vec![
+            ("kabuk", yazdir()),
+            ("kabuk", yazdir()),
+            ("kabuk", yazdir()),
+        ]),
+        td::SahteYanit::metin("bitti"),
+    ]);
+    let mut ayar = OturumAyarlari::yeni("glm-5.3", d.path());
+    ayar.kip = Kip::Serbest;
+    let siniflandirici = Arc::new(Siniflandirici::yeni(d.path(), &[]).unwrap());
+    let mut surucu = td::test_oturumu(
+        td::test_baglami(s, vec![Arc::new(arac) as Arc<dyn Arac>], siniflandirici),
+        ayar,
+    );
+    surucu
+        .gonder(Komut::KullaniciMesaji {
+            metin: "çalıştır".into(),
+        })
+        .await;
+    let ogeler = match surucu
+        .bekle(|o| matches!(o, Olay::OnayGerekiyor { .. }))
+        .await
+        .yuk
+    {
+        Olay::OnayGerekiyor { ogeler, .. } => ogeler,
+        _ => unreachable!(),
+    };
+    assert_eq!(ogeler.len(), 3);
+    for oge in ogeler {
+        assert!(oge.yerel_onay);
+        assert!(oge.kabuk.as_ref().unwrap().alan_hazirligi);
+        surucu
+            .gonder(Komut::YerelOnay {
+                cagri: oge.cagri,
+                muhur: oge.muhur,
+            })
+            .await;
+    }
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
+    let sonuclar: Vec<(AracDurumu, String)> = surucu
+        .gecmis
+        .iter()
+        .filter_map(|z| match &z.yuk {
+            Olay::AracSonucu { durum, icerik, .. } => Some((*durum, icerik.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sonuclar.len(), 3);
+    for (durum, icerik) in &sonuclar {
+        assert_eq!(*durum, AracDurumu::Basarili, "{icerik}");
+        assert!(icerik.contains("tamam"), "{icerik}");
+    }
+    // Araç her çalıştırmada onaylanan tarifle yalıtıcıya sorar; alan yalnızca
+    // ilkinde hazırlanır.
+    assert_eq!(*yalitici.hazirliklar.lock().unwrap(), vec![true; 3]);
+    let hazirlama = surucu
+        .gecmis
+        .iter()
+        .filter(|z| {
+            matches!(&z.yuk, Olay::AracCiktisiParcasi { metin, .. } if metin.contains("İzinler hazırlanıyor"))
+        })
+        .count();
+    assert_eq!(hazirlama, 1);
+    assert_eq!(yalitici.istekler.lock().unwrap().len(), 3);
+}
+
 #[tokio::test]
 async fn yalitimsizken_hazirlik_tarife_girmez() {
     let (_d, arac, yalitici) = kur_yalitimli();

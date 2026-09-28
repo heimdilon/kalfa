@@ -59,7 +59,9 @@ pub fn muhur_hesapla(
         },
     );
     // Kabuk: komut, dizin, ağ, yalıtım durumu ve profil özeti, ilk çağrı
-    // (aşama 2 tasarımı §3.3). Biri değişirse onay geçersizdir.
+    // (aşama 2 tasarımı §3.3). Biri değişirse onay geçersizdir; yalnızca
+    // tükenen tek seferlik koşullar onayla kapsanır
+    // (`KabukTarifi::onayla_kapsanan`).
     if let Some(kabuk) = &hazirlik.kabuk {
         alan(&mut h, b"k");
         alan(

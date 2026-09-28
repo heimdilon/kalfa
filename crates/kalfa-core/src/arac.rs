@@ -56,6 +56,9 @@ pub enum AracHatasi {
     Yol(#[from] YolHatasi),
     #[error("Dosya onaydan sonra değişti; işlem yapılmadı.")]
     OnayEskidi,
+    /// Kabuk tarifi onaydan sonra değişti; ileti nedeni söyler.
+    #[error("{0}; komut çalıştırılmadı. Gerekirse yeniden dene.")]
+    KomutKosuluDegisti(String),
     #[error(
         "İzin kipi veya hedefin izin koşulları değişti; işlem yapılmadı. Gerekirse yeniden dene."
     )]

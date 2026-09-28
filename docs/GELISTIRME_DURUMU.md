@@ -744,6 +744,23 @@ da alt dizinlerde, yalıtımdaki komut yeni bir `.git` oluşturabilir.
 | Yalıtım testleri (`kalfatest`) | — | `yalitim` 17, `uyumluluk` 4 geçti |
 | Uçtan uca | 24 test geçti (iki koşuda); p95 24–27 ms | 25 test geçti (iki koşuda); p95 35–38 ms |
 
+### Hata düzeltmesi: aynı turdaki kabuk çağrıları ve alan hazırlığı (2026-09-28)
+
+Windows'ta hazırlanmamış çalışma alanında model aynı turda birden çok `kabuk`
+çağrısı yapınca yalnızca ilki çalışıyor, ötekiler "Dosya onaydan sonra
+değişti" ile düşüyordu. Sebep şuydu: ilk çağrı alanı hazırlayınca ötekilerin
+yürütmeden önceki taze tarifinde alan hazırlığı ve ilk çağrı artık yoktu, bu
+yüzden mühür tutmuyordu. Tükenen bu tek seferlik koşullar artık onayla
+kapsanır ve araç onaylanan tarifle çalışır. Onaylanmayan hazırlık sonradan
+belirirse komut yine başlamaz; ileti nedeni söyler (aşama 2 tasarımı §3.3).
+
+| Kontrol | Windows | WSL Ubuntu-24.04 |
+| --- | --- | --- |
+| `cargo test --workspace --locked` ve `e2e` özellikli testler | Geçti | Geçti |
+| Biçim ve Clippy (tam, `e2e`, yalıtım özellikli) | Geçti | Geçti |
+| Gerçek yalıtım testleri | `yalitim` 29/29, `uyumluluk` 7/7 (AppContainer) | `yalitim` 17/17, `uyumluluk` 4/4 (bwrap) |
+| 2d-3 birleştikten sonra (ana dal PR dalına birleştirildi) | Çalışma alanı 464, `e2e` özellikli 91, `yalitim` 30/30, `uyumluluk` 11/11 | Çalışma alanı 414, `e2e` özellikli 90, `yalitim` 17/17, `uyumluluk` 6/6 |
+
 ### 2d-1 — Windows arka ucu (PR #12)
 
 Plan: [`2026-09-26-kalfa-2d-1-windows.md`](superpowers/plans/2026-09-26-kalfa-2d-1-windows.md).

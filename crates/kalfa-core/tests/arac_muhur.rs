@@ -259,6 +259,71 @@ fn kabuk_muhru_tarifin_her_alanina_baglidir() {
     }
 }
 
+/// İlk çağrı ve alan hazırlığı tek seferliktir: onaylanan tarifte olup taze
+/// tarifte tükenmiş koşul onaylı sayılır; onaylanmayan koşul belirirse
+/// düzeltme onu silmez ve mühür tutmaz. Başka hiçbir alan düzeltilmez.
+#[test]
+fn kabukta_tukenen_tek_seferlik_kosul_onayla_kapsanir() {
+    use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
+    let tarif = |ilk_cagri, alan_hazirligi| KabukTarifi {
+        komut: "cargo test".into(),
+        bicim: KabukBicimi::Program,
+        dizin: ".".into(),
+        ag: false,
+        yalitim: YalitimOzeti::Yalitimli {
+            arka_uc: "appcontainer".into(),
+            profil: "p1".into(),
+        },
+        ilk_cagri,
+        alan_hazirligi,
+    };
+    for onaylanan_ilk in [false, true] {
+        for onaylanan_hazirlik in [false, true] {
+            let onaylanan = tarif(onaylanan_ilk, onaylanan_hazirlik);
+            for taze_ilk in [false, true] {
+                for taze_hazirlik in [false, true] {
+                    let duzeltilmis = tarif(taze_ilk, taze_hazirlik).onayla_kapsanan(&onaylanan);
+                    let kapsanir =
+                        (!taze_ilk || onaylanan_ilk) && (!taze_hazirlik || onaylanan_hazirlik);
+                    assert_eq!(
+                        duzeltilmis == onaylanan,
+                        kapsanir,
+                        "onaylanan ({onaylanan_ilk}, {onaylanan_hazirlik}),                          taze ({taze_ilk}, {taze_hazirlik})"
+                    );
+                }
+            }
+        }
+    }
+    // Öteki alanlar olduğu gibi kalır.
+    let farkli = KabukTarifi {
+        dizin: "src".into(),
+        ..tarif(false, false)
+    };
+    assert_ne!(farkli.onayla_kapsanan(&tarif(true, true)).dizin, ".");
+
+    let onaylanan = tarif(false, false);
+    assert!(
+        onaylanan
+            .degisiklik_nedeni(&tarif(false, true))
+            .contains("hazırlığı onaydan sonra geri alındı")
+    );
+    assert!(
+        onaylanan
+            .degisiklik_nedeni(&KabukTarifi {
+                yalitim: YalitimOzeti::Yalitimsiz {
+                    talimat: "yok".into()
+                },
+                ..tarif(false, false)
+            })
+            .contains("Yalıtım")
+    );
+    assert!(
+        AracHatasi::KomutKosuluDegisti(onaylanan.degisiklik_nedeni(&tarif(true, false)).into())
+            .to_string()
+            .ends_with("; komut çalıştırılmadı. Gerekirse yeniden dene.")
+    );
+}
+
 #[test]
 fn ozet_hex_sha256() {
     assert_eq!(
