@@ -81,6 +81,9 @@ export const aracZinciriDiziniEkle = () => invoke<string[]>('arac_zinciri_dizini
 export const aracZinciriDiziniKaldir = (yol: string) =>
   invoke<string[]>('arac_zinciri_dizini_kaldir', { yol });
 
+/** Kurulu sürümde kayıtlı bir araç zinciri dizini kapta okunamıyor mu (Onar gerekir). */
+export const aracZinciriOnarimGerekli = () => invoke<boolean>('arac_zinciri_onarim_gerekli');
+
 /** Yalıtımsız çalıştırma anahtarı; açmayı Rust yerel pencerede sorar. Yeni değeri döner. */
 export const yalitimsiziAyarla = (acik: boolean) =>
   invoke<boolean>('yalitimsizi_ayarla', { acik });

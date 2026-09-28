@@ -38,6 +38,11 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
   klasörü, Ayarlar'da hazırlanmış alanlar, Windows kabuk e2e'si gerçek
   yalıtımda ve makine geneli NSIS kurucusu. Kurucu kurulu makinede UAC ile
   kabul edildi. Ayrıntısı aşağıda.
+- **2d-3 — Kalfa'nın getirdiği araç zinciri (tamamlandı; kurucu UAC ile
+  kabul edildi):** kurucu Python ve Node'u sabit sürüm ve SHA-256'yla getirir,
+  kabın `PATH`'inde önce gelirler; yöneticiye ait araç dizini UAC ile açılır,
+  Onar yükseltmede kaybolan izinleri geri getirir; Windows'ta ağsız cargo
+  geliştiricinin registry'siyle derler; sınır matrisi. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -906,10 +911,48 @@ bozulan kurulumu "Onar"la düzeltme ve kaldırma denendi. Kaldırmadan sonra
 kök ve araç zinciri izinleri, kurulum kaydı ve Program Files dizini kalmadı.
 Ayrıntı plandaki kabul notunda. 2d-2 tamamlandı.
 
-Sıradaki: 2d-3 (Kalfa'nın getirdiği araç zinciri, A15'in gelişmiş yolu, A16;
-sınır matrisi; yükseltmede araç zinciri izinleri; kaldırmada oturum
-kayıtları).
-Ardından 2d-3 (Kalfa'nın getirdiği araç zinciri, A15'in gelişmiş yolu, A16).
+### 2d-3 devam noktası (2026-09-27)
+
+Plan: [araç zinciri](superpowers/plans/2026-09-27-kalfa-2d-3-arac-zinciri.md),
+PR #15 (`2d-3/arac-zinciri`). Kodu Claude yazdı; G1–G6 commit'lendi, her
+görevin sonucu ve sapmaları plandaki "Sonuç" notlarında.
+
+- **G1:** A16 ölçümü ([bulgular](superpowers/bulgular/2026-09-27-kalfa-2d-3-a16.md));
+  Python 3.14.7 (NuGet) ve Node 24.21.0 seçildi; Python Kalfa'nın
+  `sitecustomize.py`'siyle çalışıyor.
+- **G2 / G2b:** onaylanan kip ile çalışma anı `kip_uyusmasi`'nda, 16 hücreli
+  sınır matrisi; bağımlılık dizinleri gizli kalıpların dışında.
+- **G3:** kurucu araçları indirir, özeti denetler, açar (5,9 → 42,7 MB).
+- **G4:** kurulu Kalfa'nın araçları kabın `PATH`'inde kullanıcınınkilerden önce.
+- **G5:** `kalfa-yalitim kur --izin-ver`, `okunur_yonetici_gerekli`, Onar ve
+  "Ekle"de UAC; Windows'ta araç zinciri dizinleri Ayarlar > Gelişmiş'te.
+- **G6:** ağsız cargo geliştiricinin `.cargo`'suyla; kapa yalnızca `registry`
+  ve `git` açılır, kimlik dosyaları okunamaz.
+- **G7:** belgeler; yükseltmeden sonra yalıtım "Hazır" görünürken kaybolan
+  dizin izinleri için Ayarlar > Gelişmiş'te Onar (kabul adımını yazarken
+  bulundu).
+- Git dağıtılmaz; kaldırmada oturum kayıtları silinmez (tasarım §9.8).
+
+Son doğrulama (tam, PR dalının son hâli):
+
+| Doğrulama | Windows | WSL Ubuntu-24.04 |
+|---|---|---|
+| Biçim ve Clippy (tam, `e2e`, yalıtım özellikli) | Geçti | Geçti |
+| `cargo test --workspace --locked` | 459 | 409 (Onar düzeltmesinden sonra uygulama crate'leri yeniden: 81/81) |
+| `e2e` özellikli testler | 90 | 89 |
+| Gerçek yalıtım testleri | 30/30 (AppContainer) | 17/17 (bwrap, `kalfatest`) |
+| Uyumluluk | 10/10 (`KALFA_TEST_ARAC_ZINCIRI` ile) | 6/6 |
+| Kurucu betik testleri | 5/5 | 3/3 (2 zip testi atlandı) |
+| Arayüz denetim, test ve derleme | 0/0; 231 test; paket denetimi temiz | — |
+| Uçtan uca | 25/25; `Kalfa.Alan.*` profili kalmadı | — (arayüzün Linux yolu değişmedi) |
+
+**Kurucu kabulü (kullanıcı, UAC, 2026-09-28):** kurulum, Kalfa'nın Python,
+Node ve Git'iyle yalıtımda komutlar, Gelişmiş'ten UAC ile dizin ekleme,
+yükseltmenin izinlere etkisi ve Onar'la geri gelmesi, temiz kaldırma ve
+geliştirme ortamının geri kurulması denendi. Ayrıntı plandaki kabul notunda.
+Kabulde bulunan `\\?\` önekli yol görüntüsü düzeltildi. Aynı turdaki paralel
+kabuk çağrılarının ilk hazırlıkta düşmesi 2d-3'ten önceki bir hatadır; ayrı
+işe ayrıldı. 2d-3 tamamlandı; sıradaki PR #15'in birleştirilmesi.
 
 Bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi, güvenlik
 denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü

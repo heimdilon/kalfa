@@ -41,6 +41,24 @@ pub const VARSAYILAN_GIZLI_KALIPLAR: &[&str] = &[
     "credentials*",
 ];
 
+/// Paket yöneticilerinin ürettiği bağımlılık dizinleri (2d-3, kullanıcı
+/// kararı). İçlerindeki `.pem`, `credentials*` gibi dosyalar kitaplık
+/// dosyasıdır (pip'in `cacert.pem`'i, npm paketlerinin `credentials.js`'i);
+/// gizlenirlerse araçlar bozulur. Bedeli: kullanıcı bu dizinlere kendisi bir
+/// sır koyarsa gizlenmez.
+pub const BAGIMLILIK_DIZINLERI: &[&str] = &["node_modules", "site-packages", "dist-packages"];
+
+/// Yolun bir üst dizini bağımlılık dizini mi (büyük-küçük harf duyarsız).
+pub fn bagimlilik_dizininde_mi(yol: &CalismaYolu) -> bool {
+    let mut parcalar: Vec<&str> = yol.as_str().split('/').collect();
+    parcalar.pop();
+    parcalar.iter().any(|parca| {
+        BAGIMLILIK_DIZINLERI
+            .iter()
+            .any(|ad| parca.eq_ignore_ascii_case(ad))
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Kip {
     Inceleme,
@@ -215,8 +233,10 @@ impl Siniflandirici {
         &self.kok
     }
 
+    /// Bağımlılık dizinlerinin altındaki yollar gizli sayılmaz; tarama yine de
+    /// oralara iner ve gizli dosyaların hard link'lerini bulur.
     pub fn gizli_mi(&self, yol: &CalismaYolu) -> bool {
-        self.gizli.is_match(yol.as_str())
+        !bagimlilik_dizininde_mi(yol) && self.gizli.is_match(yol.as_str())
     }
 
     /// Git korumaları her çağrıda yeniden çözülür (spec §7.3): `core.hooksPath`

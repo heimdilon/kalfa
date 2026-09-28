@@ -4,7 +4,7 @@
 // denetler).
 
 /// Ana pencerenin komutları.
-pub const ANA_PENCERE_KOMUTLARI: [&str; 27] = [
+pub const ANA_PENCERE_KOMUTLARI: [&str; 28] = [
     "uygulama_durumu",
     "oturumlari_listele",
     "calisma_alani_sec",
@@ -27,6 +27,7 @@ pub const ANA_PENCERE_KOMUTLARI: [&str; 27] = [
     "arac_zinciri_dizinleri",
     "arac_zinciri_dizini_ekle",
     "arac_zinciri_dizini_kaldir",
+    "arac_zinciri_onarim_gerekli",
     "yalitimsizi_ayarla",
     "yalitim_teknik_raporu",
     "yalitimi_onar",

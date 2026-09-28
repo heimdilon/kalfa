@@ -47,6 +47,19 @@ struct Dosya {
     yalitimsiz_izinli: bool,
 }
 
+/// Kayıtta ve Ayarlar'da tutulan yol: Windows'ta `canonicalize`'ın `\\?\`
+/// öneki atılır (kullanıcı `C:\Program Files\nodejs` görür).
+fn gosterim_yolu(yol: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        kalfa_sandbox::windows::guvenlik::sade(yol)
+    }
+    #[cfg(not(windows))]
+    {
+        yol.to_path_buf()
+    }
+}
+
 /// Kullanıcının Ayarlar'dan eklediği araç zinciri dizinleri ve yalıtımsız
 /// çalıştırma anahtarı.
 pub struct YalitimAyarlari {
@@ -59,10 +72,22 @@ impl YalitimAyarlari {
     /// kapalı).
     pub fn oku(veri_dizini: &Path) -> Self {
         let yol = veri_dizini.join(DOSYA_ADI);
-        let dosya: Dosya = std::fs::read(&yol)
+        let mut dosya: Dosya = std::fs::read(&yol)
             .ok()
             .and_then(|v| serde_json::from_slice(&v).ok())
             .unwrap_or_default();
+        // Önceki sürümler Windows'ta `\\?\` önekli yol kaydediyordu.
+        let mut dizinler: Vec<PathBuf> = Vec::new();
+        for dizin in dosya
+            .arac_zinciri_dizinleri
+            .drain(..)
+            .map(|d| gosterim_yolu(&d))
+        {
+            if !dizinler.contains(&dizin) {
+                dizinler.push(dizin);
+            }
+        }
+        dosya.arac_zinciri_dizinleri = dizinler;
         Self {
             yol,
             dosya: Mutex::new(dosya),
@@ -121,6 +146,17 @@ yalıtımsız çalıştırmasına izin verilecek. Yalıtımsız bir komut sizin 
 çalışır: ev dizininizdeki dosyaları okuyabilir, değiştirebilir ve ağa erişebilir. Her komut \
 yine ayrıca onayınızı ister.\n\nBunu yalnızca ne yaptığınızı biliyorsanız açın.";
 
+const YONETICI_DIZINI_ONAYI: &str = "Bu dizin bilgisayarın yöneticisine ait. Kalfa'nın \
+komutlarının onu okuyabilmesi için Windows yönetici onayı isteyecek.";
+
+const YONETICI_DIZINI_TALIMATI: &str = "Bu dizin bilgisayarın yöneticisine ait ve bu Kalfa \
+kurulu bir sürüm değil (Program Files'ta değil). Dizini yalıtıma açmak için \
+`kalfa-yalitim.exe izin-ver <dizin>` komutunu yönetici olarak çalıştırın, sonra dizini \
+yeniden ekleyin.";
+
+const DIZIN_REDDEDILDI: &str = "Yalıtım yeniden kuruldu, ancak bir ya da daha çok araç \
+zinciri dizini açılamadı. Ayarlar'daki listeyi denetleyin; artık olmayan dizini kaldırın.";
+
 const ALAN_KALDIRMA_ONAYI: &str = "Bu çalışma alanı için eklenen yalıtım izinleri geri alınacak \
 ve çalışma alanına özel yalıtım profili kaldırılacak. Devam etmek istiyor musunuz?";
 
@@ -143,6 +179,7 @@ pub(crate) fn yalitici_kur(
     kaynak: YalitimKaynagi,
     yalitim_dizini: &Path,
     ev: &Path,
+    kalfa_araclari: Vec<PathBuf>,
     kayit: &YalitimAyarlari,
     dinleyici: Dinleyici,
 ) -> Arc<dyn Yalitici> {
@@ -157,6 +194,7 @@ pub(crate) fn yalitici_kur(
             ev: ev.to_path_buf(),
             yalitim_dizini: yalitim_dizini.to_path_buf(),
             ek_okunur: kayit.dizinler(),
+            kalfa_araclari,
             degisince,
         }),
         YalitimKaynagi::Kurucu(kur) => kur(degisince),
@@ -279,7 +317,10 @@ impl Uygulama {
 
     /// "Onar" (§9.8): yerel pencerede ne yapılacağını söyler, onaylanırsa
     /// kurulu yardımcıyla `kalfa-yalitim kur`'u UAC ile çalıştırır ve
-    /// algılamayı yeniden yapar. `kur` yinelenince zararsızdır.
+    /// algılamayı yeniden yapar. `kur` yinelenince zararsızdır. Ayardaki araç
+    /// zinciri dizinlerinden yönetici izni isteyenler (ör. yükseltmede
+    /// izinleri geri alınan `C:\Program Files\nodejs`) `--izin-ver` ile
+    /// yeniden açılır (2d-3). Dizinler arayüzden değil ayardan gelir.
     pub async fn yalitimi_onar(&self) -> Result<OnarimSonucu, KomutHatasi> {
         if !self.yukseltici.kurulu_mu() {
             return Ok(OnarimSonucu::KuruluDegil {
@@ -293,11 +334,18 @@ impl Uygulama {
         {
             return Ok(OnarimSonucu::Vazgecildi);
         }
-        match self.yukseltici.kur().await {
+        let izinli = self.yonetici_isteyen_dizinler();
+        match self.yukseltici.kur(&izinli).await {
             Ok(None) => Ok(OnarimSonucu::Vazgecildi),
             Ok(Some(0)) => Ok(OnarimSonucu::Tamam {
                 yalitim: self.yalitimi_algila().await?,
             }),
+            Ok(Some(3)) => {
+                self.yalitimi_algila().await?;
+                Ok(OnarimSonucu::Basarisiz {
+                    mesaj: DIZIN_REDDEDILDI.to_string(),
+                })
+            }
             Ok(Some(kod)) => {
                 // Yarım kalan kurulum durumu değiştirmiş olabilir.
                 self.yalitimi_algila().await?;
@@ -307,6 +355,24 @@ impl Uygulama {
             }
             Err(mesaj) => Ok(OnarimSonucu::Basarisiz { mesaj }),
         }
+    }
+
+    /// Ayardaki, var olan ve kabın okuyamadığı (yönetici izni isteyen) araç
+    /// zinciri dizinleri. Silinmiş dizin yardımcıya verilmez.
+    fn yonetici_isteyen_dizinler(&self) -> Vec<PathBuf> {
+        self.yalitim_ayarlari
+            .dizinler()
+            .into_iter()
+            .filter(|d| d.is_dir() && self.yalitici.okunur_yonetici_gerekli(d))
+            .collect()
+    }
+
+    /// Kurulu sürümde kayıtlı bir araç zinciri dizini kapta okunamıyor mu
+    /// (2d-3)? Sürüm yükseltmede kaldırıcı dizinlerin izinlerini geri alır ama
+    /// yeni kurulum kök izinlerini kurduğu için yalıtım "Hazır" görünür;
+    /// Ayarlar bu durumda Onar'ı ayrıca gösterir.
+    pub async fn arac_zinciri_onarim_gerekli(&self) -> bool {
+        self.yukseltici.kurulu_mu() && !self.yonetici_isteyen_dizinler().is_empty()
     }
 
     /// BT için teknik rapor (§9.8), düz metin; arayüz panoya kopyalar.
@@ -367,7 +433,9 @@ impl Uygulama {
     }
 
     /// Yerel klasör seçiciyle bir dizin ekler; arayüz yol gönderemez (§10.5).
-    /// Vazgeçilirse liste değişmez.
+    /// Vazgeçilirse liste değişmez. Yöneticiye ait, kabın okuyamadığı dizin
+    /// (Windows) önce yerel pencereyle, sonra UAC ile kurulu yardımcının
+    /// `izin-ver`'iyle açılır (2d-3); kurulu sürüm değilse eklenmez.
     pub async fn arac_zinciri_dizini_ekle(&self) -> Result<Vec<String>, KomutHatasi> {
         let Some(secilen) = self
             .iletisim
@@ -377,6 +445,29 @@ impl Uygulama {
             return Ok(self.arac_zinciri_dizinleri());
         };
         let dizin = self.eklenebilir_mi(&secilen)?;
+        if self.yalitici.okunur_yonetici_gerekli(&dizin) {
+            if !self.yukseltici.kurulu_mu() {
+                return Err(KomutHatasi::gecersiz(YONETICI_DIZINI_TALIMATI));
+            }
+            let mesaj = format!("{YONETICI_DIZINI_ONAYI}\n\n{}", dizin.display());
+            if !self
+                .iletisim
+                .onayla("Yönetici izni", &mesaj, "Devam", "Vazgeç")
+                .await
+            {
+                return Ok(self.arac_zinciri_dizinleri());
+            }
+            match self.yukseltici.izin_ver(&dizin).await {
+                Ok(Some(0)) => {}
+                Ok(None) => return Ok(self.arac_zinciri_dizinleri()),
+                Ok(Some(kod)) => {
+                    return Err(KomutHatasi::ic(format!(
+                        "kalfa-yalitim izin-ver {kod} koduyla bitti; dizin eklenmedi."
+                    )));
+                }
+                Err(mesaj) => return Err(KomutHatasi::ic(mesaj)),
+            }
+        }
         let yeni = self.yalitim_ayarlari.dizinleri_degistir(|l| {
             if !l.contains(&dizin) {
                 l.push(dizin);
@@ -417,6 +508,6 @@ impl Uygulama {
                 "Kalfa'nın veri dizinindeki bir dizin yalıtıma açılamaz.",
             ));
         }
-        Ok(dizin)
+        Ok(gosterim_yolu(&dizin))
     }
 }

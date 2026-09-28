@@ -515,6 +515,64 @@ async fn evdeki_ssh_ve_cargo_kimlik_bilgileri_okunamaz() {
     assert!(!sonuc.standart.contains("GIZLI"), "{}", sonuc.standart);
 }
 
+/// 2d-3, A15'in gelişmiş yolu: ağsız komutta `CARGO_HOME` geliştiricinin
+/// `.cargo`'sudur ve `CARGO_NET_OFFLINE` açıktır. `registry` ve `git`
+/// okunur, yazılamaz. `.cargo`'nun kökündeki kimlik ve yapılandırma
+/// dosyaları hiçbir yoldan okunamaz: kök izin almaz (izin listesi). Ağlı
+/// komutta özel, boş registry sürer.
+#[tokio::test]
+async fn cargo_kimlik_bilgileri_kapta_okunamaz() {
+    let k = kurgu();
+    let cargo = k.ev.join(".cargo");
+    std::fs::create_dir_all(cargo.join(r"registry\cache")).unwrap();
+    std::fs::create_dir_all(cargo.join(r"git\db")).unwrap();
+    std::fs::write(cargo.join(r"registry\cache\paket.crate"), "PAKET-ACIK").unwrap();
+    std::fs::write(cargo.join(r"git\db\depo"), "DEPO-ACIK").unwrap();
+    let gizliler = ["credentials.toml", "credentials", "config.toml", "config"];
+    for ad in gizliler {
+        std::fs::write(cargo.join(ad), format!("GIZLI-{ad}")).unwrap();
+    }
+    let alan = k.hazirla(&k.kok, Vec::new());
+    let dogrudan: Vec<String> = gizliler.iter().map(|ad| ps(&cargo.join(ad))).collect();
+    let betik = format!(
+        "Write-Output \"ev=$env:CARGO_HOME\"; Write-Output \"cevrimdisi=$env:CARGO_NET_OFFLINE\"; \
+         foreach ($p in @({acik1}, {acik2})) {{ try {{ [IO.File]::ReadAllText($p) }} catch {{ 'OKUNAMADI' }} }}; \
+         foreach ($p in @({dogrudan})) {{ try {{ [IO.File]::ReadAllText($p) }} catch {{ 'ENGELLENDI' }} }}; \
+         foreach ($ad in @('credentials.toml', 'credentials', 'config.toml', 'config')) {{ \
+           try {{ [IO.File]::ReadAllText((Join-Path $env:CARGO_HOME $ad)) }} catch {{ 'ENGELLENDI' }} }}; \
+         try {{ [IO.File]::WriteAllText((Join-Path $env:CARGO_HOME 'registry\\cache\\yeni.crate'), 'x'); 'YAZILDI' }} \
+         catch {{ 'YAZILAMADI' }}",
+        acik1 = ps(&cargo.join(r"registry\cache\paket.crate")),
+        acik2 = ps(&cargo.join(r"git\db\depo")),
+        dogrudan = dogrudan.join(", "),
+    );
+    let sonuc = k.calistir(&alan, false, &betik).await;
+    assert_eq!(sonuc.bitis, Bitis::Cikti(Some(0)), "{}", sonuc.hata);
+    let cikti = &sonuc.standart;
+    let beklenen = kalfa_sandbox::windows::guvenlik::sade(&cargo.canonicalize().unwrap());
+    assert!(
+        deger(cikti, "ev").eq_ignore_ascii_case(&beklenen.display().to_string()),
+        "{cikti}"
+    );
+    assert_eq!(deger(cikti, "cevrimdisi"), "true", "{cikti}");
+    assert!(cikti.contains("PAKET-ACIK"), "{cikti}");
+    assert!(cikti.contains("DEPO-ACIK"), "{cikti}");
+    assert_eq!(cikti.matches("ENGELLENDI").count(), 8, "{cikti}");
+    assert!(!cikti.contains("GIZLI"), "{cikti}");
+    assert!(cikti.contains("YAZILAMADI"), "{cikti}");
+    assert!(!cargo.join(r"registry\cache\yeni.crate").exists());
+
+    let agli = k
+        .calistir(&alan, true, "Write-Output \"ev=$env:CARGO_HOME\"; Write-Output \"cevrimdisi=$env:CARGO_NET_OFFLINE\"")
+        .await;
+    assert!(
+        !deger(&agli.standart, "ev").eq_ignore_ascii_case(&beklenen.display().to_string()),
+        "{}",
+        agli.standart
+    );
+    assert_eq!(deger(&agli.standart, "cevrimdisi"), "", "{}", agli.standart);
+}
+
 #[tokio::test]
 async fn diger_calisma_alani_okunamaz_ve_disina_yazilamaz() {
     let k = kurgu();

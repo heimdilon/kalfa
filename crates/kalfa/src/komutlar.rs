@@ -51,6 +51,7 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         arac_zinciri_dizinleri,
         arac_zinciri_dizini_ekle,
         arac_zinciri_dizini_kaldir,
+        arac_zinciri_onarim_gerekli,
         yalitimsizi_ayarla,
         yalitim_teknik_raporu,
         yalitimi_onar,
@@ -235,6 +236,13 @@ pub async fn yalitimsizi_ayarla(u: State<'_, Arc<Uygulama>>, acik: bool) -> Sonu
 #[tauri::command(rename_all = "snake_case")]
 pub async fn yalitim_teknik_raporu(u: State<'_, Arc<Uygulama>>) -> Sonuc<String> {
     Ok(u.yalitim_teknik_raporu())
+}
+
+/// Kurulu sürümde kayıtlı bir araç zinciri dizini kapta okunamıyor mu (2d-3);
+/// öyleyse Ayarlar Onar'ı gösterir.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn arac_zinciri_onarim_gerekli(u: State<'_, Arc<Uygulama>>) -> Sonuc<bool> {
+    Ok(u.arac_zinciri_onarim_gerekli().await)
 }
 
 /// "Onar" (aşama 2 tasarımı §9.8): yerel onay, sonra kurulu yardımcı UAC ile.

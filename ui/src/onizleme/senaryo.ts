@@ -53,13 +53,22 @@ function gecikmeli(adimlar: [number, () => void][]) {
   }
 }
 
-export function anaSenaryosu(): SahteArka {
+/** `windows`: Ayarlar Windows'taki gibi görünür (`onizleme.html#windows`). */
+export function anaSenaryosu(windows = false): SahteArka {
   const arka = new SahteArka();
   const simdi = Date.now();
   arka.uygulama.son_oturum = 'o1';
   // Ayarlar (aşama 2 tasarımı §10.4): "Yeniden dene" yalıtımı bulur.
-  arka.aracZinciri = ['/opt/node'];
-  arka.sonrakiYalitim = { tip: 'Hazir', arka_uc: 'bwrap', surum: '0.9.0' };
+  if (windows) {
+    arka.uygulama.platform = 'windows';
+    arka.aracZinciri = ['C:\\Program Files\\nodejs'];
+    // Yükseltmeden sonra dizinin izni gitmiş: Gelişmiş'te Onar görünür.
+    arka.aracOnarimGerekli = true;
+    arka.sonrakiYalitim = { tip: 'Hazir', arka_uc: 'windows AppContainer', surum: '10.0.26200' };
+  } else {
+    arka.aracZinciri = ['/opt/node'];
+    arka.sonrakiYalitim = { tip: 'Hazir', arka_uc: 'bwrap', surum: '0.9.0' };
+  }
   arka.oturumEkle(
     {
       oturum: 'o1',

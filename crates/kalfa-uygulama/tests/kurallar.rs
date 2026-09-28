@@ -9,7 +9,9 @@ use kalfa_core::saglayici::Saglayici;
 use kalfa_core::test_destek::SahteSaglayici;
 use kalfa_evren::EvrenError;
 use kalfa_uygulama::anahtar::{AnahtarDeposu, AnahtarKasasi, BellekDeposu, DepoHatasi};
-use kalfa_uygulama::dizin::{kayit_yolu, oturum_dizini, veri_dizini, yalitim_dizini};
+use kalfa_uygulama::dizin::{
+    kalfa_araclari, kayit_yolu, oturum_dizini, veri_dizini, yalitim_dizini,
+};
 use kalfa_uygulama::evren::DegisirSaglayici;
 use kalfa_uygulama::guvenlik::{acilabilir_adres, gezinme_izinli, yukseltme_mi};
 use kalfa_uygulama::modeller::{VARSAYILAN_MODEL, bilinen_model_mi, modeller};
@@ -101,6 +103,26 @@ fn saga_gecis_yukseltmedir() {
     assert!(!yukseltme_mi(Serbest, Siki));
     assert!(!yukseltme_mi(Proje, Inceleme));
     assert!(!yukseltme_mi(Siki, Siki));
+}
+
+/// Kalfa'nın araç zinciri yalnızca Program Files'taki kurulumdan gelir;
+/// `KALFA_ARAC_ZINCIRI` yalnızca `e2e` derlemesinde okunur (2d-3, Görev 4).
+#[test]
+fn kalfa_araclari_kurulum_ya_da_e2e_degiskeninden_gelir() {
+    let d = tempfile::tempdir().unwrap();
+    let exe = d.path().join("kalfa.exe");
+    std::fs::write(&exe, b"").unwrap();
+    let araclar = d.path().join("araclar");
+    std::fs::create_dir_all(araclar.join("python")).unwrap();
+    std::fs::create_dir_all(araclar.join("node")).unwrap();
+    // Kurulu olmayan (Program Files dışındaki) exe'nin yanındaki dizin sayılmaz.
+    assert!(kalfa_araclari(&exe, None).is_empty());
+    let degisken = kalfa_araclari(&exe, Some(araclar.clone().into_os_string()));
+    if cfg!(all(windows, feature = "e2e")) {
+        assert_eq!(degisken, vec![araclar.join("python"), araclar.join("node")]);
+    } else {
+        assert!(degisken.is_empty(), "{degisken:?}");
+    }
 }
 
 #[test]

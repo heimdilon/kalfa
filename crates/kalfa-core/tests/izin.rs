@@ -115,6 +115,34 @@ fn gizli_kaliplar() {
     }
 }
 
+/// Araçların ürettiği bağımlılık dizinlerinde gizli kalıplar uygulanmaz
+/// (2d-3, kullanıcı kararı): pip'in `cacert.pem`'i ve npm paketlerinin
+/// `credentials.js`'i kitaplık dosyasıdır.
+#[test]
+fn bagimlilik_dizininde_gizli_sayilmaz() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Siniflandirici::yeni(d.path(), &["*.sir".to_string()]).unwrap();
+    for n in [
+        "node_modules/aws-sdk/lib/credentials.js",
+        "Node_Modules/pkg/.env",
+        "web/node_modules/pkg/sunucu.pem",
+        ".venv/Lib/site-packages/pip/_vendor/certifi/cacert.pem",
+        "venv/lib/python3.14/site-packages/certifi/cacert.pem",
+        "vendor/dist-packages/x/anahtar.key",
+        "node_modules/pkg/veri.sir",
+    ] {
+        assert!(!s.gizli_mi(&y(n)), "{n} gizli olmamalı");
+    }
+    for g in [
+        ".env",
+        "node_modules_degil/.env",
+        "src/site-packages.pem",
+        "paket/node_modulesx/credentials.json",
+    ] {
+        assert!(s.gizli_mi(&y(g)), "{g} gizli olmalı");
+    }
+}
+
 #[test]
 fn git_dizini_korunur() {
     let d = tempfile::tempdir().unwrap();

@@ -128,6 +128,7 @@ impl Drop for WindowsTemizlik {
                     ev: bos_ev,
                     yalitim_dizini: yalitim_dizini.clone(),
                     ek_okunur: Vec::new(),
+                    kalfa_araclari: Vec::new(),
                     git: GitKimligi::default(),
                 },
                 Box::new(|_| {}),
@@ -205,6 +206,13 @@ fn windows_arac_dizinleri() -> Vec<PathBuf> {
 
 #[cfg(windows)]
 fn kurgu(kok: &Path) -> Kurgu {
+    kurgu_ile(kok, windows_arac_dizinleri(), Vec::new())
+}
+
+/// `ek_okunur`: kullanıcının Ayarlar'dan açtığı dizinler; `kalfa_araclari`:
+/// kurulu Kalfa'nın getirdiği Python ve Node (2d-3).
+#[cfg(windows)]
+fn kurgu_ile(kok: &Path, ek_okunur: Vec<PathBuf>, kalfa_araclari: Vec<PathBuf>) -> Kurgu {
     let kilit = WINDOWS_KURGU_KILIDI
         .lock()
         .unwrap_or_else(|zehir| zehir.into_inner());
@@ -223,7 +231,8 @@ fn kurgu(kok: &Path) -> Kurgu {
         WindowsAyari {
             ev,
             yalitim_dizini,
-            ek_okunur: windows_arac_dizinleri(),
+            ek_okunur,
+            kalfa_araclari,
             git: GitKimligi::default(),
         },
         Box::new(|_| {}),
@@ -517,7 +526,9 @@ while ($yol) {
     eprintln!("A11 üst dizin listeleme ölçümü:\n{cikti}");
 }
 
-#[cfg(target_os = "linux")]
+/// Ağsız cargo, geliştiricinin önceden indirdiği crate'lerle derler. Windows'ta
+/// bu A15'in gelişmiş yoludur (2d-3): `CARGO_HOME` geliştiricinin salt okunur
+/// `.cargo`'sudur.
 #[tokio::test]
 async fn cargo_agsiz_onceden_indirilmis_crate_ile_derler_ve_test_eder() {
     let d = TempDir::new().unwrap();
@@ -533,27 +544,17 @@ async fn cargo_agsiz_onceden_indirilmis_crate_ile_derler_ve_test_eder() {
     assert!(cikti.contains("test result: ok. 1 passed"), "{cikti}");
 }
 
-/// A15 (bilinen sınır, aşama 2 tasarımı §14): Windows'ta registry
-/// bağlanamaz; çalışma alanına özel `CARGO_HOME` boş başlar ve kapta
-/// doldurulamaz. cargo paketi açarken hedefi kanonikleştirir; bu,
-/// `GetFinalPathNameByHandleW`'nin DOS yol adını ister, o da Mount Manager'a
-/// erişim ister ve AppContainer'da "Erişim engellendi" verir. Sınır kalkarsa
-/// bu test düşer; §14 ve §7.4 güncellenir.
+/// A15 (bilinen sınır, aşama 2 tasarımı §14): ağlı komutta çalışma alanına
+/// özel `CARGO_HOME` boş başlar ve kapta doldurulamaz. cargo paketi açarken
+/// hedefi kanonikleştirir; bu, `GetFinalPathNameByHandleW`'nin DOS yol adını
+/// ister, o da Mount Manager'a erişim ister ve AppContainer'da "Erişim
+/// engellendi" verir. Sınır kalkarsa bu test düşer; §14 ve §7.4 güncellenir.
 #[cfg(windows)]
 #[tokio::test]
 async fn cargo_ozel_registry_kapta_doldurulamaz() {
     let d = TempDir::new().unwrap();
     ornek_yaz(RUST_ORNEGI, d.path());
     let k = kurgu(d.path());
-    let bos = k
-        .dene(&json!({
-            "program": "cargo",
-            "argumanlar": ["build", "--offline", "--locked"],
-            "ag": false,
-            "zaman_asimi_sn": 600
-        }))
-        .await
-        .expect_err("boş registry'yle ağsız derleme başarılı olmamalı");
     let fetch = k
         .dene(&json!({
             "program": "cargo",
@@ -565,7 +566,12 @@ async fn cargo_ozel_registry_kapta_doldurulamaz() {
         .expect_err("A15 sınırı kalktı: §14 ve §7.4'ü güncelleyin");
     assert!(fetch.contains("Downloaded hex"), "{fetch}");
     assert!(fetch.contains("canonicaliz"), "{fetch}");
-    eprintln!("A15 boş registry, ağsız:\n{bos}\nA15 ağlı cargo fetch:\n{fetch}");
+    // Model ne yapılacağını öğrenir (2d-3).
+    assert!(
+        fetch.contains("`cargo fetch` çalıştırması gerekiyor"),
+        "{fetch}"
+    );
+    eprintln!("A15 ağlı cargo fetch:\n{fetch}");
 }
 
 /// A12: `build.rs` MSVC'nin `cl.exe` ve `INCLUDE` ortamıyla C derler; bağlama
@@ -630,4 +636,211 @@ async fn python_calisir() {
         }))
         .await;
     assert!(cikti.contains("py-ok"), "{cikti}");
+}
+
+/// Bağımlılık dizinlerindeki `.pem` ve `credentials*` kitaplık dosyaları
+/// kapta okunur (2d-3, Görev 2b); çalışma alanının kökündeki gizli dosyalar
+/// okunamaz.
+#[tokio::test]
+async fn bagimlilik_dizinindeki_dosyalar_okunur_gizliler_okunamaz() {
+    let d = TempDir::new().unwrap();
+    let pem = d
+        .path()
+        .join(".venv/Lib/site-packages/pip/_vendor/certifi/cacert.pem");
+    let js = d.path().join("node_modules/aws-sdk/lib/credentials.js");
+    for (yol, icerik) in [(&pem, "pem-acik"), (&js, "js-acik")] {
+        std::fs::create_dir_all(yol.parent().unwrap()).unwrap();
+        std::fs::write(yol, icerik).unwrap();
+    }
+    std::fs::write(d.path().join(".env"), "env-sir").unwrap();
+    std::fs::write(d.path().join("anahtar.pem"), "pem-sir").unwrap();
+    let k = kurgu(d.path());
+    let oku = |yol: &str| {
+        if cfg!(windows) {
+            format!(
+                "try {{ Get-Content -Raw -ErrorAction Stop -LiteralPath '{yol}' }} catch {{ 'okunamadi' }}"
+            )
+        } else {
+            format!("cat '{yol}' 2>/dev/null || echo okunamadi")
+        }
+    };
+    let betik_metni = [
+        ".venv/Lib/site-packages/pip/_vendor/certifi/cacert.pem",
+        "node_modules/aws-sdk/lib/credentials.js",
+        ".env",
+        "anahtar.pem",
+    ]
+    .map(oku)
+    .join("\n");
+    let cikti = k.calistir(betik(&betik_metni)).await;
+    assert!(cikti.contains("pem-acik"), "{cikti}");
+    assert!(cikti.contains("js-acik"), "{cikti}");
+    assert!(!cikti.contains("env-sir"), "{cikti}");
+    assert!(!cikti.contains("pem-sir"), "{cikti}");
+}
+
+/// Kurulu Kalfa'nın getirdiği Python ve Node kapta, kullanıcının
+/// bilgisayarındakilerden önce bulunur ve çalışır (2d-3, Görev 4).
+/// `KALFA_TEST_ARAC_ZINCIRI`, kurucu derlemesinin `crates/kalfa/araclar`'ının
+/// bir kopyasını gösterir: kopyanın üst dizini `C:\`'dir ve `ALL APPLICATION
+/// PACKAGES` onu okur (Program Files'ın durumu). Değişken yoksa test atlanır.
+#[cfg(windows)]
+#[tokio::test]
+async fn kalfa_python_ve_node_kapta_calisir() {
+    let Some(kok) = std::env::var_os("KALFA_TEST_ARAC_ZINCIRI").map(PathBuf::from) else {
+        eprintln!("araç zinciri verilmedi (KALFA_TEST_ARAC_ZINCIRI yok); test atlandı");
+        return;
+    };
+    // Üründe olduğu gibi `\\?\` öneksiz gerçek yol.
+    let kok = kalfa_sandbox::windows::guvenlik::sade(
+        &kok.canonicalize().expect("KALFA_TEST_ARAC_ZINCIRI"),
+    );
+    let araclar = kalfa_sandbox::windows::sistem::arac_zinciri_dizinleri(&kok);
+    assert!(kok.join(r"python\python.exe").is_file(), "{araclar:?}");
+    assert!(kok.join(r"node\node.exe").is_file(), "{araclar:?}");
+    let d = TempDir::new().unwrap();
+    ornek_yaz(NODE_ORNEGI, d.path());
+    std::fs::write(
+        d.path().join("test_ornek.py"),
+        "def test_toplama():\n    assert 1 + 1 == 2\n",
+    )
+    .unwrap();
+    let k = kurgu_ile(d.path(), Vec::new(), araclar);
+    let kok_metni = kok.display().to_string().to_lowercase();
+
+    let yerler = k
+        .calistir(betik(
+            "where.exe python; where.exe node; \
+             python -c \"import os; print('gercek=' + os.path.realpath('.'))\"",
+        ))
+        .await;
+    let ilk = |ad: &str| {
+        yerler
+            .lines()
+            .map(str::trim)
+            .find(|s| s.to_lowercase().ends_with(ad))
+            .unwrap_or_else(|| panic!("{ad} bulunamadı:\n{yerler}"))
+            .to_lowercase()
+    };
+    assert!(ilk(r"\python.exe").starts_with(&kok_metni), "{yerler}");
+    assert!(ilk(r"\node.exe").starts_with(&kok_metni), "{yerler}");
+    let alan = d.path().canonicalize().unwrap();
+    let alan = alan.display().to_string().to_lowercase();
+    let alan = alan.trim_start_matches(r"\\?\");
+    assert!(
+        yerler.to_lowercase().contains(&format!("gercek={alan}")),
+        "realpath yanlış:\n{yerler}"
+    );
+
+    k.calistir(json!({ "program": "python", "argumanlar": ["-m", "venv", ".venv"], "ag": false }))
+        .await;
+    // Kabuk aracı mutlak program yolunu kabul etmez; göreli yol alandadır.
+    let venv_python = r".venv\Scripts\python.exe";
+    let kur = k
+        .calistir(json!({
+            "program": venv_python,
+            "argumanlar": ["-m", "pip", "install", "--disable-pip-version-check", "pytest"],
+            "ag": true,
+            "zaman_asimi_sn": 600
+        }))
+        .await;
+    assert!(kur.contains("Successfully installed"), "{kur}");
+    let test = k
+        .calistir(json!({
+            "program": venv_python,
+            "argumanlar": ["-m", "pytest", "-q", "-p", "no:cacheprovider"],
+            "ag": false
+        }))
+        .await;
+    assert!(test.contains("1 passed"), "{test}");
+
+    // pip'in kullanıcı kurulumu; betiği (`pyflakes.exe`) kabın PATH'indedir.
+    let kullanici = k
+        .calistir(json!({
+            "program": "python",
+            "argumanlar": ["-m", "pip", "install", "--user", "--disable-pip-version-check", "pyflakes"],
+            "ag": true,
+            "zaman_asimi_sn": 600
+        }))
+        .await;
+    assert!(kullanici.contains("Successfully installed"), "{kullanici}");
+    let pyflakes = k
+        .calistir(betik("pyflakes --version; where.exe pyflakes"))
+        .await;
+    assert!(
+        pyflakes.contains(r"Roaming\Python\Python314\Scripts\pyflakes.exe"),
+        "{pyflakes}"
+    );
+
+    let ci = k
+        .calistir(json!({
+            "program": "npm",
+            "argumanlar": ["ci", "--no-audit", "--no-fund"],
+            "ag": true,
+            "zaman_asimi_sn": 600
+        }))
+        .await;
+    assert!(ci.contains("Çıkış kodu: 0"), "{ci}");
+    let npm_test = k
+        .calistir(json!({ "program": "npm", "argumanlar": ["test"], "ag": false }))
+        .await;
+    assert!(npm_test.contains("npm-test-ok"), "{npm_test}");
+}
+
+/// Kullanıcının kurduğu Git for Windows, hiçbir dizin açılmadan kapta
+/// Program Files'tan bulunur ve okuyan komutlar çalışır (2d-3: Git
+/// dağıtılmaz). Git kurulu değilse test atlanır.
+#[cfg(windows)]
+#[tokio::test]
+async fn git_program_files_ten_calisir() {
+    if !Path::new(r"C:\Program Files\Git\cmd\git.exe").is_file() {
+        eprintln!("Git for Windows kurulu değil; test atlandı");
+        return;
+    }
+    let d = TempDir::new().unwrap();
+    git_host(d.path(), &["init", "-q", "-b", "ana"]);
+    std::fs::write(d.path().join("benioku.md"), "ilk\n").unwrap();
+    git_host(d.path(), &["add", "."]);
+    git_host(d.path(), &["commit", "-q", "-m", "ilk"]);
+    std::fs::write(d.path().join("benioku.md"), "ilk\nikinci\n").unwrap();
+    let k = kurgu_ile(d.path(), Vec::new(), Vec::new());
+    let cikti = k
+        .calistir(betik(
+            "$ErrorActionPreference='Stop'; \
+             if (Get-Variable PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) { $PSNativeCommandUseErrorActionPreference=$false }; \
+             where.exe git; \
+             git status --short; Write-Output \"durum=$LASTEXITCODE\"; \
+             git diff --stat; Write-Output \"fark=$LASTEXITCODE\"; \
+             git log --oneline -1; Write-Output \"gunluk=$LASTEXITCODE\"",
+        ))
+        .await;
+    assert!(
+        cikti.to_lowercase().contains(r"program files\git"),
+        "{cikti}"
+    );
+    assert!(cikti.contains("M benioku.md"), "{cikti}");
+    for etiket in ["durum=", "fark=", "gunluk="] {
+        assert_eq!(etiket_kodu(&cikti, etiket), 0, "{etiket}\n{cikti}");
+    }
+}
+
+/// Bağımlılık dizinine konmuş, gizli bir dosyanın hard link'i yine gizlidir:
+/// tarama o dizinlere de iner (2d-3, Görev 2b). Windows'ta ACL dosya
+/// nesnesindedir; hard link zaten aynı izni taşır.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn bagimlilik_dizinindeki_hard_link_gizli_kalir() {
+    let d = TempDir::new().unwrap();
+    std::fs::write(d.path().join(".env"), "env-sir").unwrap();
+    let dizin = d.path().join("node_modules/pkg");
+    std::fs::create_dir_all(&dizin).unwrap();
+    std::fs::hard_link(d.path().join(".env"), dizin.join("index.js")).unwrap();
+    let k = kurgu(d.path());
+    let cikti = k
+        .calistir(betik(
+            "cat node_modules/pkg/index.js 2>/dev/null; echo bitti",
+        ))
+        .await;
+    assert!(cikti.contains("bitti"), "{cikti}");
+    assert!(!cikti.contains("env-sir"), "{cikti}");
 }

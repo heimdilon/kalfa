@@ -43,6 +43,9 @@ AppContainer kesinleşti (§9.7). Yeni §9.8: son kullanıcı kurulumu (NSIS
 kurucusu, kurucudaki araç zinciri, varsayılan proje klasörü, "Onar", yalıtım
 yokken kabuğun kapanması ve BT için teknik ayrıntı). Ayrıca §1.2, §5.1, §11,
 §14 (A15, A16), §15 (2d-2 ve 2d-3); üst belge r3.7.
+2026-09-27 (2d-3 uygulandı): kurucudaki Python ve Node, kabın `PATH`'i, Onar'ın
+araç zinciri izinlerini geri getirmesi (§9.8); Windows'ta ağsız cargo
+geliştiricinin registry'siyle (§7.4); A16 sınırları (§9.6); §10.4, §12.3, §14.
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §7.2, §7.5–§7.7, §12.3, §13.2, §13.3 ve §14 (risk 7–9, 12, 13). Bu belgede `§`
 işaretleri bu belgenin bölümlerini gösterir; üst belgeye "üst belge §x", 1c
@@ -576,6 +579,14 @@ Gizli ve korumalı yollar her çalıştırmadan hemen önce taranır.
   - Sembolik bağlantılar izlenmez.
   - Kalıplar üst belge §7.4'teki listedir; kullanıcının eklediği kalıplar
     dahildir (`Siniflandirici`).
+  - **Bağımlılık dizinleri** (`node_modules`, `site-packages`,
+    `dist-packages`; büyük-küçük harf duyarsız) altındaki yollara kalıplar
+    uygulanmaz (2d-3, kullanıcı kararı). Oradaki `.pem` ve `credentials*`
+    dosyaları kitaplık dosyasıdır: pip'in `cacert.pem`'i gizlenince venv'de
+    pip TLS kuramıyordu. Tarama bu dizinlere yine iner; gizli bir dosyanın
+    oraya konmuş hard link'i gizli kalır. Bedeli: kullanıcı bu dizinlere
+    kendisi bir sır koyarsa gizlenmez. Kural dosya araçlarının
+    sınıflandırıcısında da geçerlidir.
 - **Korumalı yollar** git koruma çözücüsünden (`git_koruma.rs`) gelir:
   `.git`'in kendisi ve `core.hooksPath`'in etkin değeri (`.git`'in dışındaysa).
   - `.git` (dizin ya da worktree'nin `.git` dosyası) yalıtımda bütünüyle salt
@@ -677,9 +688,17 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
     doldurulamaz** (2d-1, A15). cargo indirdiği paketi açarken hedef dizini
     kanonikleştirir. DOS yol adı Mount Manager'a erişim ister, AppContainer'da
     bu "Erişim engellendi" verir. Ağlı `cargo fetch` bile düşer. Bağımlılıksız
-    derleme çalışır. Geliştiricinin `CARGO_HOME`'u salt okunur verilince
-    bağımlı crate ağsız derlendi ama 12 sn sürdü (2c). Yol 2d-2'de seçilir
-    (§9.6).
+    derleme çalışır.
+  - Windows'ta ağsız komut geliştiricinin registry'siyle derler (2d-3, A15'in
+    gelişmiş yolu). `~/.cargo\bin` okunur dizinlerdeyse `CARGO_HOME`
+    geliştiricinin `.cargo`'sudur ve `CARGO_NET_OFFLINE=true` verilir.
+    Kapa yalnızca `.cargo\registry` ve `.cargo\git` okuma izni verilir;
+    `.cargo`'nun kökü izin almaz. `credentials.toml`, `config.toml` ve oraya
+    konacak her dosya kapta okunamaz; registry'ye yazılamaz. Örnek crate
+    ağsız 0,7 sn'de derlendi (2c'deki 12 sn `CARGO_NET_OFFLINE`'sız
+    ölçülmüştü). Ağlı komutta özel, boş registry kalır. Eksik crate'te
+    cargo'nun çıktısına modele "geliştiricinin yalıtım dışında `cargo
+    fetch` çalıştırması gerekiyor" eki yazılır.
 - **Rustup:** `RUSTUP_HOME` kullanıcının dizinini gösterir ve salt okunurdur.
   Eksik bir araç zincirini kurmaya çalışan rustup yalıtımda başarısız olur ve
   hatası modele gider.
@@ -1159,7 +1178,18 @@ da tam hedefi taşır.
   adlarıyla kapta her yolda "Erişim engellendi" veriyor (Mount Manager'a
   erişim ister); NT ve hacimsiz adlarla çalışıyor. Rust'ın `canonicalize`'ı
   DOS adını ister. Bu yüzden cargo kapta crate açamaz: crates.io bağımlılığı
-  Windows yalıtımında indirilemez (A15). Yol 2d-2'de seçilir.
+  Windows yalıtımında indirilemez (A15). Ağsız komut geliştiricinin önceden
+  indirdiği crate'lerle derler (§7.4); yeni bağımlılık için geliştirici
+  yalıtım dışında `cargo fetch` çalıştırır.
+- **Aynı sınıftan (A16):** Python her açılışta `Failed to find real location
+  of …\python.exe` uyarısını basar (`getpath`'ten, Kalfa'nın
+  `sitecustomize.py`'sinden önce gelir; `sys.prefix` doğrudur). Node'un
+  `fs.realpathSync.native`'i `EPERM` verir; `fs.realpathSync`, npm ve örnek
+  projeler etkilenmez. Python'un `os.path.realpath`'i ve `0o700` geçici
+  dizinleri Kalfa'nın `sitecustomize.py`'siyle düzelir.
+- **`~/.cargo\config.toml` kapta uygulanmaz:** dosya okunamaz ve cargo onu yok
+  sayar (2d-3'te ölçüldü). Oradaki ayarlar (ör. `target-dir`, bağlayıcı)
+  yalıtımlı derlemede geçerli değildir.
 - **Yerel sunuculara erişilemez:** kap, 127.0.0.1'deki geliştirme
   sunucularına ve veritabanlarına bağlanamaz.
 - **Pencere bulma** (`FindWindow`) engellenmez; bulunan pencereye ileti
@@ -1215,17 +1245,39 @@ kurucunun sorduğu UAC'dir.
   - `kalfa-yalitim.exe` Program Files'tadır. Kullanıcı ve yalıtım oraya
     yazamaz; uygulama onu yerinden UAC ile başlatır. Geliştirme derlemesinde
     "Onar" kurucuya yönlendirir.
-- **Araç zinciri kurucudadır:** Python, Node ve Git (MinGit), Program
-  Files'taki Kalfa dizininin altında durur.
+- **Araç zinciri kurucudadır:** Python ve Node, Program Files'taki Kalfa
+  dizininin altında durur. Git dağıtılmaz (kullanıcı kararı, 2026-09-27):
+  MinGit GPLv2'dir ve her sürümde kaynağının yayınlanmasını ister. Kullanıcının
+  kurduğu Git for Windows Program Files'tadır ve kapta zaten okunur; kurulu
+  değilse model `git` çalıştıramaz, Kalfa'nın kendisi git olmadan çalışır.
   - Program Files'a `ALL APPLICATION PACKAGES` zaten okuyabilir. Bu yüzden
     izin, `izin-ver` ya da A11 hazırlığı gerekmez.
   - Kullanıcı ve yalıtım bu dizine yazamaz, araçlar değiştirilemez.
   - Güncellemeleri Kalfa'nın güncellemesiyle gelir.
-  - Kabın `PATH`'inde bu dizinler önce gelir.
-  - Bilgisayarda kurulu araçlar (`C:\Python314`, `.cargo`, Visual Studio)
-    Ayarlar'ın gelişmiş bölümünden açılır. Bugünkü `izin-ver` ve MSVC yolu
-    oradadır.
-  - Rust ve MSVC gelişmiş özelliktir (A15).
+  - 2d-3'te geldi: Python 3.14.7 (NuGet paketi, pip içinde) ve Node 24.21.0
+    `$INSTDIR\araclar\python` ve `$INSTDIR\araclar\node`'dadır. Sürüm, adres
+    ve SHA-256 `crates/kalfa/kurucu/araclar.json`'da sabittir; özeti tutmayan
+    dosyayla kurucu derlenmez. Python'a Kalfa'nın `sitecustomize.py`'si
+    eklenir (A16). Lisans metinleri araçların yanındadır. Kurucu 5,9 MB'tan
+    42,7 MB'a çıktı.
+  - Kabın `PATH`'inde bu dizinler kullanıcının araçlarından önce gelir
+    (yalnızca MSVC'nin `bin`'i onlardan öncedir); pip'in kullanıcı
+    kurulumunun `Scripts` dizini de eklenir. Yalnızca Program Files'taki
+    kurulumda kullanılır; geliştirme derlemesi `target\` altındaki bir
+    dizini araç zinciri saymaz.
+  - Bilgisayarda kurulu araçlar (`C:\Python314`, `C:\Program Files\nodejs`)
+    Windows'ta Ayarlar > Gelişmiş'teki "İzinli araç zinciri dizinleri"nden
+    açılır. Kabın okuyamadığı, yöneticiye ait dizin için önce yerel pencere,
+    sonra UAC ile `izin-ver` istenir; kurulu sürüm değilse dizin eklenmez.
+  - Rust ve MSVC gelişmiş özelliktir; `.cargo`, `.rustup` ve Visual Studio
+    bulununca kendiliğinden açılır (A15, §7.4).
+- **Kaldırmada oturum kayıtları silinmez** (Claude kararı, 2026-09-27).
+  Tauri'nin "uygulama verisini sil" seçeneği yalnızca `dev.kalfa.masaustu`
+  dizinlerini (WebView önbelleği) siler; `%APPDATA%\Kalfa` ve
+  `%LOCALAPPDATA%\Kalfa` kalır. Kurucu makine genelidir; kaldırıcı başka
+  bir hesabın yükseltilmiş belirteciyle çalışabilir ve o hesabın verisine,
+  ACE kaydı olmadan geri alınamayacak hazırlanmış alan izinlerine
+  dokunamaz. Kalfa'nın kendi verisi Ayarlar'dan temizlenir.
 - **Varsayılan proje klasörü:** `%USERPROFILE%\Kalfa Projeleri`. Klasör
   OneDrive'ın altına konmaz: `Belgeler` ve `Masaüstü` çoğu zaman OneDrive'a
   yönlendirilmiştir. Klasörün üst dizini (`C:\Users\<hesap>`) ilk
@@ -1234,7 +1286,15 @@ kurucunun sorduğu UAC'dir.
 - **Onar:** durum `Hazir` değilse Ayarlar'da ve durum çubuğunun
   açıklamasında "Onar" düğmesi çıkar. Düğme önce yerel pencerede ne
   yapılacağını söyler. Sonra UAC ile `kur`'u yeniden çalıştırır ve durumu
-  yeniden denetler. `kur` yinelenince zararsızdır.
+  yeniden denetler. `kur` yinelenince zararsızdır. Sürüm yükseltmede eski
+  sürümün kaldırıcısı `izin-ver` dizinlerinin izinlerini de geri alır; Onar,
+  ayardaki dizinlerden kabın okuyamadıklarını `kur --izin-ver <dizin>` ile
+  yeniden açar (2d-3). Dizinler arayüzden değil uygulamanın kaydından gelir;
+  yardımcı her birini `izin-ver`'in denetimleriyle doğrular. Bir dizin
+  reddedilirse kök izinleri kalır ve Onar bunu söyler. Yükseltmeden sonra
+  yalıtım "Hazır" görünür (yeni kurulum kök izinlerini kurar); bu yüzden
+  kayıtlı bir dizin kapta okunamıyorsa Ayarlar > Gelişmiş bunu söyler ve
+  Onar'ı orada da gösterir (`arac_zinciri_onarim_gerekli`).
 - **Yalıtım kurulamıyorsa kabuk kapalıdır.** Bu kural iki platformda
   geçerlidir. Örneğin kurum ilkesi AppContainer'ı engelliyor, kök izni
   silinmiş ya da Linux'ta bubblewrap yok.
@@ -1346,7 +1406,10 @@ sürümünde "Onar" ve hazırlanmış çalışma alanları eklenir.
   iletişim kutusunda ne yapılacağını söyler, sonra UAC'yi açar. Kurulum ve
   kaldırma NSIS kurucusunun görevleridir.
 - **İzinli araç zinciri dizinleri:** liste, "Ekle" (yerel klasör seçici) ve
-  "Kaldır". Windows'ta sahibi olunmayan dizin için UAC istenir.
+  "Kaldır". Linux'ta kendi kartıdır. Windows'ta Gelişmiş kartındadır (2d-3):
+  Kalfa kendi Python ve Node'unu getirir, liste yalnızca başka bir sürüm
+  gerekirse kullanılır. Kabın okuyamadığı, yöneticiye ait dizin için yerel
+  onay ve UAC istenir (§9.8).
 - **Hazırlanmış çalışma alanları** (Windows): yalıtıcının ACE kaydından
   kimlik ve gösterim yolu gelir. Her satırda yol ve "İzinleri geri al ve
   kaldır" düğmesi vardır. İşlem yerel onay ister; açık ya da kapanmakta olan
@@ -1504,6 +1567,20 @@ yolundan (tarama, git yerleşimi, bwrap) geçer:
 Hiçbiri `/sys`'e ihtiyaç duymadı (A4). Rustup vekili
 `~/.rustup/update-hashes`'i istedi; `~/.rustup`'ın tamamı açıldı (§7.1).
 
+2d-1…2d-3 (Windows, gerçek AppContainer), aynı dosya:
+
+- git: kullanıcının Git for Windows'u hiçbir dizin açılmadan Program
+  Files'tan bulunur; worktree'de `status`, `diff`, `log` çalışır.
+- cargo: örnek crate, geliştiricinin registry'siyle ağsız `cargo test`
+  (§7.4); `build.rs` MSVC ile C derler (A12). Ağlı `cargo fetch` A15'e takılır.
+- Kalfa'nın Python ve Node'u (`KALFA_TEST_ARAC_ZINCIRI`, kurucunun
+  `araclar\`'ının kopyası): `where` önce Kalfa'nınkini gösterir;
+  `os.path.realpath` doğru; `python -m venv`, venv'de ağlı `pip install
+  pytest` ve ağsız `pytest`; ağlı `pip install --user` ve betiği `PATH`'te;
+  ağlı `npm ci` ve ağsız `npm test`.
+- Bağımlılık dizinlerindeki `.pem` ve `credentials*` kitaplık dosyaları
+  okunur, kökteki gizli dosyalar okunamaz (§7.2).
+
 ### 12.4 Arayüz (Vitest)
 
 - Terminal görünümünün durumu: parça ekleme, satır başıyla üzerine yazma,
@@ -1595,8 +1672,8 @@ Plan ya da prototip aşamasında cevaplanacaklar:
 | A12 | AppContainer'da C derleyen `build.rs` (`cl.exe`, `INCLUDE`) çalışıyor mu? | 2d-1: evet; MSVC dizini `PATH`'in başında olmalı ve kabın `TEMP`'i kurulmalı (§9.3) |
 | A13 | AppContainer'da `privateNetworkClientServer` ile LAN hedefi; `openssh-ssh-agent` ve `docker_engine` boruları | 2d-1: ölçülmedi; geliştiricinin makinesinde LAN hedefi, ssh-agent ve Docker yok. Yetenek verilmez (§9.3); 2d-2'de ya da ilk ihtiyaçta ölçülür |
 | A14 | Kabın içinden başka bir paket SID'iyle süreç başlatılabiliyor mu? | 2c: hayır, `ERROR_INVALID_PARAMETER`; aynı paketle başlatılabiliyor (§9.3) |
-| A15 | Windows'ta ağsız derlemede geliştiricinin cargo registry'si nasıl kullanılır? `CARGO_HOME`'u doğrudan vermek çalıştı ama 12 sn sürdü | 2d-1: çalışma alanına özel registry kapta doldurulamıyor (cargo'nun paket açması DOS yol adı istiyor, §9.6). Bilinen sınır; yol 2d-2'de seçilir (§7.4). 2026-09-27: Rust gelişmiş özellik oldu (§9.8); kısıtlı belirteçte A15 yok ama Schannel çalışmıyor (§9.7) |
-| A16 | A15'in sınıfı: kapta DOS yol adı isteyen öteki araçlar. Python `realpath` sessizce yanlış yol döndürüyor, açılışta "Failed to find real location" uyarısı veriyor; Node `realpathSync.native` EPERM (2026-09-27). Kalfa'nın getireceği Python'la `pip`, `venv` ve `pytest`; yaygın Node araçları | 2d-3'te ölçülür; düşenler §9.6'ya yazılır |
+| A15 | Windows'ta ağsız derlemede geliştiricinin cargo registry'si nasıl kullanılır? `CARGO_HOME`'u doğrudan vermek çalıştı ama 12 sn sürdü | 2d-1: çalışma alanına özel registry kapta doldurulamıyor (cargo'nun paket açması DOS yol adı istiyor, §9.6). Bilinen sınır (§7.4). 2026-09-27: Rust gelişmiş özellik oldu (§9.8); kısıtlı belirteçte A15 yok ama Schannel çalışmıyor (§9.7). 2d-3: ağsız komut geliştiricinin `.cargo`'suyla derler, kapa yalnızca `registry` ve `git` açılır (0,7 sn); ağlıda sınır sürer (§7.4, §9.6) |
+| A16 | A15'in sınıfı: kapta DOS yol adı isteyen öteki araçlar. Python `realpath` sessizce yanlış yol döndürüyor, açılışta "Failed to find real location" uyarısı veriyor; Node `realpathSync.native` EPERM (2026-09-27). Kalfa'nın getireceği Python'la `pip`, `venv` ve `pytest`; yaygın Node araçları | 2d-3 ([ölçüm](../bulgular/2026-09-27-kalfa-2d-3-a16.md)): Kalfa'nın `sitecustomize.py`'siyle `realpath`, `venv`, `pip` ve `pytest` çalışıyor; npm etkilenmiyor. Açılış uyarısı ve `realpathSync.native` bilinen sınır (§9.6) |
 
 ---
 
@@ -1651,10 +1728,15 @@ yazar, Claude inceler ve iki platformda doğrular.
      - Windows'ta kabuk uçtan uca testleri ve bıraktıkları profillerin
        temizliği.
    - **2d-3 — Kalfa'nın getirdiği araç zinciri:**
-     - Kurucuya Python, Node ve MinGit eklenir; kabın `PATH`'i onları gösterir.
+     - Kurucuya Python ve Node eklenir; kabın `PATH`'i onları önce gösterir.
+       Git, kullanıcının kurduğu Git for Windows'tan gelir (§9.8).
+     - Onar, yükseltmede kaybolan araç zinciri izinlerini de geri getirir.
+     - Plan: [2d-3](../plans/2026-09-27-kalfa-2d-3-arac-zinciri.md).
      - Bilgisayardaki araçlar ve Rust/MSVC gelişmiş ayar olur.
      - A15'in gelişmiş yolu: geliştiricinin registry'si salt okunur.
      - A16 ölçülür.
+     - 2026-09-27: kodu Claude yazdı (G1–G6), iki platformda doğrulandı;
+       kurucunun elle kabulü kullanıcıda (plan, Görev 7).
 
 2a ve 2b iki platformun ortak kodunu değiştirdiği için sırayla yürür. 2c, 2a ve
 2b'yle paralel yürüyebilir: ürün koduna dokunmaz.

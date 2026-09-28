@@ -1,6 +1,10 @@
 {
   "bundle": {
     "targets": ["nsis"],
-    "externalBin": ["binaries/kalfa-yalitim"]
+    "externalBin": ["binaries/kalfa-yalitim"],
+    "resources": {
+      "araclar/python/": "araclar/python/",
+      "araclar/node/": "araclar/node/"
+    }
   }
 }

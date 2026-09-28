@@ -26,9 +26,12 @@ pub trait Yukseltici: Send + Sync {
     /// Kalfa kurulu sürüm mü: yardımcı Program Files'ta, Kalfa'nın yanında mı?
     /// Değilse (geliştirme derlemesi, Linux) Onar yoktur.
     fn kurulu_mu(&self) -> bool;
-    /// `kalfa-yalitim kur`'u UAC ile çalıştırır ve bekler; çıkış kodunu döner.
-    /// Kullanıcı UAC'de vazgeçerse `Ok(None)`.
-    async fn kur(&self) -> Result<Option<u32>, String>;
+    /// `kalfa-yalitim kur [--izin-ver <dizin>]...`'ü UAC ile çalıştırır ve
+    /// bekler; çıkış kodunu döner (3: kök izinleri kuruldu, bir dizin
+    /// reddedildi). Kullanıcı UAC'de vazgeçerse `Ok(None)`.
+    async fn kur(&self, izinli: &[PathBuf]) -> Result<Option<u32>, String>;
+    /// `kalfa-yalitim izin-ver <dizin>`'i UAC ile çalıştırır ve bekler.
+    async fn izin_ver(&self, dizin: &Path) -> Result<Option<u32>, String>;
 }
 
 /// Adresi sistem tarayıcısında açar.

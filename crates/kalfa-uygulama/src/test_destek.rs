@@ -103,12 +103,16 @@ impl Iletisim for SahteIletisim {
     }
 }
 
-/// "Onar"ın sahtesi: kurulu sürüm gibi davranır, `kur` verilen sonucu döner
-/// ve çağrıları sayar.
+/// "Onar"ın sahtesi: kurulu sürüm gibi davranır, `kur` ve `izin_ver` verilen
+/// sonucu döner; çağrıları ve argümanlarını kaydeder.
 pub struct SahteYukseltici {
     pub kurulu: AtomicBool,
     pub sonuc: Mutex<Result<Option<u32>, String>>,
     pub cagri: std::sync::atomic::AtomicUsize,
+    /// `kur`'a verilen dizin listeleri, çağrı sırasıyla.
+    pub kurulanlar: Mutex<Vec<Vec<PathBuf>>>,
+    /// `izin_ver`'e verilen dizinler.
+    pub izin_verilenler: Mutex<Vec<PathBuf>>,
 }
 
 impl Default for SahteYukseltici {
@@ -117,6 +121,8 @@ impl Default for SahteYukseltici {
             kurulu: AtomicBool::new(true),
             sonuc: Mutex::new(Ok(Some(0))),
             cagri: Default::default(),
+            kurulanlar: Default::default(),
+            izin_verilenler: Default::default(),
         }
     }
 }
@@ -133,8 +139,18 @@ impl Yukseltici for SahteYukseltici {
         self.kurulu.load(Ordering::SeqCst)
     }
 
-    async fn kur(&self) -> Result<Option<u32>, String> {
+    async fn kur(&self, izinli: &[PathBuf]) -> Result<Option<u32>, String> {
         self.cagri.fetch_add(1, Ordering::SeqCst);
+        self.kurulanlar.lock().unwrap().push(izinli.to_vec());
+        self.sonuc.lock().unwrap().clone()
+    }
+
+    async fn izin_ver(&self, dizin: &Path) -> Result<Option<u32>, String> {
+        self.cagri.fetch_add(1, Ordering::SeqCst);
+        self.izin_verilenler
+            .lock()
+            .unwrap()
+            .push(dizin.to_path_buf());
         self.sonuc.lock().unwrap().clone()
     }
 }
@@ -310,6 +326,7 @@ pub fn test_uygulamasi_yalitimla(
         yukseltici: yukseltici.clone(),
         aktarim: AktarimAyarlari::default(),
         yalitim_dizini: dizin.join("yalitim"),
+        kalfa_araclari: Vec::new(),
         ev_dizini: dizin.join("ev"),
         yalitim,
     });

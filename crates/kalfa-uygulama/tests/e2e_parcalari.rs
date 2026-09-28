@@ -299,6 +299,7 @@ async fn uygulama(a: &E2eAyarlari, veri: &std::path::Path) -> Arc<Uygulama> {
         yukseltici: Arc::new(kalfa_uygulama::test_destek::SahteYukseltici::default()),
         aktarim: AktarimAyarlari::default(),
         yalitim_dizini: veri.join("yalitim"),
+        kalfa_araclari: Vec::new(),
         ev_dizini: std::env::temp_dir(),
         yalitim: YalitimKaynagi::Kurucu(Box::new(|_| Arc::new(Yalitimsiz))),
     });

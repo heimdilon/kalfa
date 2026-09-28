@@ -237,6 +237,11 @@ export const tr = {
   'ayarlar.arac_zinciri.ekle': 'Dizin ekle',
   'ayarlar.arac_zinciri.kaldir': '{yol} dizinini kaldır',
   'ayarlar.arac_zinciri.bos': 'Eklenmiş dizin yok.',
+  'ayarlar.arac_zinciri.windows': 'İzinli araç zinciri dizinleri',
+  'ayarlar.arac_zinciri.onarim_gerekli':
+    "Listedeki bir dizin artık Kalfa'nın komutlarınca okunamıyor; bu genellikle Kalfa güncellenince olur. Onar izinleri yeniden açar ve Windows yönetici onayı ister.",
+  'ayarlar.arac_zinciri.windows_aciklama':
+    "Bilgisayarınızda kurulu araçlar (Python, Node, Rust, Visual Studio). Kalfa kendi Python ve Node'unu getirir; bunlara yalnızca başka bir sürüm gerekirse ihtiyaç vardır. Yöneticiye ait bir dizin için Windows yönetici onayı ister.",
   'ayarlar.yalitim.calisma_alanlari': 'Hazırlanmış çalışma alanları',
   'ayarlar.yalitim.calisma_alanlari.aciklama':
     'Yalıtım için hazırlanmış çalışma alanlarının izinlerini buradan geri alabilirsiniz.',

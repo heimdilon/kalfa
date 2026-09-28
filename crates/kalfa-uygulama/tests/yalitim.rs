@@ -24,9 +24,16 @@ struct DegisenYalitici {
     hazir_alanlar: Mutex<Vec<HazirAlan>>,
     kaldirilan_alanlar: Mutex<Vec<String>>,
     kaldirma_esigi: Mutex<Option<Arc<(Barrier, Barrier)>>>,
+    /// Okunması yönetici izni isteyen dizinler (gerçek yollar).
+    yonetici_gerekenler: Mutex<Vec<PathBuf>>,
 }
 
 impl Yalitici for DegisenYalitici {
+    fn okunur_yonetici_gerekli(&self, dizin: &Path) -> bool {
+        let dizin = dizin.canonicalize().unwrap();
+        self.yonetici_gerekenler.lock().unwrap().contains(&dizin)
+    }
+
     fn durum(&self) -> YalitimDurumu {
         self.durum.lock().unwrap().clone()
     }
@@ -96,6 +103,7 @@ fn kur(dizin: &Path) -> (TestUygulamasi, Arc<DegisenYalitici>) {
         hazir_alanlar: Mutex::new(Vec::new()),
         kaldirilan_alanlar: Mutex::new(Vec::new()),
         kaldirma_esigi: Mutex::new(None),
+        yonetici_gerekenler: Mutex::new(Vec::new()),
     });
     let kurulan = sahte.clone();
     let t = test_uygulamasi_yalitimla(
@@ -151,13 +159,56 @@ async fn yalitim_durumu_degisince_ana_pencerenin_kanalina_yazilir() {
     assert_eq!(kanal.yazilanlar().len(), 2);
 }
 
+/// Önceki sürüm Windows'ta `\\?\` önekli yol kaydediyordu; okunurken önek
+/// atılır, aynı dizin iki kez görünmez ve gösterilen yolla kaldırılabilir.
+#[cfg(windows)]
+#[tokio::test]
+async fn eski_onekli_kayit_okunurken_duzelir() {
+    let d = tempfile::tempdir().unwrap();
+    let veri = d.path().join("veri");
+    let arac = d.path().join("arac");
+    std::fs::create_dir_all(&veri).unwrap();
+    std::fs::create_dir(&arac).unwrap();
+    let sade = gercek(&arac);
+    let onekli = arac.canonicalize().unwrap();
+    assert!(onekli.display().to_string().starts_with(r"\\?\"));
+    std::fs::write(
+        veri.join("yalitim.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "arac_zinciri_dizinleri": [onekli, sade],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let (t, _) = kur(&veri);
+    assert_eq!(
+        t.uygulama.arac_zinciri_dizinleri(),
+        vec![sade.display().to_string()]
+    );
+    assert!(
+        t.uygulama
+            .arac_zinciri_dizini_kaldir(&sade.display().to_string())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// Ayarlar'ın gösterdiği ve kaydettiği gerçek yol: Windows'ta `\\?\` öneksiz.
+fn gercek(yol: &Path) -> PathBuf {
+    let kanonik = yol.canonicalize().unwrap();
+    #[cfg(windows)]
+    let kanonik = kalfa_sandbox::windows::guvenlik::sade(&kanonik);
+    kanonik
+}
+
 #[tokio::test]
 async fn arac_zinciri_dizini_klasor_seciciyle_eklenir_kalir_ve_kaldirilir() {
     let d = tempfile::tempdir().unwrap();
     let veri = d.path().join("veri");
     let arac = d.path().join("araclar/node");
     std::fs::create_dir_all(&arac).unwrap();
-    let arac = arac.canonicalize().unwrap();
+    let arac = gercek(&arac);
+    assert!(!arac.display().to_string().starts_with(r"\\?\"));
     let (t, sahte) = kur(&veri);
     assert!(t.uygulama.arac_zinciri_dizinleri().is_empty());
 
@@ -492,6 +543,171 @@ async fn onar_basarida_yeniden_algilar_ve_yeni_durumu_doner() {
         OnarimSonucu::Tamam { yalitim: hazir() }
     );
     assert_eq!(t.uygulama.uygulama_durumu().yalitim, hazir());
+}
+
+/// Yükseltmede kaldırıcı araç zinciri izinlerini de geri alır; Onar,
+/// ayardaki dizinlerden yönetici isteyenleri `kur`'a verir (2d-3, Görev 5).
+#[tokio::test]
+async fn onar_uygulama_ayarindaki_yonetici_dizinlerini_kur_a_verir() {
+    let d = tempfile::tempdir().unwrap();
+    let veri = d.path().join("veri");
+    let kendi = d.path().join("kendi");
+    let yonetici = d.path().join("yonetici");
+    for dizin in [&kendi, &yonetici] {
+        std::fs::create_dir(dizin).unwrap();
+    }
+    let (t, sahte) = kur(&veri);
+    for dizin in [&kendi, &yonetici] {
+        t.iletisim.klasor_ver(dizin);
+        t.uygulama.arac_zinciri_dizini_ekle().await.unwrap();
+    }
+    *sahte.yonetici_gerekenler.lock().unwrap() = vec![yonetici.canonicalize().unwrap()];
+    let yonetici = gercek(&yonetici);
+    t.iletisim.onay_ver(true);
+    t.uygulama.yalitimi_onar().await.unwrap();
+    assert_eq!(
+        *t.yukseltici.kurulanlar.lock().unwrap(),
+        vec![vec![yonetici]]
+    );
+}
+
+/// Yükseltmeden sonra yalıtım "Hazır"dır ama bir dizinin izni gitmiştir:
+/// Ayarlar bunu bilmeli ki Onar'ı göstersin. Kurulu sürüm değilse, dizin
+/// silinmişse ya da hepsi okunuyorsa gerekmez.
+#[tokio::test]
+async fn arac_zinciri_onarim_gerekli_yalnizca_okunamayan_kayitli_dizinde() {
+    let d = tempfile::tempdir().unwrap();
+    let veri = d.path().join("veri");
+    let arac = d.path().join("arac");
+    std::fs::create_dir(&arac).unwrap();
+    let (t, sahte) = kur(&veri);
+    t.iletisim.klasor_ver(&arac);
+    t.uygulama.arac_zinciri_dizini_ekle().await.unwrap();
+    assert!(!t.uygulama.arac_zinciri_onarim_gerekli().await);
+
+    // Yükseltmede izin gitti.
+    *sahte.yonetici_gerekenler.lock().unwrap() = vec![arac.canonicalize().unwrap()];
+    assert!(t.uygulama.arac_zinciri_onarim_gerekli().await);
+
+    t.yukseltici
+        .kurulu
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    assert!(!t.uygulama.arac_zinciri_onarim_gerekli().await);
+    t.yukseltici
+        .kurulu
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+
+    // Silinmiş dizin ne bildirilir ne de yardımcıya verilir.
+    sahte.yonetici_gerekenler.lock().unwrap().clear();
+    std::fs::remove_dir(&arac).unwrap();
+    assert!(!t.uygulama.arac_zinciri_onarim_gerekli().await);
+    t.iletisim.onay_ver(true);
+    t.uygulama.yalitimi_onar().await.unwrap();
+    assert_eq!(
+        *t.yukseltici.kurulanlar.lock().unwrap(),
+        vec![Vec::<PathBuf>::new()]
+    );
+}
+
+/// Bir dizin reddedilince (`kur` 3 koduyla) kök izinleri kalır; Onar bunu
+/// söyler.
+#[tokio::test]
+async fn onar_dizin_reddedilince_basarisiz_ve_neden_doner() {
+    let d = tempfile::tempdir().unwrap();
+    let (t, _) = kur(d.path());
+    *t.yukseltici.sonuc.lock().unwrap() = Ok(Some(3));
+    t.iletisim.onay_ver(true);
+    match t.uygulama.yalitimi_onar().await.unwrap() {
+        OnarimSonucu::Basarisiz { mesaj } => {
+            assert!(mesaj.contains("araç zinciri dizini"), "{mesaj}")
+        }
+        d => panic!("{d:?}"),
+    }
+}
+
+#[tokio::test]
+async fn yonetici_dizini_eklemek_yerel_onay_ve_uac_ister() {
+    let d = tempfile::tempdir().unwrap();
+    let veri = d.path().join("veri");
+    let arac = d.path().join("arac");
+    std::fs::create_dir(&arac).unwrap();
+    let arac = gercek(&arac);
+    let (t, sahte) = kur(&veri);
+    *sahte.yonetici_gerekenler.lock().unwrap() = vec![arac.canonicalize().unwrap()];
+    t.iletisim.klasor_ver(&arac);
+    t.iletisim.onay_ver(true);
+    let liste = t.uygulama.arac_zinciri_dizini_ekle().await.unwrap();
+    assert_eq!(liste, vec![arac.display().to_string()]);
+    assert_eq!(*t.yukseltici.izin_verilenler.lock().unwrap(), vec![arac]);
+    let sorulan = t.iletisim.sorulanlar();
+    assert_eq!(sorulan.len(), 1, "{sorulan:?}");
+    assert!(
+        sorulan[0].contains("bilgisayarın yöneticisine ait"),
+        "{sorulan:?}"
+    );
+}
+
+#[tokio::test]
+async fn vazgecilince_liste_degismez() {
+    let d = tempfile::tempdir().unwrap();
+    let veri = d.path().join("veri");
+    let arac = d.path().join("arac");
+    std::fs::create_dir(&arac).unwrap();
+    let (t, sahte) = kur(&veri);
+    *sahte.yonetici_gerekenler.lock().unwrap() = vec![arac.canonicalize().unwrap()];
+
+    // Yerel pencerede vazgeçilir: UAC hiç açılmaz.
+    t.iletisim.klasor_ver(&arac);
+    t.iletisim.onay_ver(false);
+    assert!(
+        t.uygulama
+            .arac_zinciri_dizini_ekle()
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(t.yukseltici.cagri_sayisi(), 0);
+
+    // UAC'de vazgeçilir.
+    *t.yukseltici.sonuc.lock().unwrap() = Ok(None);
+    t.iletisim.klasor_ver(&arac);
+    t.iletisim.onay_ver(true);
+    assert!(
+        t.uygulama
+            .arac_zinciri_dizini_ekle()
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(t.yukseltici.cagri_sayisi(), 1);
+
+    // Yardımcı hata koduyla biter.
+    *t.yukseltici.sonuc.lock().unwrap() = Ok(Some(1));
+    t.iletisim.klasor_ver(&arac);
+    assert!(t.uygulama.arac_zinciri_dizini_ekle().await.is_err());
+    assert!(t.uygulama.arac_zinciri_dizinleri().is_empty());
+    assert!(sahte.dizinler.lock().unwrap().is_empty());
+}
+
+/// Kurulu sürüm değilse (Onar'daki gibi) yönetici dizini eklenmez; hata
+/// talimatı taşır ve yerel pencere açılmaz.
+#[tokio::test]
+async fn yonetici_dizini_kurulu_surum_degilse_talimat_doner() {
+    let d = tempfile::tempdir().unwrap();
+    let veri = d.path().join("veri");
+    let arac = d.path().join("arac");
+    std::fs::create_dir(&arac).unwrap();
+    let (t, sahte) = kur(&veri);
+    *sahte.yonetici_gerekenler.lock().unwrap() = vec![arac.canonicalize().unwrap()];
+    t.yukseltici
+        .kurulu
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    t.iletisim.klasor_ver(&arac);
+    let hata = t.uygulama.arac_zinciri_dizini_ekle().await.unwrap_err();
+    assert_eq!(hata.kod, HataKodu::GecersizGirdi);
+    assert!(hata.mesaj.contains("izin-ver"), "{}", hata.mesaj);
+    assert!(t.iletisim.sorulanlar().is_empty());
+    assert!(t.uygulama.arac_zinciri_dizinleri().is_empty());
 }
 
 #[tokio::test]

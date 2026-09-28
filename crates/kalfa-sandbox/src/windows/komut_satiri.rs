@@ -83,6 +83,19 @@ impl GenisVec for std::ffi::OsStr {
     }
 }
 
+/// Argümanları boşlukla ayrılmış tek satıra `arguman`'ın kurallarıyla yazar
+/// (`ShellExecuteExW`'nin parametreleri).
+pub(crate) fn argumanlar_metni(argumanlar: &[&str]) -> String {
+    let mut satir = Vec::new();
+    for (i, a) in argumanlar.iter().enumerate() {
+        if i > 0 {
+            satir.push(u16::from(b' '));
+        }
+        arguman(&mut satir, a);
+    }
+    String::from_utf16_lossy(&satir)
+}
+
 /// `CommandLineToArgvW` kuralları: boşluk ya da sekme içeren (ya da boş)
 /// argüman tırnaklanır; tırnaktan önceki ters bölüler ikilenir.
 fn arguman(satir: &mut Vec<u16>, a: &str) {

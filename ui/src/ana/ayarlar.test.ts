@@ -124,9 +124,20 @@ describe('Ayarlar: yalıtım (aşama 2 tasarımı §10.3, §10.4)', () => {
     );
   });
 
-  it('Windows\'ta araç zinciri bölümü yok; "Yeniden dene" var', async () => {
+  it('Linux\'ta araç zinciri kartı Gelişmiş\'in dışında, kendi yerindedir', async () => {
+    await ciz((a) => {
+      a.aracZinciri = ['/opt/araclar'];
+    });
+    const ayarlar = await ayarlariAc();
+    const liste = await within(ayarlar).findByRole('list', { name: 'Araç zinciri dizinleri' });
+    const gelismis = within(ayarlar).getByText('Gelişmiş').closest('section');
+    expect(gelismis?.contains(liste)).toBe(false);
+  });
+
+  it('Windows\'ta araç zinciri dizinleri Gelişmiş\'tedir; "Yeniden dene" var', async () => {
     const { arka } = await ciz((a) => {
       a.uygulama.platform = 'windows';
+      a.aracZinciri = ['C:\\Program Files\\nodejs'];
       a.uygulama.yalitim = {
         tip: 'Yok',
         neden: 'Desteklenmiyor',
@@ -137,9 +148,39 @@ describe('Ayarlar: yalıtım (aşama 2 tasarımı §10.3, §10.4)', () => {
     const ayarlar = await ayarlariAc();
     expect(within(ayarlar).getByText('Komutlar kapalı: bu sistemde kullanılamıyor')).toBeTruthy();
     expect(within(ayarlar).queryByText('Araç zinciri dizinleri')).toBeNull();
+    const liste = await within(ayarlar).findByRole('list', {
+      name: 'İzinli araç zinciri dizinleri',
+    });
+    expect(within(liste).getByText('C:\\Program Files\\nodejs')).toBeTruthy();
+    const gelismis = within(ayarlar).getByText('Gelişmiş').closest('section');
+    expect(gelismis?.contains(liste)).toBe(true);
+    expect(
+      within(gelismis as HTMLElement).getByText(/Kalfa kendi Python ve Node'unu getirir/),
+    ).toBeTruthy();
+    await fireEvent.click(
+      within(gelismis as HTMLElement).getByRole('button', { name: 'Dizin ekle' }),
+    );
+    expect(arka.komutlar('arac_zinciri_dizini_ekle')).toEqual([{}]);
     // BT izin verdikten sonra kullanıcı yeniden dener.
     expect(within(ayarlar).getByRole('button', { name: 'Yeniden dene' })).toBeTruthy();
-    expect(arka.komutlar('arac_zinciri_dizinleri')).toHaveLength(0);
+  });
+
+  it('Windows\'ta yükseltmeden sonra okunamayan dizin için Gelişmiş\'te Onar çıkar', async () => {
+    const { arka } = await ciz((a) => {
+      a.uygulama.platform = 'windows';
+      a.uygulama.yalitim = { tip: 'Hazir', arka_uc: 'windows', surum: 'AppContainer' };
+      a.aracZinciri = ['C:\\Program Files\\nodejs'];
+      a.aracOnarimGerekli = true;
+    });
+    const ayarlar = await ayarlariAc();
+    const gelismis = (await within(ayarlar).findByText(/artık Kalfa'nın komutlarınca okunamıyor/))
+      .closest('section') as HTMLElement;
+    expect(gelismis.textContent).toContain('Gelişmiş');
+    await fireEvent.click(within(gelismis).getByRole('button', { name: 'Onar' }));
+    expect(arka.komutlar('yalitimi_onar')).toHaveLength(1);
+    await waitFor(() =>
+      expect(within(ayarlar).queryByText(/artık Kalfa'nın komutlarınca okunamıyor/)).toBeNull(),
+    );
   });
 });
 

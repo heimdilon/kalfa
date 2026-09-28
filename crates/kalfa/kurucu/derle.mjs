@@ -1,8 +1,10 @@
 // Windows NSIS kurucusunu ve yanındaki yönetici yardımcısını aynı sürümden derler.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { hazirla } from './araclar.mjs';
 
 if (process.platform !== 'win32') {
   throw new Error('NSIS kurucusu Windows üzerinde derlenmelidir.');
@@ -34,6 +36,20 @@ mkdirSync(ikililer, { recursive: true });
 copyFileSync(
   join(kok, 'target', 'release', 'kalfa-yalitim.exe'),
   join(ikililer, `kalfa-yalitim-${hedef}.exe`),
+);
+// Python ve Node sabit sürüm ve SHA-256 ile `araclar/`'a açılır; kurucu onları
+// `$INSTDIR\araclar\`'a koyar. Python'un yalıtımda çalışması Kalfa'nın
+// sitecustomize.py'sini ister (A16).
+const kurucu = join(kalfa, 'kurucu');
+const araclar = join(kalfa, 'araclar');
+await hazirla(
+  JSON.parse(readFileSync(join(kurucu, 'araclar.json'), 'utf8')),
+  join(kok, 'target', 'kurucu-onbellek'),
+  araclar,
+);
+copyFileSync(
+  join(kurucu, 'python', 'sitecustomize.py'),
+  join(araclar, 'python', 'Lib', 'sitecustomize.py'),
 );
 // `npm` bir .cmd dosyasıdır ve kabuksuz başlatılamaz. Komut metni sabittir;
 // yol yalnızca çalışma dizini olarak geçer.

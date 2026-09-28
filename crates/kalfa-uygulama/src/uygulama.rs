@@ -33,6 +33,8 @@ pub struct Bilesenler {
     pub ev_dizini: PathBuf,
     /// Çalışma alanına özel dizinlerin kökü (`dizin::yalitim_dizini`).
     pub yalitim_dizini: PathBuf,
+    /// Kurulu Kalfa'nın getirdiği Python ve Node (`dizin::kalfa_araclari`).
+    pub kalfa_araclari: Vec<PathBuf>,
     pub yalitim: YalitimKaynagi,
     /// "Onar": kurulu yardımcıyı UAC ile çalıştırır (aşama 2 tasarımı §9.8).
     pub yukseltici: Arc<dyn Yukseltici>,
@@ -88,6 +90,7 @@ impl Uygulama {
             b.yalitim,
             &b.yalitim_dizini,
             &b.ev_dizini,
+            b.kalfa_araclari,
             &yalitim_ayarlari,
             yalitim_dinleyici.clone(),
         );

@@ -418,6 +418,7 @@ impl Arac for KabukAraci {
         // Yalıtımda çalışma alanı kanonik yolunda bağlanır; çalışma alanındaki
         // program da o yoldan çağrılır.
         let mut komut = istek.komut;
+        let cargo = cargo_komutu_mu(&komut);
         if let (Some(b), KomutBicimi::Program { program, .. }) = (&alan, &mut komut)
             && let Ok(goreli) = Path::new(program.as_str()).strip_prefix(self.alan.kok())
         {
@@ -462,11 +463,15 @@ impl Arac for KabukAraci {
         if yalitimli && sonuc.bitis == Bitis::Cikti(Some(1)) && metin.starts_with("bwrap: ") {
             self.yalitici.yeniden_algila();
         }
-        let govde = if tampon.toplam() == 0 {
+        let mut govde = if tampon.toplam() == 0 {
             "--- çıktı yok ---".to_string()
         } else {
             format!("--- çıktı ---\n{metin}")
         };
+        let basarili = sonuc.bitis == Bitis::Cikti(Some(0));
+        if let Some(talimat) = cargo_talimati(cfg!(windows), yalitimli, cargo, basarili, &metin) {
+            govde.push_str(&format!("\n--- Kalfa ---\n{talimat}"));
+        }
         let cikti = AracCiktisi {
             icerik: format!("{durum}\nSüre: {sure} sn\n{govde}"),
             kaynak: istek.kaynak,
@@ -479,9 +484,83 @@ impl Arac for KabukAraci {
     }
 }
 
+/// Eksik crate'te modele giden ek (A15, 2d-3).
+const CARGO_EKSIK_CRATE: &str = "Bağımlılık bu bilgisayarda indirilmemiş. Yalıtım içinde \
+crates.io'dan paket açılamıyor (Windows sınırı). Geliştiricinin yalıtım dışında \
+`cargo fetch` çalıştırması gerekiyor.";
+
+/// Komut `cargo` mu: program adı `cargo` ya da betikte `cargo` geçiyor.
+fn cargo_komutu_mu(komut: &KomutBicimi) -> bool {
+    match komut {
+        KomutBicimi::Program { program, .. } => Path::new(program)
+            .file_stem()
+            .is_some_and(|ad| ad.eq_ignore_ascii_case("cargo")),
+        KomutBicimi::Betik { metin } => metin
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+            .any(|kelime| kelime.eq_ignore_ascii_case("cargo")),
+    }
+}
+
+/// Windows'ta yalıtımlı ve başarısız bir cargo komutu crate bulamadıysa
+/// (ağsız: geliştiricinin registry'sinde yok; ağlı: kapta açılamadı) modele
+/// ne yapılacağı söylenir. İletiler cargo 1.98'inkilerdir.
+fn cargo_talimati(
+    windows: bool,
+    yalitimli: bool,
+    cargo: bool,
+    basarili: bool,
+    metin: &str,
+) -> Option<&'static str> {
+    let eksik = [
+        "no matching package named",
+        "failed to download",
+        "failed to unpack package",
+    ]
+    .iter()
+    .any(|iz| metin.contains(iz));
+    (windows && yalitimli && cargo && !basarili && eksik).then_some(CARGO_EKSIK_CRATE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn eksik_crate_hatasina_talimat_eklenir() {
+        let ag_siz = "error: no matching package named `hex` found\n\
+                      location searched: crates.io index\n\
+                      note: offline mode (via `--offline`) can sometimes cause surprising resolution failures";
+        let agli = "error: failed to unpack package `hex v0.4.3`\n  Erişim engellendi. (os error 5) while canonicalizing C:\\x";
+        for metin in [ag_siz, agli] {
+            assert_eq!(
+                cargo_talimati(true, true, true, false, metin),
+                Some(CARGO_EKSIK_CRATE)
+            );
+        }
+        // Linux, yalıtımsız, cargo olmayan, başarılı ya da başka bir hata: ek yok.
+        assert_eq!(cargo_talimati(false, true, true, false, ag_siz), None);
+        assert_eq!(cargo_talimati(true, false, true, false, ag_siz), None);
+        assert_eq!(cargo_talimati(true, true, false, false, ag_siz), None);
+        assert_eq!(cargo_talimati(true, true, true, true, ag_siz), None);
+        assert_eq!(
+            cargo_talimati(true, true, true, false, "error[E0308]: mismatched types"),
+            None
+        );
+
+        let program = |p: &str| KomutBicimi::Program {
+            program: p.into(),
+            argumanlar: Vec::new(),
+        };
+        assert!(cargo_komutu_mu(&program("cargo")));
+        let tam_yol = if cfg!(windows) {
+            r"C:\Users\x\.cargo\bin\CARGO.exe"
+        } else {
+            "/home/x/.cargo/bin/cargo"
+        };
+        assert!(cargo_komutu_mu(&program(tam_yol)));
+        assert!(!cargo_komutu_mu(&program("cargo-foo")));
+        assert!(!cargo_komutu_mu(&program("npm")));
+    }
 
     #[test]
     fn gosterimde_ozel_karakterli_arguman_tirnaklanir() {

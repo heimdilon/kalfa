@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, GetLastError, HANDLE, HLOCAL, LocalFree,
+    CloseHandle, ERROR_ACCESS_DENIED, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, GetLastError,
+    HANDLE, HLOCAL, INVALID_HANDLE_VALUE, LocalFree,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSecurityDescriptorToStringSecurityDescriptorW, ConvertSidToStringSidW,
@@ -36,7 +37,8 @@ use windows_sys::Win32::Security::{
     TOKEN_USER, TokenElevation, TokenUser, UNPROTECTED_DACL_SECURITY_INFORMATION,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW,
+    CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW, OPEN_EXISTING, WRITE_DAC,
 };
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::SystemServices::SECURITY_DESCRIPTOR_REVISION;
@@ -51,6 +53,8 @@ use windows_sys::Win32::UI::Shell::{
 pub const ARAC_ZINCIRI_YETENEGI: &str = "kalfaAracZinciri";
 /// `internetClient` yeteneği; ağlı çalıştırmada verilir (§9.3).
 pub const INTERNET_ISTEMCISI: &str = "S-1-15-3-1";
+/// `ALL APPLICATION PACKAGES`: Program Files ve sistem dizinlerini okur.
+pub const TUM_UYGULAMA_PAKETLERI: &str = "S-1-15-2-1";
 /// Yöneticiler ve SYSTEM; mirası kesilen nesnelerde tam izin alırlar.
 pub const YONETICILER: &str = "S-1-5-32-544";
 pub const SISTEM: &str = "S-1-5-18";
@@ -917,6 +921,45 @@ pub fn kok_izni_var_mi(kok: &Path, sid: &Sid) -> io::Result<bool> {
             && a.maske & MASKE_LISTELE == MASKE_LISTELE
             && a.sid.as_ref() == Some(sid)
     }))
+}
+
+/// Dizinin DACL'inde, verilen SID'lerden birine nesnenin kendisinde geçerli
+/// okuma ve çalıştırma izni var mı?
+pub fn okuma_izni_var_mi(yol: &Path, sidler: &[Sid]) -> io::Result<bool> {
+    Ok(aceler_oku(yol)?.iter().any(|a| {
+        a.tur == 0
+            && u32::from(a.bayraklar) & INHERIT_ONLY_ACE == 0
+            && a.maske & MASKE_OKU == MASKE_OKU
+            && a.sid.as_ref().is_some_and(|s| sidler.contains(s))
+    }))
+}
+
+/// Geçerli kullanıcı nesnenin DACL'ini değiştirebilir mi? Yalnızca
+/// `WRITE_DAC` ile açmayı dener; hiçbir şey yazılmaz.
+pub fn dacl_yazilabilir_mi(yol: &Path) -> io::Result<bool> {
+    // SAFETY: yol NUL ile biter; geçerli tutamaç hemen kapatılır.
+    let h = unsafe {
+        CreateFileW(
+            genis(yol).as_ptr(),
+            WRITE_DAC,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            null_mut(),
+        )
+    };
+    if h == INVALID_HANDLE_VALUE {
+        let hata = io::Error::last_os_error();
+        return if hata.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) {
+            Ok(false)
+        } else {
+            Err(hata)
+        };
+    }
+    // SAFETY: h geçerli ve yalnızca burada kapatılır.
+    unsafe { CloseHandle(h) };
+    Ok(true)
 }
 
 /// Nesnenin DACL'ine tek girdi uygular ve yalnızca nesnenin kendisini yazar

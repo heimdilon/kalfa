@@ -95,6 +95,8 @@ export class SahteArka {
   };
   /** Ayarlar'daki araç zinciri dizinleri. */
   aracZinciri: string[] = [];
+  /** Kayıtlı bir araç zinciri dizini kapta okunamıyor; başarılı Onar temizler. */
+  aracOnarimGerekli = false;
   /** Ayarlar'daki Windows yalıtım çalışma alanları. */
   hazirAlanlar: YalitimCalismaAlani[] = [];
   /** `yalitim_calisma_alanini_kaldir` için yerel onay yanıtı. */
@@ -317,8 +319,13 @@ export class SahteArka {
         if (!this.hazirAlanlar.some((alan) => alan.kimlik === a.kimlik)) return false;
         this.hazirAlanlar = this.hazirAlanlar.filter((alan) => alan.kimlik !== a.kimlik);
         return true;
+      case 'arac_zinciri_onarim_gerekli':
+        return this.aracOnarimGerekli;
       case 'yalitimi_onar':
-        if (this.onarimSonucu.tip === 'Tamam') this.yalitimDurumu(this.onarimSonucu.yalitim);
+        if (this.onarimSonucu.tip === 'Tamam') {
+          this.yalitimDurumu(this.onarimSonucu.yalitim);
+          this.aracOnarimGerekli = false;
+        }
         return this.onarimSonucu;
       case 'yalitim_teknik_raporu':
         return `Kalfa yalıtım raporu\nDurum: ${this.uygulama.yalitim.tip}\n`;

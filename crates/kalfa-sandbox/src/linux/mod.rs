@@ -287,16 +287,10 @@ impl Yalitici for LinuxYalitici {
     }
 
     fn baslat(&self, istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi> {
-        match (&istek.alan, self.durum().hazir_mi()) {
-            (Some(_), true) => self.yalitimli(istek),
-            (None, false) => Surec::baslat(istek),
-            (Some(_), false) => Err(BaslatmaHatasi::Yalitim(
-                "komut yalıtımlı çalışmak üzere onaylandı ama yalıtım artık kullanılamıyor".into(),
-            )),
-            (None, true) => Err(BaslatmaHatasi::Yalitim(
-                "komut yalıtımsız çalışmak üzere onaylandı ama yalıtım artık kullanılabiliyor"
-                    .into(),
-            )),
+        crate::kip_uyusmasi(istek.alan.is_some(), self.durum().hazir_mi())?;
+        match &istek.alan {
+            Some(_) => self.yalitimli(istek),
+            None => Surec::baslat(istek),
         }
     }
 

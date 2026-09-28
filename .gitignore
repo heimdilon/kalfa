@@ -12,3 +12,5 @@ Screenshot*.png
 
 # Kurucu derlemesinin yerel, platforma özgü yardımcı ikilisi
 /crates/kalfa/binaries/
+# Kurucu derlemesinin indirip açtığı Python ve Node
+/crates/kalfa/araclar/

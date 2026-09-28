@@ -136,6 +136,22 @@ pub enum BaslatmaHatasi {
     Yalitim(String),
 }
 
+/// Onaylanan kip ile çalışma anındaki yalıtım durumunu karşılaştırır (aşama 2
+/// tasarımı §3.2). Araç onaylanan tarife göre çalışır: yalıtımlı onaylanan
+/// komut yalıtım yoksa, yalıtımsız onaylanan komut yalıtım varsa başlamaz.
+/// İki arka ucun `baslat`'ı süreci başlatmadan önce bunu çağırır.
+pub fn kip_uyusmasi(yalitimli_onaylandi: bool, yalitim_hazir: bool) -> Result<(), BaslatmaHatasi> {
+    match (yalitimli_onaylandi, yalitim_hazir) {
+        (true, true) | (false, false) => Ok(()),
+        (true, false) => Err(BaslatmaHatasi::Yalitim(
+            "komut yalıtımlı çalışmak üzere onaylandı ama yalıtım artık kullanılamıyor".into(),
+        )),
+        (false, true) => Err(BaslatmaHatasi::Yalitim(
+            "komut yalıtımsız çalışmak üzere onaylandı ama yalıtım artık kullanılabiliyor".into(),
+        )),
+    }
+}
+
 /// Yalıtım için hazırlanmış çalışma alanı. Kimlik, kullanıcı arayüzünden yol
 /// kabul etmeden alanı kaldırmak için kullanılır.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +198,14 @@ pub trait Yalitici: Send + Sync {
         false
     }
 
+    /// Araç zinciri dizininin kapta okunabilmesi yönetici onayı ister mi
+    /// (2d-3)? Windows'ta: dizini ne araç zinciri yeteneği ne de bütün
+    /// uygulama paketleri okuyabiliyorsa ve geçerli kullanıcı dizinin
+    /// DACL'ini yazamıyorsa. Linux'ta böyle bir izin yoktur.
+    fn okunur_yonetici_gerekli(&self, _dizin: &Path) -> bool {
+        false
+    }
+
     /// Yalıtımlı her çalıştırmadan hemen önce çağrılır (§9.4).
     ///
     /// - Hazırlanmamış çalışma alanı yalnızca `hazirlik_onaylandi` ise
@@ -208,6 +232,9 @@ pub struct PlatformAyari {
     pub yalitim_dizini: PathBuf,
     /// Kullanıcının eklediği araç zinciri dizinleri.
     pub ek_okunur: Vec<PathBuf>,
+    /// Kurulu Kalfa'nın getirdiği araç zinciri; yalnızca Windows'ta vardır
+    /// (`windows::sistem::kurulu_arac_zinciri`), Linux'ta kullanılmaz.
+    pub kalfa_araclari: Vec<PathBuf>,
     /// Durum sonradan değişince çağrılır.
     pub degisince: Box<dyn Fn(&YalitimDurumu) + Send + Sync>,
 }
@@ -235,6 +262,7 @@ pub fn platform_yaliticisi(ayar: PlatformAyari) -> Arc<dyn Yalitici> {
                 ev: ayar.ev,
                 yalitim_dizini: ayar.yalitim_dizini,
                 ek_okunur: ayar.ek_okunur,
+                kalfa_araclari: ayar.kalfa_araclari,
                 git: GitKimligi::oku(),
             },
             ayar.degisince,
@@ -244,5 +272,30 @@ pub fn platform_yaliticisi(ayar: PlatformAyari) -> Arc<dyn Yalitici> {
     {
         let _ = ayar;
         Arc::new(Yalitimsiz)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kip_uyusmasi_dort_hucre() {
+        assert!(kip_uyusmasi(true, true).is_ok());
+        assert!(kip_uyusmasi(false, false).is_ok());
+        match kip_uyusmasi(true, false) {
+            Err(BaslatmaHatasi::Yalitim(m)) => assert_eq!(
+                m,
+                "komut yalıtımlı çalışmak üzere onaylandı ama yalıtım artık kullanılamıyor"
+            ),
+            diger => panic!("{diger:?}"),
+        }
+        match kip_uyusmasi(false, true) {
+            Err(BaslatmaHatasi::Yalitim(m)) => assert_eq!(
+                m,
+                "komut yalıtımsız çalışmak üzere onaylandı ama yalıtım artık kullanılabiliyor"
+            ),
+            diger => panic!("{diger:?}"),
+        }
     }
 }

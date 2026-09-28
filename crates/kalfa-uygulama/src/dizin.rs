@@ -30,6 +30,32 @@ pub fn yalitim_dizini(veri: &Path, yerel_veri: &Path, ortam: Option<OsString>) -
     veri.join("yalitim")
 }
 
+/// Uçtan uca test derlemesinde Kalfa'nın araç zinciri kökünü (`araclar\`)
+/// verir. Üretim derlemesi bu değişkeni okumaz.
+pub const ARAC_ZINCIRI_DEGISKENI: &str = "KALFA_ARAC_ZINCIRI";
+
+/// Kurulu Kalfa'nın getirdiği Python ve Node dizinleri (2d-3): yalnızca
+/// Windows'ta ve `exe` Program Files'taki kurulumdaysa. `ortam`:
+/// `KALFA_ARAC_ZINCIRI`'nin değeri; yalnızca `e2e` özellikli derlemede
+/// kullanılır.
+pub fn kalfa_araclari(exe: &Path, ortam: Option<OsString>) -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        #[cfg(feature = "e2e")]
+        if let Some(kok) = ortam.filter(|d| !d.is_empty()) {
+            return kalfa_sandbox::windows::sistem::arac_zinciri_dizinleri(Path::new(&kok));
+        }
+        #[cfg(not(feature = "e2e"))]
+        let _ = ortam;
+        kalfa_sandbox::windows::sistem::kurulu_arac_zinciri(exe)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (exe, ortam);
+        Vec::new()
+    }
+}
+
 pub fn oturum_dizini(veri_dizini: &Path) -> PathBuf {
     veri_dizini.join("oturumlar")
 }

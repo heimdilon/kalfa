@@ -48,14 +48,29 @@ pub struct WindowsAyari {
     pub yalitim_dizini: PathBuf,
     /// Kullanıcının ayarlardan eklediği araç zinciri dizinleri.
     pub ek_okunur: Vec<PathBuf>,
+    /// Kurulu Kalfa'nın getirdiği Python ve Node dizinleri
+    /// (`sistem::kurulu_arac_zinciri`). Program Files'tadırlar ve `ALL
+    /// APPLICATION PACKAGES` onları okur; izin verilmez. Kabın `PATH`'inde,
+    /// bu sırayla, kullanıcının bilgisayarındaki araçlardan önce gelirler
+    /// (yalnızca MSVC'nin `bin`'i onlardan öncedir).
+    pub kalfa_araclari: Vec<PathBuf>,
     /// Yalıtım içindeki git yapılandırmasında kullanılacak kimlik.
     pub git: GitKimligi,
 }
 
 impl WindowsAyari {
     /// Var olan araç zinciri dizinleri; Windows'ta izin yeteneğiyle okunur.
+    /// cargo'nun `registry` ve `git` önbellekleri de okunur: ağsız komut
+    /// geliştiricinin indirdiği crate'lerle derler (2d-3, A15'in gelişmiş
+    /// yolu). `.cargo`'nun kökü izin almaz; oradaki `credentials.toml` ve
+    /// `config.toml` kapta okunamaz.
     fn okunur(&self) -> Vec<PathBuf> {
-        let mut yollar = vec![self.ev.join(r".cargo\bin"), self.ev.join(".rustup")];
+        let mut yollar = vec![
+            self.ev.join(r".cargo\bin"),
+            self.ev.join(r".cargo\registry"),
+            self.ev.join(r".cargo\git"),
+            self.ev.join(".rustup"),
+        ];
         yollar.extend(self.ek_okunur.iter().cloned());
         yollar.retain(|y| y.is_dir());
         yollar.sort();
@@ -436,8 +451,9 @@ impl Yalitici for WindowsYalitici {
     }
 
     fn baslat(&self, istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi> {
-        match (&istek.alan, self.durum().hazir_mi()) {
-            (Some(alan), true) => {
+        crate::kip_uyusmasi(istek.alan.is_some(), self.durum().hazir_mi())?;
+        match &istek.alan {
+            Some(alan) => {
                 // ACE kilidi ACL güncellemelerini ve yeni süreç başlatmayı
                 // sıraya sokar. Böylece kaldırılmakta olan izinle yarışan bir
                 // süreç sınır değişikliğinden sonra başlatılamaz.
@@ -453,14 +469,7 @@ impl Yalitici for WindowsYalitici {
                     }
                 }
             }
-            (None, false) => Surec::baslat(istek),
-            (Some(_), false) => Err(BaslatmaHatasi::Yalitim(
-                "komut yalıtımlı çalışmak üzere onaylandı ama yalıtım artık kullanılamıyor".into(),
-            )),
-            (None, true) => Err(BaslatmaHatasi::Yalitim(
-                "komut yalıtımsız çalışmak üzere onaylandı ama yalıtım artık kullanılabiliyor"
-                    .into(),
-            )),
+            None => Surec::baslat(istek),
         }
     }
 
@@ -533,6 +542,10 @@ impl Yalitici for WindowsYalitici {
                 }
             }
         }
+    }
+
+    fn okunur_yonetici_gerekli(&self, dizin: &Path) -> bool {
+        okunur_yonetici_gerekli(dizin)
     }
 
     fn hazirlik_gerekli(&self, kok: &Path) -> bool {
@@ -648,7 +661,7 @@ impl WindowsYalitici {
                 "araç zinciri dizini çalışma alanı ya da Kalfa'nın özel verisiyle çakışıyor".into(),
             ));
         }
-        let ortam = yalitim_ortami(&istek.ortam, &ozel, &ayar, &araclar);
+        let ortam = yalitim_ortami(&istek.ortam, &ozel, &ayar, &araclar, istek.ag);
         let kokler = izinli_kokler(&ayar, alan, &ozel, &araclar);
         let (program, argumanlar) = program::coz(&istek.komut, &ortam)?;
         let program = gorunen_program(&program, &kokler, alan, &ortam)?;
@@ -1503,6 +1516,7 @@ fn yalitim_ortami(
     ozel: &OzelDizinler,
     ayar: &WindowsAyari,
     araclar: &[PathBuf],
+    ag: bool,
 ) -> Vec<(String, String)> {
     let mut ortam: Vec<(String, String)> = kaynak
         .iter()
@@ -1523,6 +1537,7 @@ fn yalitim_ortami(
 
     let mut kokler = sistem_yollari();
     kokler.extend(araclar.iter().cloned());
+    kokler.extend(ayar.kalfa_araclari.iter().cloned());
     kokler.extend([ozel.kok.clone(), ozel.ev.clone()]);
     let mevcut_yol = deger_al(&ortam, "PATH").unwrap_or_default();
     let mut yollar: Vec<PathBuf> = std::env::split_paths(&OsString::from(mevcut_yol))
@@ -1537,7 +1552,27 @@ fn yalitim_ortami(
     yollar.retain(|y| y.is_dir() && kokler.iter().any(|k| altinda(y, k)));
     yollar.sort();
     yollar.dedup_by(|a, b| ayni_yol(a, b));
-    if let Ok(path) = std::env::join_paths(yollar) {
+    // Kalfa'nın araçları, kullanıcının bilgisayarındakilerden (ör.
+    // `C:\Program Files\nodejs`) önce ve verilen sırayla gelir. pip'in
+    // kullanıcı kurulumunun betikleri henüz yoksa da yerini alır.
+    let mut once: Vec<PathBuf> = ayar
+        .kalfa_araclari
+        .iter()
+        .filter(|y| y.is_dir())
+        .cloned()
+        .collect();
+    if let Some(surum) = python_surumu(&once) {
+        once.push(
+            ozel.ev
+                .join("Roaming")
+                .join("Python")
+                .join(format!("Python{surum}"))
+                .join("Scripts"),
+        );
+    }
+    yollar.retain(|y| !once.iter().any(|o| ayni_yol(o, y)));
+    once.extend(yollar);
+    if let Ok(path) = std::env::join_paths(once) {
         deger_ata(&mut ortam, "PATH", &path.to_string_lossy());
     }
 
@@ -1551,11 +1586,34 @@ fn yalitim_ortami(
     deger_ata(&mut ortam, "LOCALAPPDATA", &ozel.ev.display().to_string());
     deger_ata(&mut ortam, "TEMP", &ozel.gecici.display().to_string());
     deger_ata(&mut ortam, "TMP", &ozel.gecici.display().to_string());
-    deger_ata(
-        &mut ortam,
-        "CARGO_HOME",
-        &ozel.cargo().display().to_string(),
-    );
+    // A15'in gelişmiş yolu (2d-3): kapta crates.io paketi açılamaz. Ağsız
+    // komut, geliştiricinin `cargo` ve `registry`'si okunur dizinlerdeyse
+    // onun `.cargo`'suyla ve çevrimdışı derler; kap oraya yazamaz, kökteki
+    // kimlik dosyalarını okuyamaz. Ağlı komutta özel, boş registry kalır.
+    let okunur_mu = |alt: &str| {
+        kanonik_varsa_baglantisiz(&ayar.ev.join(alt))
+            .ok()
+            .flatten()
+            .is_some_and(|y| araclar.iter().any(|a| ayni_yol(a, &y)))
+    };
+    let gelistirici_cargo = (!ag && okunur_mu(r".cargo\bin") && okunur_mu(r".cargo\registry"))
+        .then(|| {
+            kanonik_varsa_baglantisiz(&ayar.ev.join(".cargo"))
+                .ok()
+                .flatten()
+        })
+        .flatten();
+    match gelistirici_cargo {
+        Some(cargo) => {
+            deger_ata(&mut ortam, "CARGO_HOME", &cargo.display().to_string());
+            deger_ata(&mut ortam, "CARGO_NET_OFFLINE", "true");
+        }
+        None => deger_ata(
+            &mut ortam,
+            "CARGO_HOME",
+            &ozel.cargo().display().to_string(),
+        ),
+    }
     deger_ata(
         &mut ortam,
         "GIT_CONFIG_GLOBAL",
@@ -1586,6 +1644,37 @@ fn yalitim_ortami(
     }
     MsvcOrtami::bul().uygula(&mut ortam);
     ortam
+}
+
+/// `Yalitici::okunur_yonetici_gerekli`: dizini ne araç zinciri yeteneği ne de
+/// bütün uygulama paketleri okuyabiliyor ve geçerli kullanıcı DACL'ini
+/// yazamıyor. Okunamayan DACL de yönetici ister; yükseltilmiş yardımcı dizini
+/// `izin-ver`'in denetimleriyle yeniden doğrular.
+fn okunur_yonetici_gerekli(dizin: &Path) -> bool {
+    let sidler = match (
+        guvenlik::arac_zinciri_sidi(),
+        Sid::metinden(guvenlik::TUM_UYGULAMA_PAKETLERI),
+    ) {
+        (Ok(yetenek), Ok(paketler)) => vec![yetenek, paketler],
+        _ => return true,
+    };
+    if guvenlik::okuma_izni_var_mi(dizin, &sidler).unwrap_or(false) {
+        return false;
+    }
+    !guvenlik::dacl_yazilabilir_mi(dizin).unwrap_or(false)
+}
+
+/// Kalfa'nın Python'unun kısa sürümü (`python314.dll` → `314`): pip'in
+/// kullanıcı kurulumu `%APPDATA%\Python\Python314\Scripts`'e iner.
+fn python_surumu(dizinler: &[PathBuf]) -> Option<String> {
+    dizinler.iter().find_map(|dizin| {
+        std::fs::read_dir(dizin).ok()?.flatten().find_map(|girdi| {
+            let ad = girdi.file_name().to_string_lossy().to_ascii_lowercase();
+            let surum = ad.strip_prefix("python")?.strip_suffix(".dll")?;
+            (surum.len() >= 3 && surum.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| surum.to_string())
+        })
+    })
 }
 
 fn deger_ata(ortam: &mut Vec<(String, String)>, ad: &str, deger: &str) {
@@ -1622,13 +1711,14 @@ fn gorunen_program(
 }
 
 fn izinli_kokler(
-    _ayar: &WindowsAyari,
+    ayar: &WindowsAyari,
     alan: &AlanBilgisi,
     ozel: &OzelDizinler,
     araclar: &[PathBuf],
 ) -> Vec<PathBuf> {
     let mut kokler = sistem_yollari();
     kokler.extend(araclar.iter().cloned());
+    kokler.extend(ayar.kalfa_araclari.iter().cloned());
     kokler.push(alan.kok.clone());
     kokler.push(ozel.kok.clone());
     kokler.extend(alan.git_dizinleri.iter().cloned());
@@ -1749,6 +1839,106 @@ mod tests {
             ayrinti,
             r"denetim=kok-izni; C:\ sürücüsünün kök izni eksik."
         );
+    }
+
+    /// Kalfa'nın getirdiği araçlar kabın `PATH`'inde, kullanıcının
+    /// bilgisayarındaki araçlardan (ör. `C:\Program Files\nodejs`) önce ve
+    /// verilen sırada gelir; pip'in kullanıcı kurulumu da `PATH`'tedir.
+    #[test]
+    fn kalfa_araclari_path_in_basinda() {
+        let d = tempfile::tempdir().unwrap();
+        let kok = guvenlik::sade(&d.path().canonicalize().unwrap());
+        let kalfa_python = kok.join(r"z\python");
+        let kalfa_node = kok.join(r"b\node");
+        let kullanici_node = kok.join(r"a\nodejs");
+        for dizin in [&kalfa_python, &kalfa_node, &kullanici_node] {
+            std::fs::create_dir_all(dizin).unwrap();
+        }
+        std::fs::write(kalfa_python.join("python3.dll"), b"").unwrap();
+        std::fs::write(kalfa_python.join("python314.dll"), b"").unwrap();
+        let ayar = WindowsAyari {
+            ev: kok.join("ev"),
+            yalitim_dizini: kok.join("yalitim"),
+            ek_okunur: vec![kullanici_node.clone()],
+            kalfa_araclari: vec![kalfa_python.clone(), kalfa_node.clone()],
+            git: GitKimligi::default(),
+        };
+        let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, "deneme");
+        let kaynak = vec![(
+            "PATH".to_string(),
+            std::env::join_paths([&kullanici_node, &kalfa_node])
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        )];
+
+        let ortam = yalitim_ortami(
+            &kaynak,
+            &ozel,
+            &ayar,
+            std::slice::from_ref(&kullanici_node),
+            false,
+        );
+        let path = deger_al(&ortam, "PATH").unwrap();
+        let yollar: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        // MSVC ortamı `bin`'ini en başa koyar (Git'in `link.exe`'sinden
+        // önce); orada `python` ya da `node` yoktur.
+        let p = yollar
+            .iter()
+            .position(|y| y == &kalfa_python)
+            .unwrap_or_else(|| panic!("{path}"));
+        assert!(
+            yollar[..p]
+                .iter()
+                .all(|y| !y.join("python.exe").exists() && !y.join("node.exe").exists()),
+            "{path}"
+        );
+        assert_eq!(yollar[p + 1], kalfa_node, "{path}");
+        assert_eq!(
+            yollar[p + 2],
+            ozel.ev.join(r"Roaming\Python\Python314\Scripts"),
+            "{path}"
+        );
+        let kullanici = yollar.iter().position(|y| y == &kullanici_node);
+        assert!(kullanici.is_some_and(|i| i > p + 2), "{path}");
+        assert_eq!(
+            yollar.iter().filter(|y| *y == &kalfa_node).count(),
+            1,
+            "Kalfa'nın dizini yinelenmemeli: {path}"
+        );
+    }
+
+    /// Geliştiricinin kendi dizini ve bütün uygulama paketlerinin okuduğu
+    /// `System32` yönetici istemez; ikisini de karşılamayan, yöneticiye ait
+    /// `System32\Tasks` ister (2d-3, Görev 5).
+    #[test]
+    fn okunur_yonetici_gerekli_kendi_dizininde_false() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(!okunur_yonetici_gerekli(d.path()));
+        let windows = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        assert!(!okunur_yonetici_gerekli(&windows.join("System32")));
+        assert!(okunur_yonetici_gerekli(&windows.join(r"System32\Tasks")));
+    }
+
+    /// Kalfa'nın araçları yoksa `PATH` bugünkü gibidir; pip'in kullanıcı
+    /// dizini de eklenmez.
+    #[test]
+    fn kalfa_araclari_yoksa_pip_kullanici_dizini_eklenmez() {
+        let d = tempfile::tempdir().unwrap();
+        let kok = guvenlik::sade(&d.path().canonicalize().unwrap());
+        let ayar = WindowsAyari {
+            ev: kok.join("ev"),
+            yalitim_dizini: kok.join("yalitim"),
+            ek_okunur: Vec::new(),
+            kalfa_araclari: Vec::new(),
+            git: GitKimligi::default(),
+        };
+        let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, "deneme");
+        let ortam = yalitim_ortami(&[], &ozel, &ayar, &[], false);
+        let path = deger_al(&ortam, "PATH").unwrap();
+        assert!(!path.contains("Python"), "{path}");
     }
 
     #[test]

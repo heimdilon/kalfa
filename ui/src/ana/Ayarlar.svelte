@@ -4,7 +4,9 @@
   çalıştırma; Linux'ta yalıtıma açılan araç zinciri dizinleri; Windows'ta
   hazırlanmış çalışma alanları. Dizin yerel klasör seçiciyle eklenir; arayüz
   yol göndermez. Gelişmiş bölümde yalıtımsız çalıştırma anahtarı (§9.8); açmayı
-  Rust yerel pencerede sorar.
+  Rust yerel pencerede sorar. Windows'ta araç zinciri dizinleri de Gelişmiş'tedir
+  (2d-3): Kalfa kendi Python ve Node'unu getirir; yöneticiye ait dizin için
+  onayı ve UAC'yi Rust ister.
 -->
 <script lang="ts">
   import Button from '../bilesenler/Button.svelte';
@@ -98,6 +100,10 @@
         <p class="aciklama">{m('ayarlar.yalitim.hazir_aciklama')}</p>
         {#if durum.onarim?.tip === 'Tamam'}
           <p class="aciklama alt" role="status">{m('ayarlar.yalitim.onarildi')}</p>
+        {:else if durum.onarim?.tip === 'Basarisiz'}
+          <p class="aciklama alt uyari-metni" role="status">
+            {m('ayarlar.yalitim.onarim_basarisiz', { mesaj: durum.onarim.mesaj })}
+          </p>
         {/if}
       {:else if yalitim}
         {@const acik = durum.uygulama?.yalitimsiz_izinli ?? false}
@@ -157,31 +163,36 @@
       {/if}
     </Card>
 
+    {#snippet dizinEkle()}
+      <Button size="sm" iconLeft="folder-plus" onclick={() => durum.aracZinciriEkle()}>
+        {m('ayarlar.arac_zinciri.ekle')}
+      </Button>
+    {/snippet}
+
+    {#snippet dizinListesi(baslik: string)}
+      {#if durum.aracZinciri.length > 0}
+        <ul class="dizinler" aria-label={baslik}>
+          {#each durum.aracZinciri as yol (yol)}
+            <li>
+              <span class="yol">{yol}</span>
+              <IconButton
+                icon="x"
+                size="sm"
+                label={m('ayarlar.arac_zinciri.kaldir', { yol })}
+                onclick={() => durum.aracZinciriKaldir(yol)}
+              />
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="bos">{m('ayarlar.arac_zinciri.bos')}</p>
+      {/if}
+    {/snippet}
+
     {#if linux}
-      <Card title={m('ayarlar.arac_zinciri')} icon="folder">
-        {#snippet actions()}
-          <Button size="sm" iconLeft="folder-plus" onclick={() => durum.aracZinciriEkle()}>
-            {m('ayarlar.arac_zinciri.ekle')}
-          </Button>
-        {/snippet}
+      <Card title={m('ayarlar.arac_zinciri')} icon="folder" actions={dizinEkle}>
         <p class="aciklama">{m('ayarlar.arac_zinciri.aciklama')}</p>
-        {#if durum.aracZinciri.length > 0}
-          <ul class="dizinler" aria-label={m('ayarlar.arac_zinciri')}>
-            {#each durum.aracZinciri as yol (yol)}
-              <li>
-                <span class="yol">{yol}</span>
-                <IconButton
-                  icon="x"
-                  size="sm"
-                  label={m('ayarlar.arac_zinciri.kaldir', { yol })}
-                  onclick={() => durum.aracZinciriKaldir(yol)}
-                />
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <p class="bos">{m('ayarlar.arac_zinciri.bos')}</p>
-        {/if}
+        {@render dizinListesi(m('ayarlar.arac_zinciri'))}
       </Card>
     {/if}
 
@@ -220,6 +231,32 @@
         onchange={(acik) => durum.yalitimsiziAyarla(acik)}
       />
       <p class="aciklama alt">{m('ayarlar.yalitimsiz.aciklama')}</p>
+      {#if windows}
+        <div class="alt-bolum">
+          <div class="alt-baslik">
+            <h3>{m('ayarlar.arac_zinciri.windows')}</h3>
+            {@render dizinEkle()}
+          </div>
+          <p class="aciklama">{m('ayarlar.arac_zinciri.windows_aciklama')}</p>
+          {#if durum.aracOnarimGerekli}
+            <p class="aciklama alt uyari-metni" role="status">
+              {m('ayarlar.arac_zinciri.onarim_gerekli')}
+            </p>
+            <div class="dugmeler">
+              <Button
+                size="sm"
+                variant="primary"
+                iconLeft="shield-check"
+                loading={durum.onariliyor}
+                onclick={() => durum.yalitimiOnar()}
+              >
+                {m('ayarlar.yalitim.onar')}
+              </Button>
+            </div>
+          {/if}
+          {@render dizinListesi(m('ayarlar.arac_zinciri.windows'))}
+        </div>
+      {/if}
     </Card>
   </div>
 </section>
@@ -264,6 +301,10 @@
     padding: 20px 22px;
     max-width: 760px;
   }
+  /* Kartlar küçülmez; kısa pencerede içerik kırpılmaz, gövde kayar. */
+  .govde > :global(.kart) {
+    flex-shrink: 0;
+  }
   .durum {
     display: flex;
     align-items: center;
@@ -288,6 +329,24 @@
     display: flex;
     gap: 8px;
     margin-top: 12px;
+  }
+  .alt-bolum {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: var(--border-width) solid var(--border-subtle);
+  }
+  .alt-baslik {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  h3 {
+    margin: 0;
+    font: var(--type-body);
+    font-weight: var(--fw-semibold);
+    color: var(--text-title);
   }
   .teknik {
     margin-top: 12px;

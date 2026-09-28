@@ -154,6 +154,18 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
         aktarim: AktarimAyarlari::default(),
         ev_dizini,
         yalitim_dizini: yalitim,
+        // Kurulu sürümde Program Files'taki `araclar\`; e2e derlemesi
+        // `KALFA_ARAC_ZINCIRI` ile başka bir kök verebilir.
+        kalfa_araclari: std::env::current_exe()
+            .map(|exe| {
+                let ortam = if cfg!(feature = "e2e") {
+                    std::env::var_os(kalfa_uygulama::dizin::ARAC_ZINCIRI_DEGISKENI)
+                } else {
+                    None
+                };
+                kalfa_uygulama::dizin::kalfa_araclari(&exe, ortam)
+            })
+            .unwrap_or_default(),
         yalitim: YalitimKaynagi::Platform,
     }))
 }

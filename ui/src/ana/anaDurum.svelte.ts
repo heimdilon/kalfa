@@ -34,8 +34,10 @@ export class AnaDurum {
   duyuru = $state('');
   /** Menünün seçtiği görünüm: oturumlar ya da Ayarlar (aşama 2 tasarımı §10.4). */
   gorunum = $state<'oturumlar' | 'ayarlar'>('oturumlar');
-  /** Yalıtıma açılan araç zinciri dizinleri (Linux). */
+  /** Yalıtıma açılan araç zinciri dizinleri (Linux ve Windows). */
   aracZinciri = $state<string[]>([]);
+  /** Windows: kayıtlı bir dizin kapta okunamıyor; Gelişmiş'te Onar gösterilir. */
+  aracOnarimGerekli = $state(false);
   algilaniyor = $state(false);
   /** Son alınan teknik rapor ve panoya kopyalamanın sonucu (§9.8). */
   teknikRapor = $state<string | null>(null);
@@ -179,16 +181,23 @@ export class AnaDurum {
     void this.#dene(() => ipc.sartPenceresiniAc());
   }
 
-  /** Ayarlar'ı açar; Linux'ta araç zinciri dizinlerini okur. */
+  /** Ayarlar'ı açar; Linux ve Windows'ta araç zinciri dizinlerini okur. */
   async ayarlariAc(): Promise<void> {
     this.gorunum = 'ayarlar';
     this.hata = null;
     this.teknikRapor = null;
     this.kopyalama = null;
     this.onarim = null;
-    if (this.uygulama?.platform !== 'linux') return;
+    const platform = this.uygulama?.platform;
+    if (platform !== 'linux' && platform !== 'windows') return;
     const dizinler = await this.#dene(() => ipc.aracZinciriDizinleri());
     if (dizinler) this.aracZinciri = dizinler;
+    if (platform === 'windows') await this.#aracOnarimGerekliOku();
+  }
+
+  async #aracOnarimGerekliOku(): Promise<void> {
+    const gerekli = await this.#dene(() => ipc.aracZinciriOnarimGerekli());
+    if (gerekli !== undefined) this.aracOnarimGerekli = gerekli;
   }
 
   oturumlaraDon(): void {
@@ -237,6 +246,7 @@ export class AnaDurum {
       if (!sonuc) return;
       this.onarim = sonuc;
       if (sonuc.tip === 'Tamam') this.#yalitimYaz(sonuc.yalitim);
+      if (this.uygulama?.platform === 'windows') await this.#aracOnarimGerekliOku();
     } finally {
       this.onariliyor = false;
     }
@@ -251,6 +261,7 @@ export class AnaDurum {
   async aracZinciriKaldir(yol: string): Promise<void> {
     const dizinler = await this.#dene(() => ipc.aracZinciriDiziniKaldir(yol));
     if (dizinler) this.aracZinciri = dizinler;
+    if (this.uygulama?.platform === 'windows') await this.#aracOnarimGerekliOku();
   }
 
   #yalitimYaz(yeni: YalitimDurumu): void {

@@ -2,6 +2,7 @@
 //! (aşama 2 tasarımı §9.8). BT için teknik raporda Windows'un sürümü, yapısı
 //! ve baskısı yazılır; "Onar", kurulu `kalfa-yalitim.exe`'yi UAC ile başlatır.
 
+use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
@@ -17,6 +18,7 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
 use super::guvenlik::{genis, program_files_dizinleri, sade};
+use super::komut_satiri;
 
 /// Yardımcının dosya adı; kurulu sürümde Kalfa'nın yanındadır.
 pub const YARDIMCI: &str = "kalfa-yalitim.exe";
@@ -26,22 +28,63 @@ pub const YARDIMCI: &str = "kalfa-yalitim.exe";
 /// yazabilir; başka yerdeki (ör. `target\debug`) bir yardımcı, yalıtımın
 /// değiştirebileceği bir dosya olabilir ve UAC ile hiçbir zaman başlatılmaz.
 pub fn kurulu_yardimci(exe: &Path) -> Option<PathBuf> {
+    let yardimci = kurulum_dizini(exe)?.join(YARDIMCI);
+    yardimci.is_file().then_some(yardimci)
+}
+
+/// Kurulu Kalfa'nın getirdiği araç zinciri (2d-3): `exe` Program Files'ın
+/// altındaysa yanındaki `araclar\`'ın var olan dizinleri; değilse boş.
+/// Geliştirme derlemesinin `target\` altındaki bir dizini araç zinciri
+/// sayılmaz (`kurulu_yardimci` ile aynı kural).
+pub fn kurulu_arac_zinciri(exe: &Path) -> Vec<PathBuf> {
+    kurulum_dizini(exe)
+        .map(|dizin| arac_zinciri_dizinleri(&dizin.join("araclar")))
+        .unwrap_or_default()
+}
+
+/// Araç zinciri kökünün (`araclar\`) kabın `PATH`'ine girecek dizinleri,
+/// bu sırayla: `python`, `python\Scripts`, `node`. Yalnızca var olanlar.
+pub fn arac_zinciri_dizinleri(kok: &Path) -> Vec<PathBuf> {
+    [r"python", r"python\Scripts", r"node"]
+        .into_iter()
+        .map(|alt| kok.join(alt))
+        .filter(|d| d.is_dir())
+        .collect()
+}
+
+/// `exe`'nin dizini, Program Files'ın altındaysa.
+fn kurulum_dizini(exe: &Path) -> Option<PathBuf> {
     let dizin = sade(&exe.canonicalize().ok()?).parent()?.to_path_buf();
-    let kurulu = program_files_dizinleri().into_iter().any(|pf| {
-        pf.canonicalize()
-            .map(|pf| dizin.starts_with(sade(&pf)))
-            .unwrap_or(false)
-    });
-    let yardimci = dizin.join(YARDIMCI);
-    (kurulu && yardimci.is_file()).then_some(yardimci)
+    program_files_dizinleri()
+        .into_iter()
+        .any(|pf| {
+            pf.canonicalize()
+                .map(|pf| dizin.starts_with(sade(&pf)))
+                .unwrap_or(false)
+        })
+        .then_some(dizin)
+}
+
+/// Yükseltilen sürecin komut satırı: her argüman `CommandLineToArgvW`
+/// kurallarıyla yazılır (boşluklu yol tırnaklanır, tırnaktan önceki ters
+/// bölüler ikilenir).
+pub fn yardimci_komut_satiri(argumanlar: &[&OsStr]) -> io::Result<String> {
+    let parcalar = argumanlar
+        .iter()
+        .map(|a| {
+            a.to_str()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "argüman Unicode değil"))
+        })
+        .collect::<io::Result<Vec<&str>>>()?;
+    Ok(komut_satiri::argumanlar_metni(&parcalar))
 }
 
 /// `exe`'yi UAC ile yönetici olarak başlatır ve bitmesini bekler; çıkış
 /// kodunu döner. Kullanıcı UAC'de vazgeçerse `Ok(None)`.
-pub fn yonetici_olarak_calistir(exe: &Path, argumanlar: &str) -> io::Result<Option<u32>> {
+pub fn yonetici_olarak_calistir(exe: &Path, argumanlar: &[&OsStr]) -> io::Result<Option<u32>> {
     let fiil = genis("runas");
     let dosya = genis(exe);
-    let parametreler = genis(argumanlar);
+    let parametreler = genis(yardimci_komut_satiri(argumanlar)?);
     // SAFETY: yapı sıfırla başlatılır; dizeler NUL ile sonlanır ve çağrı
     // boyunca yaşar.
     let mut bilgi: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
@@ -197,6 +240,57 @@ mod tests {
         assert_eq!(kurulu_yardimci(&exe), None);
         let test_ikilisi = std::env::current_exe().unwrap();
         assert_eq!(kurulu_yardimci(&test_ikilisi), None);
+    }
+
+    /// Kalfa'nın araç zinciri de yalnızca Program Files'taki kurulumdan gelir
+    /// (2d-3 planı, Görev 4): `target\debug`'daki bir `araclar\` sayılmaz.
+    #[test]
+    fn kurulu_arac_zinciri_program_files_disinda_bos() {
+        let d = tempfile::tempdir().unwrap();
+        let exe = d.path().join("kalfa.exe");
+        std::fs::write(&exe, b"").unwrap();
+        for alt in [r"araclar\python\Scripts", r"araclar\node"] {
+            std::fs::create_dir_all(d.path().join(alt)).unwrap();
+        }
+        assert!(kurulu_arac_zinciri(&exe).is_empty());
+        let test_ikilisi = std::env::current_exe().unwrap();
+        assert!(kurulu_arac_zinciri(&test_ikilisi).is_empty());
+    }
+
+    #[test]
+    fn arac_zinciri_dizinleri_var_olanlari_sirayla_verir() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(arac_zinciri_dizinleri(d.path()).is_empty());
+        std::fs::create_dir_all(d.path().join("node")).unwrap();
+        std::fs::create_dir_all(d.path().join(r"python\Scripts")).unwrap();
+        assert_eq!(
+            arac_zinciri_dizinleri(d.path()),
+            vec![
+                d.path().join("python"),
+                d.path().join(r"python\Scripts"),
+                d.path().join("node"),
+            ]
+        );
+    }
+
+    /// UAC ile başlayan yardımcının komut satırı: boşluklu yol tek argüman
+    /// kalır, sondaki ters bölü tırnağı kaçırmaz (2d-3, Görev 5).
+    #[test]
+    fn yardimci_komut_satiri_yollari_tirnaklar() {
+        let satir = yardimci_komut_satiri(&[
+            OsStr::new("kur"),
+            OsStr::new("--izin-ver"),
+            OsStr::new(r"C:\a"),
+            OsStr::new("--izin-ver"),
+            OsStr::new(r"C:\Program Files\nodejs"),
+            OsStr::new("--izin-ver"),
+            OsStr::new(r"C:\b c\"),
+        ])
+        .unwrap();
+        assert_eq!(
+            satir,
+            r#"kur --izin-ver C:\a --izin-ver "C:\Program Files\nodejs" --izin-ver "C:\b c\\""#
+        );
     }
 
     #[test]
