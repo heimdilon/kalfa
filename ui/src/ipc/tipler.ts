@@ -69,6 +69,15 @@ export interface OnayOgesi {
   kabuk: KabukTarifi | null;
   /** Onayı Rust yerel pencerede ayrıca sorar (aşama 2 tasarımı §5.2). */
   yerel_onay: boolean;
+  /** Kabuk öğesinde: oturumda onaysız değişenler (güvenlik analizi Bulgu 3). */
+  onaysiz_degisiklikler?: OnaysizDegisiklikler;
+}
+
+export interface OnaysizDegisiklikler {
+  yollar: string[];
+  /** Onaysız bir komut da çalıştı; değiştirdiği dosyalar bilinmiyor. */
+  komut_calisti: boolean;
+  derleme_dosyalari: string[];
 }
 
 export type CiktiAkisi = 'Standart' | 'Hata';
@@ -81,6 +90,8 @@ export type Olay =
   | { tip: 'DusunceParcasi'; metin: string }
   | { tip: 'AracCagrisiBasladi'; cagri: CagriId; arac: string; aciklama: string }
   | { tip: 'AracSonucu'; cagri: CagriId; arac: string; durum: AracDurumu; icerik: string }
+  /** Aracın bildirdiği güvenlik uyarısı; `AracSonucu`'ndan sonra gelir. */
+  | { tip: 'GuvenlikUyarisi'; cagri: CagriId; mesaj: string }
   | {
       tip: 'AracCiktisiParcasi';
       cagri: CagriId;
@@ -130,7 +141,8 @@ export type GorunumOgesi =
       durum: AracDurumu | null;
       sonuc: string | null;
     }
-  | { tip: 'TurSonu'; sira: number; tur: TurId | null; neden: BitisNedeni };
+  | { tip: 'TurSonu'; sira: number; tur: TurId | null; neden: BitisNedeni }
+  | { tip: 'GuvenlikUyarisi'; sira: number; tur: TurId | null; mesaj: string };
 
 export interface GecmisSayfasi {
   ogeler: GorunumOgesi[];

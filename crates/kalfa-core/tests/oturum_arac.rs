@@ -3,7 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use kalfa_core::arac::Arac;
-use kalfa_core::izin::{GIZLI_UYARISI, Kip};
+use kalfa_core::gorunum::GORUNMEZ_UYARISI;
+use kalfa_core::izin::{GIZLI_UYARISI, KORUMALI_UYARISI, Kip};
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::oturum::{OturumAyarlari, baslat_kayitla};
 use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OnayOgesi};
@@ -355,9 +356,16 @@ async fn serbest_okuma_onaysiz_calisir_ve_kaynakla_modele_doner() {
             .unwrap()
             .starts_with("model-cagri-")
     );
-    assert_eq!(
-        arac_mesaji.content.as_deref(),
-        Some("[kaynak: sahte:oku]\ndosya içeriği")
+    let icerik = arac_mesaji.content.as_deref().unwrap();
+    let satirlar: Vec<&str> = icerik.lines().collect();
+    assert!(
+        satirlar[0].starts_with("<arac_sonucu kaynak=\"sahte:oku\" sinir=\""),
+        "{icerik}"
+    );
+    assert_eq!(satirlar[1], "dosya içeriği");
+    assert!(
+        satirlar[2].starts_with("</arac_sonucu sinir=\""),
+        "{icerik}"
     );
     assert_eq!(oku.cagri_sayisi(), 1);
 }
@@ -452,6 +460,48 @@ async fn proje_kipinde_yazma_onaysiz() {
             .any(|z| matches!(z.yuk, Olay::OnayGerekiyor { .. }))
     );
     assert_eq!(yaz.cagri_sayisi(), 1);
+}
+
+/// Güvenlik analizi Bulgu 1: `.git/commondir` git'i saldırganın
+/// yapılandırmasına yönlendirir; Proje kipinde de onaysız yazılamaz.
+#[tokio::test]
+async fn proje_kipinde_commondir_yazmasi_onaya_cikar() {
+    let yaz = Arc::new(SahteArac::yazan("yaz"));
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac("yaz", yol(".git/commondir")),
+        SahteYanit::metin("peki"),
+    ]);
+    let mut d = oturum(&s, vec![a(&yaz)], ayarlar(Kip::Proje));
+    d.gonder(mesaj("yaz")).await;
+    let ogeler = onay_bekle(&mut d).await;
+    assert_eq!(ogeler[0].uyarilar, vec![KORUMALI_UYARISI]);
+    d.gonder(Komut::AracOnayi {
+        cagri: ogeler[0].cagri,
+        karar: OnayKarari::Reddet { gerekce: None },
+        muhur: ogeler[0].muhur.clone(),
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(sonuc_durumlari(&d), vec![AracDurumu::Reddedildi]);
+    assert_eq!(yaz.cagri_sayisi(), 0);
+}
+
+/// Güvenlik analizi Bulgu 7: yolunda yön değiştiren karakter olan yazma
+/// Serbest kipte de onay ister.
+#[tokio::test]
+async fn gorunmez_karakterli_yol_serbest_kipte_de_onay_ister() {
+    let yaz = Arc::new(SahteArac::yazan("yaz"));
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac("yaz", yol("belge\u{202E}txt.exe")),
+        SahteYanit::metin("tamam"),
+    ]);
+    let mut d = oturum(&s, vec![a(&yaz)], ayarlar(Kip::Serbest));
+    d.gonder(mesaj("yaz")).await;
+    let ogeler = onay_bekle(&mut d).await;
+    assert_eq!(ogeler[0].uyarilar, vec![GORUNMEZ_UYARISI]);
+    d.gonder(onayla(&ogeler[0])).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(yaz.cagri_sayisi(), 1, "onaydan sonra çalışır");
 }
 
 #[tokio::test]

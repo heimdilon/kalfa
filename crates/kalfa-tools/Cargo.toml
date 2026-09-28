@@ -20,6 +20,7 @@ ignore.workspace = true
 kalfa-core = { path = "../kalfa-core" }
 kalfa-sandbox = { path = "../kalfa-sandbox" }
 regex.workspace = true
+same-file.workspace = true
 serde_json.workspace = true
 similar.workspace = true
 tokio.workspace = true

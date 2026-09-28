@@ -76,6 +76,11 @@ pub enum KayitOgesi {
         cagri: CagriId,
         durum: AracDurumu,
     },
+    /// Aracın bildirdiği güvenlik uyarısı; geçmişte de gösterilir.
+    GuvenlikUyarisi {
+        cagri: CagriId,
+        mesaj: String,
+    },
     Istek {
         amac: String,
         istek_id: Option<String>,

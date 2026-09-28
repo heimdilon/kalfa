@@ -46,6 +46,11 @@ yokken kabuğun kapanması ve BT için teknik ayrıntı). Ayrıca §1.2, §5.1, 
 2026-09-27 (2d-3 uygulandı): kurucudaki Python ve Node, kabın `PATH`'i, Onar'ın
 araç zinciri izinlerini geri getirmesi (§9.8); Windows'ta ağsız cargo
 geliştiricinin registry'siyle (§7.4); A16 sınırları (§9.6); §10.4, §12.3, §14.
+2026-09-28 (güvenlik sertleştirmesi, [analiz](../bulgular/2026-09-27-guvenlik-analizi.md)):
+her derinlikte `.git` ve yapılandırma salt okunur, yeni `.git`'in denetimi ve
+karantinası (§7.2); yönetici yardımcısının kayıt dizini denetimi (§9.1);
+kabuk onay kartında onaysız değişiklikler ve görünmez karakterler (§10.2);
+üst belge r3.8.
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §7.2, §7.5–§7.7, §12.3, §13.2, §13.3 ve §14 (risk 7–9, 12, 13). Bu belgede `§`
 işaretleri bu belgenin bölümlerini gösterir; üst belgeye "üst belge §x", 1c
@@ -609,9 +614,29 @@ Gizli ve korumalı yollar her çalıştırmadan hemen önce taranır.
     `core.worktree`'si bu çalışma alanını gösterir. İkisi de çalışma alanında,
     yani yalıtımın yazabildiği yerdedir; doğrulanmasalardı yalıtımdaki komut
     başka bir dizini açtırabilirdi.
-  - **Bilinen sınır:** `.git` sembolik bağlantıysa, çalışma alanı bir git
-    deposu değilse ya da alt dizinlerde, yalıtımdaki komut yeni bir `.git`
-    oluşturabilir. Git o dizinlerde bunu kullanır.
+  - **Her derinlikte** (2026-09-28, güvenlik analizi Bulgu 1): tarama her
+    derinlikteki `.git` girdilerini toplar ve içlerine inmez. Hepsi, `.git`
+    dosyalarının çalışma alanındaki `gitdir` hedefleri ve `commondir`
+    hedefleri salt okunurdur. Gizli dizinin altındakiler listelenmez; açık
+    okuma izni (Windows) gizli dizinin içini gösterirdi.
+  - **Komutun oluşturduğu yeni `.git`** komuttan sonra (iptal ve zaman aşımı
+    dahil, yalıtımlı ya da değil) izin listesiyle denetlenir
+    (`git_denetimi.rs`): `.git` dosyası, `commondir`, `config.worktree`,
+    `gitdir`, `.sample` olmayan kanca ve izin listesinde olmayan her
+    yapılandırma anahtarı tehlikelidir. Yapılandırma `git config --file
+    --no-includes --list -z` ile boş ortamda okunur; git yoksa sonuç
+    tehlikelidir. Tehlikeli `.git` `<ad>.kalfa-karantina-<UTC>` adıyla kenara
+    alınır ve kullanıcıya "Güvenlik uyarısı" olarak bildirilir (konuşmada ve
+    geçmişte; modele `[güvenlik]` satırı). Bedeli: yalıtımda
+    `git clone --recurse-submodules` ile gelen alt modül `.git` dosyaları da
+    kenara alınır.
+  - **Kendiliğinden çalışan yapılandırma** (üst belge §7.3, Bulgu 2) da salt
+    okunurdur: `.vscode` gibi dizinler bütünüyle, `.cargo/config.toml` gibi
+    dosyalar tek tek. Komutun oluşturduğu yeni yapılandırma karantinaya
+    alınmaz, güvenlik uyarısıyla bildirilir.
+  - **Bilinen sınır:** `.git` sembolik bağlantıysa korunmaz; komutun
+    oluşturduğu yeni bir `.git` bağlantısı ise tehlikeli sayılıp kenara
+    alınır.
 - **Linux'ta hard link.** Taramada bağlantı sayısı birden büyük olan normal
   dosyaların (aygıt, inode) çifti gizli dosyalarınkiyle karşılaştırılır.
   Eşleşen dosya da gizli sayılır. `a.txt`, `.env`'nin hard link'iyse o da
@@ -913,6 +938,23 @@ başlar:
 
 Komutu çalıştırmak için yardımcı gerekmez: Kalfa kabı kendisi başlatır (§9.3).
 Durum denetimi de yükseltme istemez (§9.2).
+
+**Kayıt dizininin denetimi** (2026-09-28, güvenlik analizi Bulgu 6).
+`%ProgramData%` altında standart kullanıcı klasör oluşturabilir ve sahibi
+olur; `Kalfa\yalitim` önceden bir junction olarak konursa yönetici süreci
+hedefin DACL'ini değiştirip oraya yazardı. Yardımcı her işten önce
+`Kalfa` ve `Kalfa\yalitim`'i hazırlar:
+
+- Yoksa dizin oluştuğu anda mirassız DACL'le oluşur (Administrators ve
+  SYSTEM tam, oturum açmış kullanıcılar okuma).
+- Reparse noktası izlenmeden açılır; reparse noktasıysa durur.
+- Sahibi Administrators ya da SYSTEM değilse durur: "Kayıt dizininin sahibi
+  yönetici değil; güvenlik için durduruldu."
+- DACL tutamaçla, yalnızca nesnenin kendisine yazılır
+  (`SetKernelObjectSecurity`); hiçbir yol izlenmez.
+- Kayıt dosyası reparse noktası izlenmeden ve yalnızca yeni olarak yazılır.
+- Hazırlık başarısızsa kayıt okunmaz: `kaldir` kaydı bilinmeyen sayar ve
+  kök izinlerini sürücülerden bulur, kayda dokunmaz; diğer işler durur.
 
 **Hangi dosya çalıştırılır.** Kalfa, `kalfa-yalitim.exe`'yi yalıtımın
 yazabileceği bir yerden hiçbir zaman başlatmaz. Başlatsaydı yalıtılmış bir komut
@@ -1383,6 +1425,12 @@ Onay sayfasında (1c §8.2) kabuk öğesi diff yerine şunları gösterir:
   nedeni.
 - Uyarılar (§5.1, §4.2).
 - `yerel_onay` öğesinde onayın yerel pencerede ayrıca sorulacağı notu (§5.2).
+- Bu oturumda onaysız değişen dosyalar, onaysız bir komutun çalıştığı notu ve
+  derleme dosyası uyarısı (2026-09-28; üst belge §7.6).
+- Komut, dizin, hedefler, açıklama ve diff görünmez karakterleri `⟨U+XXXX⟩`
+  olarak vurgulu gösterir.
+- Ağlı, derleme dosyası değişmiş ya da görünmez karakter taşıyan öğe önceden
+  seçili gelmez ve "Tümünü onayla" onu onaylamaz; tek tek seçilir.
 
 ### 10.3 Durum çubuğu
 

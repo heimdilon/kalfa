@@ -1,7 +1,7 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Revizyon:** r3.7 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
+**Revizyon:** r3.8 — güvenlik sertleştirmesi (§7.3–§7.6, §9); r3.7 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
 **Durum:** 1a, 1b ve 1c uygulandı; aşama 2'de 2a ve 2b uygulandı, 2c (Windows prototipi) ölçüldü, 2d bekliyor
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
@@ -577,13 +577,20 @@ ister. Git hard link saklamadığı için klonlanan bir depoda bu durum kendili�
 oluşmaz.
 
 **Korumalı yollar.** Git'in kendiliğinden kod çalıştırdığı yollar korumalıdır:
-`.git/hooks/`, `.git/config` ve `core.hooksPath`'in gösterdiği dizin (örneğin
-`.husky/`). Kural ortak izin motorundadır, bu yüzden **bütün yazma yollarına**
-uygulanır:
+her derinlikteki `.git`'in **tamamı**, `.git` dosyasının gösterdiği git dizini,
+git dizininin `commondir` hedefi ve `core.hooksPath`'in gösterdiği dizin
+(örneğin `.husky/`). `.git` adı git'in `is_ntfs_dotgit` kuralıyla tanınır:
+büyük-küçük harf, sondaki nokta ve boşluk duyarsız; 8.3 kısa adı `git~N` da
+sayılır (r3.8; [güvenlik analizi](../bulgular/2026-09-27-guvenlik-analizi.md)
+Bulgu 1: önce yalnızca `hooks` ve `config` korumalıydı, `commondir` yazılarak
+git başka bir yapılandırmaya yönlendirilebiliyordu). Kural ortak izin
+motorundadır, bu yüzden **bütün yazma yollarına** uygulanır:
 
 - Dosya araçları korumalı bir yola yazmak için her kipte (Serbest dahil) onay
-  ister. Onay kartı "Bu dosyayı git kendiliğinden çalıştırır" der; kısayol
-  sunulmaz. Kullanıcının istediği meşru bir hook kurulumu böylece yine mümkündür.
+  ister. Onay kartı "Bu yol git'in dizininde ya da kanca dizininde…" der;
+  kısayol sunulmaz. Kullanıcının istediği meşru bir hook kurulumu böylece yine
+  mümkündür. Yazarken araç kökteki `.git`'in kimliğini de denetler: git
+  dizinine başka bir adla (8.3 kısa ad) yazılamaz.
 - Kabuk için korumalı yollar salt okunurdur (§7.7).
 - `core.hooksPath`'in etkin değeri (depo ve kullanıcı yapılandırmasıyla birlikte)
   her yazma kararında yeniden çözülür. `.git/config` korumalı olduğu için bu
@@ -591,6 +598,17 @@ uygulanır:
 - Çalışma alanındaki `.git` bir dosyaysa (worktree ya da submodule, `gitdir:`
   satırı) gerçek git dizini çözülür ve koruma oraya uygulanır. O dizin çalışma
   alanı dışındaysa çalışma alanı dışı kuralı zaten işler.
+
+**Kendiliğinden çalışan yapılandırma** (r3.8; güvenlik analizi Bulgu 2). IDE,
+git, CI ve paket yöneticileri bazı dosyaları Kalfa'nın yalıtımı dışında ve çoğu
+zaman sorulmadan çalıştırır: `.vscode/`, `.idea/`, `.devcontainer/`,
+`.cargo/config*`, `rust-toolchain*`, `mise.toml`, `.envrc`,
+`.github/workflows/`, `.gitlab-ci.yml`, `.pre-commit-config.yaml`, `.husky/`,
+`lefthook.yml`, `.yarnrc*`, `.pnpmfile.cjs`. Bu sınıfa yazmak her kipte onay
+ister; okuması serbesttir. Yalıtımda bu yollar salt okunurdur; komutun
+oluşturduğu yeni bir yapılandırma dosyası kullanıcıya bildirilir. `build.rs` ve
+`package.json` meşru ve sık düzenlendiği için bu sınıfta değildir; onlar
+kabuk onayında gösterilir (§7.6).
 
 Kabuk bu bölümün kapsamı dışındadır; onun sınırı §7.7'dir.
 
@@ -601,9 +619,14 @@ Kabuk bu bölümün kapsamı dışındadır; onun sınırı §7.7'dir.
 
 - **Gizli dosya kalıpları** (varsayılan): `.env`, `.env.*`, `*.pem`, `*.key`,
   `*.p12`, `*.pfx`, `*.keystore`, `*.kdbx`, `id_rsa*`, `id_ed25519*`, `.netrc`,
-  `.npmrc`, `.pypirc`, `.git-credentials`, `credentials*`. Kullanıcı kalıp
-  ekleyebilir; varsayılanları yalnızca uygulama ayarlarından kapatabilir, depo
-  içindeki bir dosyadan kapatamaz.
+  `.npmrc`, `.pypirc`, `.git-credentials`, `credentials*`; r3.8'de (güvenlik
+  analizi Bulgu 4) `*.env`, Terraform durumu ve değişkenleri,
+  `secrets.{json,yaml,…}`, hizmet hesabı JSON'ları, `.pgpass`, `.htpasswd`,
+  `.vault-token`, Docker ve Kubernetes yapılandırması, `.yarnrc.yml`, `*.jks`,
+  `*.ovpn`, `*.ppk`, `*.keytab`, `id_ecdsa*`, `id_dsa*`. Kaynak kod adlarını
+  yakalamamak için `secrets.*` gibi geniş kalıplar yoktur. Kullanıcı kalıp
+  ekleyebilir (ayar arayüzü henüz yok; açık iş); varsayılanları yalnızca
+  uygulama ayarlarından kapatabilir, depo içindeki bir dosyadan kapatamaz.
 - Eşleşen bir dosyayı okumak **her kipte** (Serbest dahil) onay ister ve onay
   kartı açıkça söyler: *"Bu dosyanın içeriği EVREN'e gönderilecek."*
 - `grep` ve `glob` gizli dosyaların içeriğini döndürmez; adlarını listeler ve
@@ -632,8 +655,10 @@ Kabuk bu bölümün kapsamı dışındadır; onun sınırı §7.7'dir.
 | **Serbest** | Serbest | Çalışma alanı içinde serbest | Yalıtımlı ve ağsız olan otomatik |
 
 Her kipte geçerli olanlar: çalışma alanı dışı yol onay ister (§7.3) · korumalı
-yola yazmak onay ister (§7.3) · gizli dosya onay ister (§7.4) · ağlı kabuk onay
-ister · yalıtımsız kabuk onay ister (§7.7).
+yola ve kendiliğinden çalışan yapılandırmaya yazmak onay ister (§7.3) · gizli
+dosya onay ister (§7.4) · ağlı kabuk onay ister · yalıtımsız kabuk onay ister
+(§7.7) · görünmez ya da yön değiştiren karakter taşıyan işlem onay ister (§7.6)
+· onay isteyen bir komutla aynı adımdaki yazma onay ister (§7.6).
 
 - **İnceleme kipinde** yazma araçları ve kabuk modele **hiç sunulmaz**; araç
   listesinde yer almazlar. Ajan depoyu okur, plan ve öneri üretir. Reddetmek
@@ -672,6 +697,20 @@ hesaplar:
   kısayol aracın sonraki bütün argümanlarına izin anlamına gelmez. Gizli dosya,
   korumalı yol, çalışma alanı dışı yol, ağlı ya da yalıtımsız kabuk için kısayol
   sunulmaz.
+
+**Onaylanan komutun çalıştıracağı kod** (r3.8; güvenlik analizi Bulgu 3, 7):
+
+- Kabuk onayı, oturumda son kabuk onayından beri onaysız yazılan dosyaları ve
+  onaysız bir komutun çalışıp çalışmadığını gösterir. Aralarında derleme ya da
+  betik dosyası (`build.rs`, `package.json`, `Makefile` …) varsa ayrı uyarı
+  çıkar. Liste kayda yazılmaz; kurtarılan oturumda "onaysız komut çalıştı"
+  varsayılır.
+- Onay isteyen bir komutla aynı adımdaki onaysız yazmalar da onaya çıkar.
+- Görünmez ve yön değiştiren karakterler ("Trojan Source") onay yüzeylerinde
+  `⟨U+XXXX⟩` olarak gösterilir; komutta, dizinde, diff'te ya da yolda böyle bir
+  karakter varsa işlem her kipte onay ister. Yerel kutuda uzun komut kısaltılır.
+- Ağlı komut, derleme dosyası değişmiş kabuk öğesi ve görünmez karakterli
+  işlem "Tümünü onayla" ile onaylanamaz; tek tek seçilir.
 
 Onay kartının içeriği ("neden izin gerekiyor") §11.4'te.
 
@@ -1040,7 +1079,12 @@ yoludur.**
 engeller. Denetçi yanlış negatif de yanlış pozitif de üretebilir.
 
 Dış içerik modele **kaynak etiketiyle** girer (`dosya:yol`, `kabuk:komut`,
-`eklenti:ad`, `rag`); etiket özetlendiğinde de korunur (§6.5).
+`eklenti:ad`, `rag`); etiket özetlendiğinde de korunur (§6.5). r3.8'den beri
+(güvenlik analizi Bulgu 5) içerik çağrı başına rastgele bir sınırı taşıyan
+`<arac_sonucu kaynak="…" sinir="…">` … `</arac_sonucu sinir="…">` sarmalıyla
+gelir: sınır içerik yazılırken bilinemez, içerik sahte bir kapanışla sarmaldan
+çıkamaz. Sistem istemi sarmalın içini veri sayar. Bu bir azaltımdır; denetçinin
+yerini tutmaz.
 
 ### 9.1 Kanca
 
@@ -1667,3 +1711,15 @@ belgede değişenler:
 - §7.7: kurucu yalıtımı kurar ve araç zincirini getirir; yalıtım yoksa kabuk
   kapalıdır, yalıtımsız çalıştırma Ayarlar'dan bilerek açılır.
 - Dağıtım satırı ve risk 8 buna göre güncellendi.
+
+**r3.8 (2026-09-28):** [Güvenlik analizi](../bulgular/2026-09-27-guvenlik-analizi.md)
+ve [sertleştirme planı](../plans/2026-09-27-kalfa-guvenlik-sertlestirme.md)
+uygulandı. Bu belgede değişenler:
+- §7.3: `.git`'in tamamı ve her derinlikteki `.git` korumalı; kısa ad reddi;
+  "kendiliğinden çalışan yapılandırma" sınıfı.
+- §7.4: gizli dosya kalıpları genişledi.
+- §7.5: her kipte geçerli kurallara yapılandırma, görünmez karakter ve aynı adım
+  kuralı eklendi.
+- §7.6: kabuk onayında onaysız değişiklikler, aynı adım kuralı, görünmez
+  karakterler ve "Tümünü onayla" istisnaları.
+- §9: araç çıktısı rastgele sınırlı sarmalla gelir.

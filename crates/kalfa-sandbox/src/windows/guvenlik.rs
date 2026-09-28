@@ -9,6 +9,7 @@ use std::ffi::{OsStr, c_void};
 use std::fmt;
 use std::io;
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 
@@ -19,9 +20,9 @@ use windows_sys::Win32::Foundation::{
 use windows_sys::Win32::Security::Authorization::{
     ConvertSecurityDescriptorToStringSecurityDescriptorW, ConvertSidToStringSidW,
     ConvertStringSecurityDescriptorToSecurityDescriptorW, ConvertStringSidToSidW,
-    EXPLICIT_ACCESS_W, GRANT_ACCESS, GetNamedSecurityInfoW, NO_MULTIPLE_TRUSTEE, REVOKE_ACCESS,
-    SDDL_REVISION_1, SE_FILE_OBJECT, SetEntriesInAclW, SetNamedSecurityInfoW, TRUSTEE_IS_SID,
-    TRUSTEE_IS_UNKNOWN, TRUSTEE_W,
+    EXPLICIT_ACCESS_W, GRANT_ACCESS, GetNamedSecurityInfoW, GetSecurityInfo, NO_MULTIPLE_TRUSTEE,
+    REVOKE_ACCESS, SDDL_REVISION_1, SE_FILE_OBJECT, SetEntriesInAclW, SetNamedSecurityInfoW,
+    TRUSTEE_IS_SID, TRUSTEE_IS_UNKNOWN, TRUSTEE_W,
 };
 use windows_sys::Win32::Security::Isolation::{
     CreateAppContainerProfile, DeleteAppContainerProfile, DeriveAppContainerSidFromAppContainerName,
@@ -31,14 +32,18 @@ use windows_sys::Win32::Security::{
     DACL_SECURITY_INFORMATION, DeriveCapabilitySidsFromName, FreeSid, GetAce, GetAclInformation,
     GetFileSecurityW, GetLengthSid, GetSecurityDescriptorControl, GetSecurityDescriptorDacl,
     GetTokenInformation, INHERIT_ONLY_ACE, InitializeAcl, InitializeSecurityDescriptor,
-    PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SE_DACL_AUTO_INHERIT_REQ,
-    SE_DACL_AUTO_INHERITED, SE_DACL_PROTECTED, SECURITY_DESCRIPTOR, SetFileSecurityW,
-    SetSecurityDescriptorControl, SetSecurityDescriptorDacl, TOKEN_ELEVATION, TOKEN_QUERY,
-    TOKEN_USER, TokenElevation, TokenUser, UNPROTECTED_DACL_SECURITY_INFORMATION,
+    OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
+    SE_DACL_AUTO_INHERIT_REQ, SE_DACL_AUTO_INHERITED, SE_DACL_PROTECTED, SECURITY_ATTRIBUTES,
+    SECURITY_DESCRIPTOR, SetFileSecurityW, SetKernelObjectSecurity, SetSecurityDescriptorControl,
+    SetSecurityDescriptorDacl, TOKEN_ELEVATION, TOKEN_QUERY, TOKEN_USER, TokenElevation, TokenUser,
+    UNPROTECTED_DACL_SECURITY_INFORMATION,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW, OPEN_EXISTING, WRITE_DAC,
+    BY_HANDLE_FILE_INFORMATION, CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_DIRECTORY,
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetDriveTypeW,
+    GetFileInformationByHandle, GetLogicalDrives, GetVolumeInformationW, OPEN_EXISTING,
+    READ_CONTROL, WRITE_DAC,
 };
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::SystemServices::SECURITY_DESCRIPTOR_REVISION;
@@ -680,6 +685,158 @@ fn dacl_yaz(yol: &Path, dacl: *const ACL, korumali: bool) -> io::Result<()> {
             &format!("SetNamedSecurityInfoW({})", yol.display()),
             kod,
         ));
+    }
+    Ok(())
+}
+
+/// Reparse noktası izlenmeden açılmış bir dosya ya da dizin; sahibi ve DACL'i
+/// okunup yazılabilir (güvenlik analizi Bulgu 6).
+pub struct Tutamac(OwnedHandle);
+
+impl Tutamac {
+    fn ham(&self) -> HANDLE {
+        self.0.as_raw_handle() as HANDLE
+    }
+}
+
+/// `yol`'u reparse noktasını izlemeden açar (`FILE_FLAG_OPEN_REPARSE_POINT`).
+/// Nesne bir reparse noktasıysa (junction, sembolik bağlantı) ya da türü
+/// beklenen değilse hata döner. Tutamaç sahibi okumaya ve DACL yazmaya açıktır.
+pub fn yeniden_ayristirma_izlemeden_ac(yol: &Path, dizin: bool) -> io::Result<Tutamac> {
+    let mut bayraklar = FILE_FLAG_OPEN_REPARSE_POINT;
+    if dizin {
+        bayraklar |= FILE_FLAG_BACKUP_SEMANTICS;
+    }
+    // SAFETY: yol NUL ile biter; geçerli tutamaç hemen OwnedHandle'a geçer.
+    let h = unsafe {
+        CreateFileW(
+            genis(yol).as_ptr(),
+            READ_CONTROL | WRITE_DAC,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            null(),
+            OPEN_EXISTING,
+            bayraklar,
+            null_mut(),
+        )
+    };
+    if h == INVALID_HANDLE_VALUE {
+        return Err(son_hata(&format!("CreateFileW({})", yol.display())));
+    }
+    // SAFETY: h geçerli ve sahibi yalnızca bu değerdir.
+    let t = Tutamac(unsafe { OwnedHandle::from_raw_handle(h as RawHandle) });
+    // SAFETY: yapı yalnızca tamsayı alanlarından oluşur; sıfır geçerli bir
+    // değerdir.
+    let mut bilgi: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: tutamaç geçerlidir; yapı yığında ve yazılabilir.
+    if unsafe { GetFileInformationByHandle(t.ham(), &mut bilgi) } == 0 {
+        return Err(son_hata("GetFileInformationByHandle"));
+    }
+    if bilgi.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "{}: bağlantı (reparse noktası); güvenlik için izlenmez",
+                yol.display()
+            ),
+        ));
+    }
+    if (bilgi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0) != dizin {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{}: beklenen türde değil", yol.display()),
+        ));
+    }
+    Ok(t)
+}
+
+/// Nesnenin sahibi.
+pub fn sahip(t: &Tutamac) -> io::Result<Sid> {
+    let mut sahip: PSID = null_mut();
+    let mut sd: PSECURITY_DESCRIPTOR = null_mut();
+    // SAFETY: tutamaç READ_CONTROL ile açık; tanımlayıcı LocalFree ile
+    // bırakılır ve `sahip` onun içini gösterir, kopyalanana kadar yaşar.
+    unsafe {
+        let kod = GetSecurityInfo(
+            t.ham(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut sahip,
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            &mut sd,
+        );
+        if kod != ERROR_SUCCESS {
+            return Err(win32_hatasi("GetSecurityInfo", kod));
+        }
+        let _bellek = Yerel(sd);
+        if sahip.is_null() {
+            return Err(io::Error::other("nesnenin sahibi yok"));
+        }
+        Ok(Sid::kopyala(sahip))
+    }
+}
+
+/// Mirassız (korumalı) DACL'i tutamaç üzerinden, yalnızca nesnenin kendisine
+/// yazar (`SetKernelObjectSecurity`). `SetNamedSecurityInfoW` yola göre
+/// çalışır ve reparse noktasını izler; `SetSecurityInfo` da mirası alt ağaca
+/// yayarken araya konmuş bir bağlantıyı izleyebilirdi. Burada hiçbir yol
+/// izlenmez; alt nesnelerin mirası yeniden hesaplanmaz.
+pub fn dacl_yaz_tutamacla(t: &Tutamac, izinler: &[Izin]) -> io::Result<()> {
+    let girdiler: Vec<EXPLICIT_ACCESS_W> =
+        izinler.iter().map(|i| erisim(i, GRANT_ACCESS)).collect();
+    let yeni = yeni_dacl(null(), &girdiler)?;
+    // SAFETY: tanımlayıcı yığındadır ve geçerli ACL'i gösterir; ikisi de
+    // çağrı dönene kadar yaşar. Tutamaç WRITE_DAC ile açıktır.
+    unsafe {
+        let mut sd: SECURITY_DESCRIPTOR = std::mem::zeroed();
+        let p = (&raw mut sd).cast::<c_void>();
+        if InitializeSecurityDescriptor(p, SECURITY_DESCRIPTOR_REVISION) == 0 {
+            return Err(son_hata("InitializeSecurityDescriptor"));
+        }
+        if SetSecurityDescriptorDacl(p, 1, yeni.0 as *const ACL, 0) == 0 {
+            return Err(son_hata("SetSecurityDescriptorDacl"));
+        }
+        let bitler = SE_DACL_AUTO_INHERIT_REQ | SE_DACL_PROTECTED;
+        if SetSecurityDescriptorControl(p, bitler, bitler) == 0 {
+            return Err(son_hata("SetSecurityDescriptorControl"));
+        }
+        if SetKernelObjectSecurity(t.ham(), DACL_SECURITY_INFORMATION, p) == 0 {
+            return Err(son_hata("SetKernelObjectSecurity"));
+        }
+    }
+    Ok(())
+}
+
+/// Dizini, oluştuğu anda mirassız ve yalnızca verilen izinlerle oluşturur:
+/// arada başka bir kullanıcının içine bir şey koyabileceği an olmaz. Dizin
+/// zaten varsa dokunmaz ve `AlreadyExists` döner.
+pub fn korumali_dizin_olustur(yol: &Path, izinler: &[Izin]) -> io::Result<()> {
+    let girdiler: Vec<EXPLICIT_ACCESS_W> =
+        izinler.iter().map(|i| erisim(i, GRANT_ACCESS)).collect();
+    let dacl = yeni_dacl(null(), &girdiler)?;
+    // SAFETY: tanımlayıcı ve ACL CreateDirectoryW dönene kadar yaşar; yol NUL
+    // ile biter.
+    unsafe {
+        let mut sd: SECURITY_DESCRIPTOR = std::mem::zeroed();
+        let p = (&raw mut sd).cast::<c_void>();
+        if InitializeSecurityDescriptor(p, SECURITY_DESCRIPTOR_REVISION) == 0 {
+            return Err(son_hata("InitializeSecurityDescriptor"));
+        }
+        if SetSecurityDescriptorDacl(p, 1, dacl.0 as *const ACL, 0) == 0 {
+            return Err(son_hata("SetSecurityDescriptorDacl"));
+        }
+        if SetSecurityDescriptorControl(p, SE_DACL_PROTECTED, SE_DACL_PROTECTED) == 0 {
+            return Err(son_hata("SetSecurityDescriptorControl"));
+        }
+        let nitelik = SECURITY_ATTRIBUTES {
+            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: p,
+            bInheritHandle: 0,
+        };
+        if CreateDirectoryW(genis(yol).as_ptr(), &nitelik) == 0 {
+            return Err(io::Error::last_os_error());
+        }
     }
     Ok(())
 }

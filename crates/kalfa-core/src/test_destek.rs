@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, Hazirlik, YazmaHedefi};
 use crate::izin::Siniflandirici;
+use crate::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
 use crate::kayit::{KayitHedefi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
 use crate::oturum::{OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci, baslat};
@@ -191,8 +192,11 @@ impl Saglayici for SahteSaglayici {
 pub struct SahteArac {
     ad: String,
     yazar: bool,
+    /// Kabuk gibi davranır: hazırlık yalıtımlı bir kabuk tarifi taşır.
+    kabuk: bool,
     yanit: String,
     hata: Option<String>,
+    guvenlik_uyarilari: Vec<String>,
     gecikme: Duration,
     on_hal: AtomicU64,
     cagrilar: Mutex<Vec<Value>>,
@@ -206,8 +210,10 @@ impl SahteArac {
         Self {
             ad: ad.into(),
             yazar,
+            kabuk: false,
             yanit: format!("{ad} tamam"),
             hata: None,
+            guvenlik_uyarilari: Vec::new(),
             gecikme: Duration::ZERO,
             on_hal: AtomicU64::new(0),
             cagrilar: Mutex::new(Vec::new()),
@@ -225,6 +231,15 @@ impl SahteArac {
         Self::yeni(ad, true)
     }
 
+    /// Yalıtımlı kabuk gibi hazırlanan sahte araç: `{"yol": ".", "ag": bool}`;
+    /// komut `test`, dizin `yol`'dur.
+    pub fn kabuk(ad: &str) -> Self {
+        Self {
+            kabuk: true,
+            ..Self::yeni(ad, true)
+        }
+    }
+
     pub fn yanit(mut self, yanit: String) -> Self {
         self.yanit = yanit;
         self
@@ -232,6 +247,11 @@ impl SahteArac {
 
     pub fn hata(mut self, hata: String) -> Self {
         self.hata = Some(hata);
+        self
+    }
+
+    pub fn guvenlik_uyarisi(mut self, mesaj: &str) -> Self {
+        self.guvenlik_uyarilari.push(mesaj.into());
         self
     }
 
@@ -272,7 +292,7 @@ impl Arac for SahteArac {
     fn parametre_semasi(&self) -> Value {
         json!({
             "type": "object",
-            "properties": {"yol": {"type": "string"}},
+            "properties": {"yol": {"type": "string"}, "ag": {"type": "boolean"}},
             "required": ["yol"],
             "additionalProperties": false
         })
@@ -287,6 +307,25 @@ impl Arac for SahteArac {
     }
 
     async fn hazirla(&self, argumanlar: &Value) -> Result<Hazirlik, AracHatasi> {
+        if self.kabuk {
+            return Ok(Hazirlik {
+                aciklama: "`test` komutunu çalıştırmak istiyor.".into(),
+                tum_calisma_alani: true,
+                kabuk: Some(KabukTarifi {
+                    komut: "test".into(),
+                    bicim: KabukBicimi::Program,
+                    dizin: argumanlar["yol"].as_str().unwrap_or(".").to_string(),
+                    ag: argumanlar["ag"].as_bool().unwrap_or(false),
+                    yalitim: YalitimOzeti::Yalitimli {
+                        arka_uc: "sahte".into(),
+                        profil: "p".into(),
+                    },
+                    ilk_cagri: false,
+                    alan_hazirligi: false,
+                }),
+                ..Default::default()
+            });
+        }
         let yol = CalismaYolu::coz(argumanlar["yol"].as_str().unwrap_or_default())?;
         let mut h = Hazirlik {
             aciklama: format!("sahte {} `{yol}`", self.ad),
@@ -317,7 +356,7 @@ impl Arac for SahteArac {
         let sonuc = tokio::select! {
             _ = tokio::time::sleep(self.gecikme) => match &self.hata {
                 Some(h) => Err(AracHatasi::Gecersiz(h.clone())),
-                None => Ok(AracCiktisi { icerik: self.yanit.clone(), kaynak: format!("sahte:{}", self.ad) }),
+                None => Ok(AracCiktisi { icerik: self.yanit.clone(), kaynak: format!("sahte:{}", self.ad), guvenlik_uyarilari: self.guvenlik_uyarilari.clone() }),
             },
             _ = iptal.cancelled() => Err(AracHatasi::Iptal),
         };

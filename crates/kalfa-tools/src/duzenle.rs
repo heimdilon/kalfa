@@ -141,6 +141,7 @@ impl Arac for DosyaDuzenle {
         Ok(AracCiktisi {
             icerik: format!("`{yol}` dosyasında {} değişiklik yapıldı.", d.adet),
             kaynak: format!("dosya:{yol}"),
+            guvenlik_uyarilari: Vec::new(),
         })
     }
 }

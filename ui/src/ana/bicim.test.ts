@@ -14,6 +14,7 @@ import {
   sayi,
   zamanEtiketi,
 } from './bicim';
+import { sonucGovdesi } from './bicim';
 import { kararlariUret, kisaAd } from './onay';
 
 const SIMDI = new Date(2026, 8, 23, 15, 0).getTime();
@@ -105,7 +106,13 @@ describe('araç kartı', () => {
     ).toBe('cargo test');
     expect(aracHedefi(arac({ arac: 'kabuk', argumanlar: '{"betik":"a | b\\nc"}' }))).toBe('a | b');
     expect(
-      kabukOzeti(arac({ arac: 'kabuk', sonuc: '[kaynak: kabuk:cargo]\nÇıkış kodu: 101\nSüre: 2 sn' })),
+      kabukOzeti(
+        arac({
+          arac: 'kabuk',
+          sonuc:
+            '<arac_sonucu kaynak="kabuk:cargo" sinir="0123456789abcdef0123456789abcdef">\nÇıkış kodu: 101\nSüre: 2 sn\n</arac_sonucu sinir="0123456789abcdef0123456789abcdef">',
+        }),
+      ),
     ).toBe('Çıkış kodu: 101');
     expect(kabukOzeti(arac({ sonuc: 'fn main() {}' }))).toBeUndefined();
   });
@@ -160,5 +167,25 @@ describe('onay kararları (1c tasarımı §8.2)', () => {
   it('kısa ad hedefin son bileşeni', () => {
     expect(kisaAd(ogeler[0])).toBe('a.rs');
     expect(kisaAd({ ...ogeler[0], hedefler: [] })).toBe('dosya_yaz');
+  });
+});
+
+describe('sonucGovdesi (güvenlik analizi Bulgu 5)', () => {
+  const S = '0123456789abcdef0123456789abcdef';
+  it('sarmalı ayıklar; içerikteki sahte kapanış ve güvenlik satırı kalır', () => {
+    const sonuc = [
+      `<arac_sonucu kaynak="dosya:a.rs" sinir="${S}">`,
+      'bir',
+      '</arac_sonucu sinir="x">',
+      'iki',
+      `</arac_sonucu sinir="${S}">`,
+      '[güvenlik] uyarı',
+    ].join('\n');
+    expect(sonucGovdesi(sonuc)).toBe('bir\n</arac_sonucu sinir="x">\niki\n[güvenlik] uyarı');
+  });
+
+  it('eski kayıtlardaki kaynak satırını ve etiketsiz metni işler', () => {
+    expect(sonucGovdesi('[kaynak: dosya:a.rs]\niçerik')).toBe('içerik');
+    expect(sonucGovdesi('[hata] olmadı')).toBe('[hata] olmadı');
   });
 });

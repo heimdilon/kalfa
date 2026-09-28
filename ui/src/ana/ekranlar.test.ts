@@ -163,6 +163,16 @@ describe('ana pencere (1c tasarımı §8.1)', () => {
     expect(arka.komutlar('anahtar_penceresini_ac')).toHaveLength(1);
   });
 
+  it('güvenlik uyarısı konuşmada uyarı kartı olarak çizilir', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      { tip: 'GuvenlikUyarisi', cagri: 'c1', mesaj: '`.git` kenara alındı.' },
+    ]);
+    const kart = (await screen.findByText('Güvenlik uyarısı')).closest('section');
+    expect(within(kart as HTMLElement).getByText('`.git` kenara alındı.')).toBeTruthy();
+  });
+
   it('aktarım durunca kart oturumu yeniden açtırır', async () => {
     const { arka } = await ciz();
     arka.olaylar('o1', [{ tip: 'AktarimDurdu', neden: 'TuketiciYetismedi' }]);
@@ -244,8 +254,94 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
     expect(within(sayfa).getByText('Yalıtımsız')).toBeTruthy();
     expect(within(sayfa).getByText(/yerel bir pencerede bir kez daha sorulur/)).toBeTruthy();
     expect(within(sayfa).queryByText('Bu değişiklik için önizleme yok.')).toBeNull();
-    await fireEvent.click(within(sayfa).getByRole('button', { name: 'Tümünü onayla' }));
+    // Ağlı komut riskli: toplu onaylanmaz, önceden seçili değildir.
+    const tumu = within(sayfa).getByRole('button', { name: 'Tümünü onayla' });
+    expect((tumu as HTMLButtonElement).disabled).toBe(true);
+    expect(within(sayfa).getByText(/tek tek seçilerek onaylanır/)).toBeTruthy();
+    await fireEvent.click(within(sayfa).getByRole('checkbox', { name: 'cargo' }));
+    await fireEvent.click(within(sayfa).getByRole('button', { name: 'Seçilenleri onayla' }));
     await waitFor(() => expect(arka.komutlar('arac_onayi')).toHaveLength(1));
+  });
+
+  it('kabuk onayı onaysız değişen dosyaları ve derleme dosyası uyarısını gösterir (Bulgu 3)', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      {
+        tip: 'OnayGerekiyor',
+        islem: 'i4',
+        ogeler: [
+          onayOgesi({
+            cagri: 'k3',
+            arac: 'kabuk',
+            aciklama: '`cargo test` komutunu çalıştırmak istiyor.',
+            kabuk: {
+              komut: 'cargo test',
+              bicim: { tip: 'Program' },
+              dizin: '.',
+              ag: false,
+              yalitim: { tip: 'Yalitimli', arka_uc: 'linux', profil: 'p' },
+              ilk_cagri: false,
+              alan_hazirligi: false,
+            },
+            onaysiz_degisiklikler: {
+              yollar: ['build.rs', 'src/a.rs'],
+              komut_calisti: true,
+              derleme_dosyalari: ['build.rs'],
+            },
+          }),
+          onayOgesi({ cagri: 'c9', hedefler: ['src/b.rs'], muhur: 'm9' }),
+        ],
+      },
+    ]);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    const sayfa = await screen.findByRole('dialog');
+    await fireEvent.click(within(sayfa).getByRole('button', { name: /cargo değişikliğini göster/ }));
+    expect(within(sayfa).getByText('Bu oturumda onayınız olmadan değişen dosyalar')).toBeTruthy();
+    expect(within(sayfa).getByText('src/a.rs')).toBeTruthy();
+    expect(within(sayfa).getByText(/Onaysız bir komut da çalıştı/)).toBeTruthy();
+    expect(within(sayfa).getByText(/Derleme ya da betik dosyası değişti.*build\.rs/)).toBeTruthy();
+    const tumu = within(sayfa).getByRole('button', { name: 'Tümünü onayla' });
+    expect((tumu as HTMLButtonElement).disabled).toBe(true);
+    // Riskli olmayan öğe seçili, riskli olan seçili değil.
+    await fireEvent.click(within(sayfa).getByRole('button', { name: 'Seçilenleri onayla' }));
+    await waitFor(() => expect(arka.komutlar('arac_onayi')).toHaveLength(1));
+    const kararlar = (arka.komutlar('arac_onayi')[0] as { kararlar: { cagri: string; karar: { tip: string } }[] })
+      .kararlar;
+    expect(kararlar.find((k) => k.cagri === 'c9')?.karar.tip).toBe('Onayla');
+    expect(kararlar.find((k) => k.cagri === 'k3')?.karar.tip).toBe('Reddet');
+  });
+
+  it('görünmez ve yön değiştiren karakterler kaçışla gösterilir (Bulgu 7)', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      {
+        tip: 'OnayGerekiyor',
+        islem: 'i3',
+        ogeler: [
+          onayOgesi({
+            cagri: 'k2',
+            arac: 'kabuk',
+            aciklama: 'komut',
+            kabuk: {
+              komut: 'echo "‮txt.exe"',
+              bicim: { tip: 'Program' },
+              dizin: '.',
+              ag: false,
+              yalitim: { tip: 'Yalitimli', arka_uc: 'linux', profil: 'p' },
+              ilk_cagri: false,
+              alan_hazirligi: false,
+            },
+          }),
+        ],
+      },
+    ]);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    const sayfa = await screen.findByRole('dialog');
+    const kacis = within(sayfa).getByText('⟨U+202E⟩');
+    expect(kacis.classList.contains('kacis')).toBe(true);
+    expect(sayfa.textContent).not.toContain('‮');
   });
 
   it('Escape karar vermeden kapatır; istek kartta bekler', async () => {

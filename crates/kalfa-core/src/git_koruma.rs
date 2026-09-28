@@ -1,4 +1,9 @@
 //! Git'in kendiliğinden kod çalıştırdığı korumalı yollar (spec §7.3).
+//!
+//! Dosya araçları için `.git`'in tamamı korumalıdır, her derinlikte
+//! (güvenlik analizi Bulgu 1): `commondir`, `modules/*/config` ya da iç içe
+//! bir `.git` git'i başka bir yapılandırmaya ve kanca dizinine yönlendirir;
+//! git de onları yalıtım dışında, kullanıcının yetkileriyle çalıştırır.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -170,19 +175,97 @@ fn hooks_path_mutlak(kok: &Path) -> Option<PathBuf> {
     Some(yol.canonicalize().unwrap_or(yol))
 }
 
+/// Yol bileşeni git'in dizin adı mı: `.git`, büyük-küçük harf duyarsız ve
+/// sondaki nokta ile boşluklar atılarak (Windows bunları yok sayar), ya da
+/// 8.3 kısa adı `git~<rakamlar>`. git'in `is_ntfs_dotgit` denetimine denktir
+/// ve her platformda uygulanır.
+pub fn git_bileseni_mi(parca: &str) -> bool {
+    let ad = parca.trim_end_matches(['.', ' ']).to_ascii_lowercase();
+    ad == ".git"
+        || ad
+            .strip_prefix("git~")
+            .is_some_and(|r| !r.is_empty() && r.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Yolun herhangi bir bileşeni git'in dizin adı mı; derinlikten bağımsız.
+pub fn git_ic_yolu_mu(yol: &CalismaYolu) -> bool {
+    yol.as_str().split('/').any(git_bileseni_mi)
+}
+
 /// Çalışma alanındaki korumalı yollar; her öğe küçük harfli, göreli yoldur.
+/// Her derinlikteki `.git` ayrıca `git_ic_yolu_mu` ile korunur; burada adı
+/// `.git` olmayan git dizinleri de listelenir:
+/// - `.git` bir dosyaysa gösterdiği dizinin tamamı,
+/// - git dizininin `commondir`'i,
+/// - `core.hooksPath`.
+///
 /// Çalışma alanı dışına düşen hedefler listelenmez: onlara zaten çalışma
 /// alanı dışı kuralı uygulanır.
 pub fn korumali_yollar(kok: &Path) -> Vec<String> {
-    let mut yollar = Vec::new();
+    let mut yollar = vec![".git".to_string()];
     if let Some(gitdir) = git_dizini(kok) {
-        yollar.push(format!("{gitdir}/hooks"));
-        yollar.push(format!("{gitdir}/config"));
+        if let Some(ortak) = ortak_dizin(kok, &gitdir) {
+            yollar.push(ortak);
+        }
+        yollar.push(gitdir);
     }
     if let Some(hooks) = hooks_path(kok) {
         yollar.push(hooks);
     }
     yollar.into_iter().map(|y| y.to_lowercase()).collect()
+}
+
+/// Bir `.git` girdisinin git'i yönlendirdiği, çalışma alanı içindeki dizinler
+/// (yalıtımda salt okunur kalmaları için): `.git` bir dosyaysa `gitdir:`
+/// hedefi, ve git dizininin `commondir` hedefi. `kok` kanoniktir; dışarıya
+/// düşen ya da çözülemeyen hedefler atlanır. Değerler doğrulanmaz: korumak
+/// yalnızca kısıtlar.
+pub fn yonlendirilen_dizinler(nokta_git: &Path, dizin: bool, kok: &Path) -> Vec<PathBuf> {
+    let Some(ust) = nokta_git.parent() else {
+        return Vec::new();
+    };
+    let gitdir = if dizin {
+        nokta_git.to_path_buf()
+    } else {
+        let Some(hedef) = std::fs::read_to_string(nokta_git).ok().and_then(|m| {
+            m.lines().find_map(|s| {
+                s.trim()
+                    .strip_prefix("gitdir:")
+                    .map(|h| h.trim().to_string())
+            })
+        }) else {
+            return Vec::new();
+        };
+        match ust.join(hedef).canonicalize() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        }
+    };
+    let ortak = std::fs::read_to_string(gitdir.join("commondir"))
+        .ok()
+        .and_then(|m| gitdir.join(m.trim()).canonicalize().ok());
+    let mut dizinler = Vec::new();
+    if !dizin {
+        dizinler.push(gitdir);
+    }
+    dizinler.extend(ortak);
+    // Kökün kendisi salt okunur yapılamaz; o zaman bütün alan yazılamazdı.
+    dizinler.retain(|d| d.starts_with(kok) && d != kok);
+    dizinler.sort();
+    dizinler.dedup();
+    dizinler
+}
+
+/// Git dizininin `commondir`'inin çalışma alanındaki göreli yolu. Değer
+/// doğrulanmaz: korumak yalnızca kısıtlar.
+fn ortak_dizin(kok: &Path, gitdir: &str) -> Option<String> {
+    let gitdir = kok.join(gitdir);
+    let deger = std::fs::read_to_string(gitdir.join("commondir")).ok()?;
+    let deger = deger.trim();
+    if deger.is_empty() {
+        return None;
+    }
+    goreli_yap(kok, &gitdir.join(deger))
 }
 
 /// `.git` bir dizinse `.git`; `gitdir:` satırı taşıyan bir dosyaysa (worktree,

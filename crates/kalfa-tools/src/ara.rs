@@ -115,6 +115,7 @@ impl Arac for IcerikAra {
         Ok(AracCiktisi {
             icerik,
             kaynak: format!("arama:{desen}"),
+            guvenlik_uyarilari: Vec::new(),
         })
     }
 }

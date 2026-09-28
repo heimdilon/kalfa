@@ -68,6 +68,7 @@ impl Arac for Deneme {
         Ok(AracCiktisi {
             icerik: "ok".into(),
             kaynak: "deneme".into(),
+            guvenlik_uyarilari: Vec::new(),
         })
     }
 }

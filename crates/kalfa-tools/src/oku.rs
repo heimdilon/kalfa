@@ -86,6 +86,7 @@ impl Arac for DosyaOku {
             return Ok(AracCiktisi {
                 icerik: "[dosya boş]".into(),
                 kaynak: format!("dosya:{yol}"),
+                guvenlik_uyarilari: Vec::new(),
             });
         }
 
@@ -117,6 +118,7 @@ impl Arac for DosyaOku {
         Ok(AracCiktisi {
             icerik: cikti,
             kaynak: format!("dosya:{yol}:{bas}-{son}"),
+            guvenlik_uyarilari: Vec::new(),
         })
     }
 }

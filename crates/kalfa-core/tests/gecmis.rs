@@ -333,3 +333,58 @@ fn durum_ozeti_kayittan_cikarilir() {
         }
     );
 }
+
+/// Güvenlik analizi Bulgu 1: aracın güvenlik uyarısı olay olarak yayılır,
+/// kayda yazılır, geçmişte görünür ve modele `[güvenlik]` satırıyla gider.
+#[tokio::test]
+async fn guvenlik_uyarisi_olay_ve_kayit_olur() {
+    let d = tempfile::tempdir().unwrap();
+    let yol = d.path().join("oturum.jsonl");
+    let mut ayar = OturumAyarlari::yeni("glm-5.3", Path::new("calisma"));
+    ayar.kayit_yolu = Some(yol.clone());
+    ayar.kip = Kip::Serbest;
+    let oku = Arc::new(SahteArac::okuyan("oku").guvenlik_uyarisi("`.git` kenara alındı"));
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac("oku", json!({"yol": "a"})),
+        SahteYanit::metin("tamam"),
+    ]);
+    let mut surucu = test_oturumu(
+        test_baglami(s.clone(), vec![oku], sanal_siniflandirici()),
+        ayar,
+    );
+    surucu
+        .gonder(Komut::KullaniciMesaji {
+            metin: "oku".into(),
+        })
+        .await;
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
+
+    let sonuc = surucu
+        .gecmis
+        .iter()
+        .position(|z| matches!(z.yuk, Olay::AracSonucu { .. }))
+        .unwrap();
+    let uyari = surucu
+        .gecmis
+        .iter()
+        .position(|z| matches!(&z.yuk, Olay::GuvenlikUyarisi { mesaj, .. } if mesaj == "`.git` kenara alındı"))
+        .unwrap();
+    assert!(sonuc < uyari, "uyarı sonuçtan sonra gelir");
+    surucu.kapat().await;
+
+    let model = s.istekler()[1]
+        .messages
+        .iter()
+        .find_map(|m| m.tool_call_id.as_ref().and(m.content.clone()))
+        .unwrap();
+    assert!(
+        model.ends_with("\n[güvenlik] `.git` kenara alındı"),
+        "{model}"
+    );
+
+    let ogeler = gorunum_uret(&OturumKaydi::oku(&yol).unwrap());
+    assert!(ogeler.iter().any(|o| matches!(
+        o,
+        GorunumOgesi::GuvenlikUyarisi { mesaj, .. } if mesaj == "`.git` kenara alındı"
+    )));
+}

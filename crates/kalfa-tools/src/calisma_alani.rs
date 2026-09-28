@@ -4,6 +4,10 @@
 //! `FollowSymlinks::No` ile açılır. Böylece son dosyada no-follow kullanıp üst
 //! zinciri normal açma hatasına düşülmez. v1'de bağlantı izlenmez; çalışma
 //! alanının içinde kalan bağlantılar bile reddedilir.
+//!
+//! Yazarken kökteki `.git`'in kimliği de denetlenir (güvenlik analizi
+//! Bulgu 1): çekirdek `.git`'i adıyla tanıyıp korumalı sayar; git dizinine
+//! başka bir adla (8.3 kısa ad gibi) yazılamaz.
 
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -17,6 +21,7 @@ use kalfa_core::arac::AracHatasi;
 use kalfa_core::izin::Siniflandirici;
 use kalfa_core::muhur::ozet_hex;
 use kalfa_core::yol::CalismaYolu;
+use same_file::Handle;
 use tokio_util::sync::CancellationToken;
 
 use crate::baglanti;
@@ -57,10 +62,24 @@ impl CalismaAlani {
     /// Yalnızca üst dizinler açılır; son bileşen çağıranın yapacağı dosya
     /// işlemine bırakılır. Her üst bileşen tek adla ve no-follow açılır.
     fn ust_dizin(&self, yol: &CalismaYolu, olustur: bool) -> io::Result<(Dir, String)> {
+        self.ust_dizin_denetimli(yol, olustur, None)
+    }
+
+    /// `git` verilirse açılan her üst dizin onunla karşılaştırılır.
+    fn ust_dizin_denetimli(
+        &self,
+        yol: &CalismaYolu,
+        olustur: bool,
+        git: Option<&Handle>,
+    ) -> io::Result<(Dir, String)> {
         let mut dizin = self.dizin.try_clone()?;
         let mut parcalar = yol.as_str().split('/').peekable();
+        let mut ad_onceki: Option<&str> = None;
 
         while let Some(ad) = parcalar.next() {
+            if let (Some(g), Some(onceki)) = (git, ad_onceki) {
+                git_takma_adi_reddet(g, onceki, &dizin.try_clone()?.into_std_file())?;
+            }
             if parcalar.peek().is_none() {
                 return Ok((dizin, ad.to_string()));
             }
@@ -79,6 +98,7 @@ impl CalismaAlani {
                 }
                 Err(e) => return Err(e),
             };
+            ad_onceki = Some(ad);
         }
 
         Err(io::Error::new(
@@ -135,20 +155,73 @@ impl CalismaAlani {
     }
 
     pub fn yaz(&self, yol: &CalismaYolu, icerik: &[u8]) -> io::Result<()> {
-        let (ust, ad) = self.ust_dizin(yol, true)?;
+        let git = self.git_kimligi()?;
+        let (ust, ad) = self.ust_dizin_denetimli(yol, true, git.as_ref())?;
         let mut secenek = OpenOptions::new();
         // `truncate` yerine önce no-follow açıp sonra set_len kullanılır. Son
         // bileşen son anda symlink/junction yapılırsa open_with başarısız olur.
         secenek.write(true).create(true).follow(FollowSymlinks::No);
-        let mut dosya = ust.open_with(ad, &secenek)?;
+        let mut dosya = ust.open_with(&ad, &secenek)?;
         if !dosya.metadata()?.is_file() {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "Yalnızca normal dosyalara yazılabilir",
             ));
         }
+        // `.git` bir dosyaysa (worktree, alt modül) son bileşen de denetlenir.
+        if let Some(g) = &git {
+            git_takma_adi_reddet(g, &ad, &dosya.try_clone()?.into_std())?;
+        }
         dosya.set_len(0)?;
         dosya.write_all(icerik)
+    }
+
+    /// Komutun oluşturduğu tehlikeli `.git`'i aynı üst dizinde
+    /// `<ad>.kalfa-karantina-<damga>` adına taşır (güvenlik analizi Bulgu 1).
+    /// Bağlantı izlenmez: bağlantının kendisi taşınır. Yeni yolu döner.
+    pub fn karantinaya_al(&self, yol: &CalismaYolu, damga: &str) -> io::Result<CalismaYolu> {
+        let (ust, ad) = self.ust_dizin(yol, false)?;
+        for sira in 0..100 {
+            let yeni = match sira {
+                0 => format!("{ad}.kalfa-karantina-{damga}"),
+                n => format!("{ad}.kalfa-karantina-{damga}-{n}"),
+            };
+            match ust.symlink_metadata(&yeni) {
+                Ok(_) => continue,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
+            ust.rename(&ad, &ust, &yeni)?;
+            let yeni_yol = match yol.ust() {
+                Some(u) => format!("{u}/{yeni}"),
+                None => yeni,
+            };
+            return CalismaYolu::coz(&yeni_yol)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()));
+        }
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "karantina adı bulunamadı",
+        ))
+    }
+
+    /// Kökteki `.git`'in (dizin ya da dosya) kimliği; yoksa `None`. Bağlantı
+    /// izlenmez: bağlantı olan `.git` açılamaz ve denetlenmez, git de onu
+    /// izlemez.
+    fn git_kimligi(&self) -> io::Result<Option<Handle>> {
+        let std_dosya = match self.dizin.open_dir_nofollow(".git") {
+            Ok(d) => d.into_std_file(),
+            Err(_) => {
+                let mut secenek = OpenOptions::new();
+                secenek.read(true).follow(FollowSymlinks::No);
+                match self.dizin.open_with(".git", &secenek) {
+                    Ok(f) => f.into_std(),
+                    // Yok ya da bağlantı: denetlenecek bir git dizini yok.
+                    Err(_) => return Ok(None),
+                }
+            }
+        };
+        Handle::from_file(std_dosya).map(Some)
     }
 
     /// Çalışma alanındaki dosyaları döner. Yalnızca depo kökündeki
@@ -186,6 +259,21 @@ impl CalismaAlani {
         sonuc.sort();
         Ok(sonuc)
     }
+}
+
+/// Nesne kökteki `.git`'in kendisiyse ve ona `.git` adıyla ulaşılmadıysa
+/// reddeder.
+fn git_takma_adi_reddet(git: &Handle, ad: &str, nesne: &std::fs::File) -> io::Result<()> {
+    if ad.eq_ignore_ascii_case(".git") {
+        return Ok(());
+    }
+    if Handle::from_file(nesne.try_clone()?)? == *git {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Git dizinine başka bir adla erişilemez.",
+        ));
+    }
+    Ok(())
 }
 
 /// İlk 8 KiB'ta NUL baytı varsa dosya ikili sayılır.

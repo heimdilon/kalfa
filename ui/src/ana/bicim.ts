@@ -188,11 +188,31 @@ export function aracKartDurumu(durum: AracDurumu | 'Suruyor' | null): {
   }
 }
 
+/**
+ * Modele giden sonuçtan etiketi ayıklar: `<arac_sonucu … sinir="…">` sarmalı
+ * (güvenlik analizi Bulgu 5) ya da eski kayıtlardaki `[kaynak: …]` satırı.
+ * Sarmalın dışındaki `[güvenlik]` satırları kalır.
+ */
+export function sonucGovdesi(sonuc: string): string {
+  const satirlar = sonuc.split('\n');
+  const ilk = satirlar[0] ?? '';
+  if (ilk.startsWith('<arac_sonucu ')) {
+    const sinir = /sinir="([0-9a-f]+)">$/.exec(ilk)?.[1];
+    const kapanis = satirlar.lastIndexOf(`</arac_sonucu sinir="${sinir}">`);
+    if (sinir && kapanis > 0) {
+      return [...satirlar.slice(1, kapanis), ...satirlar.slice(kapanis + 1)].join('\n');
+    }
+  }
+  if (ilk.startsWith('[kaynak:')) return satirlar.slice(1).join('\n');
+  return sonuc;
+}
+
 /** Kabuk kartının özeti: sonucun ilk satırı ("Çıkış kodu: 0"). */
 export function kabukOzeti(oge: AracOgesi): string | undefined {
   if (oge.arac !== 'kabuk' || !oge.sonuc) return undefined;
-  // Sonuç `[kaynak: …]` etiketiyle başlar.
-  return oge.sonuc.split('\n').find((s) => s && !s.startsWith('[kaynak:'));
+  return sonucGovdesi(oge.sonuc)
+    .split('\n')
+    .find((s) => s);
 }
 
 /** Araç çıktısının kartta gösterilen kısmı. */

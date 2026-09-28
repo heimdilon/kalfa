@@ -10,7 +10,7 @@ use crate::kabuk::{KabukTarifi, YalitimOzeti};
 use crate::yol::CalismaYolu;
 
 pub const GIZLI_UYARISI: &str = "Bu dosyanın içeriği EVREN'e gönderilecek.";
-pub const KORUMALI_UYARISI: &str = "Bu dosyayı git kendiliğinden çalıştırır.";
+pub const KORUMALI_UYARISI: &str = "Bu yol git'in dizininde ya da kanca dizininde. Git buradaki yapılandırmayı ve kancaları kendiliğinden çalıştırır.";
 pub const BAGLANTI_UYARISI: &str =
     "Bu dosyanın başka bir yerde de adı var (hard link); yazmak o dosyayı da değiştirir.";
 pub const ILK_KABUK_UYARISI: &str = "Bu çalışma alanında ilk kez komut çalıştırılacak. Projenin \
@@ -20,6 +20,71 @@ dizinindeki dosyaları okuyabilir ve ağa erişebilir.";
 pub const AGLI_KABUK_UYARISI: &str = "Komut ağa erişebilecek. Dosya yalıtımı sürer.";
 pub const ALAN_HAZIRLIGI_UYARISI: &str = "Kalfa bu klasörün izinlerine yalıtım için giriş \
 ekleyecek. Klasörü ayarlardan kaldırınca geri alınır.";
+pub const YAPILANDIRMA_UYARISI: &str = "Bu dosyayı IDE'niz, git ya da paket yöneticiniz \
+Kalfa'nın yalıtımı dışında kendiliğinden çalıştırabilir.";
+
+pub const AYNI_ADIM_UYARISI: &str = "Bu dosya aynı adımda bir komutla birlikte yazılıyor; \
+komut bu değişikliği çalıştırabilir.";
+
+/// Komutların kod olarak çalıştırdığı derleme ve betik dosyaları (güvenlik
+/// analizi Bulgu 3). Dosya adına göre, büyük-küçük harf duyarsız eşleşir.
+pub const DERLEME_DOSYALARI: &[&str] = &[
+    "build.rs",
+    "Cargo.toml",
+    "package.json",
+    "Makefile",
+    "GNUmakefile",
+    "CMakeLists.txt",
+    "setup.py",
+    "pyproject.toml",
+    "conftest.py",
+    "noxfile.py",
+    "tox.ini",
+    "justfile",
+    "Taskfile.yml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "pom.xml",
+];
+
+pub fn derleme_dosyasi_mi(yol: &CalismaYolu) -> bool {
+    let ad = yol.as_str().rsplit('/').next().unwrap_or("");
+    DERLEME_DOSYALARI.iter().any(|d| d.eq_ignore_ascii_case(ad))
+}
+
+/// Kendiliğinden çalışan yapılandırma (güvenlik analizi Bulgu 2): IDE, git,
+/// CI ve paket yöneticileri bu dosyaları Kalfa'nın yalıtımı dışında ve çoğu
+/// zaman sorulmadan çalıştırır. Her kalıp her derinlikte ve büyük-küçük harf
+/// duyarsız eşleşir. Bilinen adlar listesidir: sınıf yalnızca onay ister,
+/// hiçbir şeyi serbest bırakmaz.
+pub const VARSAYILAN_YAPILANDIRMA_KALIPLARI: &[&str] = &[
+    // IDE ve geliştirme ortamı
+    ".vscode/**",
+    ".idea/**",
+    ".devcontainer/**",
+    // Araç zinciri
+    ".cargo/config",
+    ".cargo/config.toml",
+    "rust-toolchain",
+    "rust-toolchain.toml",
+    "mise.toml",
+    ".mise.toml",
+    // Ortam
+    ".envrc",
+    // CI
+    ".github/workflows/**",
+    ".gitlab-ci.yml",
+    // Commit kancası yöneticileri
+    ".pre-commit-config.yaml",
+    ".husky/**",
+    "lefthook.yml",
+    ".lefthook.yml",
+    // Paket yöneticileri
+    ".yarnrc",
+    ".yarnrc.yml",
+    ".pnpmfile.cjs",
+];
 
 /// Spec §7.4'teki varsayılan gizli dosya kalıpları. Her kalıp her derinlikte
 /// ve büyük-küçük harf duyarsız eşleşir.
@@ -39,6 +104,34 @@ pub const VARSAYILAN_GIZLI_KALIPLAR: &[&str] = &[
     ".pypirc",
     ".git-credentials",
     "credentials*",
+    // Güvenlik analizi Bulgu 4. Kaynak kod adlarını yakalamamak için
+    // `secrets.*` gibi geniş kalıplar kullanılmaz.
+    "*.env",
+    "*.tfstate",
+    "*.tfstate.*",
+    "*.tfvars",
+    ".terraformrc",
+    "terraform.rc",
+    "secrets.{json,yaml,yml,toml,env,ini}",
+    "secret.{json,yaml,yml,toml,env,ini}",
+    "service-account*.json",
+    "serviceaccount*.json",
+    ".pgpass",
+    ".htpasswd",
+    ".vault-token",
+    ".s3cfg",
+    ".boto",
+    ".docker/config.json",
+    ".dockercfg",
+    "kubeconfig",
+    ".kube/config",
+    ".yarnrc.yml",
+    "*.jks",
+    "*.ovpn",
+    "*.ppk",
+    "*.keytab",
+    "id_ecdsa*",
+    "id_dsa*",
 ];
 
 /// Paket yöneticilerinin ürettiği bağımlılık dizinleri (2d-3, kullanıcı
@@ -78,6 +171,8 @@ pub enum YolSinifi {
     Normal,
     Gizli,
     Korumali,
+    /// Kendiliğinden çalışan yapılandırma (Bulgu 2).
+    Yapilandirma,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,7 +272,7 @@ pub fn karar_ver(kip: Kip, islem: Islem, sinif: YolSinifi, coklu_baglanti: bool)
             YolSinifi::Gizli => Karar::Onayli {
                 uyarilar: vec![GIZLI_UYARISI.to_string()],
             },
-            YolSinifi::Normal | YolSinifi::Korumali => Karar::Serbest,
+            YolSinifi::Normal | YolSinifi::Korumali | YolSinifi::Yapilandirma => Karar::Serbest,
         },
         Islem::Yazma => {
             if kip == Kip::Inceleme {
@@ -186,8 +281,10 @@ pub fn karar_ver(kip: Kip, islem: Islem, sinif: YolSinifi, coklu_baglanti: bool)
                 };
             }
             let mut uyarilar = Vec::new();
-            if sinif == YolSinifi::Korumali {
-                uyarilar.push(KORUMALI_UYARISI.to_string());
+            match sinif {
+                YolSinifi::Korumali => uyarilar.push(KORUMALI_UYARISI.to_string()),
+                YolSinifi::Yapilandirma => uyarilar.push(YAPILANDIRMA_UYARISI.to_string()),
+                YolSinifi::Normal | YolSinifi::Gizli => {}
             }
             if coklu_baglanti {
                 uyarilar.push(BAGLANTI_UYARISI.to_string());
@@ -201,32 +298,59 @@ pub fn karar_ver(kip: Kip, islem: Islem, sinif: YolSinifi, coklu_baglanti: bool)
     }
 }
 
-/// Bir yolun sınıfını (gizli / korumalı) belirler.
+/// Kalıplar her derinlikte ve büyük-küçük harf duyarsız eşleşir.
+fn kalip_kumesi(kaliplar: impl Iterator<Item = String>) -> Result<GlobSet, globset::Error> {
+    let mut kurucu = GlobSetBuilder::new();
+    for kalip in kaliplar {
+        kurucu.add(
+            GlobBuilder::new(&format!("**/{kalip}"))
+                .case_insensitive(true)
+                .literal_separator(true)
+                .build()?,
+        );
+    }
+    kurucu.build()
+}
+
+/// Bir yolun sınıfını (gizli / korumalı / yapılandırma) belirler.
 #[derive(Debug)]
 pub struct Siniflandirici {
     kok: PathBuf,
     gizli: GlobSet,
+    yapilandirma: GlobSet,
 }
 
 impl Siniflandirici {
     pub fn yeni(kok: impl Into<PathBuf>, ek_gizli: &[String]) -> Result<Self, globset::Error> {
-        let mut kurucu = GlobSetBuilder::new();
-        let kaliplar = VARSAYILAN_GIZLI_KALIPLAR
-            .iter()
-            .map(|k| k.to_string())
-            .chain(ek_gizli.iter().cloned());
-        for kalip in kaliplar {
-            kurucu.add(
-                GlobBuilder::new(&format!("**/{kalip}"))
-                    .case_insensitive(true)
-                    .literal_separator(true)
-                    .build()?,
-            );
-        }
+        let gizli = kalip_kumesi(
+            VARSAYILAN_GIZLI_KALIPLAR
+                .iter()
+                .map(|k| k.to_string())
+                .chain(ek_gizli.iter().cloned()),
+        )?;
+        let yapilandirma = kalip_kumesi(
+            VARSAYILAN_YAPILANDIRMA_KALIPLARI
+                .iter()
+                .map(|k| k.to_string()),
+        )?;
         Ok(Self {
             kok: kok.into(),
-            gizli: kurucu.build()?,
+            gizli,
+            yapilandirma,
         })
+    }
+
+    /// Kendiliğinden çalışan yapılandırma mı (Bulgu 2)? Bağımlılık dizinleri
+    /// muaf değildir: oraya yazılan bir `.vscode` de çalışabilir.
+    pub fn yapilandirma_mi(&self, yol: &CalismaYolu) -> bool {
+        self.yapilandirma.is_match(yol.as_str())
+    }
+
+    /// İçindeki her şey yapılandırma sayılan dizin mi (`.vscode`,
+    /// `.github/workflows`)? Yalıtımda bütünüyle salt okunur olur.
+    pub fn yapilandirma_dizini_mi(&self, yol: &CalismaYolu) -> bool {
+        self.yapilandirma
+            .is_match(format!("{}/kalfa-ornek", yol.as_str()))
     }
 
     pub fn kok(&self) -> &Path {
@@ -240,8 +364,12 @@ impl Siniflandirici {
     }
 
     /// Git korumaları her çağrıda yeniden çözülür (spec §7.3): `core.hooksPath`
-    /// oturum sırasında değişebilir.
+    /// oturum sırasında değişebilir. Her derinlikteki `.git` her zaman
+    /// korumalıdır.
     pub fn korumali_mi(&self, yol: &CalismaYolu) -> bool {
+        if git_koruma::git_ic_yolu_mu(yol) {
+            return true;
+        }
         let anahtar = yol.anahtar();
         git_koruma::korumali_yollar(&self.kok).iter().any(|k| {
             let k = k.trim_end_matches('/');
@@ -249,9 +377,14 @@ impl Siniflandirici {
         })
     }
 
+    /// Öncelik: Korumalı > Yapılandırma > Gizli > Normal. Okuma kararı
+    /// `gizli_mi`'yi doğrudan kullanır; bu öncelik gizli dosyanın okuma
+    /// onayını etkilemez.
     pub fn sinifla(&self, yol: &CalismaYolu) -> YolSinifi {
         if self.korumali_mi(yol) {
             YolSinifi::Korumali
+        } else if self.yapilandirma_mi(yol) {
+            YolSinifi::Yapilandirma
         } else if self.gizli_mi(yol) {
             YolSinifi::Gizli
         } else {

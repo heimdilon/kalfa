@@ -160,7 +160,9 @@ describe('kabuk', () => {
     assert.match(terminal, /kabuktan-merhaba/);
     assert.match(terminal, /uyari-satiri/);
     await k.metniBekle('Çıkış kodu: 0');
-    await k.metniBekle('[kaynak: kabuk:node]');
+    // Sahte model araç sonucunu yanıtına yansıtır: sonuç sarmalıyla modele gitti
+    // (güvenlik analizi Bulgu 5).
+    await k.metniBekle('<arac_sonucu kaynak="kabuk:node" sinir="');
     if (
       process.platform === 'win32' &&
       ilkProfilSayisi !== null &&

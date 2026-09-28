@@ -58,6 +58,21 @@ function tipler(d: OturumEkrani): EkranOgesi['tip'][] {
   return d.ogeler.map((o) => o.tip);
 }
 
+describe('güvenlik uyarısı', () => {
+  it('canlı olaydan ve geçmişten konuşma öğesi olur', () => {
+    const d = acilis({
+      ogeler: [{ tip: 'GuvenlikUyarisi', sira: 3, tur: 't0', mesaj: 'eski uyarı' }],
+      daha_eski_var: false,
+    });
+    expect(d.ogeler).toMatchObject([{ tip: 'GuvenlikUyarisi', mesaj: 'eski uyarı' }]);
+    const sonra = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'GuvenlikUyarisi', cagri: 'c-1', mesaj: 'yeni uyarı' }),
+    });
+    expect(sonra.ogeler.at(-1)).toMatchObject({ tip: 'GuvenlikUyarisi', mesaj: 'yeni uyarı' });
+  });
+});
+
 describe('kanal mesajı → oturum durumu (1c tasarımı §8.4)', () => {
   it('mesaj, tur ve bitişik metin parçaları tek yanıtta birleşir', () => {
     let d = uygula(acilis(), { tip: 'MesajGonderildi', metin: 'selam' });

@@ -297,3 +297,44 @@ fn varsayilan_araclar_kaydedilebilir() {
     assert_eq!(yazanlar, vec!["dosya_yaz", "dosya_duzenle"]);
     AracKayitDefteri::yeni(araclar).expect("bütün şemalar geçerli olmalı");
 }
+
+/// Güvenlik analizi Bulgu 1: çekirdeğin metin kuralı `.git`'i adıyla tanır;
+/// araç, git dizinine başka bir adla (8.3 kısa ad) yazmaz.
+#[cfg(windows)]
+#[test]
+fn kisa_ad_ile_git_dizinine_yazilamaz() {
+    use kalfa_core::yol::CalismaYolu;
+
+    let (d, a) = alan();
+    std::fs::create_dir(d.path().join(".git")).unwrap();
+    let cikti = std::process::Command::new("cmd")
+        .args(["/c", "dir", "/x", "/a"])
+        .current_dir(d.path())
+        .output()
+        .unwrap();
+    let metin = String::from_utf8_lossy(&cikti.stdout);
+    let kisa = metin.lines().find_map(|satir| {
+        let parcalar: Vec<&str> = satir.split_whitespace().collect();
+        match parcalar.as_slice() {
+            [.., kisa, ".git"] if kisa.contains('~') => Some(kisa.to_string()),
+            _ => None,
+        }
+    });
+    let Some(kisa) = kisa else {
+        eprintln!("8.3 kısa adlar bu sürücüde kapalı; test atlandı");
+        return;
+    };
+    let yol = CalismaYolu::coz(&format!("{kisa}/commondir")).unwrap();
+    let hata = a.yaz(&yol, b"../zz").unwrap_err();
+    assert_eq!(hata.kind(), std::io::ErrorKind::PermissionDenied, "{kisa}");
+    // cap-std sondaki noktayı Win32 gibi atmaz; yol hiç çözülmez.
+    assert!(
+        a.yaz(&CalismaYolu::coz(".git./commondir").unwrap(), b"../zz")
+            .is_err()
+    );
+    assert!(!d.path().join(".git/commondir").exists());
+    // Kendi adıyla yazma (çekirdeğin onayından sonra) çalışır.
+    a.yaz(&CalismaYolu::coz(".git/description").unwrap(), b"x")
+        .unwrap();
+    assert!(d.path().join(".git/description").exists());
+}

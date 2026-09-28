@@ -1,5 +1,6 @@
 // Onay sayfasının kararları (1c tasarımı §8.2). Seçilen çağrılar onaylanır;
 // seçilmeyenler gerekçeyle reddedilir. Her karar çağrının mührünü taşır.
+import { gorunmezMi } from '../bilesenler/gorunmez';
 import type { CagriId, OnayGirdisi, OnayOgesi } from '../ipc/tipler';
 
 export type OnaySecimi = 'tumu' | 'secilenler' | 'hicbiri';
@@ -19,6 +20,22 @@ export function kararlariUret(
       karar: onay ? { tip: 'Onayla' } : { tip: 'Reddet', gerekce: temizGerekce },
     };
   });
+}
+
+function gorunmezVar(metin: string | null | undefined): boolean {
+  return [...(metin ?? '').replace(/\r\n/g, '\n')].some(gorunmezMi);
+}
+
+/**
+ * Toplu onaylanmayan, tek tek seçilmesi gereken öğe (güvenlik analizi
+ * Bulgu 3, 7): ağlı komut, onaysız derleme dosyası değişikliğinden sonraki
+ * komut ve görünmez karakter taşıyan işlem. Yerel onaylı öğe zaten yerel
+ * pencerede ayrıca sorulur.
+ */
+export function riskliMi(o: OnayOgesi): boolean {
+  if (o.kabuk?.ag) return true;
+  if ((o.onaysiz_degisiklikler?.derleme_dosyalari.length ?? 0) > 0) return true;
+  return [o.kabuk?.komut, o.kabuk?.dizin, o.diff, ...o.hedefler].some(gorunmezVar);
 }
 
 /** Dosya listesinde gösterilen kısa ad: hedefin son bileşeni. */

@@ -148,7 +148,10 @@ async fn ui_siz_tam_dongu_gercek_araclarla() {
     assert_eq!(d.metin(), "Dosyayı güncelledim.");
 
     // Model, okuma sonucunu kaynak etiketiyle gördü.
-    assert!(arac_yanitlari(&s, 1)[0].starts_with("[kaynak: dosya:selam.txt:1-1]"));
+    assert!(
+        arac_yanitlari(&s, 1)[0]
+            .starts_with("<arac_sonucu kaynak=\"dosya:selam.txt:1-1\" sinir=\"")
+    );
 
     // Kayıttan kurtarma aynı bağlamı verir.
     let durum =

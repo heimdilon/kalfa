@@ -12,7 +12,14 @@
   import type { BitisNedeni, OturumId } from '../ipc/tipler';
   import Markdown from '../markdown/Markdown.svelte';
   import type { AnaDurum } from './anaDurum.svelte';
-  import { aracBasligi, aracHedefi, aracKartDurumu, ciktiOnizlemesi, kabukOzeti } from './bicim';
+  import {
+    aracBasligi,
+    aracHedefi,
+    aracKartDurumu,
+    ciktiOnizlemesi,
+    kabukOzeti,
+    sonucGovdesi,
+  } from './bicim';
   import OnayKarti from './OnayKarti.svelte';
   import TerminalGorunumu from './TerminalGorunumu.svelte';
 
@@ -63,7 +70,7 @@
     {#if oge.terminal}
       <TerminalGorunumu terminal={oge.terminal} />
     {:else if oge.sonuc}
-      {@const o = ciktiOnizlemesi(oge.sonuc)}
+      {@const o = ciktiOnizlemesi(sonucGovdesi(oge.sonuc))}
       <CodeBlock code={o.kod} truncated={o.kirpildi} maxHeight="320px" />
     {/if}
   </ToolCallCard>
@@ -91,6 +98,10 @@
         </Button>
       {/if}
     {/snippet}
+    <p class="aciklama">{oge.mesaj}</p>
+  </Card>
+{:else if oge.tip === 'GuvenlikUyarisi'}
+  <Card tone="danger" icon="shield-alert" title={m('guvenlik.kart.baslik')}>
     <p class="aciklama">{oge.mesaj}</p>
   </Card>
 {:else if oge.tip === 'TurSonu'}

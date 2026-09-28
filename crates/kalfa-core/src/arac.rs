@@ -41,11 +41,15 @@ pub struct Hazirlik {
     pub kabuk: Option<KabukTarifi>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AracCiktisi {
     pub icerik: String,
     /// Modele giden içeriğin kaynak etiketi (spec §9), örn. `dosya:src/a.rs:1-40`.
     pub kaynak: String,
+    /// Kullanıcıya ayrıca gösterilen güvenlik uyarıları (güvenlik analizi
+    /// Bulgu 1): örneğin komutun oluşturduğu tehlikeli `.git`'in karantinası.
+    /// Modele de `[güvenlik] …` satırıyla gider.
+    pub guvenlik_uyarilari: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

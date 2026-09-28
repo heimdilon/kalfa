@@ -1,6 +1,6 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-09-27. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-09-28. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
 ## Mevcut uygulama
@@ -43,6 +43,12 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
   kabın `PATH`'inde önce gelirler; yöneticiye ait araç dizini UAC ile açılır,
   Onar yükseltmede kaybolan izinleri geri getirir; Windows'ta ağsız cargo
   geliştiricinin registry'siyle derler; sınır matrisi. Ayrıntısı aşağıda.
+- **Güvenlik sertleştirmesi (PR #16):** [güvenlik analizinin](superpowers/bulgular/2026-09-27-guvenlik-analizi.md)
+  1–7. bulguları: `.git`'in tamamı korumalı ve yeni `.git` karantinası,
+  kendiliğinden çalışan yapılandırma sınıfı, kabuk onayında onaysız
+  değişiklikler, genişleyen gizli kalıplar, araç çıktısının rastgele sınırlı
+  sarmalı, yönetici yardımcısının kayıt dizini denetimi ve görünmez
+  karakterler. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -970,6 +976,55 @@ geliştirme ortamının geri kurulması denendi. Ayrıntı plandaki kabul notund
 Kabulde bulunan `\\?\` önekli yol görüntüsü düzeltildi. Aynı turdaki paralel
 kabuk çağrılarının ilk hazırlıkta düşmesi 2d-3'ten önceki bir hatadır; ayrı
 işe ayrıldı. 2d-3 tamamlandı; sıradaki PR #15'in birleştirilmesi.
+
+### Güvenlik sertleştirmesi (PR #16, 2026-09-28)
+
+[Güvenlik analizi](superpowers/bulgular/2026-09-27-guvenlik-analizi.md) ve
+[plan](superpowers/plans/2026-09-27-kalfa-guvenlik-sertlestirme.md); kararlar
+ve plandan sapmalar planın "Kararlar" ve "Uygulama sonucu" bölümlerinde.
+
+- **Bulgu 1 (yüksek):** dosya araçları `.git/commondir` yazabiliyordu; git bununla
+  yalıtım dışında kod çalıştırıyordu. Artık her derinlikteki `.git`'in tamamı
+  korumalı (onay ister), 8.3 kısa adla da yazılamaz. Yalıtımda bütün `.git`
+  girdileri salt okunur; komutun oluşturduğu tehlikeli yeni `.git` izin
+  listesiyle bulunur, `.git.kalfa-karantina-<zaman>` olarak kenara alınır ve
+  "Güvenlik uyarısı" olarak gösterilir.
+- **Bulgu 2:** `.vscode/`, `.cargo/config*`, `.envrc`, CI dosyaları gibi
+  kendiliğinden çalışan yapılandırmaya yazmak her kipte onay ister; yalıtımda
+  salt okunur, yenisi bildirilir.
+- **Bulgu 3:** kabuk onayı oturumdaki onaysız değişiklikleri ve derleme
+  dosyalarını gösterir; aynı adımdaki yazmalar da onaya çıkar; riskli öğeler
+  "Tümünü onayla" ile geçmez.
+- **Bulgu 4:** gizli dosya kalıpları genişledi.
+- **Bulgu 5:** araç çıktısı çağrı başına rastgele sınırlı sarmalla gelir.
+- **Bulgu 6:** yönetici yardımcısı kayıt dizininin sahibini ve reparse
+  noktasını denetler, DACL'i tutamaçla yazar.
+- **Bulgu 7:** görünmez ve yön değiştiren karakterler onay yüzeylerinde
+  `⟨U+XXXX⟩` olarak görünür ve onay ister.
+
+Son doğrulama (tam, PR dalının son hâli):
+
+| Doğrulama | Windows | WSL Ubuntu-24.04 |
+|---|---|---|
+| Biçim ve Clippy (tam, `e2e`, yalıtım özellikli) | Geçti | Geçti |
+| `cargo test --workspace --locked` | 513 | 458 |
+| `e2e` özellikli testler | 92 | 91 |
+| Gerçek yalıtım testleri | 30/30 (AppContainer) | 17/17 (bwrap, `kalfatest`) |
+| Uyumluluk | 14/14 | 9/9 |
+| Arayüz denetim, test ve derleme | 0/0; 242 test; paket denetimi temiz | — |
+| Uçtan uca | 25/25 | 25/25 (`xvfb-run`) |
+
+Testler makinede fazladan Kalfa AppContainer profili bırakmadı. Uçtan uca
+`05-kabuk`'taki etiket beklentisi yeni sarmala taşındı; ilk koşuda yalnız o
+test eski beklentiyle düştü, düzeltmeden sonra iki platformda geçti.
+
+**Açık işler:**
+- Görev 3'ün kurulu makinede yönetici olarak kabulü (kullanıcı; UAC): kurulum,
+  "Onar" ve kaldırma kayıt dizininin yeni denetimiyle.
+- Bulgu 8: ağlı komutun çıkışı sınırsız; izin listeli çıkış vekili aşama 3'te
+  ayrı bir tasarımla.
+- Kullanıcının ek gizli kalıpları için ayar arayüzü ve saklama yeri.
+- Güvenlik denetçisi (üst belge §9); sarmal yalnızca bir azaltımdır.
 
 Bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi, güvenlik
 denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü

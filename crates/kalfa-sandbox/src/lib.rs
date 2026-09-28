@@ -6,6 +6,7 @@
 //! `kalfa-core`'a bağlı değildir.
 
 mod agac;
+pub mod git_denetimi;
 #[cfg(target_os = "linux")]
 pub mod linux;
 pub mod ortam;

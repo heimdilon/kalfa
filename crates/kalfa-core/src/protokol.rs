@@ -81,6 +81,23 @@ pub struct OnayOgesi {
     /// Onay yalnızca yerel iletişim kutusundan verilebilir (§5.2).
     #[serde(default)]
     pub yerel_onay: bool,
+    /// Kabuk öğesinde: bu oturumda onaysız değişen dosyalar (güvenlik analizi
+    /// Bulgu 3). Mühre girmez: işlemi değil bağlamı anlatır.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onaysiz_degisiklikler: Option<OnaysizDegisiklikler>,
+}
+
+/// Kabuk onayında gösterilen bağlam: komut, modelin onaysız yazdığı kodu
+/// çalıştırabilir (güvenlik analizi Bulgu 3).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OnaysizDegisiklikler {
+    /// Onay sorulmadan yazılan dosyalar.
+    pub yollar: Vec<String>,
+    /// Onaysız bir komut da çalıştı; değiştirdiği dosyalar bilinmiyor.
+    pub komut_calisti: bool,
+    /// `yollar` içindeki derleme ve betik dosyaları (`build.rs`,
+    /// `package.json` …).
+    pub derleme_dosyalari: Vec<String>,
 }
 
 /// Araç çıktısının hangi akıştan geldiği.
@@ -131,6 +148,11 @@ pub enum Olay {
         arac: String,
         durum: AracDurumu,
         icerik: String,
+    },
+    /// Aracın bildirdiği güvenlik uyarısı; `AracSonucu`'ndan sonra gelir.
+    GuvenlikUyarisi {
+        cagri: CagriId,
+        mesaj: String,
     },
     /// Süren bir aracın ara çıktısı (aşama 2 tasarımı §4.4). Kayda yazılmaz.
     /// Ekran yetişemezse parçalar atılır; `atlanan_bayt` bu parçadan önce

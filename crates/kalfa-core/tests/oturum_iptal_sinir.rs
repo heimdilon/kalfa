@@ -273,9 +273,10 @@ async fn buyuk_cikti_kirpilir_ve_utf8_bozulmaz() {
     d.gonder(mesaj("oku")).await;
     d.tur_sonu().await;
     let yanit = &arac_mesajlari(&s, 1)[0];
-    assert!(yanit.starts_with("[kaynak: sahte:oku]"));
+    assert!(yanit.starts_with("<arac_sonucu kaynak=\"sahte:oku\" sinir=\""));
     assert!(yanit.contains("kırpıldı"));
-    assert!(yanit.len() < 200);
+    // Sınır içeriğe uygulanır; sarmalın etiketleri (~150 bayt) ona girmez.
+    assert!(yanit.len() < 350, "{}", yanit.len());
 }
 
 #[tokio::test]

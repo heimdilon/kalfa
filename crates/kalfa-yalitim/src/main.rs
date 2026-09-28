@@ -23,6 +23,7 @@ const KULLANIM: &str = "Kullanım: kalfa-yalitim kur [--izin-ver <dizin>]... | k
 const KISMI_KURULUM: u8 = 3;
 
 /// Çıkış kodu ve iletisiyle hata. Düz ileti 1 koduyla çıkar.
+#[derive(Debug)]
 struct Hata {
     kod: u8,
     ileti: String,
@@ -102,9 +103,10 @@ mod windows {
 
     use kalfa_sandbox::windows::guvenlik::{
         Izin, MASKE_OKU, MIRAS, arac_zinciri_sidi, izin_ekle, izni_kaldir, kok_izni_kaldir,
-        kok_izni_var_mi, kok_izni_ver, profiller_dizini, sabit_diskler, sade, yukseltilmis_mi,
+        kok_izni_var_mi, kok_izni_ver, profiller_dizini, program_data, sabit_diskler, sade,
+        yukseltilmis_mi,
     };
-    use kalfa_sandbox::windows::kurulum::{KurulumKaydi, kayit_dizini};
+    use kalfa_sandbox::windows::kurulum::{KurulumKaydi, kayit_dizini, kayit_dizini_hazirla};
 
     use super::{Hata, KISMI_KURULUM};
 
@@ -117,6 +119,7 @@ mod windows {
         IzinGeriAl(PathBuf),
     }
 
+    #[derive(Debug)]
     enum KurulumDurumu {
         Okundu,
         Bulunamadi,
@@ -138,24 +141,8 @@ mod windows {
             return Err("Bu komut yönetici olarak çalıştırılmalıdır.".into());
         }
         let dizin = kayit_dizini().map_err(metin)?;
-        // Bozuk kayıtla yalnızca `kaldir` sürer: kök izinlerini sürücülerden
-        // bulur. Diğer komutlar kaydı ezmemek için durur.
-        let (mut kayit, durum) = match KurulumKaydi::oku(&dizin) {
-            Ok(Some(kayit)) => (kayit, KurulumDurumu::Okundu),
-            Ok(None) => (KurulumKaydi::default(), KurulumDurumu::Bulunamadi),
-            Err(e) if matches!(&is, Is::Kaldir) => {
-                println!(
-                    "{e}; kök izinleri taranacak; izin-ver dizinleri bilinmediğinden kaldırma başarısı doğrulanamayacak."
-                );
-                (
-                    KurulumKaydi::default(),
-                    KurulumDurumu::Okunamadi(e.to_string()),
-                )
-            }
-            Err(e) => {
-                return Err(format!("{e}. Kaydı inceleyin ya da önce kaldir.").into());
-            }
-        };
+        let hazirlik = program_data().and_then(|taban| kayit_dizini_hazirla(&taban));
+        let (mut kayit, durum) = kaydi_yukle(&is, hazirlik, KurulumKaydi::oku)?;
         match is {
             Is::Kur(izinli) => {
                 kur(&dizin, &mut kayit)?;
@@ -181,6 +168,33 @@ mod windows {
             Is::IzinGeriAl(d) => izin_geri_al(&dizin, &mut kayit, &d)?,
         }
         Ok(())
+    }
+
+    /// Kayıt dizini her işten önce hazırlanır (güvenlik analizi Bulgu 6):
+    /// sahibi yönetici değilse ya da reparse noktasıysa kayıt okunmaz ve
+    /// yazılmaz. Bozuk ya da okunmayan kayıtla yalnızca `kaldir` sürer: kök
+    /// izinlerini sürücülerden bulur ve kayda dokunmaz. Diğer komutlar
+    /// kaydı ezmemek için durur.
+    fn kaydi_yukle(
+        is: &Is,
+        hazirlik: io::Result<PathBuf>,
+        oku: impl FnOnce(&Path) -> io::Result<Option<KurulumKaydi>>,
+    ) -> Result<(KurulumKaydi, KurulumDurumu), Hata> {
+        let sonuc = hazirlik.and_then(|dizin| oku(&dizin));
+        match sonuc {
+            Ok(Some(kayit)) => Ok((kayit, KurulumDurumu::Okundu)),
+            Ok(None) => Ok((KurulumKaydi::default(), KurulumDurumu::Bulunamadi)),
+            Err(e) if matches!(is, Is::Kaldir) => {
+                println!(
+                    "{e}; kök izinleri taranacak; izin-ver dizinleri bilinmediğinden kaldırma başarısı doğrulanamayacak."
+                );
+                Ok((
+                    KurulumKaydi::default(),
+                    KurulumDurumu::Okunamadi(e.to_string()),
+                ))
+            }
+            Err(e) => Err(format!("{e}. Kaydı inceleyin ya da önce kaldir.").into()),
+        }
     }
 
     /// Kök izni. Kayıt izinden önce yazılır: izin yarıda kalsa da `kaldir`
@@ -413,6 +427,35 @@ mod windows {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn yardimci_hazirlik_basarisizsa_kaydi_okumaz() {
+            let hazirlik = || {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Kayıt dizininin sahibi yönetici değil",
+                ))
+            };
+            let okuma = |_: &Path| -> io::Result<Option<KurulumKaydi>> {
+                panic!("hazırlanmayan kayıt okunmamalı")
+            };
+            for is in [
+                Is::Kur(Vec::new()),
+                Is::IzinVer(PathBuf::from(r"C:\x")),
+                Is::IzinGeriAl(PathBuf::from(r"C:\x")),
+            ] {
+                let hata = kaydi_yukle(&is, hazirlik(), okuma).unwrap_err();
+                assert!(
+                    hata.ileti.contains("yönetici değil"),
+                    "{is:?}: {}",
+                    hata.ileti
+                );
+            }
+            // `kaldir` kaydı bilinmeyen sayar: kök izinlerini tarar, kayda dokunmaz.
+            let (kayit, durum) = kaydi_yukle(&Is::Kaldir, hazirlik(), okuma).unwrap();
+            assert_eq!(kayit, KurulumKaydi::default());
+            assert!(matches!(durum, KurulumDurumu::Okunamadi(_)));
+        }
 
         #[test]
         fn bozuk_kayit_kaldirma_kaydini_silmez_ve_yazmaz() {

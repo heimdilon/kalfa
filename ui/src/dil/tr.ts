@@ -152,6 +152,13 @@ export const tr = {
   'onay.sayfa.tumunu_onayla': 'Tümünü onayla',
   'onay.sayfa.secilenleri_onayla': 'Seçilenleri onayla',
   'onay.sayfa.reddet': 'Reddet',
+  'onay.sayfa.riskli':
+    'Ağa çıkan, derleme dosyası değişmiş ya da görünmeyen karakter taşıyan işlemler tek tek seçilerek onaylanır.',
+  'onay.kabuk.onaysiz': 'Bu oturumda onayınız olmadan değişen dosyalar',
+  'onay.kabuk.onaysiz_yok': 'Yok',
+  'onay.kabuk.onaysiz_komut': 'Onaysız bir komut da çalıştı; değiştirdiği dosyalar bilinmiyor.',
+  'onay.kabuk.derleme':
+    'Derleme ya da betik dosyası değişti; komut bu kodu çalıştırabilir: {dosyalar}',
   'onay.kabuk.komut': 'Komut',
   'onay.kabuk.betik': 'Betik ({yorumlayici})',
   'onay.kabuk.dizin': 'Dizin',
@@ -171,6 +178,7 @@ export const tr = {
   'sart.kart.ac': 'Şart penceresini aç',
 
   'hata.kart.baslik': 'Tur hatayla bitti',
+  'guvenlik.kart.baslik': 'Güvenlik uyarısı',
   'aktarim.baslik': 'Aktarım durdu',
 
   'durum.ad': 'Durum çubuğu',

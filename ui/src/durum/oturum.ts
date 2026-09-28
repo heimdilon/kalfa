@@ -56,6 +56,7 @@ export type EkranOgesi =
     })
   | (Ortak & { tip: 'SartIstegi'; surum: number; durum: 'Bekliyor' | 'Cozuldu' })
   | (Ortak & { tip: 'Hata'; mesaj: string })
+  | (Ortak & { tip: 'GuvenlikUyarisi'; mesaj: string })
   | (Ortak & { tip: 'TurSonu'; neden: BitisNedeni })
   | (Ortak & { tip: 'AktarimDurdu'; neden: AktarimDurmaNedeni });
 
@@ -122,6 +123,8 @@ export function gecmisOgesi(o: GorunumOgesi): EkranOgesi {
       };
     case 'TurSonu':
       return { ...o, anahtar: `g-${o.sira}-s` };
+    case 'GuvenlikUyarisi':
+      return { ...o, anahtar: `g-${o.sira}-g` };
   }
 }
 
@@ -309,6 +312,15 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
       if (yuk.yonlendirilen_model !== null) {
         d.ozet = { ...d.ozet, yonlendirilen_model: yuk.yonlendirilen_model };
       }
+      return;
+    case 'GuvenlikUyarisi':
+      d.ogeler.push({
+        tip: 'GuvenlikUyarisi',
+        anahtar: `c-${z.sira}`,
+        sira: z.sira,
+        tur: z.tur,
+        mesaj: yuk.mesaj,
+      });
       return;
     case 'Hata':
       akisiKapat(d);

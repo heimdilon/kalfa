@@ -165,11 +165,19 @@ mod tests {
             gizli: Tarama {
                 dosyalar: vec!["/tmp/alan/.env".into()],
                 dizinler: vec!["/tmp/alan/gizli".into()],
+                git: Vec::new(),
+                yapilandirma: Vec::new(),
             },
-            korumali: vec![Korumali {
-                yol: "/tmp/alan/.git/hooks".into(),
-                dizin: true,
-            }],
+            korumali: vec![
+                Korumali {
+                    yol: "/tmp/alan/.git/hooks".into(),
+                    dizin: true,
+                },
+                Korumali {
+                    yol: "/tmp/alan/gizli/alt/.git".into(),
+                    dizin: true,
+                },
+            ],
             git_dizinleri: vec!["/depo/.git".into()],
         };
         let ozel = OzelDizinler::yol(Path::new("/veri/yalitim"), "abc");
@@ -230,7 +238,18 @@ mod tests {
             ],
         );
         assert!(kok < usr && usr < bin && bin < tmp && tmp < alan);
+        // İç içe `.git` de salt okunur; gizli dizindeki `.git`'i gizli
+        // dizinin tmpfs'i sonradan örter (güvenlik analizi Bulgu 1).
+        let ic_ice = konum(
+            &s,
+            &[
+                "--ro-bind",
+                "/tmp/alan/gizli/alt/.git",
+                "/tmp/alan/gizli/alt/.git",
+            ],
+        );
         assert!(alan < hooks && alan < env && alan < gizli);
+        assert!(alan < ic_ice && ic_ice < gizli);
         assert!(gizli < konum(&s, &["--remount-ro", "/"]));
         konum(
             &s,

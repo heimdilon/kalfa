@@ -13,13 +13,15 @@
   import Checkbox from '../bilesenler/Checkbox.svelte';
   import DiffView from '../bilesenler/DiffView.svelte';
   import { diffCozumle, diffSayilari } from '../bilesenler/diff';
+  import { gorunurMetin } from '../bilesenler/gorunmez';
+  import GorunurMetin from '../bilesenler/GorunurMetin.svelte';
   import Icon from '../bilesenler/Icon.svelte';
   import IconButton from '../bilesenler/IconButton.svelte';
   import IconTile from '../bilesenler/IconTile.svelte';
   import Textarea from '../bilesenler/Textarea.svelte';
   import { m } from '../dil/tr';
   import type { CagriId, OnayGirdisi, OnayOgesi } from '../ipc/tipler';
-  import { kararlariUret, kisaAd, type OnaySecimi } from './onay';
+  import { kararlariUret, kisaAd, riskliMi, type OnaySecimi } from './onay';
 
   let {
     ogeler,
@@ -32,7 +34,11 @@
   } = $props();
 
   const kimlik = $props.id();
-  const secilenler = new SvelteSet<CagriId>(untrack(() => ogeler.map((o) => o.cagri)));
+  // Riskli öğeler önceden seçilmez; kullanıcı tek tek seçer.
+  const secilenler = new SvelteSet<CagriId>(
+    untrack(() => ogeler.filter((o) => !riskliMi(o)).map((o) => o.cagri)),
+  );
+  const riskliVar = $derived(ogeler.some(riskliMi));
   let aktif = $state(0);
   let gerekce = $state('');
   let gonderiliyor = $state(false);
@@ -127,7 +133,7 @@
           <div class={['dosya', { etkin: i === aktif }]}>
             <Checkbox
               checked={secilenler.has(o.cagri)}
-              label={kisaAd(o)}
+              label={gorunurMetin(kisaAd(o))}
               hint={s ? `+${s.eklenen} −${s.silinen}` : undefined}
               onchange={(v) => (v ? secilenler.add(o.cagri) : secilenler.delete(o.cagri))}
             />
@@ -135,7 +141,7 @@
               icon="chevron-right"
               size="sm"
               active={i === aktif}
-              label={m('onay.sayfa.goster', { ad: kisaAd(o) })}
+              label={m('onay.sayfa.goster', { ad: gorunurMetin(kisaAd(o)) })}
               onclick={() => (aktif = i)}
             />
           </div>
@@ -146,8 +152,10 @@
         <div class="onizleme-ust">
           <Icon name={aktifOge.kabuk ? 'square-terminal' : 'file-text'} size={16} />
           <div class="yol-blogu">
-            <div class="ad">{kisaAd(aktifOge)}</div>
-            {#if aktifOge.hedefler[0]}<div class="yol">{aktifOge.hedefler[0]}</div>{/if}
+            <div class="ad"><GorunurMetin metin={kisaAd(aktifOge)} /></div>
+            {#if aktifOge.hedefler[0]}<div class="yol">
+                <GorunurMetin metin={aktifOge.hedefler[0]} />
+              </div>{/if}
           </div>
         </div>
         {#if aktifOge.kabuk}
@@ -158,9 +166,9 @@
                 ? m('onay.kabuk.betik', { yorumlayici: k.bicim.yorumlayici })
                 : m('onay.kabuk.komut')}
             </dt>
-            <dd><pre class="komut">{k.komut}</pre></dd>
+            <dd><pre class="komut"><GorunurMetin metin={k.komut} /></pre></dd>
             <dt>{m('onay.kabuk.dizin')}</dt>
-            <dd class="mono">{k.dizin}</dd>
+            <dd class="mono"><GorunurMetin metin={k.dizin} /></dd>
             <dt>{m('onay.kabuk.ag')}</dt>
             <dd class={{ uyari: k.ag }}>
               {k.ag ? m('onay.kabuk.ag_acik') : m('onay.kabuk.ag_kapali')}
@@ -171,6 +179,23 @@
                 ? m('onay.kabuk.yalitimli', { arka_uc: k.yalitim.arka_uc })
                 : m('onay.kabuk.yalitimsiz')}
             </dd>
+            {#if aktifOge.onaysiz_degisiklikler}
+              {@const o = aktifOge.onaysiz_degisiklikler}
+              <dt>{m('onay.kabuk.onaysiz')}</dt>
+              <dd class="onaysiz">
+                {#if o.yollar.length === 0 && !o.komut_calisti}
+                  <span>{m('onay.kabuk.onaysiz_yok')}</span>
+                {/if}
+                {#each o.yollar as y (y)}<span class="mono"><GorunurMetin metin={y} /></span>{/each}
+                {#if o.komut_calisti}<span class="uyari">{m('onay.kabuk.onaysiz_komut')}</span>{/if}
+                {#if o.derleme_dosyalari.length > 0}
+                  <span class="uyari rozet">
+                    <Icon name="triangle-alert" size={14} />
+                    {m('onay.kabuk.derleme', { dosyalar: o.derleme_dosyalari.join(', ') })}
+                  </span>
+                {/if}
+              </dd>
+            {/if}
           </dl>
         {:else}
           <div class="diff">
@@ -187,13 +212,13 @@
     <dl class="bilgiler">
       <div class="bilgi">
         <dt><Icon name="info" size={16} />{m('onay.sayfa.ne')}</dt>
-        <dd>{aktifOge.aciklama}</dd>
+        <dd><GorunurMetin metin={aktifOge.aciklama} /></dd>
       </div>
       {#if aktifOge.hedefler.length > 0}
         <div class="bilgi">
           <dt><Icon name="folder" size={16} />{m('onay.sayfa.nerede')}</dt>
           <dd class="mono">
-            {#each aktifOge.hedefler as h (h)}<span>{h}</span>{/each}
+            {#each aktifOge.hedefler as h (h)}<span><GorunurMetin metin={h} /></span>{/each}
           </dd>
         </div>
       {/if}
@@ -208,6 +233,10 @@
         </div>
       {/if}
     </dl>
+
+    {#if riskliVar}
+      <p class="yerel"><Icon name="shield-alert" size={16} />{m('onay.sayfa.riskli')}</p>
+    {/if}
 
     {#if ogeler.some((o) => o.yerel_onay)}
       <p class="yerel"><Icon name="shield-alert" size={16} />{m('onay.kabuk.yerel')}</p>
@@ -228,7 +257,7 @@
           variant="approve"
           size="lg"
           iconLeft="check"
-          disabled={gonderiliyor}
+          disabled={gonderiliyor || riskliVar}
           onclick={() => karar('tumu')}
         >
           {m('onay.sayfa.tumunu_onayla')}
@@ -396,6 +425,20 @@
   }
   .kabuk .uyari {
     color: var(--status-warn);
+  }
+  .onaysiz {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .onaysiz .mono {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+  }
+  .rozet {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .yerel {
     display: flex;

@@ -115,6 +115,138 @@ fn gizli_kaliplar() {
     }
 }
 
+/// Güvenlik analizi Bulgu 4: yaygın sır dosyaları gizlidir.
+#[test]
+fn genis_gizli_liste() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    for g in [
+        "config/prod.env",
+        "infra/terraform.tfstate",
+        "infra/terraform.tfstate.backup",
+        "prod.tfvars",
+        ".terraformrc",
+        "terraform.rc",
+        "config/secrets.yaml",
+        "secret.json",
+        "gcp/service-account-prod.json",
+        "serviceaccount.json",
+        ".pgpass",
+        "web/.htpasswd",
+        ".vault-token",
+        ".s3cfg",
+        ".boto",
+        ".docker/config.json",
+        ".dockercfg",
+        "kubeconfig",
+        ".kube/config",
+        ".yarnrc.yml",
+        "keys/app.jks",
+        "vpn/ofis.ovpn",
+        "putty.ppk",
+        "krb5.keytab",
+        "id_ecdsa",
+        "id_dsa.pub",
+    ] {
+        assert!(s.gizli_mi(&y(g)), "{g} gizli olmalı");
+    }
+}
+
+#[test]
+fn gizli_olmayanlar() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    for n in [
+        "src/secrets.rs",
+        "src/env.rs",
+        "environment.ts",
+        "secrets_test.go",
+        "docs/kubeconfig.md",
+        ".docker/daemon.json",
+        "src/service_account.rs",
+    ] {
+        assert!(!s.gizli_mi(&y(n)), "{n} gizli olmamalı");
+    }
+}
+
+/// Güvenlik analizi Bulgu 2: kendiliğinden çalışan yapılandırmaya yazmak her
+/// kipte onay ister; İnceleme'de yasaktır. Okuması serbesttir.
+#[test]
+fn yapilandirma_yazmasi_her_kipte_onay_ister() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    for k in [
+        ".vscode/tasks.json",
+        ".vscode/settings.json",
+        ".idea/workspace.xml",
+        ".devcontainer/devcontainer.json",
+        ".cargo/config",
+        ".cargo/config.toml",
+        "rust-toolchain",
+        "rust-toolchain.toml",
+        "mise.toml",
+        ".mise.toml",
+        ".envrc",
+        ".github/workflows/ci.yml",
+        ".gitlab-ci.yml",
+        ".pre-commit-config.yaml",
+        ".husky/pre-commit",
+        "lefthook.yml",
+        ".lefthook.yml",
+        ".yarnrc",
+        ".pnpmfile.cjs",
+        "alt/.envrc",
+        "alt/.cargo/config.toml",
+        ".VSCode/Tasks.json",
+    ] {
+        let sinif = s.sinifla(&y(k));
+        assert_eq!(sinif, YolSinifi::Yapilandirma, "{k}");
+        for kip in [Kip::Siki, Kip::Proje, Kip::Serbest] {
+            assert_eq!(
+                karar_ver(kip, Islem::Yazma, sinif, false),
+                onayli(&[YAPILANDIRMA_UYARISI]),
+                "{kip:?} {k}"
+            );
+        }
+        assert!(matches!(
+            karar_ver(Kip::Inceleme, Islem::Yazma, sinif, false),
+            Karar::Yasak { .. }
+        ));
+        assert_eq!(
+            karar_ver(Kip::Serbest, Islem::Okuma, sinif, false),
+            Karar::Serbest,
+            "{k}"
+        );
+    }
+}
+
+#[test]
+fn yapilandirma_olmayanlar_normal() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    for n in [
+        "src/vscode.rs",
+        ".github/README.md",
+        "docs/.idea.md",
+        ".cargo/credentials.md",
+        "src/envrc.rs",
+    ] {
+        assert!(!s.yapilandirma_mi(&y(n)), "{n}");
+    }
+    assert_eq!(s.sinifla(&y("src/vscode.rs")), YolSinifi::Normal);
+}
+
+/// Hem gizli hem yapılandırma olan dosya: yazması yapılandırma uyarısıyla,
+/// okuması gizli dosya uyarısıyla onay ister.
+#[test]
+fn gizli_ve_yapilandirma_olan_dosyanin_okumasi_onay_ister() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    let yol = y(".vscode/.env");
+    assert_eq!(s.sinifla(&yol), YolSinifi::Yapilandirma);
+    assert!(s.gizli_mi(&yol));
+}
+
 /// Araçların ürettiği bağımlılık dizinlerinde gizli kalıplar uygulanmaz
 /// (2d-3, kullanıcı kararı): pip'in `cacert.pem`'i ve npm paketlerinin
 /// `credentials.js`'i kitaplık dosyasıdır.
@@ -154,18 +286,118 @@ fn git_dizini_korunur() {
         ".GIT/Hooks/post-merge",
         ".git/config",
         ".git/hooks",
+        ".git/HEAD",
+        ".git/objects/ab/cd",
     ] {
         assert_eq!(s.sinifla(&y(k)), YolSinifi::Korumali, "{k}");
     }
-    for n in [
-        ".git/HEAD",
-        ".git/objects/ab/cd",
-        ".gitignore",
-        "src/config",
-    ] {
+    for n in [".gitignore", "src/config"] {
         assert_ne!(s.sinifla(&y(n)), YolSinifi::Korumali, "{n}");
     }
     assert_eq!(s.sinifla(&y(".env")), YolSinifi::Gizli);
+}
+
+/// Güvenlik analizi Bulgu 1: `.git`'in hiçbir yeri dosya araçlarıyla onaysız
+/// yazılamaz (`commondir` git'i saldırganın yapılandırmasına yönlendirir).
+#[test]
+fn git_ic_yollari_her_kipte_onay_ister() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join(".git/hooks")).unwrap();
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    for k in [
+        ".git/commondir",
+        ".git/modules/x/config",
+        ".git/modules/x/hooks/post-checkout",
+        ".git/worktrees/w/commondir",
+        ".git/info/attributes",
+        ".git/HEAD",
+        ".git",
+        "alt/.git/config",
+        "vendor/x/.git/commondir",
+        ".GIT/commondir",
+        ".git./commondir",
+        ".git /config",
+        "GIT~1/commondir",
+    ] {
+        let sinif = s.sinifla(&y(k));
+        assert_eq!(sinif, YolSinifi::Korumali, "{k}");
+        for kip in [Kip::Siki, Kip::Proje, Kip::Serbest] {
+            assert_eq!(
+                karar_ver(kip, Islem::Yazma, sinif, false),
+                onayli(&[KORUMALI_UYARISI]),
+                "{kip:?} {k}"
+            );
+        }
+        assert!(matches!(
+            karar_ver(Kip::Inceleme, Islem::Yazma, sinif, false),
+            Karar::Yasak { .. }
+        ));
+    }
+}
+
+#[test]
+fn depo_olmayan_alanda_git_olusturmak_onay_ister() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    let sinif = s.sinifla(&y(".git/config"));
+    assert_eq!(sinif, YolSinifi::Korumali);
+    assert_eq!(
+        karar_ver(Kip::Proje, Islem::Yazma, sinif, false),
+        onayli(&[KORUMALI_UYARISI])
+    );
+}
+
+#[test]
+fn git_benzeri_ama_git_olmayanlar_normal() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    for n in [
+        ".github/ci.yml",
+        ".gitignore",
+        ".gitmodules",
+        "a.git/x",
+        "git~x/y",
+        "gitx/y",
+        "git~/y",
+    ] {
+        assert_eq!(s.sinifla(&y(n)), YolSinifi::Normal, "{n}");
+    }
+}
+
+#[test]
+fn git_bileseni_kurali() {
+    for e in [
+        ".git", ".GIT", ".git.", ".git ", ".git. .", "git~1", "GIT~12",
+    ] {
+        assert!(git_koruma::git_bileseni_mi(e), "{e}");
+    }
+    for h in [
+        ".github", "git", ".gitx", "git~", "git~a", "x.git", ".git~1",
+    ] {
+        assert!(!git_koruma::git_bileseni_mi(h), "{h}");
+    }
+}
+
+#[test]
+fn worktree_gitdir_calisma_alani_icindeyse_tamami_korumali() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join("ic/gd")).unwrap();
+    std::fs::write(d.path().join(".git"), "gitdir: ic/gd\n").unwrap();
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    for k in ["ic/gd/commondir", "ic/gd/HEAD", "ic/gd"] {
+        assert_eq!(s.sinifla(&y(k)), YolSinifi::Korumali, "{k}");
+    }
+    assert_eq!(s.sinifla(&y("ic/baska")), YolSinifi::Normal);
+}
+
+#[test]
+fn commondir_hedefi_calisma_alani_icindeyse_korumali() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join(".git")).unwrap();
+    std::fs::create_dir_all(d.path().join("zz")).unwrap();
+    std::fs::write(d.path().join(".git/commondir"), "../zz\n").unwrap();
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    assert_eq!(s.sinifla(&y("zz/config")), YolSinifi::Korumali);
 }
 
 #[test]

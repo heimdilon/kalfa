@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use kalfa_core::arac::{Arac, AracHatasi, AracKayitDefteri, CiktiGonderici, Hazirlik};
+use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, CiktiGonderici, Hazirlik};
 use kalfa_core::izin::Siniflandirici;
 use kalfa_core::kabuk::{KabukBicimi, YalitimOzeti};
 use kalfa_core::kimlik::CagriId;
@@ -278,6 +278,105 @@ async fn olmayan_program_hata_verir() {
         guven.kayit.load(Ordering::SeqCst),
         0,
         "başlamayan komut güven kaydetmez"
+    );
+}
+
+async fn calistir_tam(arac: &KabukAraci, a: &Value) -> Result<AracCiktisi, AracHatasi> {
+    let h = arac.hazirla(a).await.expect("hazırlık");
+    arac.calistir_akisli(a, &h, CancellationToken::new(), CiktiGonderici::bos())
+        .await
+}
+
+fn karantinadakiler(dizin: &std::path::Path) -> Vec<String> {
+    let mut adlar: Vec<String> = std::fs::read_dir(dizin)
+        .unwrap()
+        .map(|g| g.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|ad| ad.starts_with(".git.kalfa-karantina-"))
+        .collect();
+    adlar.sort();
+    adlar
+}
+
+/// Güvenlik analizi Bulgu 1: düz `git init` yerinde kalır, uyarı yoktur.
+#[tokio::test]
+async fn kabuk_duz_git_init_korunur() {
+    let (d, arac, _) = kur();
+    let c = calistir_tam(
+        &arac,
+        &json!({"program": "git", "argumanlar": ["init", "-q"]}),
+    )
+    .await
+    .unwrap();
+    assert!(d.path().join(".git").is_dir());
+    assert!(
+        c.guvenlik_uyarilari.is_empty(),
+        "{:?}",
+        c.guvenlik_uyarilari
+    );
+    assert!(karantinadakiler(d.path()).is_empty());
+    // Var olan `.git` ikinci komutta yeni sayılmaz.
+    let c = calistir_tam(&arac, &betik("echo a", "echo a"))
+        .await
+        .unwrap();
+    assert!(c.guvenlik_uyarilari.is_empty());
+}
+
+/// Güvenlik analizi Bulgu 1: komutun oluşturduğu tehlikeli `.git` (yeni
+/// yapılandırma anahtarı, `.git` dosyası) kenara alınır; ardından çalışan
+/// `git status` kod çalıştırmaz.
+#[tokio::test]
+async fn kabuk_tehlikeli_yeni_git_karantinaya_alinir() {
+    let (d, arac, _) = kur();
+    let a = betik(
+        "git init -q && git config core.fsmonitor 'touch KANIT' && mkdir alt && echo 'gitdir: ../zz' > alt/.git",
+        "git init -q; git config core.fsmonitor 'touch KANIT'; mkdir alt | Out-Null; Set-Content alt/.git 'gitdir: ../zz'",
+    );
+    let c = calistir_tam(&arac, &a).await.unwrap();
+    assert!(!d.path().join(".git").exists());
+    assert!(!d.path().join("alt/.git").exists());
+    assert_eq!(karantinadakiler(d.path()).len(), 1);
+    assert_eq!(karantinadakiler(&d.path().join("alt")).len(), 1);
+    assert_eq!(c.guvenlik_uyarilari.len(), 2, "{:?}", c.guvenlik_uyarilari);
+    assert!(
+        c.guvenlik_uyarilari.iter().any(|u| u.contains("`.git`")
+            && u.contains("core.fsmonitor")
+            && u.contains("kenara alındı")),
+        "{:?}",
+        c.guvenlik_uyarilari
+    );
+    let durum = std::process::Command::new("git")
+        .arg("-C")
+        .arg(d.path())
+        .arg("status")
+        .output()
+        .unwrap();
+    assert!(!durum.status.success(), "depo artık yok");
+    assert!(!d.path().join("KANIT").exists());
+}
+
+/// Güvenlik analizi Bulgu 2: komutun oluşturduğu kendiliğinden çalışan
+/// yapılandırma bildirilir; dosya yerinde kalır. Var olan yapılandırmanın
+/// içindekiler yeniden bildirilmez.
+#[tokio::test]
+async fn yeni_envrc_bildirilir() {
+    let (d, arac, _) = kur();
+    std::fs::create_dir(d.path().join(".vscode")).unwrap();
+    let c = calistir_tam(
+        &arac,
+        &betik(
+            "echo x > .envrc && echo '{}' > .vscode/tasks.json",
+            "Set-Content .envrc x; Set-Content .vscode/tasks.json '{}'",
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(d.path().join(".envrc").exists());
+    assert_eq!(c.guvenlik_uyarilari.len(), 1, "{:?}", c.guvenlik_uyarilari);
+    assert!(
+        c.guvenlik_uyarilari[0].contains("`.envrc`")
+            && c.guvenlik_uyarilari[0].contains("yapılandırma"),
+        "{:?}",
+        c.guvenlik_uyarilari
     );
 }
 

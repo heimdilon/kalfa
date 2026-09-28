@@ -4,8 +4,15 @@
 //!
 //! Linux'ta bağlantı sayısı birden büyük dosyaların (aygıt, inode) çifti gizli
 //! dosyalarınkiyle karşılaştırılır: `.env`'nin hard link'i de gizlidir.
+//!
+//! Tarama her derinlikteki `.git` girdilerini de toplar (güvenlik analizi
+//! Bulgu 1); `.git` dizinlerinin içine inilmez. Kendiliğinden çalışan
+//! yapılandırma yollarını da toplar (Bulgu 2). Adın `.git` ya da yolun
+//! yapılandırma sayılıp sayılmadığına çağıran karar verir (çekirdekteki
+//! kurallar).
 
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -19,6 +26,37 @@ pub struct Tarama {
     pub dosyalar: Vec<PathBuf>,
     /// İçi boş görünecek dizinler.
     pub dizinler: Vec<PathBuf>,
+    /// Her derinlikteki `.git` girdileri (dizin, dosya ya da bağlantı).
+    pub git: Vec<GitGirdisi>,
+    /// Kendiliğinden çalışan yapılandırma yolları; en üsttekiler (eşleşen
+    /// bir dizinin içindekiler listelenmez).
+    pub yapilandirma: Vec<Yapilandirma>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GitGirdisi {
+    pub yol: PathBuf,
+    pub dizin: bool,
+    /// Sembolik bağlantı; git onu izler, Kalfa izlemez.
+    pub baglanti: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Yapilandirma {
+    pub yol: PathBuf,
+    pub dizin: bool,
+}
+
+/// Git girdisi taraması için ad kuralı.
+pub type GitMi<'a> = &'a (dyn Fn(&OsStr) -> bool + Sync);
+/// Yol kuralı: çalışma alanına göre yol ve yolun dizin olup olmadığı.
+pub type YolKurali<'a> = &'a (dyn Fn(&Path, bool) -> bool + Sync);
+
+/// Komuttan sonra aranan adlı girdiler.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AdliGirdiler {
+    pub git: Vec<GitGirdisi>,
+    pub yapilandirma: Vec<Yapilandirma>,
 }
 
 impl Tarama {
@@ -36,11 +74,24 @@ struct Toplanan {
     gizli_inode: BTreeSet<(u64, u64)>,
     /// Bağlantı sayısı birden büyük bütün normal dosyalar.
     bagli: Vec<((u64, u64), PathBuf)>,
+    git: BTreeSet<GitGirdisi>,
+    yapilandirma: BTreeSet<Yapilandirma>,
 }
 
 /// Çalışma alanını tarar. `gizli_mi` çalışma alanına göre yolu ve yolun dizin
 /// olup olmadığını alır.
-pub fn tara(kok: &Path, gizli_mi: &(dyn Fn(&Path, bool) -> bool + Sync)) -> Tarama {
+pub fn tara(kok: &Path, gizli_mi: YolKurali<'_>) -> Tarama {
+    tara_ayrintili(kok, gizli_mi, &|_| false, &|_, _| false)
+}
+
+/// `tara` gibi; ayrıca adı `git_mi` olan girdileri ve `yapilandirma_mi`
+/// yollarını toplar. `.git` dizinlerinin içine inmez.
+pub fn tara_ayrintili(
+    kok: &Path,
+    gizli_mi: YolKurali<'_>,
+    git_mi: GitMi<'_>,
+    yapilandirma_mi: YolKurali<'_>,
+) -> Tarama {
     let toplanan = Mutex::new(Toplanan::default());
     WalkBuilder::new(kok)
         .standard_filters(false)
@@ -61,17 +112,35 @@ pub fn tara(kok: &Path, gizli_mi: &(dyn Fn(&Path, bool) -> bool + Sync)) -> Tara
                 let Ok(goreli) = giris.path().strip_prefix(kok) else {
                     return WalkState::Continue;
                 };
+                if let Some(girdi) = git_girdisi(&giris, git_mi) {
+                    let dizin = girdi.dizin;
+                    toplanan
+                        .lock()
+                        .unwrap_or_else(|z| z.into_inner())
+                        .git
+                        .insert(girdi);
+                    if dizin {
+                        return WalkState::Skip;
+                    }
+                }
                 // Bağlantı izlenmez; hedefi çalışma alanındaysa kendisi taranır.
                 if tur.is_symlink() || !(tur.is_dir() || tur.is_file()) {
                     return WalkState::Continue;
                 }
                 let gizli = gizli_mi(goreli, tur.is_dir());
+                let yapilandirma = yapilandirma_mi(goreli, tur.is_dir());
                 let inode = if tur.is_file() {
                     inode(giris.path())
                 } else {
                     None
                 };
                 let mut t = toplanan.lock().unwrap_or_else(|z| z.into_inner());
+                if yapilandirma {
+                    t.yapilandirma.insert(Yapilandirma {
+                        yol: giris.path().to_path_buf(),
+                        dizin: tur.is_dir(),
+                    });
+                }
                 if gizli {
                     if tur.is_dir() {
                         t.dizinler.insert(giris.path().to_path_buf());
@@ -120,7 +189,97 @@ pub fn tara(kok: &Path, gizli_mi: &(dyn Fn(&Path, bool) -> bool + Sync)) -> Tara
             .filter(|d| !gizli_dizin_altinda(d))
             .collect(),
         dizinler,
+        git: t.git.into_iter().collect(),
+        yapilandirma: en_ustteki(t.yapilandirma),
     }
+}
+
+/// Eşleşen bir dizinin altındakileri atar.
+fn en_ustteki(kume: BTreeSet<Yapilandirma>) -> Vec<Yapilandirma> {
+    let dizinler: Vec<PathBuf> = kume
+        .iter()
+        .filter(|y| y.dizin)
+        .map(|y| y.yol.clone())
+        .collect();
+    kume.into_iter()
+        .filter(|y| {
+            !y.yol
+                .ancestors()
+                .skip(1)
+                .any(|a| dizinler.iter().any(|d| d == a))
+        })
+        .collect()
+}
+
+/// Yalnızca `.git` girdileri ve yapılandırma yolları; komuttan sonra
+/// yenilerini aramak için. Gizli tarama ve inode yapılmaz.
+pub fn adli_girdiler(
+    kok: &Path,
+    git_mi: GitMi<'_>,
+    yapilandirma_mi: YolKurali<'_>,
+) -> AdliGirdiler {
+    let toplanan = Mutex::new((BTreeSet::new(), BTreeSet::new()));
+    WalkBuilder::new(kok)
+        .standard_filters(false)
+        .follow_links(false)
+        .build_parallel()
+        .run(|| {
+            let toplanan = &toplanan;
+            Box::new(move |giris| {
+                let Ok(giris) = giris else {
+                    return WalkState::Continue;
+                };
+                if let Some(girdi) = git_girdisi(&giris, git_mi) {
+                    let dizin = girdi.dizin;
+                    toplanan
+                        .lock()
+                        .unwrap_or_else(|z| z.into_inner())
+                        .0
+                        .insert(girdi);
+                    return if dizin {
+                        WalkState::Skip
+                    } else {
+                        WalkState::Continue
+                    };
+                }
+                let (Some(tur), Ok(goreli)) = (giris.file_type(), giris.path().strip_prefix(kok))
+                else {
+                    return WalkState::Continue;
+                };
+                if giris.depth() > 0
+                    && !tur.is_symlink()
+                    && (tur.is_dir() || tur.is_file())
+                    && yapilandirma_mi(goreli, tur.is_dir())
+                {
+                    toplanan
+                        .lock()
+                        .unwrap_or_else(|z| z.into_inner())
+                        .1
+                        .insert(Yapilandirma {
+                            yol: giris.path().to_path_buf(),
+                            dizin: tur.is_dir(),
+                        });
+                }
+                WalkState::Continue
+            })
+        });
+    let (git, yapilandirma) = toplanan.into_inner().unwrap_or_else(|z| z.into_inner());
+    AdliGirdiler {
+        git: git.into_iter().collect(),
+        yapilandirma: en_ustteki(yapilandirma),
+    }
+}
+
+fn git_girdisi(giris: &ignore::DirEntry, git_mi: GitMi<'_>) -> Option<GitGirdisi> {
+    if giris.depth() == 0 || !git_mi(giris.file_name()) {
+        return None;
+    }
+    let tur = giris.file_type()?;
+    Some(GitGirdisi {
+        yol: giris.path().to_path_buf(),
+        dizin: tur.is_dir(),
+        baglanti: tur.is_symlink(),
+    })
 }
 
 #[cfg(unix)]
@@ -166,6 +325,103 @@ mod tests {
         assert_eq!(t.dosyalar, vec![k.join(".env"), k.join("a/b/anahtar.pem")]);
         assert_eq!(t.dizinler, vec![k.join("gizli")]);
         assert_eq!(t.sayi(), 3);
+    }
+
+    fn git_adi(ad: &OsStr) -> bool {
+        ad.to_string_lossy().eq_ignore_ascii_case(".git")
+    }
+
+    #[test]
+    fn tarama_her_derinlikte_git_girdilerini_toplar_icine_inmez() {
+        let d = tempfile::tempdir().unwrap();
+        let k = d.path();
+        std::fs::create_dir_all(k.join(".git/objects/ab")).unwrap();
+        std::fs::write(k.join(".git/objects/ab/cd"), "x").unwrap();
+        std::fs::create_dir_all(k.join("alt")).unwrap();
+        std::fs::write(k.join("alt/.git"), "gitdir: ../zz").unwrap();
+        std::fs::create_dir_all(k.join("a/b/.GIT/hooks")).unwrap();
+        // `.git`'in içine inilmez: içindeki gizli adlı dosya listelenmez.
+        std::fs::write(k.join(".git/.env"), "x").unwrap();
+        let beklenen = vec![
+            GitGirdisi {
+                yol: k.join(".git"),
+                dizin: true,
+                baglanti: false,
+            },
+            GitGirdisi {
+                yol: k.join("a/b/.GIT"),
+                dizin: true,
+                baglanti: false,
+            },
+            GitGirdisi {
+                yol: k.join("alt/.git"),
+                dizin: false,
+                baglanti: false,
+            },
+        ];
+        let t = tara_ayrintili(k, &env_ya_da_gizli_dizin, &git_adi, &|_, _| false);
+        assert_eq!(t.git, beklenen);
+        assert!(t.dosyalar.is_empty(), "{:?}", t.dosyalar);
+        assert_eq!(adli_girdiler(k, &git_adi, &|_, _| false).git, beklenen);
+        // Git kuralı verilmezse eski davranış.
+        assert!(tara(k, &env_ya_da_gizli_dizin).git.is_empty());
+    }
+
+    fn vscode_ya_da_envrc(yol: &Path, dizin: bool) -> bool {
+        let ad = yol.file_name().and_then(|a| a.to_str()).unwrap_or("");
+        if dizin {
+            ad == ".vscode"
+        } else {
+            ad == ".envrc"
+        }
+    }
+
+    #[test]
+    fn yapilandirma_yollari_en_ustten_toplanir() {
+        let d = tempfile::tempdir().unwrap();
+        let k = d.path();
+        std::fs::create_dir_all(k.join(".vscode/alt")).unwrap();
+        std::fs::write(k.join(".vscode/tasks.json"), "{}").unwrap();
+        std::fs::write(k.join(".vscode/alt/.envrc"), "x").unwrap();
+        std::fs::create_dir_all(k.join("alt")).unwrap();
+        std::fs::write(k.join("alt/.envrc"), "x").unwrap();
+        // `.vscode/.env` gizlidir; yapılandırma dizininin içi de gizli
+        // taraması için gezilir.
+        std::fs::write(k.join(".vscode/.env"), "x").unwrap();
+        let beklenen = vec![
+            Yapilandirma {
+                yol: k.join(".vscode"),
+                dizin: true,
+            },
+            Yapilandirma {
+                yol: k.join("alt/.envrc"),
+                dizin: false,
+            },
+        ];
+        let t = tara_ayrintili(k, &env_ya_da_gizli_dizin, &git_adi, &vscode_ya_da_envrc);
+        assert_eq!(t.yapilandirma, beklenen);
+        assert_eq!(t.dosyalar, vec![k.join(".vscode/.env")]);
+        assert_eq!(
+            adli_girdiler(k, &git_adi, &vscode_ya_da_envrc).yapilandirma,
+            beklenen
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_baglantisi_toplanir() {
+        let d = tempfile::tempdir().unwrap();
+        let k = d.path();
+        std::fs::create_dir_all(k.join("zz")).unwrap();
+        std::os::unix::fs::symlink(k.join("zz"), k.join(".git")).unwrap();
+        assert_eq!(
+            adli_girdiler(k, &git_adi, &|_, _| false).git,
+            vec![GitGirdisi {
+                yol: k.join(".git"),
+                dizin: false,
+                baglanti: true,
+            }]
+        );
     }
 
     #[cfg(unix)]

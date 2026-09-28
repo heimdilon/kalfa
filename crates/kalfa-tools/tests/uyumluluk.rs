@@ -881,3 +881,99 @@ async fn bagimlilik_dizinindeki_hard_link_gizli_kalir() {
     assert!(cikti.contains("bitti"), "{cikti}");
     assert!(!cikti.contains("env-sir"), "{cikti}");
 }
+
+/// Güvenlik analizi Bulgu 1: yalıtımlı komutun oluşturduğu tehlikeli `.git`
+/// kenara alınır; ardından yalıtım dışında çalışan `git status` kod
+/// çalıştırmaz. Düz `git init` yerinde kalır.
+#[tokio::test]
+async fn yalitimda_tehlikeli_yeni_git_karantinaya_alinir() {
+    let d = TempDir::new().unwrap();
+    let k = kurgu(d.path());
+    #[cfg(target_os = "linux")]
+    let komut = "git init -q && git config core.fsmonitor 'touch KANIT' && git init -q duz";
+    #[cfg(windows)]
+    let komut = "git init -q; if ($LASTEXITCODE) { exit 1 }; \
+                 git config core.fsmonitor 'touch KANIT'; if ($LASTEXITCODE) { exit 1 }; \
+                 git init -q duz; exit $LASTEXITCODE";
+    let a = betik(komut);
+    let h = k.arac.hazirla(&a).await.expect("hazırlık");
+    let c = k
+        .arac
+        .calistir_akisli(&a, &h, CancellationToken::new(), CiktiGonderici::bos())
+        .await
+        .expect("komut başarılı");
+    assert!(!d.path().join(".git").exists());
+    assert!(d.path().join("duz/.git").is_dir(), "düz depo yerinde kalır");
+    let karantina: Vec<String> = std::fs::read_dir(d.path())
+        .unwrap()
+        .map(|g| g.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|ad| ad.starts_with(".git.kalfa-karantina-"))
+        .collect();
+    assert_eq!(karantina.len(), 1, "{karantina:?}");
+    assert_eq!(c.guvenlik_uyarilari.len(), 1, "{:?}", c.guvenlik_uyarilari);
+    assert!(c.guvenlik_uyarilari[0].contains("core.fsmonitor"));
+    let _ = Command::new("git")
+        .arg("-C")
+        .arg(d.path())
+        .arg("status")
+        .output()
+        .unwrap();
+    assert!(!d.path().join("KANIT").exists());
+}
+
+/// Güvenlik analizi Bulgu 2: var olan kendiliğinden çalışan yapılandırma
+/// yalıtımda salt okunurdur; `.vscode`'un içine yeni dosya da konamaz.
+#[tokio::test]
+async fn var_olan_vscode_ayari_yazilamaz() {
+    let d = TempDir::new().unwrap();
+    std::fs::create_dir_all(d.path().join(".vscode")).unwrap();
+    std::fs::write(d.path().join(".vscode/settings.json"), "{}").unwrap();
+    std::fs::create_dir_all(d.path().join("alt/.cargo")).unwrap();
+    std::fs::write(d.path().join("alt/.cargo/config.toml"), "").unwrap();
+    let k = kurgu(d.path());
+    #[cfg(target_os = "linux")]
+    let komut = "echo x >> .vscode/settings.json; echo x > .vscode/tasks.json; \
+                 echo x >> alt/.cargo/config.toml; true";
+    #[cfg(windows)]
+    let komut = "Add-Content -LiteralPath .vscode/settings.json -Value x -ErrorAction SilentlyContinue; \
+                 Set-Content -LiteralPath .vscode/tasks.json -Value x -ErrorAction SilentlyContinue; \
+                 Add-Content -LiteralPath alt/.cargo/config.toml -Value x -ErrorAction SilentlyContinue; exit 0";
+    k.calistir(betik(komut)).await;
+    assert_eq!(
+        std::fs::read_to_string(d.path().join(".vscode/settings.json")).unwrap(),
+        "{}"
+    );
+    assert!(!d.path().join(".vscode/tasks.json").exists());
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("alt/.cargo/config.toml")).unwrap(),
+        ""
+    );
+}
+
+/// Güvenlik analizi Bulgu 1: her derinlikteki `.git` yalıtımda salt okunurdur;
+/// yalıtımlı bir komutun kendi oluşturduğu `.git` de sonraki komutta.
+#[tokio::test]
+async fn ic_ice_git_yalitimda_salt_okunur() {
+    let d = TempDir::new().unwrap();
+    std::fs::create_dir_all(d.path().join("alt2")).unwrap();
+    std::fs::write(d.path().join("alt2/.git"), "gitdir: ../zz\n").unwrap();
+    let k = kurgu(d.path());
+    k.calistir(betik("git init -q alt")).await;
+    let config = d.path().join("alt/.git/config");
+    let onceki = std::fs::read(&config).unwrap();
+    #[cfg(target_os = "linux")]
+    let komut = "echo '[core] fsmonitor = x' >> alt/.git/config; \
+                 echo 'gitdir: ../yy' > alt2/.git; \
+                 mkdir -p alt/.git/hooks && echo x > alt/.git/hooks/pre-commit; true";
+    #[cfg(windows)]
+    let komut = "Add-Content -LiteralPath alt/.git/config -Value '[core] fsmonitor = x' -ErrorAction SilentlyContinue; \
+                 Set-Content -LiteralPath alt2/.git -Value 'gitdir: ../yy' -ErrorAction SilentlyContinue; \
+                 Set-Content -LiteralPath alt/.git/hooks/pre-commit -Value 'x' -ErrorAction SilentlyContinue; exit 0";
+    k.calistir(betik(komut)).await;
+    assert_eq!(std::fs::read(&config).unwrap(), onceki);
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("alt2/.git")).unwrap(),
+        "gitdir: ../zz\n"
+    );
+    assert!(!d.path().join("alt/.git/hooks/pre-commit").exists());
+}

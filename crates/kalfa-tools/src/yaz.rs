@@ -100,6 +100,7 @@ impl Arac for DosyaYaz {
         Ok(AracCiktisi {
             icerik: format!("`{yol}` yazıldı ({} bayt).", icerik.len()),
             kaynak: format!("dosya:{yol}"),
+            guvenlik_uyarilari: Vec::new(),
         })
     }
 }

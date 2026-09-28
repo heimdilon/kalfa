@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DiffSatiri } from './diff';
+  import GorunurMetin from './GorunurMetin.svelte';
 
   interface Props {
     /** Birleşik diff blok başlığı, ör. "@@ -42,10 +42,18 @@ async fn main()". */
@@ -22,7 +23,7 @@
           <td class="no">{satir.old ?? ''}</td>
           <td class="no yeni">{satir.neu ?? ''}</td>
           <td class="isaret">{ISARET[satir.kind]}</td>
-          <td class="metin">{satir.text}</td>
+          <td class="metin"><GorunurMetin metin={satir.text} /></td>
         </tr>
       {/each}
     </tbody>

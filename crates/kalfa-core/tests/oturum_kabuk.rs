@@ -111,6 +111,7 @@ impl Arac for SahteKabuk {
         let c = AracCiktisi {
             icerik: "Çıkış kodu: 1".into(),
             kaynak: "kabuk:test".into(),
+            guvenlik_uyarilari: Vec::new(),
         };
         if self.basarisiz {
             Err(AracHatasi::Basarisiz(c))
@@ -387,7 +388,12 @@ async fn basarisiz_cikti_ayni_hata_sinirina_sayilmaz() {
     assert_eq!(sonuclar.len(), 4);
     for (durum, icerik) in sonuclar {
         assert_eq!(durum, AracDurumu::Basarisiz);
-        assert_eq!(icerik, "[kaynak: kabuk:test]\nÇıkış kodu: 1");
+        let satirlar: Vec<&str> = icerik.lines().collect();
+        assert!(
+            satirlar[0].starts_with("<arac_sonucu kaynak=\"kabuk:test\" sinir=\""),
+            "{icerik}"
+        );
+        assert_eq!(satirlar[1], "Çıkış kodu: 1");
     }
 }
 
@@ -477,6 +483,7 @@ impl Arac for HazirlikliKabuk {
         Ok(AracCiktisi {
             icerik: "Çıkış kodu: 0".into(),
             kaynak: "kabuk:test".into(),
+            guvenlik_uyarilari: Vec::new(),
         })
     }
 }

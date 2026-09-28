@@ -51,6 +51,11 @@ pub enum GorunumOgesi {
         tur: Option<TurId>,
         neden: BitisNedeni,
     },
+    GuvenlikUyarisi {
+        sira: u64,
+        tur: Option<TurId>,
+        mesaj: String,
+    },
 }
 
 impl GorunumOgesi {
@@ -59,7 +64,8 @@ impl GorunumOgesi {
             Self::KullaniciMesaji { sira, .. }
             | Self::Yanit { sira, .. }
             | Self::AracCagrisi { sira, .. }
-            | Self::TurSonu { sira, .. } => *sira,
+            | Self::TurSonu { sira, .. }
+            | Self::GuvenlikUyarisi { sira, .. } => *sira,
         }
     }
 
@@ -68,7 +74,8 @@ impl GorunumOgesi {
             Self::KullaniciMesaji { tur, .. }
             | Self::Yanit { tur, .. }
             | Self::AracCagrisi { tur, .. }
-            | Self::TurSonu { tur, .. } => *tur,
+            | Self::TurSonu { tur, .. }
+            | Self::GuvenlikUyarisi { tur, .. } => *tur,
         }
     }
 }
@@ -149,6 +156,13 @@ pub fn gorunum_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GorunumOgesi> {
                     *durum = Some(*bitis);
                 }
                 son_sonuc = None;
+            }
+            KayitOgesi::GuvenlikUyarisi { mesaj, .. } => {
+                ogeler.push(GorunumOgesi::GuvenlikUyarisi {
+                    sira: z.sira,
+                    tur: z.tur,
+                    mesaj: mesaj.clone(),
+                })
             }
             KayitOgesi::TurBitti { neden } => ogeler.push(GorunumOgesi::TurSonu {
                 sira: z.sira,

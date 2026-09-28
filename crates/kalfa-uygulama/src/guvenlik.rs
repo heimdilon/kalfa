@@ -1,5 +1,6 @@
 //! Pencere sınırlarının Tauri'siz kuralları (1c tasarımı §6).
 
+use kalfa_core::gorunum::gorunur_yap;
 use kalfa_core::izin::Kip;
 use kalfa_core::kabuk::YalitimOzeti;
 use kalfa_core::protokol::OnayOgesi;
@@ -88,6 +89,27 @@ pub fn yerel_onay_basligi(ogeler: &[OnayOgesi]) -> &'static str {
     }
 }
 
+/// Yerel kutuda gösterilen komutun sınırı; fazlası onay sayfasındadır.
+const KOMUT_AZAMI_KARAKTER: usize = 2000;
+const KOMUT_AZAMI_SATIR: usize = 30;
+
+/// Komut ve dizin yerel kutuda görünmez karakterler kaçışlanarak ve uzunsa
+/// kısaltılarak gösterilir (güvenlik analizi Bulgu 7).
+fn yerel_gosterim(metin: &str) -> String {
+    let gorunur = gorunur_yap(metin);
+    let satirlar: Vec<&str> = gorunur.lines().collect();
+    if gorunur.chars().count() <= KOMUT_AZAMI_KARAKTER && satirlar.len() <= KOMUT_AZAMI_SATIR {
+        return gorunur;
+    }
+    let mut kisa: String = satirlar[..satirlar.len().min(KOMUT_AZAMI_SATIR)]
+        .join("\n")
+        .chars()
+        .take(KOMUT_AZAMI_KARAKTER)
+        .collect();
+    kisa.push_str("\n…(kısaltıldı; tamamı onay sayfasında)");
+    kisa
+}
+
 /// Yerel onay metni (aşama 2 tasarımı §5.2, §9.4). Komut çekirdeğin bekleyen
 /// onayından gelir.
 pub fn yerel_onay_metni(ogeler: &[OnayOgesi]) -> String {
@@ -112,7 +134,11 @@ pub fn yerel_onay_metni(ogeler: &[OnayOgesi]) -> String {
     let mut talimat = None;
     for o in ogeler {
         let Some(k) = &o.kabuk else { continue };
-        metin.push_str(&format!("\nKomut: {}\nDizin: {}\n", k.komut, k.dizin));
+        metin.push_str(&format!(
+            "\nKomut: {}\nDizin: {}\n",
+            yerel_gosterim(&k.komut),
+            yerel_gosterim(&k.dizin)
+        ));
         if k.ag {
             metin.push_str("Model ağ erişimi istedi.\n");
         }
@@ -153,6 +179,7 @@ mod tests {
                 alan_hazirligi,
             }),
             yerel_onay: true,
+            onaysiz_degisiklikler: None,
         }
     }
 
@@ -183,6 +210,39 @@ mod tests {
         );
         assert!(metin.contains("Komut: cargo test"), "{metin}");
         assert!(!metin.contains("yalıtımsız"), "{metin}");
+    }
+
+    #[test]
+    fn yerel_onay_metni_kacislar_ve_kisaltir() {
+        let mut o = oge(yalitimsiz(), false);
+        if let Some(k) = o.kabuk.as_mut() {
+            k.komut = "echo \u{202E}txt.exe".into();
+            k.dizin = "alt\u{200B}".into();
+        }
+        let metin = yerel_onay_metni(std::slice::from_ref(&o));
+        assert!(metin.contains("Komut: echo ⟨U+202E⟩txt.exe"), "{metin}");
+        assert!(metin.contains("Dizin: alt⟨U+200B⟩"), "{metin}");
+        assert!(!metin.contains('\u{202E}'));
+
+        if let Some(k) = o.kabuk.as_mut() {
+            k.komut = (0..40)
+                .map(|i| format!("echo {i}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
+        let metin = yerel_onay_metni(std::slice::from_ref(&o));
+        assert!(
+            metin.contains("echo 29\n…(kısaltıldı; tamamı onay sayfasında)"),
+            "{metin}"
+        );
+        assert!(!metin.contains("echo 30"), "{metin}");
+
+        if let Some(k) = o.kabuk.as_mut() {
+            k.komut = "x".repeat(5000);
+        }
+        let metin = yerel_onay_metni(std::slice::from_ref(&o));
+        assert!(!metin.contains(&"x".repeat(2001)));
+        assert!(metin.contains("kısaltıldı"));
     }
 
     #[test]

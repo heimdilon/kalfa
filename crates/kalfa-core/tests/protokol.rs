@@ -98,6 +98,7 @@ fn butun_olaylar_gidip_gelir() {
                 muhur: OnayMuhru("m".into()),
                 kabuk: None,
                 yerel_onay: false,
+                onaysiz_degisiklikler: None,
             }],
         },
         Olay::OnayGerekiyor {
@@ -182,6 +183,7 @@ fn kabuk_ogesi(cagri: CagriId) -> OnayOgesi {
             alan_hazirligi: false,
         }),
         yerel_onay: true,
+        onaysiz_degisiklikler: None,
     }
 }
 
