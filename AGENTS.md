@@ -166,9 +166,20 @@ Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni ister.
 - **Plana bağlılık:** Plandan sapmanız gerekirse durun, gerekçeyi PR'a yazın.
   Plandaki bir kural kodla çelişiyorsa planı değil çelişkiyi bildirin.
 - **Commit mesajları:** Türkçe ve önekli yazılır: `sandbox:`, `çekirdek:`,
-  `araçlar:`, `uygulama:`, `ui:`, `e2e:`, `docs:`, `prototip:`.
+  `araçlar:`, `uygulama:`, `ui:`, `e2e:`, `docs:`, `prototip:`, `derleme:`
+  (workspace ve derleme ayarları).
   - Codex'in commit'lerine Claude satırı eklenmez.
   - Claude'un commit'leri `Co-Authored-By` satırı taşır.
+- **Worktree'ler:** Her worktree'nin `target`'ı 12–25 GB tutar. PR birleşince
+  ya da deneme bitince worktree'yi aynı oturumda kaldırın:
+  `git worktree remove <yol>`, ardından `git worktree prune`.
+  - Commit'lenmemiş değişiklik varsa önce `git diff HEAD --binary` ile yama
+    olarak saklayın.
+  - Uzun yollar yüzünden kaldırma yarıda kalabilir. Klasör kaldıysa
+    `git worktree list` ile kaydın gittiğini doğrulayıp klasörü Git Bash'te
+    `rm -rf` ile silin.
+  - WSL'deki doğrulama kopyaları ve ayrı `CARGO_TARGET_DIR`'lar da iş bitince
+    silinir.
 - **Paylaşılan dosyalar:** `docs/GELISTIRME_DURUMU.md` ve README'yi
   commit'lemeden önce `git diff` ile başkasının düzenlemesi var mı bakın.
 - **Belgeler:** Bir aşama bitince `docs/GELISTIRME_DURUMU.md` ve ilgili tasarım

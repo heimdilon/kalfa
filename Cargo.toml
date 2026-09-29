@@ -17,6 +17,12 @@ rust-version = "1.98"
 license = "Apache-2.0"
 authors = ["Orkun Koray Güngör"]
 
+# Geliştirme ve test derlemelerinde yalnızca satır tabloları: geri izlemeler dosya
+# ve satırı gösterir, target klasörü küçülür. Hata ayıklayıcı için tam bilgi
+# gerekirse: CARGO_PROFILE_DEV_DEBUG=true
+[profile.dev]
+debug = "line-tables-only"
+
 [workspace.dependencies]
 async-trait = "0.1.92"
 bytes = "1.12"
