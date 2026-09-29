@@ -14,7 +14,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, CiktiGonderici, Hazirlik};
+use kalfa_core::arac::{
+    Arac, AracCiktisi, AracHatasi, CiktiGonderici, DegisiklikTuru, DosyaDegisiklikleri, Hazirlik,
+};
 use kalfa_core::git_koruma;
 use kalfa_core::izin::Siniflandirici;
 use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
@@ -323,14 +325,15 @@ impl KabukAraci {
 
     /// Komuttan sonra yeni `.git` girdilerini denetler ve tehlikelileri
     /// karantinaya alır (güvenlik analizi Bulgu 1); yeni yapılandırma
-    /// dosyalarını bildirir (Bulgu 2). Uyarıları ve bir karantinanın başarısız
-    /// olup olmadığını döner.
-    async fn komut_sonrasi_denetim(&self, onceki: AdliGirdiler) -> (Vec<String>, bool) {
+    /// dosyalarını bildirir (Bulgu 2). Aynı taramanın görüntüsü komutun
+    /// değiştirdiği dosyaları verir (aşama 3 tasarımı §5.4). Uyarıları, bir
+    /// karantinanın başarısız olup olmadığını ve değişiklikleri döner.
+    async fn komut_sonrasi_denetim(&self, onceki: AdliGirdiler) -> KomutSonrasi {
         let alan = self.alan.clone();
         tokio::task::spawn_blocking(move || {
             let kok = match alan.kok().canonicalize() {
                 Ok(k) => k,
-                Err(e) => return (vec![format!("{GIT_DENETLENEMEDI}: {e}")], true),
+                Err(e) => return KomutSonrasi::denetlenemedi(e),
             };
             let damga = utc_damgasi(std::time::SystemTime::now());
             let mut uyarilar = Vec::new();
@@ -339,6 +342,12 @@ impl KabukAraci {
             let simdi = tarama::adli_girdiler(&kok, &git_adi_mi, &|yol, dizin| {
                 yapilandirma_mi(s, yol, dizin)
             });
+            let degisiklikler = DosyaDegisiklikleri::olustur(
+                tarama::karsilastir(&onceki.goruntu, &simdi.goruntu)
+                    .into_iter()
+                    .map(|d| (d.yol, degisiklik_turu(d.tur))),
+                onceki.goruntu.eksik || simdi.goruntu.eksik,
+            );
             for y in &simdi.yapilandirma {
                 let yeni = !onceki
                     .yapilandirma
@@ -389,10 +398,14 @@ impl KabukAraci {
                     }
                 }
             }
-            (uyarilar, basarisiz)
+            KomutSonrasi {
+                uyarilar,
+                karantina_basarisiz: basarisiz,
+                degisiklikler: Some(degisiklikler),
+            }
         })
         .await
-        .unwrap_or_else(|e| (vec![format!("{GIT_DENETLENEMEDI}: {e}")], true))
+        .unwrap_or_else(KomutSonrasi::denetlenemedi)
     }
 
     /// Çalışma alanını yalıtım için hazırlar (§9.4); ilerleme araç kartında
@@ -533,7 +546,7 @@ impl Arac for KabukAraci {
         if !yalitimli && !self.izin.izinli_mi() {
             return Err(gecersiz(YALITIMSIZ_KAPALI));
         }
-        let alan = if yalitimli {
+        let mut alan = if yalitimli {
             let bilgi = self.alan_bilgisi().await?;
             let onaylandi = h.kabuk.as_ref().is_some_and(|t| t.alan_hazirligi);
             self.alani_hazirla(&bilgi, onaylandi, &gonderici).await?;
@@ -541,10 +554,12 @@ impl Arac for KabukAraci {
         } else {
             None
         };
-        let onceki = match &alan {
+        let onceki = match &mut alan {
             Some(b) => AdliGirdiler {
                 git: b.gizli.git.clone(),
                 yapilandirma: b.gizli.yapilandirma.clone(),
+                // Yalıtıcı görüntüyü kullanmaz.
+                goruntu: std::mem::take(&mut b.gizli.goruntu),
             },
             None => self.adli_girdiler().await?,
         };
@@ -587,7 +602,11 @@ impl Arac for KabukAraci {
             .await;
         // Komut nasıl biterse bitsin yeni `.git` ve yapılandırma denetlenir.
         // İptalde uyarılar modele gidemez; karantina yine yapılır.
-        let (guvenlik_uyarilari, karantina_basarisiz) = self.komut_sonrasi_denetim(onceki).await;
+        let KomutSonrasi {
+            uyarilar: guvenlik_uyarilari,
+            karantina_basarisiz,
+            degisiklikler,
+        } = self.komut_sonrasi_denetim(onceki).await;
         let durum = match sonuc.bitis {
             Bitis::Iptal => return Err(AracHatasi::Iptal),
             Bitis::Cikti(Some(kod)) => format!("Çıkış kodu: {kod}"),
@@ -617,6 +636,7 @@ impl Arac for KabukAraci {
             icerik: format!("{durum}\nSüre: {sure} sn\n{govde}"),
             kaynak: istek.kaynak,
             guvenlik_uyarilari,
+            degisiklikler: degisiklikler.map(Box::new),
         };
         if sonuc.bitis == Bitis::Cikti(Some(0)) && !karantina_basarisiz {
             Ok(cikti)
@@ -627,6 +647,32 @@ impl Arac for KabukAraci {
 }
 
 const GIT_DENETLENEMEDI: &str = "Komuttan sonra yeni `.git` denetlenemedi";
+
+/// Komuttan sonraki denetimin sonucu.
+struct KomutSonrasi {
+    uyarilar: Vec<String>,
+    karantina_basarisiz: bool,
+    /// Tarama yapılamadıysa `None`: değişiklikler bilinmiyor.
+    degisiklikler: Option<DosyaDegisiklikleri>,
+}
+
+impl KomutSonrasi {
+    fn denetlenemedi(e: impl std::fmt::Display) -> Self {
+        Self {
+            uyarilar: vec![format!("{GIT_DENETLENEMEDI}: {e}")],
+            karantina_basarisiz: true,
+            degisiklikler: None,
+        }
+    }
+}
+
+fn degisiklik_turu(tur: tarama::DegisiklikTuru) -> DegisiklikTuru {
+    match tur {
+        tarama::DegisiklikTuru::Eklendi => DegisiklikTuru::Eklendi,
+        tarama::DegisiklikTuru::Degisti => DegisiklikTuru::Degisti,
+        tarama::DegisiklikTuru::Silindi => DegisiklikTuru::Silindi,
+    }
+}
 
 /// Tarama için git'in dizin adı kuralı (çekirdekteki `git_bileseni_mi`).
 fn git_adi_mi(ad: &OsStr) -> bool {

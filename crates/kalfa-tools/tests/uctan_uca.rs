@@ -269,6 +269,7 @@ async fn canli_evren_ile_dosya_okuyup_yanitlar() {
         araclar: Arc::new(AracKayitDefteri::yeni(varsayilan_araclar(calisma_alani)).unwrap()),
         siniflandirici: o.siniflandirici.clone(),
         kilitler: Arc::new(kalfa_core::kilit::KaynakKilitleri::yeni()),
+        geri_yukleyici: None,
     };
     let mut ayar = OturumAyarlari::yeni("qwen3.8-flash-next", o.alan.path());
     ayar.kip = Kip::Proje;
@@ -290,4 +291,162 @@ async fn canli_evren_ile_dosya_okuyup_yanitlar() {
         )
     }));
     assert!(d.metin().contains("4721"), "yanıt: {}", d.metin());
+}
+
+// Aşama 3a: gerçek araçlarla yakalama (aşama 3 tasarımı §5.3).
+
+#[tokio::test]
+async fn gercek_araclarla_onceki_hal_depoda_ve_kayitta() {
+    use kalfa_core::geri_alma::{OncekiHal, OncekiHalDeposu};
+    use kalfa_core::kayit::KayitOgesi;
+    use kalfa_core::muhur::ozet_hex;
+
+    let o = ortam();
+    std::fs::write(o.alan.path().join("x.txt"), "eski\n").unwrap();
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::araclar(vec![
+            ("dosya_yaz", json!({"yol": "x.txt", "icerik": "yeni\n"})),
+            ("dosya_yaz", json!({"yol": "a/b/y.txt", "icerik": "y\n"})),
+        ]),
+        SahteYanit::metin("tamam"),
+    ]);
+    let depo_dizini = o.kayitlar.path().join("geri-alma/oturum");
+    let calisma_alani = CalismaAlani::ac(o.siniflandirici.clone()).unwrap();
+    let mut ayar = OturumAyarlari::yeni("glm-5.3", o.alan.path());
+    ayar.kip = Kip::Proje;
+    ayar.kayit_yolu = Some(o.kayitlar.path().join("oturum.jsonl"));
+    ayar.geri_alma_dizini = Some(depo_dizini.clone());
+    let mut d = test_oturumu(
+        test_baglami(
+            s.clone(),
+            varsayilan_araclar(calisma_alani),
+            o.siniflandirici.clone(),
+        ),
+        ayar,
+    );
+    d.gonder(mesaj("yaz")).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    d.kapat().await;
+
+    assert_eq!(
+        std::fs::read_to_string(o.alan.path().join("x.txt")).unwrap(),
+        "yeni\n"
+    );
+    let kayit = OturumKaydi::oku(&o.kayitlar.path().join("oturum.jsonl")).unwrap();
+    let mut yedekler: Vec<_> = kayit
+        .into_iter()
+        .flat_map(|z| match z.yuk {
+            KayitOgesi::AracBasladi { yedekler, .. } => yedekler,
+            _ => Vec::new(),
+        })
+        .collect();
+    yedekler.sort_by(|a, b| a.yol.cmp(&b.yol));
+    assert_eq!(yedekler.len(), 2, "{yedekler:?}");
+
+    let yeni = &yedekler[0];
+    assert_eq!(yeni.yol.as_str(), "a/b/y.txt");
+    assert_eq!(yeni.onceki, OncekiHal::Yoktu);
+    let dizinler: Vec<&str> = yeni.olusan_dizinler.iter().map(|y| y.as_str()).collect();
+    assert_eq!(dizinler, ["a", "a/b"]);
+
+    let degisen = &yedekler[1];
+    let eski = ozet_hex(b"eski\n");
+    assert_eq!(degisen.onceki, OncekiHal::Saklandi { ozet: eski.clone() });
+    assert_eq!(degisen.sonraki, Some(ozet_hex(b"yeni\n")));
+    assert_eq!((degisen.eklenen, degisen.silinen), (1, 1));
+    let depo = OncekiHalDeposu::ac(&depo_dizini).unwrap();
+    assert_eq!(depo.oku(&eski).unwrap(), b"eski\n");
+}
+
+/// Aşama 3a: Kalfa kapatılıp açıldıktan sonra tur gerçek araçlarla geri
+/// alınır (aşama 3 tasarımı §3 madde 1).
+#[tokio::test]
+async fn kayittan_acilan_oturumda_geri_alma() {
+    use kalfa_core::geri_alma::{GeriAlmaEylemi, GeriYukleyici};
+    use kalfa_core::oturum::devam_et;
+
+    let o = ortam();
+    std::fs::write(o.alan.path().join("x.txt"), "eski\n").unwrap();
+    let kayit = o.kayitlar.path().join("oturum.jsonl");
+    let depo = o.kayitlar.path().join("geri-alma/oturum");
+    let ayar = |kip| {
+        let mut a = OturumAyarlari::yeni("glm-5.3", o.alan.path());
+        a.kip = kip;
+        a.kayit_yolu = Some(kayit.clone());
+        a.geri_alma_dizini = Some(depo.clone());
+        a
+    };
+    let baglam = |s: Arc<SahteSaglayici>| {
+        let alan = CalismaAlani::ac(o.siniflandirici.clone()).unwrap();
+        let mut b = test_baglami(
+            s,
+            varsayilan_araclar(alan.clone()),
+            o.siniflandirici.clone(),
+        );
+        b.geri_yukleyici = Some(alan as Arc<dyn GeriYukleyici>);
+        b
+    };
+
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::araclar(vec![
+            ("dosya_yaz", json!({"yol": "x.txt", "icerik": "yeni\n"})),
+            ("dosya_yaz", json!({"yol": "a/b/y.txt", "icerik": "y\n"})),
+        ]),
+        SahteYanit::metin("tamam"),
+    ]);
+    let mut d = test_oturumu(baglam(s), ayar(Kip::Proje));
+    d.gonder(mesaj("yaz")).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    let tur = d
+        .gecmis
+        .iter()
+        .find(|z| matches!(z.yuk, Olay::TurBasladi))
+        .and_then(|z| z.tur)
+        .unwrap();
+    d.kapat().await;
+
+    let (t, alici, _) = devam_et(
+        &kayit,
+        ayar(Kip::Proje),
+        baglam(SahteSaglayici::yeni(vec![])),
+    )
+    .unwrap();
+    let mut d = Surucu::yeni(t, alici);
+    d.gonder(Komut::GeriAlmaOnizle { tur }).await;
+    let (plan, muhur) = match d
+        .bekle(|o| matches!(o, Olay::GeriAlmaPlani { .. }))
+        .await
+        .yuk
+    {
+        Olay::GeriAlmaPlani { plan, muhur, .. } => (plan, muhur),
+        _ => unreachable!(),
+    };
+    let eylemler: Vec<(&str, &GeriAlmaEylemi)> = plan
+        .ogeler
+        .iter()
+        .map(|o| (o.yol.as_str(), &o.eylem))
+        .collect();
+    assert!(
+        matches!(
+            eylemler.as_slice(),
+            [
+                ("a/b/y.txt", GeriAlmaEylemi::Sil),
+                ("x.txt", GeriAlmaEylemi::GeriYukle { .. })
+            ]
+        ),
+        "{eylemler:?}"
+    );
+    d.gonder(Komut::TuruGeriAl { tur, muhur }).await;
+    d.bekle(|o| matches!(o, Olay::TurGeriAlindi { .. })).await;
+    d.kapat().await;
+
+    assert_eq!(
+        std::fs::read_to_string(o.alan.path().join("x.txt")).unwrap(),
+        "eski\n"
+    );
+    assert!(!o.alan.path().join("a/b/y.txt").exists());
+    assert!(
+        !o.alan.path().join("a").exists(),
+        "turun oluşturduğu boş dizinler de kaldırılır"
+    );
 }

@@ -364,3 +364,178 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Kapat' }));
   });
 });
+
+describe('tur özeti ve geri alma (aşama 3 tasarımı §5.11)', () => {
+  const ozet = {
+    tur: 't1',
+    dosyalar: [
+      {
+        yol: 'src/a.rs',
+        islem: 'Degisti' as const,
+        eklenen: 2,
+        silinen: 1,
+        sonucu_bilinmiyor: false,
+        geri_alinabilir: { tip: 'Evet' as const },
+      },
+    ],
+    komutlar: [
+      {
+        cagri: 'k1',
+        komut: 'cargo build',
+        durum: 'Basarili' as const,
+        degisiklikler: { dosyalar: [{ yol: 'target/x', tur: 'Eklendi' as const }], toplam: 1, eksik: false },
+      },
+    ],
+    istekler: { sayi: 2, istem: 100, tamamlama: 20, dusunce: 0 },
+    guvenlik_uyarisi: 0,
+  };
+
+  const plan = {
+    ogeler: [
+      {
+        yol: 'src/a.rs',
+        eylem: { tip: 'GeriYukle' as const, ozet: 'x' },
+        simdiki: 'y',
+        uyarilar: [],
+        diff: DIFF,
+      },
+      {
+        yol: 'b.rs',
+        eylem: { tip: 'Cakisma' as const, neden: { tip: 'Elle' as const } },
+        simdiki: 'z',
+        uyarilar: [],
+        diff: null,
+      },
+      {
+        yol: '.env',
+        eylem: { tip: 'GeriYukle' as const, ozet: 'e' },
+        simdiki: 'w',
+        uyarilar: ['Gizli dosya; içerik gösterilmiyor.'],
+        diff: null,
+      },
+    ],
+    komutlar: ozet.komutlar,
+    veri_silindi: false,
+  };
+
+  it('tur özeti satırları ve notu çizilir; geri alınamayan turda düğme yok', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [{ tip: 'TurOzeti', ozet }]);
+    const blok = await screen.findByRole('region', { name: 'Tur özeti' });
+    expect(within(blok).getByText('src/a.rs +2 −1')).toBeTruthy();
+    expect(within(blok).getByText('cargo build: 1 dosya değişti')).toBeTruthy();
+    expect(within(blok).getByText('Kabukla yapılan değişiklikler geri alınamaz.')).toBeTruthy();
+    expect(within(blok).getByRole('button', { name: 'Turu geri al…' })).toBeTruthy();
+
+    arka.olaylar('o1', [
+      {
+        tip: 'TurOzeti',
+        ozet: {
+          ...ozet,
+          tur: 't2',
+          komutlar: [],
+          dosyalar: [{ ...ozet.dosyalar[0], geri_alinabilir: { tip: 'Hayir', neden: 'Buyuk' } }],
+        },
+      },
+    ]);
+    await waitFor(() => expect(screen.getAllByRole('region', { name: 'Tur özeti' })).toHaveLength(2));
+    const ikinci = screen.getAllByRole('region', { name: 'Tur özeti' })[1];
+    expect(within(ikinci).queryByRole('button', { name: 'Turu geri al…' })).toBeNull();
+    // Tur sonu çizgisi ayrı kalır: uçtan uca testler onu sayar.
+    expect(document.querySelectorAll('.tur-sonu')).toHaveLength(0);
+  });
+
+  it('"Turu geri al…" önizler; sayfa eylemleri, çakışmayı ve gizli dosyayı gösterir; "Geri al" mühürle yürütür', async () => {
+    const { arka } = await ciz((a) => {
+      a.geriAlmaPlani = plan;
+    });
+    arka.olaylar('o1', [{ tip: 'TurOzeti', ozet }]);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Turu geri al…' }));
+    expect(arka.komutlar('geri_alma_onizle')).toEqual([{ oturum: 'o1', tur: 't1' }]);
+    const sayfa = await screen.findByRole('dialog', { name: 'Turu geri al' });
+    expect(within(sayfa).getByText('Tur: Dosyaları incele')).toBeTruthy();
+    expect(within(sayfa).getAllByText('Önceki hâline döner').length).toBeGreaterThan(0);
+    expect(within(sayfa).getByText('yeni();')).toBeTruthy();
+    expect(within(sayfa).getByText('cargo build')).toBeTruthy();
+
+    await fireEvent.click(within(sayfa).getByRole('button', { name: 'b.rs için ne olacağını göster' }));
+    expect(within(sayfa).getByText("Dosya Kalfa'dan sonra değişti.")).toBeTruthy();
+    await fireEvent.click(within(sayfa).getByRole('button', { name: '.env için ne olacağını göster' }));
+    expect(within(sayfa).getByText('Gizli dosya; içerik gösterilmiyor.')).toBeTruthy();
+    expect(within(sayfa).getByText('Bu dosya için önizleme yok.')).toBeTruthy();
+
+    await fireEvent.click(within(sayfa).getByRole('button', { name: 'Geri al' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(arka.komutlar('turu_geri_al')).toEqual([{ oturum: 'o1', tur: 't1', muhur: 'muhur-t1' }]);
+    expect(await screen.findByText(/Tur geri alındı: 2 dosya önceki hâline döndü/)).toBeTruthy();
+    expect(screen.getByText('Bu tur geri alındı.')).toBeTruthy();
+  });
+
+  it('yapılacak bir şey yoksa "Geri al" kapalı; Escape kapatır', async () => {
+    const { arka } = await ciz((a) => {
+      a.geriAlmaPlani = {
+        ogeler: [{ yol: 'a', eylem: { tip: 'ZatenOnceki' }, simdiki: 'x', uyarilar: [], diff: null }],
+        veri_silindi: false,
+      };
+    });
+    arka.olaylar('o1', [{ tip: 'TurOzeti', ozet }]);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Turu geri al…' }));
+    const sayfa = await screen.findByRole('dialog', { name: 'Turu geri al' });
+    expect(within(sayfa).getByText('Geri alınacak bir değişiklik yok.')).toBeTruthy();
+    const dugme = within(sayfa).getByRole('button', { name: 'Geri al' }) as HTMLButtonElement;
+    expect(dugme.disabled).toBe(true);
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(arka.komutlar('turu_geri_al')).toEqual([]);
+  });
+
+  it('onay sayfası geri alınabilirliği gösterir; kabuk öğesi seçiliyken başlık cümlesi yok', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      {
+        tip: 'OnayGerekiyor',
+        islem: 'i3',
+        ogeler: [
+          onayOgesi({ cagri: 'y1', diff: DIFF, geri_alinabilir: { tip: 'Evet' } }),
+          onayOgesi({
+            cagri: 'y2',
+            arac: 'kabuk',
+            geri_alinabilir: { tip: 'Hayir', neden: 'Kabuk' },
+            kabuk: {
+              komut: 'make',
+              bicim: { tip: 'Program' },
+              dizin: '.',
+              ag: false,
+              yalitim: { tip: 'Yalitimli', arka_uc: 'bwrap', profil: 'p' },
+              ilk_cagri: false,
+              alan_hazirligi: false,
+            },
+          }),
+        ],
+      },
+    ]);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    const sayfa = await screen.findByRole('dialog');
+    expect(within(sayfa).getByText('Evet: turu geri alarak')).toBeTruthy();
+    expect(within(sayfa).queryByText('Bu değişiklikler geri alınabilir.')).toBeNull();
+    await fireEvent.click(within(sayfa).getByRole('checkbox', { name: 'make' }));
+    expect(within(sayfa).getByText('Bu değişiklikler geri alınabilir.')).toBeTruthy();
+    await fireEvent.click(within(sayfa).getByRole('button', { name: 'make değişikliğini göster' }));
+    expect(within(sayfa).getByText('Hayır: komutların etkileri geri alınamaz')).toBeTruthy();
+  });
+
+  it('oturum listesindeki "Sil" oturumu siler; vazgeçilirse oturum kalır', async () => {
+    const { arka } = await ciz();
+    const liste = screen.getByRole('complementary', { name: 'Oturumlar' });
+    arka.silmeOnayi = false;
+    await fireEvent.click(within(liste).getByRole('button', { name: 'Dosyaları incele oturumunu sil' }));
+    await waitFor(() => expect(arka.komutlar('oturumu_sil')).toHaveLength(1));
+    expect(screen.getByRole('heading', { name: 'Dosyaları incele' })).toBeTruthy();
+
+    arka.silmeOnayi = true;
+    await fireEvent.click(within(liste).getByRole('button', { name: 'Dosyaları incele oturumunu sil' }));
+    await waitFor(() => expect(within(liste).getByText('Henüz oturum yok. Yeni bir oturumla başlayın.')).toBeTruthy());
+    expect(screen.queryByRole('heading', { name: 'Dosyaları incele' })).toBeNull();
+  });
+});

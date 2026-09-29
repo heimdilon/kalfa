@@ -8,6 +8,9 @@ import type {
   CagriId,
   DurumOzeti,
   GecmisSayfasi,
+  GeriAlmaPlani,
+  GeriAlmaSonucu,
+  TurOzeti,
   GorunumOgesi,
   IslemId,
   KanalMesaji,
@@ -58,7 +61,23 @@ export type EkranOgesi =
   | (Ortak & { tip: 'Hata'; mesaj: string })
   | (Ortak & { tip: 'GuvenlikUyarisi'; mesaj: string })
   | (Ortak & { tip: 'TurSonu'; neden: BitisNedeni })
-  | (Ortak & { tip: 'AktarimDurdu'; neden: AktarimDurmaNedeni });
+  | (Ortak & { tip: 'AktarimDurdu'; neden: AktarimDurmaNedeni })
+  | (Ortak & {
+      tip: 'GeriAlma';
+      geri_alinan_tur: TurId;
+      sonuc: GeriAlmaSonucu[];
+      yarim: boolean;
+    })
+  | (Ortak & { tip: 'KalfaNotu'; metin: string })
+  /** `geri_alindi`: sonradan bu tur geri alındı (aşama 3 tasarımı §5.11). */
+  | (Ortak & { tip: 'TurOzeti'; ozet: TurOzeti; geri_alindi: boolean });
+
+/** Açık geri alma sayfası: son gelen plan ve mührü (aşama 3 tasarımı §5.6). */
+export interface GeriAlmaOnizlemesi {
+  tur: TurId;
+  plan: GeriAlmaPlani;
+  muhur: string;
+}
 
 export interface OturumEkrani {
   oturum: OturumId;
@@ -82,6 +101,8 @@ export interface OturumEkrani {
   bosluk: boolean;
   /** Canlı yerel öğelerin anahtarı için sayaç. */
   yerel_sayac: number;
+  /** Geri alma sayfası açıksa gösterdiği plan. */
+  geri_alma: GeriAlmaOnizlemesi | null;
 }
 
 export type Girdi =
@@ -90,7 +111,9 @@ export type Girdi =
   | { tip: 'MesajGonderildi'; metin: string }
   | { tip: 'OnayYanitlandi'; islem: IslemId }
   | { tip: 'ModelDegisti'; model: string }
-  | { tip: 'KipDegisti'; kip: Kip };
+  | { tip: 'KipDegisti'; kip: Kip }
+  /** Geri alma sayfası karar verilmeden kapandı. */
+  | { tip: 'GeriAlmaKapandi' };
 
 /** Kayıttan gelen bir geçmiş öğesini ekran öğesine çevirir. */
 export function gecmisOgesi(o: GorunumOgesi): EkranOgesi {
@@ -125,12 +148,29 @@ export function gecmisOgesi(o: GorunumOgesi): EkranOgesi {
       return { ...o, anahtar: `g-${o.sira}-s` };
     case 'GuvenlikUyarisi':
       return { ...o, anahtar: `g-${o.sira}-g` };
+    case 'GeriAlma':
+      return { ...o, anahtar: `g-${o.sira}-r` };
+    case 'KalfaNotu':
+      return { ...o, anahtar: `g-${o.sira}-n` };
+    case 'TurOzeti':
+      return { ...o, anahtar: `g-${o.sira}-o`, geri_alindi: false };
   }
+}
+
+/** Geri alınmış turların özetlerini işaretler. */
+function geriAlinanlariIsle(ogeler: EkranOgesi[]): EkranOgesi[] {
+  const alinan = new Set(
+    ogeler.flatMap((o) => (o.tip === 'GeriAlma' && !o.yarim ? [o.geri_alinan_tur] : [])),
+  );
+  if (alinan.size === 0) return ogeler;
+  return ogeler.map((o) =>
+    o.tip === 'TurOzeti' && alinan.has(o.ozet.tur) ? { ...o, geri_alindi: true } : o,
+  );
 }
 
 /** `oturum_baslat` ya da `oturum_ac`'ın sonucundan ilk ekran durumu. */
 export function acilistanEkran(acilis: OturumAcilisi): OturumEkrani {
-  const ogeler = acilis.gecmis.ogeler.map(gecmisOgesi);
+  const ogeler = geriAlinanlariIsle(acilis.gecmis.ogeler.map(gecmisOgesi));
   return {
     oturum: acilis.oturum,
     calisma_alani: acilis.calisma_alani,
@@ -145,6 +185,7 @@ export function acilistanEkran(acilis: OturumAcilisi): OturumEkrani {
     kapandi: false,
     bosluk: false,
     yerel_sayac: 0,
+    geri_alma: null,
   };
 }
 
@@ -157,7 +198,7 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
       const eskiler = girdi.sayfa.ogeler.filter((o) => o.sira < enEski).map(gecmisOgesi);
       return {
         ...durum,
-        ogeler: [...eskiler, ...durum.ogeler],
+        ogeler: geriAlinanlariIsle([...eskiler, ...durum.ogeler]),
         daha_eski_var: girdi.sayfa.daha_eski_var,
       };
     }
@@ -194,6 +235,8 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
       return { ...durum, ozet: { ...durum.ozet, model: girdi.model } };
     case 'KipDegisti':
       return { ...durum, ozet: { ...durum.ozet, kip: girdi.kip } };
+    case 'GeriAlmaKapandi':
+      return { ...durum, geri_alma: null };
   }
 }
 
@@ -345,6 +388,41 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
       d.anlik = 'Bos';
       d.aktif_tur = null;
       return;
+    case 'TurOzeti':
+      d.ogeler.push({
+        tip: 'TurOzeti',
+        anahtar: `c-${z.sira}`,
+        sira: z.sira,
+        tur: z.tur,
+        ozet: yuk.ozet,
+        geri_alindi: false,
+      });
+      return;
+    case 'GeriAlmaVerisiSilindi':
+      d.ogeler = d.ogeler.map((o) =>
+        o.tip === 'TurOzeti' && yuk.turlar.includes(o.ozet.tur)
+          ? { ...o, ozet: veriSilindi(o.ozet) }
+          : o,
+      );
+      return;
+    case 'GeriAlmaPlani':
+      d.geri_alma = { tur: yuk.geri_alinan_tur, plan: yuk.plan, muhur: yuk.muhur };
+      return;
+    case 'TurGeriAlindi':
+      d.geri_alma = null;
+      d.ogeler = d.ogeler.map((o) =>
+        o.tip === 'TurOzeti' && o.ozet.tur === yuk.geri_alinan_tur ? { ...o, geri_alindi: true } : o,
+      );
+      d.ogeler.push({
+        tip: 'GeriAlma',
+        anahtar: `c-${z.sira}`,
+        sira: z.sira,
+        tur: z.tur,
+        geri_alinan_tur: yuk.geri_alinan_tur,
+        sonuc: yuk.sonuc,
+        yarim: false,
+      });
+      return;
     case 'AktarimDurdu':
       akisiKapat(d);
       bekleyenleriKapat(d);
@@ -359,6 +437,21 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
       d.aktif_tur = null;
       return;
   }
+}
+
+/**
+ * Önceki hâlleri silinen turun değişen dosyaları artık geri alınamaz;
+ * oluşturduğu dosyalar silinerek yine geri alınabilir (aşama 3 tasarımı §5.2).
+ */
+function veriSilindi(ozet: TurOzeti): TurOzeti {
+  return {
+    ...ozet,
+    dosyalar: ozet.dosyalar.map((d) =>
+      d.geri_alinabilir.tip === 'Evet' && d.islem === 'Degisti'
+        ? { ...d, geri_alinabilir: { tip: 'Hayir', neden: 'VeriSilindi' } }
+        : d,
+    ),
+  };
 }
 
 /** Bitişik ve aynı turdaki metin parçaları tek yanıtta birleşir. */

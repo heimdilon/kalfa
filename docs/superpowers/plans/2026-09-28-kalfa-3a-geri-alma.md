@@ -554,4 +554,98 @@ docs/superpowers/specs/*, docs/GELISTIRME_DURUMU.md
 
 ## Uygulama sonucu
 
-Uygulanınca doldurulur: görev başına commit ve plandan sapmalar, ayrıca G1, G2, G10 ve G12'nin ölçüm sonuçları.
+### Bulut oturumu: platformdan bağımsız görevler (2026-09-28, Linux)
+
+Kullanıcı kararıyla (K10'un ayrıntısı) platformdan bağımsız görevler bir bulut oturumunda, Linux'ta yazıldı ve sınandı; dal `3a/geri-alma`. Windows ve WSL doğrulaması yerel makinede yapılacak.
+
+| Görev | Commit | Durum |
+|---|---|---|
+| 1 Depo | `834fc89` | Tamam (Linux) |
+| 2 Araç hazırlığı | `3d8b67f` | Tamam (Linux) |
+| 3 Yakalama ve büyük dosya kuralı | `1df41b5` | Tamam (Linux) |
+| 4 `GeriYukleyici` | `bd1816d` | Linux testleri geçti; junction ve kısa ad testleri yazıldı, Windows'ta koşacak |
+| 5 Plan, mühür, yürütme | `5b95042` | Tamam (Linux) |
+| 7 Tur özeti | `0975445` | Tamam (Linux) |
+| 8 Onay kartında geri alınabilirlik | `3bf4c33` | Çekirdek tamam; kartın gösterimi Task 10'da |
+
+**Denetimler (Linux, bu ortam):**
+- `cargo test` (`kalfa` dışındaki crate'ler; webkit olmadığı için Tauri crate'i derlenmedi): 518 geçti, 0 başarısız. Çekirdek ve araç testleri beş kez art arda koştu; titreme görülmedi.
+- `cargo test -p kalfa-uygulama --features e2e`: 85 geçti.
+- `cargo clippy` (aynı crate'ler, `--all-targets`, `e2e` dahil) ve `cargo fmt --check` temiz.
+- Arayüz: `npm run check` 0 hata, 0 uyarı; `npm test` 246 geçti; `npm run build` ve paket denetimi temiz.
+- Koşmayanlar: `kalfa` crate'i, uçtan uca testler, `yalitim-testleri` (bwrap yok; `kalfa-tools`'a dokunulduğu için uyumluluk testleri WSL'de koşmalı) ve bütün Windows denetimleri.
+
+**Plandan sapmalar:**
+- **`YazmaHedefi`:** plandaki alanlara `onceki_bayt` eklendi (`OncekiHal::Buyuk { bayt }` için). Ayrıca `YazmaHedefi::yeni` kurucusu ve `geri_alinabilir()` var. Önceki içeriği vermeyen ve büyük olmayan yazan araç (yalnızca test sahteleri) geri alınamaz sayılır.
+- **`baslat_kayitla` artık `Result` döner:** `geri_alma_dizini` verildiyse depo açılır, açılamazsa oturum başlamaz.
+- **Turu olmayan "başladı" kaydı** (tur dışında yazılmış) kurtarmada sıfır kimlikli bir tura düşer: geri alınamaz ama önceki hâlleri depodan silinmez.
+- **`GeriAlmaEylemi::GeriYukle { ozet }`:** geri yazılacak içeriğin özeti eylemdedir ve mühre girer. `PlanOgesi.uyari` yerine `uyarilar: Vec<String>` (Codex bulgusu sonrası tasarımla aynı).
+- **Önizlemedeki diff,** kayıttaki diff'lerin ters çevrilmesidir (`ters_diff`): çekirdekte diff kitaplığı yok.
+- **Mühür denetimi, "yapılacak bir şey yok" denetiminden önce yapılır:** önizlemeden sonra değişen dosya her zaman yeni planı gösterir.
+- **Sıra:** `TurBitti` → `Tamamlandi` → depo sınırı (gerekirse `GeriAlmaVerisiSilindi`) → `TurOzeti`. Özet ve silme olayı turun zarfıyla gelir.
+- **`GeriAlinamazNedeni`** plan ve özet için ortaktır: `Buyuk`, `VeriSilindi`, `Kayitsiz`, `Kabuk`.
+- **Önceki hâlleri silinen tur,** oluşturduğu dosyaları silerek yine geri alınabilir; özette değişen dosyalar "geri alınamaz" olur.
+- **Task 6'ya bağlı olanlar:** `CakismaNedeni::Komut` tanımlı ama üretilmiyor; `KomutOzeti`'nde `degisiklikler` yok; Kalfa notu kabuk değişikliklerini henüz anmıyor.
+- **Task 9'dan erken yapılan:** `kalfa-uygulama` bağlamı `geri_yukleyici: Some(alan)` verir. Uygulama `geri_alma_dizini`'ni henüz vermediği için geri alma uygulamada kapalıdır.
+- **Arayüz (Task 10'dan önce):** protokol tipleri ve en küçük gösterim eklendi: tur özeti, geri alma ve Kalfa notu `.bilgi-satiri` satırlarıyla görünür. Bu satırlar uçtan uca testlerin saydığı `.tur-sonu` çizgisinden ayrıdır. `TurnSummary`, geri alma sayfası ve kartın "Geri alınabilir mi" satırı Task 10'dadır.
+
+**Kalanlar (yerel makine):** Task 4'ün Windows testleri, Task 6 (kabuk görüntüsü, G1), Task 9 (depo dizini, Tauri komutları, oturumu silme, yetkiler), Task 10 (arayüz), Task 11 (uçtan uca), Task 12 (belgeler); G2 (canlı `#[ignore]` testi), G10 ve G12; iki platformda tam doğrulama.
+
+### Yerel makine: kalan görevler ve iki platformda doğrulama (2026-09-28)
+
+Claude, dal `3a/geri-alma`'da, Windows'ta ve WSL'de (Ubuntu-24.04) yazdı ve doğruladı. Bulutun görevleri de iki platformda yeniden koşturuldu; hepsi yeşil çıktı.
+
+| Görev | Commit | Durum |
+|---|---|---|
+| 4 `GeriYukleyici`'nin Windows testleri | — | Junction ve kısa ad testleri Windows'ta geçti; kısa ad testi atlanmadı |
+| 6 Kabuk görüntüsü | `01101d4`, `4585401` | Tamam |
+| 9 Uygulama: depo dizini, komutlar, oturumu silme | `4a38195` | Tamam |
+| 10 Arayüz | `e4883c8` | Tamam |
+| 11 Uçtan uca | `8174605` | Tamam |
+| Planın maliyeti (e2e'de bulundu) | `5230882`, `ff79e32` | Tamam |
+| G2 canlı testi | `35ea777` | Geçti (2026-09-29) |
+| 12 Belgeler | bu commit | Tamam |
+
+**Ölçümler:**
+- **G1:** 100 000 dosyalık ağaçta (1 000 dizin × 100 dosya) görüntülü ve görüntüsüz tarama, beş koşunun medyanı, sürüm profili:
+
+  | | Görüntüsüz | Görüntülü | Ek |
+  |---|---|---|---|
+  | Windows (`adli_girdiler`) | 55 ms | 72 ms | 17 ms |
+  | WSL, ext4 (`adli_girdiler`) | 14 ms | 59 ms | 45 ms |
+  | WSL (`tara_ayrintili`) | — | 78 ms | — |
+
+  İlk sürüm görüntüyü ortak kilit altında bir `BTreeMap<PathBuf>`'e ekliyordu; Windows'ta ek 240 ms'ti. Her iş parçacığının kendi parçasını biriktirmesiyle 17 ms'ye indi. Hedef (150 ms) iki platformda da tutuyor. Windows'ta kimlik olmadan kaçırma oranı ölçülmedi (tasarım §13).
+- **G10:** kapandı. Uyumluluk testi `geri_alma_deposu_yalitimda_gorunmez` gerçek AppContainer'la (Windows) ve bwrap'la (WSL, `kalfatest`) geçti: kap, özel kökün kardeşi olan deponun içini okuyamıyor ve listeleyemiyor. `%LOCALAPPDATA%`'nın izinlerinde "ALL APPLICATION PACKAGES" yok.
+- **G2:** kapandı. Canlı test `kalfa-evren/tests/canli.rs`, `canli_art_arda_iki_kullanici_mesaji_kabul_edilir`: `glm-5.3`, `qwen3.8-flash-next` ve `deepseek-v4-flash` art arda iki kullanıcı mesajını kabul edip yanıt verdi (2026-09-29, 10,9 sn).
+- **G12:** sınırlar değişmedi; Ayarlar toplam boyutu gösterir, kullanımla ayarlanır.
+
+**Plandan sapmalar:**
+- **Görüntü (Task 6):**
+  - Dizinler görüntüye girmez; `GirdiTuru` yalnızca `Dosya | Baglanti`'dır.
+  - Anahtar `/` ayraçlı `String`'dir; `Goruntu.girdiler` bir `HashMap`'tir.
+  - `DosyaDegisiklikleri`'ne `toplam` ve `tam_mi()`, kayıt öğesine `komut` eklendi. Dosya değiştirmeyen komut kaydedilmez.
+  - `AracCiktisi.degisiklikler` kutuludur (`Option<Box<…>>`): `AracHatasi::Basarisiz` onu taşır ve clippy'nin `result_large_err` sınırı aşılıyordu.
+  - Plan, `GeriAlmaDizini`'ne turun komutlarını ekledi. `GeriAlmaPlani.komutlar` ve `CakismaNedeni::Komut` artık üretiliyor. Kalfa notu kabuk değişikliklerini anıyor.
+  - Bilinen sınır: iptal edilen komutun değişiklikleri listelenmez (tasarım §5.12).
+- **Task 9:** silme çekirdekte `OturumKaydi::sil`'dir: kilit altında önce geri alma verisi, sonra kayıt ve kilit dosyası silinir. `geri_alma_verisi_boyutu` komutu eklendi.
+- **Task 10:**
+  - `TurnSummary`'nin `items`'ı metin dizisi, `note`'u satır dizisidir.
+  - "Sil" düğmesi seçili satırda her zaman görünür.
+  - Canlı geri almada Kalfa notu konuşmada görünmez; kayıttan açılınca görünür.
+  - Çakışan dosyanın önceki hâlini sayfada gösterip kopyalatmak yapılmadı. Bir komut gerektirir; G11 ile birlikte kullanımla değerlendirilir.
+- **Planın maliyeti:** e2e'de bulundu. Yolu sınıflandırmak `git config` çalıştırır (Windows'ta ~250 ms). Plan yol başına çözdüğü için art arda önizlemeler çekirdeği meşgul tutup olay akışını durdurdu. `Siniflandirici::toplu()` korumaları plan başına bir kez çözer. Araç planlamasındaki aynı maliyet ayrı bir iş olarak işaretlendi.
+
+**Doğrulama** (son kod, `945dd72`):
+
+| Denetim | Windows | WSL (Ubuntu-24.04) |
+|---|---|---|
+| `cargo fmt --check`, `cargo clippy -D warnings` (çalışma alanı, `e2e`, yalıtım özellikleri) | Temiz | Temiz |
+| `cargo test --workspace` | 593 geçti | 540 geçti |
+| `kalfa-uygulama` ve `kalfa`, `e2e` özelliğiyle | 98 geçti | 97 geçti |
+| Yalıtım (`yalitim-testleri`) | 30/30 | 17/17 (`kalfatest`) |
+| Uyumluluk (gerçek yalıtım) | 16/16 | 11/11 (`kalfatest`) |
+| Arayüz: `npm run check`, `npm test`, `npm run build` | 0 hata, 0 uyarı; 264 test; paket denetimi temiz | — |
+| Uçtan uca | 29/29 (geri alma 4/4; gecikme p95 < 50 ms) | 29/29 (`xvfb-run`; gecikme p95 36–39 ms) |
+
+Windows testlerinden sonra makinede yalnızca kullanıcının kendi "Kalfa Projeleri" AppContainer profili kaldı; test profili ya da `S-1-15-2-` ACE'si kalmadı.

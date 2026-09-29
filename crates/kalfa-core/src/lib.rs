@@ -6,6 +6,7 @@
 pub mod aktarim;
 pub mod arac;
 pub mod gecmis;
+pub mod geri_alma;
 pub mod git_koruma;
 pub mod gorunum;
 pub mod izin;
@@ -19,6 +20,7 @@ pub mod oturum;
 pub mod protokol;
 pub mod saglayici;
 pub mod sart_kapisi;
+pub mod tur_ozeti;
 pub mod yol;
 
 #[cfg(feature = "test-destek")]

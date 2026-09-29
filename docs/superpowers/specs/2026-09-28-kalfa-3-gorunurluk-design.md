@@ -705,8 +705,7 @@ Geri alınmayan (sonradan değişmiş): src/d.rs. Kabukla yapılan değişiklikl
   - Oturumun başlığı ilk kullanıcı mesajından çıkarılır.
 - Ekranda kullanıcı balonu olarak değil, bir bildirim olarak görünür.
 - Not ile sonraki kullanıcı mesajı art arda iki kullanıcı mesajı olur.
-  - Kullanılan modellerin sohbet şablonlarının bunu kabul edip etmediği
-    **doğrulanmadı** (G2).
+  - Kullanılan üç model bunu kabul ediyor; canlı testle doğrulandı (G2).
   - Sahte sağlayıcıyla sınanır. Canlı doğrulamayı kullanıcı `#[ignore]`
     testle yapar.
   - Kabul etmeyen bir model çıkarsa not, sonraki kullanıcı mesajının başına
@@ -758,6 +757,56 @@ Geri alınmayan (sonradan değişmiş): src/d.rs. Kabukla yapılan değişiklikl
   - Bilgiyi çekirdek `OnayOgesi.geri_alinabilir` olarak verir; arayüz tahmin
     etmez.
 - **Oturum listesi:** her satırda "Sil" seçeneği.
+
+### 5.12 Uygulamada netleşenler (3a)
+
+3a'nın uygulaması sırasında tasarımdan ayrılan ya da netleşen noktalar.
+Plandan sapmaların tam listesi planın "Uygulama sonucu" bölümündedir.
+
+- **Kabuk görüntüsü (§5.4):**
+  - Görüntüye yalnızca dosyalar ve bağlantılar girer, dizinler girmez.
+    Değişiklik dizindeki dosyalarda görünür; boş bir dizinin eklenmesi
+    listelenmez.
+  - Anahtar, köke göre `/` ayraçlı yol metnidir. Her tarama iş parçacığı
+    kendi parçasını biriktirir; ortak kilit parça bitince bir kez alınır.
+    Ortak kilit altında `BTreeMap<PathBuf>`'e eklemek Windows'ta 100 000
+    dosyada 240 ms tutuyordu (yol karşılaştırması bileşen bileşen yapılıyor).
+  - Okunamayan dizin ya da girdi de görüntüyü eksik işaretler.
+  - `DosyaDegisiklikleri`'ne `toplam` eklendi. Liste 200'de kesildiyse ya da
+    tarama eksikse liste tam değildir (`tam_mi`).
+  - Kayıt öğesi `KabukDegisiklikleri { cagri, komut, degisiklikler }`'dir.
+    `komut`, kayıttan kurulan geri alma planı komutu gösterebilsin diye
+    eklendi. Dosya değiştirmeyen komut kaydedilmez.
+  - **Bilinen sınır:** iptal edilen komutun sonucu yoktur; değiştirdiği
+    dosyalar özete ve plana girmez. Böyle bir dosya planda "Kalfa'dan sonra
+    değişti" diye çakışır. Onaysız değişikliklerde iptal edilen komut
+    "onaysız bir komut çalıştı" notunu bırakır.
+- **Onaysız değişiklikler (Bulgu 3):** kabuğun değiştirdiği dosyaların listesi
+  tamsa sonraki kabuk onayı "onaysız bir komut çalıştı" notunu göstermez,
+  dosyaları gösterir. Liste tam değilse not da kalır.
+- **Geri alma planı:** `GeriAlmaPlani.komutlar` turun dosya değiştiren
+  komutlarını taşır; mühre girmez. Bir dosyayı turun ya da sonraki turların
+  bir komutu değiştirdiyse çakışmanın nedeni `Komut`'tur. Öncelik: sonraki
+  tur, komut, başarısız çağrı, elle. Kalfa notu, turda dosya değiştiren
+  komut varsa "Kabukla yapılan değişiklikler geri alınmadı." der.
+- **Planın maliyeti:** yolu sınıflandırmak git korumalarını çözer, bu da
+  `git config` çalıştırır; Windows'ta çağrı başına yaklaşık 250 ms. Plan bu
+  yüzden `Siniflandirici::toplu()` ile korumaları plan başına bir kez çözer.
+  Uçtan uca testte yol başına çözmek, art arda gelen önizlemelerde çekirdeğin
+  görevini meşgul tutup olayların arayüze akmasını durdurmuştu.
+- **Oturumu silme (§5.10):** çekirdekteki `OturumKaydi::sil` kayıt kilidini
+  alır. Kilit altında önce geri alma verisi, sonra kayıt, en son kilit
+  dosyası silinir. Geri alma verisi silinemezse kayıt kalır ve silme
+  yinelenebilir. Kayıt silinip veri kalsaydı, silinecek bir oturumu olmayan
+  sahipsiz veri kalırdı.
+- **Arayüz (§5.11):**
+  - Geri alma sayfası açık bir onay sayfasının üstüne açılmaz; onay
+    sayfası kapanınca görünür.
+  - Oturum listesindeki "Sil" düğmesi seçili satırda her zaman, öteki
+    satırlarda fare ya da odak gelince görünür.
+  - Canlı geri almada Kalfa notu konuşmada görünmez; oturum kayıttan
+    açılınca görünür. Konuşmadaki geri alma satırı dokunulmayan dosyaları
+    sayar.
 
 ---
 
@@ -1566,8 +1615,8 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 
 | # | Soru | Nerede |
 |---|---|---|
-| G1 | Kabuk görüntüsünün maliyeti ve Windows'ta dosya kimliği olmadan kaçırma oranı. Hedef: 100 000 dosyada, taramanın `stat` eki 150 ms'nin altında. | 3a, iki platformda ölçüm |
-| G2 | Art arda iki kullanıcı mesajını (Kalfa notu ve kullanıcı) `glm-5.3`, `qwen3.8-flash-next` ve `deepseek-v4-flash` kabul ediyor mu? | 3a: sahte sağlayıcıda sınanır; canlıda kullanıcı `#[ignore]` testle doğrular |
+| G1 | Kabuk görüntüsünün maliyeti ve Windows'ta dosya kimliği olmadan kaçırma oranı. Hedef: 100 000 dosyada, taramanın `stat` eki 150 ms'nin altında. | **Süre ölçüldü (3a):** 100 000 dosyada görüntünün eki Windows'ta 17 ms (55 → 72 ms), WSL'de 45 ms (14 → 59 ms; ext4, medyan). Kaçırma oranı ölçülmedi: kimlik olmadan kaçan tek durum, dosyayı silip aynı boyut ve zamanla yeniden yazmaktır; kullanımla izlenir |
+| G2 | Art arda iki kullanıcı mesajını (Kalfa notu ve kullanıcı) `glm-5.3`, `qwen3.8-flash-next` ve `deepseek-v4-flash` kabul ediyor mu? | **Kapandı (3a, 2026-09-29):** üç model de art arda iki kullanıcı mesajını kabul edip yanıt verdi; canlı test `kalfa-evren/tests/canli.rs`, `canli_art_arda_iki_kullanici_mesaji_kabul_edilir` |
 | G3 | Denetçinin gecikmesi ve token maliyeti; reasoning kapatılabilir mi (`chat_template_kwargs`); EVREN'de `max_tokens`'ın davranışı | 3c, canlı; kullanıcı koşturur |
 | G4 | Denetçinin `kategori` değerlerinden yalnızca `talimat_enjeksiyonu` gözlendi | 3c, canlı |
 | G5 | Linux: bwrap'ın `--unshare-net`'inde köprünün `SCM_RIGHTS` ile bağlantı taşıması; cargo, npm, pip ve git'in `HTTPS_PROXY`'ye uyması | 3d, WSL'de `kalfatest` ile |
@@ -1575,9 +1624,9 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 | G7 | SNI denetimi ECH kullanan istemcileri bozar; kullanılan araçlarda ECH var mı? | 3d |
 | G8 | Önizleme kartında büyük içerik: 50 × 64 KiB olay bütçesine ve arayüze sığar mı? | 3b, ölçüm |
 | G9 | Ek gizli kalıpların ve istisnaların paylaşılan kaydının her sınıflandırmada okunmasının maliyeti | 3e |
-| G10 | Windows'ta geri alma deposunun kaptan görünmemesi: A11'in listeleme izniyle `Kalfa\` altındaki adlar görünüyor | 3a, kurulu makinede test |
+| G10 | Windows'ta geri alma deposunun kaptan görünmemesi: A11'in listeleme izniyle `Kalfa\` altındaki adlar görünüyor | **Kapandı (3a):** yalıtımın özel kökünün kardeşi olan depo kaptan okunamıyor ve listelenemiyor; uyumluluk testi `geri_alma_deposu_yalitimda_gorunmez`, Windows'ta gerçek AppContainer'la ve WSL'de bwrap'la. `%LOCALAPPDATA%`'da "ALL APPLICATION PACKAGES" izni yok |
 | G11 | Yazma yarım kalmışsa (çökme) "yine de önceki hâli yaz" seçeneği gerekiyor mu? | Kullanımla; şimdilik sayfada görülüp kopyalanıyor |
-| G12 | 8 MiB ve 512 MiB sınırları | 3a, ölçüm ve kullanım |
+| G12 | 8 MiB ve 512 MiB sınırları | 3a'da değişmedi; kullanımla ayarlanır. Ayarlar toplam boyutu gösterir |
 | G13 | Bağlam özetleme gelince Kalfa notunun ve gönderim günlüğünün özetle ilişkisi | Özetleme tasarımında |
 | G14 | İçerikte anahtar biçimi arayan tarama (`-----BEGIN`, `AKIA…`, `ghp_…`, `evren_llm_…`) | Ayrı karar; aşama 3 dışında |
 | G15 | `icerik_ara` sonucunda dosya başına kaynak etiketi | 3b ya da sonrası |

@@ -9,7 +9,7 @@
 //! Bulgu 1): çekirdek `.git`'i adıyla tanıyıp korumalı sayar; git dizinine
 //! başka bir adla (8.3 kısa ad gibi) yazılamaz.
 
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -18,6 +18,7 @@ use cap_std::ambient_authority;
 use cap_std::fs::{Dir, File, OpenOptions};
 use ignore::WalkBuilder;
 use kalfa_core::arac::AracHatasi;
+use kalfa_core::geri_alma::{DosyaDurumu, GeriYukleyici};
 use kalfa_core::izin::Siniflandirici;
 use kalfa_core::muhur::ozet_hex;
 use kalfa_core::yol::CalismaYolu;
@@ -114,6 +115,37 @@ impl CalismaAlani {
         let (ust, ad) = self.ust_dizin(yol, false)?;
         ust.open_dir_nofollow(ad)?;
         Ok(())
+    }
+
+    /// Yolun henüz olmayan üst dizinleri, sığdan derine (aşama 3 tasarımı
+    /// §5.3). Varlık bağlantı izlenmeden denetlenir; üst dizinlerden biri
+    /// bağlantıysa hata döner (yazma zaten başarısız olurdu).
+    pub fn olusacak_dizinler(&self, yol: &CalismaYolu) -> io::Result<Vec<CalismaYolu>> {
+        let parcalar: Vec<&str> = yol.as_str().split('/').collect();
+        let mut dizin = self.dizin.try_clone()?;
+        let mut sonuc = Vec::new();
+        for (sira, ad) in parcalar
+            .iter()
+            .enumerate()
+            .take(parcalar.len().saturating_sub(1))
+        {
+            if sonuc.is_empty() {
+                match dizin.open_dir_nofollow(ad) {
+                    Ok(d) => {
+                        dizin = d;
+                        continue;
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            let goreli = parcalar[..=sira].join("/");
+            sonuc.push(
+                CalismaYolu::coz(&goreli)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?,
+            );
+        }
+        Ok(sonuc)
     }
 
     /// Son dosya bileşenini de no-follow açar ve yalnızca normal dosyaları
@@ -258,6 +290,87 @@ impl CalismaAlani {
 
         sonuc.sort();
         Ok(sonuc)
+    }
+}
+
+/// Geri alma dosya araçlarının yazma yolundan geçer (aşama 3 tasarımı §5.6):
+/// bileşenler bağlantı izlenmeden açılır, `.git` takma adı reddedilir, hard
+/// link'li dosyaya yazılmaz ve yazmadan hemen önce şimdiki özet denetlenir.
+impl GeriYukleyici for CalismaAlani {
+    fn durum(&self, yol: &CalismaYolu) -> io::Result<Option<DosyaDurumu>> {
+        let mut dosya = match self.dosya_ac(yol) {
+            Ok(d) => d,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let mut veri = Vec::new();
+        dosya.read_to_end(&mut veri)?;
+        Ok(Some(DosyaDurumu {
+            ozet: ozet_hex(&veri),
+            baglanti_sayisi: baglanti::sayi(&dosya.into_std())?,
+        }))
+    }
+
+    fn geri_yaz(&self, yol: &CalismaYolu, icerik: Option<&[u8]>, beklenen: &str) -> io::Result<()> {
+        let git = self.git_kimligi()?;
+        let (ust, ad) = self.ust_dizin_denetimli(yol, false, git.as_ref())?;
+        let mut secenek = OpenOptions::new();
+        secenek.read(true).write(true).follow(FollowSymlinks::No);
+        let mut dosya = ust.open_with(&ad, &secenek)?;
+        if !dosya.metadata()?.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Yalnızca normal dosyalar geri yazılabilir",
+            ));
+        }
+        if let Some(g) = &git {
+            git_takma_adi_reddet(g, &ad, &dosya.try_clone()?.into_std())?;
+        }
+        let mut veri = Vec::new();
+        dosya.read_to_end(&mut veri)?;
+        if ozet_hex(&veri) != beklenen {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Dosya önizlemeden sonra değişti; geri yazılmadı.",
+            ));
+        }
+        if baglanti::sayi(&dosya.try_clone()?.into_std())? > 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Dosyanın başka bir adı var (hard link); geri yazmak öteki adı da değiştirirdi.",
+            ));
+        }
+        match icerik {
+            Some(icerik) => {
+                dosya.seek(SeekFrom::Start(0))?;
+                dosya.set_len(0)?;
+                dosya.write_all(icerik)
+            }
+            None => {
+                drop(dosya);
+                ust.remove_file(&ad)
+            }
+        }
+    }
+
+    fn bos_dizini_kaldir(&self, yol: &CalismaYolu) -> io::Result<bool> {
+        let (ust, ad) = match self.ust_dizin(yol, false) {
+            Ok(u) => u,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        match ust.remove_dir(&ad) {
+            Ok(()) => Ok(true),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::DirectoryNotEmpty | io::ErrorKind::NotFound
+                ) =>
+            {
+                Ok(false)
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 

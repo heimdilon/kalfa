@@ -403,3 +403,174 @@ describe('kanal dinleyicisi', () => {
     expect(isledim).not.toHaveBeenCalled();
   });
 });
+
+describe('geri alma (aşama 3 tasarımı §5.11)', () => {
+  it('geçmişteki geri alma ve Kalfa notu ekran öğesi olur', () => {
+    const d = acilis({
+      ogeler: [
+        { tip: 'KullaniciMesaji', sira: 1, tur: 't-0', metin: 'yaz' },
+        { tip: 'TurSonu', sira: 5, tur: 't-0', neden: { tip: 'Normal' } },
+        {
+          tip: 'GeriAlma',
+          sira: 7,
+          tur: null,
+          geri_alinan_tur: 't-0',
+          sonuc: [{ yol: 'a.txt', eylem: { tip: 'Sil' } }],
+          yarim: false,
+        },
+        { tip: 'KalfaNotu', sira: 9, tur: null, metin: '[Kalfa] not' },
+      ],
+      daha_eski_var: false,
+    });
+    expect(tipler(d)).toEqual(['KullaniciMesaji', 'TurSonu', 'GeriAlma', 'KalfaNotu']);
+    expect(new Set(d.ogeler.map((o) => o.anahtar)).size).toBe(4);
+  });
+
+  it('TurGeriAlindi canlı bir geri alma öğesi ekler; önizleme ve silme öğe eklemez', () => {
+    let d = acilis();
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(
+        1,
+        {
+          tip: 'GeriAlmaPlani',
+          geri_alinan_tur: 't-0',
+          plan: { ogeler: [], veri_silindi: false },
+          muhur: 'm',
+        },
+        { tip: 'GeriAlmaVerisiSilindi', turlar: ['t-0'] },
+        { tip: 'TurGeriAlindi', geri_alinan_tur: 't-0', sonuc: [] },
+      ),
+    });
+    expect(tipler(d)).toEqual(['GeriAlma']);
+    const oge = d.ogeler[0] as Extract<EkranOgesi, { tip: 'GeriAlma' }>;
+    expect(oge.geri_alinan_tur).toBe('t-0');
+    expect(oge.yarim).toBe(false);
+  });
+});
+
+describe('tur özeti (aşama 3 tasarımı §5.5)', () => {
+  const ozet = {
+    tur: 't-0',
+    dosyalar: [
+      {
+        yol: 'a.txt',
+        islem: 'Degisti' as const,
+        eklenen: 1,
+        silinen: 1,
+        sonucu_bilinmiyor: false,
+        geri_alinabilir: { tip: 'Evet' as const },
+      },
+      {
+        yol: 'yeni.txt',
+        islem: 'Olusturuldu' as const,
+        eklenen: 1,
+        silinen: 0,
+        sonucu_bilinmiyor: false,
+        geri_alinabilir: { tip: 'Evet' as const },
+      },
+    ],
+    komutlar: [],
+    istekler: { sayi: 2, istem: 10, tamamlama: 5, dusunce: 0 },
+    guvenlik_uyarisi: 0,
+  };
+
+  it('özet olayı ekran öğesi olur; veri silinince değişen dosya geri alınamaz olur', () => {
+    let d = acilis();
+    d = uygula(d, { tip: 'Kanal', mesaj: paket(1, { tip: 'TurOzeti', ozet }) });
+    expect(tipler(d)).toEqual(['TurOzeti']);
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(2, { tip: 'GeriAlmaVerisiSilindi', turlar: ['t-0'] }),
+    });
+    const oge = d.ogeler[0] as Extract<EkranOgesi, { tip: 'TurOzeti' }>;
+    expect(oge.ozet.dosyalar.map((f) => f.geri_alinabilir)).toEqual([
+      { tip: 'Hayir', neden: 'VeriSilindi' },
+      { tip: 'Evet' },
+    ]);
+  });
+
+  it('geçmişteki özet ekran öğesi olur', () => {
+    const d = acilis({
+      ogeler: [{ tip: 'TurOzeti', sira: 3, tur: 't-0', ozet }],
+      daha_eski_var: false,
+    });
+    expect(tipler(d)).toEqual(['TurOzeti']);
+  });
+});
+
+describe('geri alma sayfası (aşama 3 tasarımı §5.6)', () => {
+  const plan = {
+    ogeler: [
+      {
+        yol: 'a.txt',
+        eylem: { tip: 'GeriYukle' as const, ozet: 'x' },
+        simdiki: 'y',
+        uyarilar: [],
+        diff: null,
+      },
+    ],
+    veri_silindi: false,
+  };
+  const ozet = {
+    tur: 't-0',
+    dosyalar: [],
+    komutlar: [],
+    istekler: { sayi: 1, istem: 1, tamamlama: 1, dusunce: 0 },
+    guvenlik_uyarisi: 0,
+  };
+
+  it('plan sayfayı açar; yeni plan eskisinin yerine geçer; kapatınca kapanır', () => {
+    let d = acilis();
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'GeriAlmaPlani', geri_alinan_tur: 't-0', plan, muhur: 'm1' }),
+    });
+    expect(d.geri_alma).toEqual({ tur: 't-0', plan, muhur: 'm1' });
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(2, { tip: 'GeriAlmaPlani', geri_alinan_tur: 't-0', plan, muhur: 'm2' }),
+    });
+    expect(d.geri_alma?.muhur).toBe('m2');
+    d = uygula(d, { tip: 'GeriAlmaKapandi' });
+    expect(d.geri_alma).toBeNull();
+  });
+
+  it('TurGeriAlindi sayfayı kapatır ve turun özetini "geri alındı" işaretler', () => {
+    let d = acilis();
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(
+        1,
+        { tip: 'TurOzeti', ozet },
+        { tip: 'GeriAlmaPlani', geri_alinan_tur: 't-0', plan, muhur: 'm' },
+      ),
+    });
+    const once = d.ogeler[0] as Extract<EkranOgesi, { tip: 'TurOzeti' }>;
+    expect(once.geri_alindi).toBe(false);
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(2, { tip: 'TurGeriAlindi', geri_alinan_tur: 't-0', sonuc: [] }),
+    });
+    expect(d.geri_alma).toBeNull();
+    const sonra = d.ogeler[0] as Extract<EkranOgesi, { tip: 'TurOzeti' }>;
+    expect(sonra.geri_alindi).toBe(true);
+  });
+
+  it('geçmişten açılışta geri alınmış turun özeti işaretlidir; yarım geri alma işaretlemez', () => {
+    const d = acilis({
+      ogeler: [
+        { tip: 'TurOzeti', sira: 3, tur: 't-0', ozet },
+        { tip: 'TurOzeti', sira: 6, tur: 't-1', ozet: { ...ozet, tur: 't-1' } },
+        { tip: 'GeriAlma', sira: 8, tur: null, geri_alinan_tur: 't-0', sonuc: [], yarim: false },
+        { tip: 'GeriAlma', sira: 9, tur: null, geri_alinan_tur: 't-1', sonuc: [], yarim: true },
+      ],
+      daha_eski_var: false,
+    });
+    const ozetler = d.ogeler.filter(
+      (o): o is Extract<EkranOgesi, { tip: 'TurOzeti' }> => o.tip === 'TurOzeti',
+    );
+    expect(ozetler.map((o) => o.geri_alindi)).toEqual([true, false]);
+    expect(d.geri_alma).toBeNull();
+  });
+});

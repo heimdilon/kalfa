@@ -323,6 +323,7 @@ fn eksik_arac_yanitlari_tamamlanir() {
                 cagri: c1,
                 model_cagri_id: "m1".into(),
                 arac: "yaz".into(),
+                yedekler: Vec::new(),
             },
         ),
         z(
@@ -332,6 +333,7 @@ fn eksik_arac_yanitlari_tamamlanir() {
                 cagri: c3,
                 model_cagri_id: "m3".into(),
                 arac: "oku".into(),
+                yedekler: Vec::new(),
             },
         ),
         z(
@@ -377,4 +379,35 @@ fn bos_ve_acilissiz_kayit() {
         kurtar(&[z(o, 1, KayitOgesi::KipDegisti { kip: Kip::Siki })]),
         Err(KurtarmaHatasi::AcilisYok)
     );
+}
+
+/// Aşama 3 tasarımı §5.10: kayıt, kilit altında silinir; başka yerde açık
+/// kayıt silinmez; `once` başarısızsa kayıt kalır.
+#[test]
+fn kayit_kilit_altinda_silinir() {
+    let d = tempfile::tempdir().unwrap();
+    let yol = d.path().join("oturum.jsonl");
+    let kilit = kalfa_core::kayit::kilit_yolu(&yol);
+    let acik = OturumKaydi::olustur(&yol).unwrap();
+    let hata = OturumKaydi::sil(&yol, || panic!("kilitsiz çalışmamalı")).unwrap_err();
+    assert_eq!(hata.kind(), std::io::ErrorKind::ResourceBusy);
+    assert!(yol.exists());
+    drop(acik);
+
+    let hata =
+        OturumKaydi::sil(&yol, || Err(std::io::Error::other("veri silinemedi"))).unwrap_err();
+    assert_eq!(hata.to_string(), "veri silinemedi");
+    assert!(yol.exists(), "önceki adım başarısızsa kayıt kalır");
+
+    let mut calisti = false;
+    OturumKaydi::sil(&yol, || {
+        calisti = true;
+        Ok(())
+    })
+    .unwrap();
+    assert!(calisti);
+    assert!(!yol.exists());
+    assert!(!kilit.exists(), "kilit dosyası da silinir");
+    let hata = OturumKaydi::sil(&yol, || Ok(())).unwrap_err();
+    assert_eq!(hata.kind(), std::io::ErrorKind::NotFound);
 }

@@ -11,6 +11,7 @@ import type {
   OturumAcilisi,
   OturumId,
   OturumSatiri,
+  TurId,
   UygulamaDurumu,
   YalitimCalismaAlani,
   YalitimDurumu,
@@ -55,6 +56,20 @@ export const izinKipiDegistir = (oturum: OturumId, kip: Kip) =>
   invoke<Kip>('izin_kipi_degistir', { oturum, kip });
 
 export const oturumuKapat = (oturum: OturumId) => invoke<void>('oturumu_kapat', { oturum });
+
+/** Turun geri alma planını ister; plan `GeriAlmaPlani` olayıyla gelir (aşama 3 tasarımı §5.6). */
+export const geriAlmaOnizle = (oturum: OturumId, tur: TurId) =>
+  invoke<void>('geri_alma_onizle', { oturum, tur });
+
+/** Önizlenen planı mührüyle yürütür; sonuç `TurGeriAlindi` olayıyla gelir. */
+export const turuGeriAl = (oturum: OturumId, tur: TurId, muhur: string) =>
+  invoke<void>('turu_geri_al', { oturum, tur, muhur });
+
+/** Rust yerel pencerede sorar; vazgeçilirse `false` (aşama 3 tasarımı §5.10). */
+export const oturumuSil = (oturum: OturumId) => invoke<boolean>('oturumu_sil', { oturum });
+
+/** Bütün oturumların geri alma verisinin toplam boyutu (bayt). */
+export const geriAlmaVerisiBoyutu = () => invoke<number>('geri_alma_verisi_boyutu');
 
 export const baglantiAc = (adres: string) => invoke<void>('baglanti_ac', { adres });
 

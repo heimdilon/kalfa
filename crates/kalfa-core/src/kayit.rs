@@ -22,9 +22,13 @@ use kalfa_evren::KrediGozlemi;
 use kalfa_evren::tipler::ChatMessage;
 use serde::{Deserialize, Serialize};
 
+use crate::arac::DosyaDegisiklikleri;
+use crate::geri_alma::{DosyaYedegi, GeriAlmaSonucu};
 use crate::izin::Kip;
-use crate::kimlik::CagriId;
+use crate::kimlik::{CagriId, TurId};
+use crate::muhur::OnayMuhru;
 use crate::protokol::{AracDurumu, BitisNedeni, Komut, Zarf};
+use crate::tur_ozeti::TurOzeti;
 
 /// Komut kaydının wire türü. Geçmişteki şart kabul komutu yalnızca kayıt
 /// uyumluluğu için okunur; bu kayıt EVREN'in kabulü onayladığını göstermez.
@@ -71,6 +75,11 @@ pub enum KayitOgesi {
         cagri: CagriId,
         model_cagri_id: String,
         arac: String,
+        /// Yazan dosya aracının dosya başına geri alma bilgisi (aşama 3
+        /// tasarımı §5.3). Önceki hâller bu kayıt yazılmadan önce depoya
+        /// ulaşır.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        yedekler: Vec<DosyaYedegi>,
     },
     AracBitti {
         cagri: CagriId,
@@ -107,6 +116,37 @@ pub enum KayitOgesi {
     /// Oturum, kullanıcının şart penceresinde kabul ettiği sürümle sürdü.
     SartKabulEdildi {
         surum: u32,
+    },
+    /// Geri alma yazmaya başlamadan önce, kalıcı (aşama 3 tasarımı §5.6).
+    /// `GeriAlindi`'si olmayan kayıt "geri alma yarım kaldı" demektir.
+    GeriAlmaBasladi {
+        geri_alinan_tur: TurId,
+        muhur: OnayMuhru,
+    },
+    GeriAlindi {
+        geri_alinan_tur: TurId,
+        sonuc: Vec<GeriAlmaSonucu>,
+    },
+    /// Geri almanın modele bildirimi (§5.9). Bağlama kullanıcı rolünde girer
+    /// ama kullanıcının mesajı değildir: başlığı, oturum listesindeki durumu
+    /// ve kullanıcı balonunu etkilemez.
+    KalfaNotu {
+        metin: String,
+    },
+    /// Depo sınırı yüzünden bu turların önceki hâlleri silindi (§5.2).
+    GeriAlmaVerisiSilindi {
+        turlar: Vec<TurId>,
+    },
+    /// Kabuk çağrısının çalışırken değişen dosyaları (aşama 3 tasarımı
+    /// §5.4); `AracBitti`'den sonra. Geri alınmaz, listelenir.
+    KabukDegisiklikleri {
+        cagri: CagriId,
+        komut: String,
+        degisiklikler: DosyaDegisiklikleri,
+    },
+    /// Turun özeti (§5.5); `TurBitti`'den sonra, aynı tur kimliğiyle.
+    TurOzeti {
+        ozet: TurOzeti,
     },
 }
 
@@ -204,6 +244,25 @@ impl OturumKaydi {
     pub fn yaz_kalici(&mut self, zarf: &Zarf<KayitOgesi>) -> io::Result<()> {
         self.yaz(zarf)?;
         self.hedef.kalici_yap()
+    }
+
+    /// Kaydı ve kilit dosyasını siler (aşama 3 tasarımı §5.10). Kilit
+    /// alınamazsa (kayıt başka bir yerde açık) `ResourceBusy` döner ve hiçbir
+    /// şey silinmez. Kilit altında önce `once` çalışır (oturumun geri alma
+    /// verisi); o başarısız olursa kayıt kalır ve silme yinelenebilir.
+    pub fn sil(yol: &Path, once: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+        fs::metadata(yol)?;
+        let kilitli = kilitle(yol)?;
+        once()?;
+        fs::remove_file(&kilitli.yol)?;
+        // Kilit tutulurken silinir: arada başka bir yazıcı kilidi alamaz.
+        let kilit = sidecar_yolu(&kilitli.yol);
+        let sonuc = fs::remove_file(&kilit);
+        drop(kilitli);
+        match sonuc {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
     }
 
     /// Kaydı okur. Çökme sırasında yarım yazılmış **son** satır atlanır;

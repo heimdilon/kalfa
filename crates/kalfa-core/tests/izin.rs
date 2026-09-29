@@ -440,6 +440,19 @@ fn core_hookspath_hedefi_korunur() {
     assert_eq!(s.sinifla(&y(".HUSKY/pre-push")), YolSinifi::Korumali);
     assert_eq!(s.sinifla(&y("src/husky.rs")), YolSinifi::Normal);
 
+    // Toplu sınıflandırıcı korumaları bir kez çözer; sonucu aynıdır.
+    let toplu = s.toplu();
+    for yol in [
+        ".husky/pre-commit",
+        ".git/config",
+        "alt/.GIT/hooks/x",
+        ".envrc",
+        ".env",
+        "src/husky.rs",
+    ] {
+        assert_eq!(toplu.sinifla(&y(yol)), s.sinifla(&y(yol)), "{yol}");
+    }
+
     // Yalıtımın yerleşiminde de mutlak ve gerçek yazımıyla bulunur.
     let kok = d.path().canonicalize().unwrap();
     let yerlesim = git_koruma::git_yerlesimi(d.path());

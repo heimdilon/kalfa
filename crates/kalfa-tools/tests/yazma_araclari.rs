@@ -338,3 +338,116 @@ fn kisa_ad_ile_git_dizinine_yazilamaz() {
         .unwrap();
     assert!(d.path().join(".git/description").exists());
 }
+
+// Aşama 3a: hazırlık geri alma için önceki içeriği ve sonraki özeti taşır
+// (aşama 3 tasarımı §5.3).
+
+#[tokio::test]
+async fn yazma_hazirligi_onceki_icerigi_ve_sonraki_ozeti_tasir() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("x.txt"), "eski\n").unwrap();
+    let yaz = DosyaYaz::yeni(a);
+    let arg = json!({"yol": "x.txt", "icerik": "yeni\n"});
+    let h = yaz.hazirla(&arg).await.unwrap();
+    let hedef = &h.yazilan[0];
+    assert_eq!(hedef.onceki_icerik.as_deref(), Some(&b"eski\n"[..]));
+    assert_eq!(hedef.onceki_bayt, 5);
+    assert!(!hedef.buyuk);
+    assert_eq!(
+        hedef.sonraki_ozet.as_deref(),
+        Some(ozet_hex(b"yeni\n").as_str())
+    );
+    assert!(hedef.olusacak_dizinler.is_empty());
+    assert!(hedef.geri_alinabilir());
+}
+
+#[tokio::test]
+async fn yeni_dosyanin_hazirligi_olusacak_dizinleri_bildirir() {
+    let (d, a) = alan();
+    let yaz = DosyaYaz::yeni(a);
+    let arg = json!({"yol": "a/b/c.txt", "icerik": "x"});
+    let h = yaz.hazirla(&arg).await.unwrap();
+    let hedef = &h.yazilan[0];
+    let dizinler: Vec<&str> = hedef.olusacak_dizinler.iter().map(|y| y.as_str()).collect();
+    assert_eq!(dizinler, ["a", "a/b"]);
+    assert_eq!(hedef.onceki_icerik, None);
+    assert_eq!(hedef.onceki_ozet, None);
+    assert!(
+        hedef.geri_alinabilir(),
+        "yok olan dosya silinerek geri alınır"
+    );
+
+    std::fs::create_dir(d.path().join("a")).unwrap();
+    let h = yaz.hazirla(&arg).await.unwrap();
+    let dizinler: Vec<&str> = h.yazilan[0]
+        .olusacak_dizinler
+        .iter()
+        .map(|y| y.as_str())
+        .collect();
+    assert_eq!(dizinler, ["a/b"]);
+}
+
+#[tokio::test]
+async fn duzenleme_hazirligi_sonraki_ozeti_tasir() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("k.rs"), "fn a() {}\n").unwrap();
+    let duzenle = DosyaDuzenle::yeni(a);
+    let arg = json!({"yol": "k.rs", "eski_metin": "a()", "yeni_metin": "b()"});
+    let h = duzenle.hazirla(&arg).await.unwrap();
+    let hedef = &h.yazilan[0];
+    assert_eq!(hedef.onceki_icerik.as_deref(), Some(&b"fn a() {}\n"[..]));
+    assert_eq!(
+        hedef.sonraki_ozet.as_deref(),
+        Some(ozet_hex(b"fn b() {}\n").as_str())
+    );
+    assert!(hedef.olusacak_dizinler.is_empty());
+    calistir(&duzenle, &arg, &h).await.unwrap();
+    assert_eq!(
+        ozet_hex(oku(&d, "k.rs").as_bytes()),
+        hedef.sonraki_ozet.clone().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn buyuk_dosyanin_onceki_icerigi_tasinmaz() {
+    let (d, a) = alan();
+    let boyut = kalfa_core::geri_alma::DOSYA_SINIRI as usize + 1;
+    let veri = vec![b'a'; boyut];
+    std::fs::write(d.path().join("buyuk.txt"), &veri).unwrap();
+    let yaz = DosyaYaz::yeni(a.clone());
+    let h = yaz
+        .hazirla(&json!({"yol": "buyuk.txt", "icerik": "kisa"}))
+        .await
+        .unwrap();
+    let hedef = &h.yazilan[0];
+    assert!(hedef.buyuk);
+    assert_eq!(hedef.onceki_icerik, None);
+    assert_eq!(hedef.onceki_ozet.as_deref(), Some(ozet_hex(&veri).as_str()));
+    assert_eq!(hedef.onceki_bayt, boyut as u64);
+    assert!(!hedef.geri_alinabilir());
+
+    // Sınırdaki dosya saklanır.
+    let tam = vec![b'b'; kalfa_core::geri_alma::DOSYA_SINIRI as usize];
+    std::fs::write(d.path().join("tam.txt"), &tam).unwrap();
+    let h = yaz
+        .hazirla(&json!({"yol": "tam.txt", "icerik": "kisa"}))
+        .await
+        .unwrap();
+    assert!(!h.yazilan[0].buyuk);
+    assert_eq!(
+        h.yazilan[0].onceki_icerik.as_deref().map(<[u8]>::len),
+        Some(tam.len())
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn baglantili_ust_dizinde_olusacak_dizin_hesaplanmaz() {
+    let (d, a) = alan();
+    let dis = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(dis.path(), d.path().join("bag")).unwrap();
+    assert!(
+        a.olusacak_dizinler(&kalfa_core::yol::CalismaYolu::coz("bag/yeni/x.txt").unwrap())
+            .is_err()
+    );
+}

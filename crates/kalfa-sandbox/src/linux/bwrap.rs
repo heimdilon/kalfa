@@ -167,6 +167,7 @@ mod tests {
                 dizinler: vec!["/tmp/alan/gizli".into()],
                 git: Vec::new(),
                 yapilandirma: Vec::new(),
+                goruntu: Default::default(),
             },
             korumali: vec![
                 Korumali {

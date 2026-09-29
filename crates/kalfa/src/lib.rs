@@ -130,6 +130,11 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
         &platform_yerel_veri,
         std::env::var_os(VERI_DIZINI_DEGISKENI),
     );
+    let geri_alma = kalfa_uygulama::dizin::geri_alma_dizini(
+        &veri,
+        &platform_yerel_veri,
+        std::env::var_os(VERI_DIZINI_DEGISKENI),
+    );
     let kalici: Option<Box<dyn AnahtarDeposu>> =
         if std::env::var(ANAHTAR_DEPOSU_DEGISKENI).as_deref() == Ok("bellek") {
             None
@@ -154,6 +159,7 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
         aktarim: AktarimAyarlari::default(),
         ev_dizini,
         yalitim_dizini: yalitim,
+        geri_alma_dizini: geri_alma,
         // Kurulu sürümde Program Files'taki `araclar\`; e2e derlemesi
         // `KALFA_ARAC_ZINCIRI` ile başka bir kök verebilir.
         kalfa_araclari: std::env::current_exe()

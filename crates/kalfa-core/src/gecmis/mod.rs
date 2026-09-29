@@ -14,10 +14,12 @@ use kalfa_evren::KrediGozlemi;
 use kalfa_evren::tipler::Role;
 use serde::{Deserialize, Serialize};
 
+use crate::geri_alma::GeriAlmaSonucu;
 use crate::izin::Kip;
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, TurId};
 use crate::protokol::{AracDurumu, BitisNedeni, Zarf};
+use crate::tur_ozeti::{TurOzeti, veri_silindi_isle};
 
 /// Ekranda gösterilen bir geçmiş öğesi.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -56,6 +58,29 @@ pub enum GorunumOgesi {
         tur: Option<TurId>,
         mesaj: String,
     },
+    /// Bir turun geri alınması (aşama 3 tasarımı §5.6). `tur` kaydın kendi
+    /// turudur (geri alma tur dışında yapılır); geri alınan tur
+    /// `geri_alinan_tur`'dadır. `yarim`: `GeriAlmaBasladi` var, `GeriAlindi`
+    /// yok.
+    GeriAlma {
+        sira: u64,
+        tur: Option<TurId>,
+        geri_alinan_tur: TurId,
+        sonuc: Vec<GeriAlmaSonucu>,
+        yarim: bool,
+    },
+    /// Geri almanın modele bildirimi; kullanıcı balonu değildir (§5.9).
+    KalfaNotu {
+        sira: u64,
+        tur: Option<TurId>,
+        metin: String,
+    },
+    /// Turun özeti (§5.5); turun son öğesidir.
+    TurOzeti {
+        sira: u64,
+        tur: Option<TurId>,
+        ozet: TurOzeti,
+    },
 }
 
 impl GorunumOgesi {
@@ -65,7 +90,10 @@ impl GorunumOgesi {
             | Self::Yanit { sira, .. }
             | Self::AracCagrisi { sira, .. }
             | Self::TurSonu { sira, .. }
-            | Self::GuvenlikUyarisi { sira, .. } => *sira,
+            | Self::GuvenlikUyarisi { sira, .. }
+            | Self::GeriAlma { sira, .. }
+            | Self::KalfaNotu { sira, .. }
+            | Self::TurOzeti { sira, .. } => *sira,
         }
     }
 
@@ -75,7 +103,10 @@ impl GorunumOgesi {
             | Self::Yanit { tur, .. }
             | Self::AracCagrisi { tur, .. }
             | Self::TurSonu { tur, .. }
-            | Self::GuvenlikUyarisi { tur, .. } => *tur,
+            | Self::GuvenlikUyarisi { tur, .. }
+            | Self::GeriAlma { tur, .. }
+            | Self::KalfaNotu { tur, .. }
+            | Self::TurOzeti { tur, .. } => *tur,
         }
     }
 }
@@ -169,6 +200,61 @@ pub fn gorunum_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GorunumOgesi> {
                 tur: z.tur,
                 neden: neden.clone(),
             }),
+            KayitOgesi::GeriAlmaBasladi {
+                geri_alinan_tur, ..
+            } => ogeler.push(GorunumOgesi::GeriAlma {
+                sira: z.sira,
+                tur: z.tur,
+                geri_alinan_tur: *geri_alinan_tur,
+                sonuc: Vec::new(),
+                yarim: true,
+            }),
+            KayitOgesi::GeriAlindi {
+                geri_alinan_tur,
+                sonuc: bitis,
+            } => {
+                let yarim_kalan = ogeler.iter_mut().rev().find_map(|o| match o {
+                    GorunumOgesi::GeriAlma {
+                        geri_alinan_tur: t,
+                        sonuc,
+                        yarim,
+                        ..
+                    } if t == geri_alinan_tur && *yarim => Some((sonuc, yarim)),
+                    _ => None,
+                });
+                match yarim_kalan {
+                    Some((sonuc, yarim)) => {
+                        *sonuc = bitis.clone();
+                        *yarim = false;
+                    }
+                    None => ogeler.push(GorunumOgesi::GeriAlma {
+                        sira: z.sira,
+                        tur: z.tur,
+                        geri_alinan_tur: *geri_alinan_tur,
+                        sonuc: bitis.clone(),
+                        yarim: false,
+                    }),
+                }
+            }
+            KayitOgesi::KalfaNotu { metin } => ogeler.push(GorunumOgesi::KalfaNotu {
+                sira: z.sira,
+                tur: z.tur,
+                metin: metin.clone(),
+            }),
+            KayitOgesi::TurOzeti { ozet } => ogeler.push(GorunumOgesi::TurOzeti {
+                sira: z.sira,
+                tur: z.tur,
+                ozet: ozet.clone(),
+            }),
+            KayitOgesi::GeriAlmaVerisiSilindi { turlar } => {
+                for oge in &mut ogeler {
+                    if let GorunumOgesi::TurOzeti { ozet, .. } = oge
+                        && turlar.contains(&ozet.tur)
+                    {
+                        veri_silindi_isle(&mut ozet.dosyalar);
+                    }
+                }
+            }
             _ => {}
         }
     }

@@ -112,6 +112,7 @@ fn arac_cagrilarinin_durumlari() {
             cagri: c1,
             model_cagri_id: "m1".into(),
             arac: "yaz".into(),
+            yedekler: Vec::new(),
         },
     );
     k.mesaj(tur, ChatMessage::tool("m1", "yazıldı"));
@@ -141,6 +142,7 @@ fn arac_cagrilarinin_durumlari() {
             cagri: c3,
             model_cagri_id: "m3".into(),
             arac: "yaz".into(),
+            yedekler: Vec::new(),
         },
     );
     let araclar: Vec<(String, Option<AracDurumu>, Option<String>, u64)> = gorunum_uret(&k.kayitlar)
@@ -232,12 +234,16 @@ async fn gercek_oturum_kaydindan_gorunum() {
         o,
         GorunumOgesi::Yanit { metin: Some(m), .. } if m == "tamam"
     )));
+    // Tur özeti (aşama 3 tasarımı §5.5) turun sonundan hemen sonra gelir.
     assert!(matches!(
-        ogeler.last(),
-        Some(GorunumOgesi::TurSonu {
-            neden: BitisNedeni::Normal,
-            ..
-        })
+        &ogeler[ogeler.len() - 2..],
+        [
+            GorunumOgesi::TurSonu {
+                neden: BitisNedeni::Normal,
+                ..
+            },
+            GorunumOgesi::TurOzeti { .. }
+        ]
     ));
 }
 

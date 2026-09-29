@@ -20,8 +20,10 @@
     kabukOzeti,
     sonucGovdesi,
   } from './bicim';
+  import { geriAlmaSonucMetni } from './geriAlma';
   import OnayKarti from './OnayKarti.svelte';
   import TerminalGorunumu from './TerminalGorunumu.svelte';
+  import TurOzeti from './TurOzeti.svelte';
 
   let { oge, durum, oturum }: { oge: EkranOgesi; durum: AnaDurum; oturum: OturumId } = $props();
 
@@ -108,6 +110,22 @@
   <div class={['tur-sonu', `n-${oge.neden.tip}`]}>
     <span>{turSonu(oge.neden)}</span>
   </div>
+{:else if oge.tip === 'GeriAlma'}
+  <div class="bilgi-satiri">
+    <span>
+      {oge.yarim ? m('geri_alma.yarim') : geriAlmaSonucMetni(oge.sonuc)}
+    </span>
+  </div>
+{:else if oge.tip === 'TurOzeti'}
+  <TurOzeti
+    ozet={oge.ozet}
+    geriAlindi={oge.geri_alindi}
+    ongeri={() => durum.geriAlmaOnizle(oturum, oge.ozet.tur)}
+  />
+{:else if oge.tip === 'KalfaNotu'}
+  <div class="bilgi-satiri">
+    <span>{m('geri_alma.not', { metin: oge.metin })}</span>
+  </div>
 {:else if oge.tip === 'AktarimDurdu'}
   <Card tone="danger" icon="triangle-alert" title={m('aktarim.baslik')}>
     {#snippet actions()}
@@ -149,5 +167,14 @@
   }
   .n-Hata {
     color: var(--status-danger);
+  }
+  /* Geri alma ve Kalfa notu. Tur sonu çizgisinden ayrı sınıftır: uçtan uca
+     testler tur sonlarını `.tur-sonu` ile sayar. */
+  .bilgi-satiri {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font: var(--type-meta);
+    color: var(--text-muted);
   }
 </style>

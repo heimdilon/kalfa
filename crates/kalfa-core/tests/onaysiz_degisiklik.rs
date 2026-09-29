@@ -213,3 +213,37 @@ async fn kurtarilan_oturumda_onaysiz_komut_varsayilir() {
     d.gonder(karar(&ogeler[0], true)).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
 }
+
+/// Aşama 3 tasarımı §5.4: onaysız çalışan kabuğun değiştirdiği dosyalar tam
+/// biliniyorsa sonraki kabuk onayında listelenir; "onaysız bir komut
+/// çalıştı" notu gerekmez. Bilinmiyorsa not kalır.
+#[tokio::test]
+async fn onaysiz_kabugun_degistirdigi_dosyalar_sonraki_kabuk_onayinda_listelenir() {
+    let bilinen = Arc::new(SahteArac::kabuk("kabuk").degistirdigi(&["build.rs", "src/a.rs"]));
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac("kabuk", json!({"yol": "."})),
+        SahteYanit::arac("kabuk", json!({"yol": ".", "ag": true})),
+        SahteYanit::metin("bitti"),
+    ]);
+    let mut d = surucu(&s, vec![bilinen.clone()], Kip::Serbest);
+    d.gonder(mesaj()).await;
+    let ogeler = onay_bekle(&mut d).await;
+    assert_eq!(bilinen.cagri_sayisi(), 1);
+    assert_eq!(
+        ogeler[0].onaysiz_degisiklikler,
+        Some(OnaysizDegisiklikler {
+            yollar: vec!["build.rs".into(), "src/a.rs".into()],
+            komut_calisti: false,
+            derleme_dosyalari: vec!["build.rs".into()],
+        })
+    );
+    d.gonder(karar(&ogeler[0], true)).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    // Kayıtta ve tur özetinde de görünür.
+    let Olay::TurOzeti { ozet } = d.bekle(|o| matches!(o, Olay::TurOzeti { .. })).await.yuk else {
+        unreachable!()
+    };
+    let ilk = ozet.komutlar[0].degisiklikler.as_ref().unwrap();
+    assert_eq!(ilk.toplam, 2);
+    assert!(ilk.tam_mi());
+}

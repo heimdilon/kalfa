@@ -2,9 +2,11 @@
   Onay sayfası (1c tasarımı §8.2, §9.5; tasarım sistemindeki ApprovalSheet).
   Değişiklik listesi, seçilenin diff'i, "ne" ve "nerede", uyarılar, ret
   gerekçesi ve üç karar. Seçilmeyen çağrılar gerekçeyle reddedilir. Odak
-  sayfanın içinde kalır; Escape karar vermeden kapatır. "Bu değişiklikler geri
-  alınabilir" cümlesi geri alma gelene kadar yazılmaz. Kabuk çağrısında diff
-  yerine komut, dizin, ağ ve yalıtım gösterilir (aşama 2 tasarımı §10.2).
+  sayfanın içinde kalır; Escape karar vermeden kapatır. Seçilen öğelerin hepsi
+  geri alınabilir dosya değişikliğiyse başlıkta "Bu değişiklikler geri
+  alınabilir" yazar; bilgiyi çekirdek verir (aşama 3 tasarımı §5.11). Kabuk
+  çağrısında diff yerine komut, dizin, ağ ve yalıtım gösterilir (aşama 2
+  tasarımı §10.2).
 -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
@@ -21,6 +23,7 @@
   import Textarea from '../bilesenler/Textarea.svelte';
   import { m } from '../dil/tr';
   import type { CagriId, OnayGirdisi, OnayOgesi } from '../ipc/tipler';
+  import { geriAlinabilirlikMetni } from './geriAlma';
   import { kararlariUret, kisaAd, riskliMi, type OnaySecimi } from './onay';
 
   let {
@@ -47,6 +50,13 @@
   const aktifOge = $derived(ogeler[aktif] ?? ogeler[0]);
   const parcalar = $derived(aktifOge?.diff ? diffCozumle(aktifOge.diff) : []);
   const tumu = $derived(secilenler.size === ogeler.length);
+  /** Seçilen öğelerin hepsi geri alınabilir dosya değişikliği. */
+  const hepsiGeriAlinabilir = $derived(
+    secilenler.size > 0 &&
+      ogeler
+        .filter((o) => secilenler.has(o.cagri))
+        .every((o) => o.geri_alinabilir?.tip === 'Evet'),
+  );
 
   onMount(() => {
     const onceki = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -111,6 +121,11 @@
       <div class="baslik-blogu">
         <h2 id="{kimlik}-baslik">{m('onay.sayfa.baslik', { sayi: ogeler.length })}</h2>
         <p id="{kimlik}-alt">{m('onay.sayfa.alt')}</p>
+        {#if hepsiGeriAlinabilir}
+          <p class="geri-alinabilir">
+            <Icon name="rotate-ccw" size={14} />{m('onay.sayfa.hepsi_geri_alinabilir')}
+          </p>
+        {/if}
       </div>
       <IconButton icon="x" label={m('genel.kapat')} onclick={onkapat} />
     </header>
@@ -222,6 +237,12 @@
           </dd>
         </div>
       {/if}
+      {#if aktifOge.geri_alinabilir}
+        <div class={['bilgi', { uyari: aktifOge.geri_alinabilir.tip === 'Hayir' }]}>
+          <dt><Icon name="rotate-ccw" size={16} />{m('onay.sayfa.geri_alinabilir')}</dt>
+          <dd>{geriAlinabilirlikMetni(aktifOge.geri_alinabilir)}</dd>
+        </div>
+      {/if}
       {#if aktifOge.uyarilar.length > 0}
         <div class="bilgi uyari">
           <dt><Icon name="triangle-alert" size={16} />{m('onay.sayfa.uyarilar')}</dt>
@@ -329,6 +350,13 @@
     margin: 6px 0 0;
     font: var(--type-subtitle);
     color: var(--text-muted);
+  }
+  .baslik-blogu .geri-alinabilir {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: var(--type-small);
+    color: var(--status-ok);
   }
   .izgara {
     display: grid;

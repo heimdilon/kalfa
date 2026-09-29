@@ -33,6 +33,8 @@ pub struct Bilesenler {
     pub ev_dizini: PathBuf,
     /// Çalışma alanına özel dizinlerin kökü (`dizin::yalitim_dizini`).
     pub yalitim_dizini: PathBuf,
+    /// Oturumların geri alma verisinin kökü (`dizin::geri_alma_dizini`).
+    pub geri_alma_dizini: PathBuf,
     /// Kurulu Kalfa'nın getirdiği Python ve Node (`dizin::kalfa_araclari`).
     pub kalfa_araclari: Vec<PathBuf>,
     pub yalitim: YalitimKaynagi,
@@ -54,6 +56,7 @@ pub struct Uygulama {
     pub(crate) aktarim: AktarimAyarlari,
     pub(crate) veri_dizini: PathBuf,
     pub(crate) ev_dizini: PathBuf,
+    pub(crate) geri_alma_dizini: PathBuf,
     /// Kabuk komutlarını başlatan arka uç (aşama 2 tasarımı §3.2).
     pub(crate) yalitici: Arc<dyn Yalitici>,
     pub(crate) yalitim_ayarlari: Arc<YalitimAyarlari>,
@@ -112,6 +115,7 @@ impl Uygulama {
             alanlar: Arc::new(CalismaAlaniKaydi::yeni(&b.veri_dizini)),
             veri_dizini: b.veri_dizini,
             ev_dizini: b.ev_dizini,
+            geri_alma_dizini: b.geri_alma_dizini,
             ic: Mutex::new(IcDurum {
                 baglanti: BaglantiDurumu::Var,
                 son_oturum: None,

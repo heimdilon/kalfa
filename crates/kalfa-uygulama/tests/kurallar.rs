@@ -10,7 +10,8 @@ use kalfa_core::test_destek::SahteSaglayici;
 use kalfa_evren::EvrenError;
 use kalfa_uygulama::anahtar::{AnahtarDeposu, AnahtarKasasi, BellekDeposu, DepoHatasi};
 use kalfa_uygulama::dizin::{
-    kalfa_araclari, kayit_yolu, oturum_dizini, veri_dizini, yalitim_dizini,
+    geri_alma_dizini, kalfa_araclari, kayit_yolu, oturum_dizini, oturum_geri_alma_dizini,
+    veri_dizini, yalitim_dizini,
 };
 use kalfa_uygulama::evren::DegisirSaglayici;
 use kalfa_uygulama::guvenlik::{acilabilir_adres, gezinme_izinli, yukseltme_mi};
@@ -150,7 +151,22 @@ fn veri_dizini_platforma_gore_ve_ortamla_degisir() {
         yalitim_dizini(Path::new("v"), yerel, Some(OsString::from("v"))),
         Path::new("v").join("yalitim")
     );
+    // Geri alma verisi de (aşama 3 tasarımı §5.2).
+    let geri = geri_alma_dizini(Path::new("v"), yerel, None);
+    if cfg!(windows) {
+        assert_eq!(geri, yerel.join("Kalfa").join("geri-alma"));
+    } else {
+        assert_eq!(geri, Path::new("v").join("geri-alma"));
+    }
+    assert_eq!(
+        geri_alma_dizini(Path::new("v"), yerel, Some(OsString::from("v"))),
+        Path::new("v").join("geri-alma")
+    );
     let oturum = OturumId::yeni();
+    assert_eq!(
+        oturum_geri_alma_dizini(&geri, oturum),
+        geri.join(oturum.to_string())
+    );
     assert_eq!(
         kayit_yolu(&oturum_dizini(Path::new("v")), oturum),
         Path::new("v")

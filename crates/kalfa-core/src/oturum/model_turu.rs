@@ -65,6 +65,7 @@ impl Oturum {
                             dusunce,
                         })
                         .await;
+                        self.tur_ozeti.kullanim(istem, tamamlama, dusunce);
                         self.yay(Olay::TokenKullanimi {
                             istem,
                             tamamlama,
@@ -155,6 +156,7 @@ impl Oturum {
             yonlendirilen_model: meta.yonlendirilen_model.clone(),
         };
         self.kaydet(oge).await;
+        self.tur_ozeti.istek();
         self.yay(Olay::IstekBilgisi {
             istek_id: meta.istek_id.clone(),
             yonlendirilen_model: meta.yonlendirilen_model.clone(),

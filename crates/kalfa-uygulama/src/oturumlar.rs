@@ -9,10 +9,12 @@ use std::time::Duration;
 use kalfa_core::aktarim::{KrediTutamaci, Paketleyici};
 use kalfa_core::arac::AracKayitDefteri;
 use kalfa_core::gecmis::{self, DurumOzeti, GecmisSayfasi};
+use kalfa_core::geri_alma::GeriYukleyici;
 use kalfa_core::izin::{Kip, Siniflandirici};
 use kalfa_core::kayit::OturumKaydi;
-use kalfa_core::kimlik::OturumId;
+use kalfa_core::kimlik::{OturumId, TurId};
 use kalfa_core::kurtarma::kurtar;
+use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::oturum::{self, OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci};
 use kalfa_core::protokol::{Komut, OnayKarari, OnayOgesi};
 use kalfa_tools::{CalismaAlani as AracAlani, KabukAraci, varsayilan_araclar};
@@ -54,8 +56,31 @@ pub(crate) struct KapananOturum {
     pub(crate) calisma_alani_kimligi: String,
 }
 
+/// Oturumu silmenin yerel onay metni (aşama 3 tasarımı §5.10).
+pub const OTURUM_SILME_METNI: &str = "Oturum, kaydı ve geri alma verisi kalıcı olarak silinecek. Bu oturumun turları artık geri alınamaz.";
+
 const ALAN_KALDIRILIYOR: &str =
     "Bu çalışma alanının yalıtım izinleri kaldırılıyor. İşlem bitince yeniden deneyin.";
+
+/// Dizindeki dosyaların toplam boyutu; bağlantılar izlenmez. Dizin yoksa 0.
+fn dizin_boyutu(dizin: &Path) -> io::Result<u64> {
+    let girdiler = match std::fs::read_dir(dizin) {
+        Ok(g) => g,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e),
+    };
+    let mut toplam = 0;
+    for girdi in girdiler {
+        let girdi = girdi?;
+        let tur = girdi.file_type()?;
+        if tur.is_dir() {
+            toplam += dizin_boyutu(&girdi.path())?;
+        } else if tur.is_file() {
+            toplam += girdi.metadata()?.len();
+        }
+    }
+    Ok(toplam)
+}
 
 fn ic_hata(e: impl std::fmt::Display) -> KomutHatasi {
     KomutHatasi::ic(e.to_string())
@@ -127,6 +152,10 @@ impl Uygulama {
         let yol = dizin::kayit_yolu(&self.oturum_dizini, oturum);
         let mut ayarlar = OturumAyarlari::yeni(model.clone(), &kok);
         ayarlar.kayit_yolu = Some(yol.clone());
+        ayarlar.geri_alma_dizini = Some(dizin::oturum_geri_alma_dizini(
+            &self.geri_alma_dizini,
+            oturum,
+        ));
         let (tutamac, alici) = oturum::baslat_kimlikle(oturum, ayarlar, baglam)?;
         let acik = AcikOturum {
             tutamac,
@@ -189,7 +218,11 @@ impl Uygulama {
             return self.acilis(oturum, yol, Some(kok), Some(neden)).await;
         }
         let baglam = self.baglam(&kok)?;
-        let ayarlar = OturumAyarlari::yeni(durum.model.clone(), &kok);
+        let mut ayarlar = OturumAyarlari::yeni(durum.model.clone(), &kok);
+        ayarlar.geri_alma_dizini = Some(dizin::oturum_geri_alma_dizini(
+            &self.geri_alma_dizini,
+            oturum,
+        ));
         let (tutamac, alici, kurtarilan) = match oturum::devam_et(&yol, ayarlar, baglam) {
             Ok(v) => v,
             Err(e) => {
@@ -439,6 +472,74 @@ impl Uygulama {
         Ok(kip)
     }
 
+    /// Turun geri alma önizlemesini ister; plan `GeriAlmaPlani` olayıyla gelir
+    /// (aşama 3 tasarımı §5.6). Arayüz yol göndermez, tur kimliği gönderir.
+    pub async fn geri_alma_onizle(&self, oturum: OturumId, tur: TurId) -> Result<(), KomutHatasi> {
+        self.tutamac(oturum)?
+            .gonder(Komut::GeriAlmaOnizle { tur })
+            .await?;
+        Ok(())
+    }
+
+    /// Önizlenen planı mührüyle yürütür. Onay webview'da verilir: geri alma
+    /// yalnızca Kalfa'nın o turdan önce gördüğü içeriği geri koyar (§5.6).
+    pub async fn turu_geri_al(
+        &self,
+        oturum: OturumId,
+        tur: TurId,
+        muhur: OnayMuhru,
+    ) -> Result<(), KomutHatasi> {
+        self.tutamac(oturum)?
+            .gonder(Komut::TuruGeriAl { tur, muhur })
+            .await?;
+        Ok(())
+    }
+
+    /// Oturumu, kaydını ve geri alma verisini siler (aşama 3 tasarımı §5.10).
+    /// Onay yerel penceredir: webview'a sızmış bir betik geri alma olanağını
+    /// tek komutla yok edememeli. Açık oturum önce kapatılır; kayıt başka bir
+    /// yerde açıksa silinmez. Vazgeçilirse `false`.
+    pub async fn oturumu_sil(&self, oturum: OturumId) -> Result<bool, KomutHatasi> {
+        let yol = dizin::kayit_yolu(&self.oturum_dizini, oturum);
+        std::fs::metadata(&yol).map_err(KomutHatasi::kayit)?;
+        let onay = self
+            .iletisim
+            .onayla("Oturumu sil", OTURUM_SILME_METNI, "Sil", "Vazgeç")
+            .await;
+        if !onay {
+            return Ok(false);
+        }
+        if self.acik_oturum(oturum).is_some() {
+            self.oturumu_kapat(oturum).await?;
+        }
+        self.kapanmayi_bekle(oturum).await;
+        let depo = dizin::oturum_geri_alma_dizini(&self.geri_alma_dizini, oturum);
+        tokio::task::spawn_blocking(move || {
+            OturumKaydi::sil(&yol, || match std::fs::remove_dir_all(&depo) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            })
+        })
+        .await
+        .map_err(ic_hata)?
+        .map_err(KomutHatasi::kayit)?;
+        let mut ic = self.ic();
+        if ic.son_oturum == Some(oturum) {
+            ic.son_oturum = None;
+        }
+        Ok(true)
+    }
+
+    /// Bütün oturumların geri alma verisinin toplam boyutu (bayt); Ayarlar
+    /// gösterir.
+    pub async fn geri_alma_verisi_boyutu(&self) -> Result<u64, KomutHatasi> {
+        let kok = self.geri_alma_dizini.clone();
+        tokio::task::spawn_blocking(move || dizin_boyutu(&kok))
+            .await
+            .map_err(ic_hata)?
+            .map_err(KomutHatasi::from)
+    }
+
     /// Oturumu kapatır: süren tur iptal edilir, olay alıcısı bırakılır, kayıt
     /// kilidi çözülür (1c tasarımı §5.1).
     pub async fn oturumu_kapat(&self, oturum: OturumId) -> Result<(), KomutHatasi> {
@@ -567,6 +668,7 @@ impl Uygulama {
             kimlik: CalismaAlaniKaydi::kimlik(kok),
         });
         let mut araclar = varsayilan_araclar(alan.clone());
+        let geri_yukleyici: Arc<dyn GeriYukleyici> = alan.clone();
         araclar.push(Arc::new(KabukAraci::yeni(
             alan,
             self.yalitici.clone(),
@@ -580,6 +682,7 @@ impl Uygulama {
             siniflandirici,
             kilitler: self.kilitler.al(kok)?,
             sart_kapisi: self.kapi.clone(),
+            geri_yukleyici: Some(geri_yukleyici),
         })
     }
 

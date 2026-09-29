@@ -30,6 +30,22 @@ pub fn yalitim_dizini(veri: &Path, yerel_veri: &Path, ortam: Option<OsString>) -
     veri.join("yalitim")
 }
 
+/// Geri alma verisinin (önceki hâllerin deposu) kökü (aşama 3 tasarımı §5.2);
+/// kural `yalitim_dizini`'ninkidir. Windows'ta `%LOCALAPPDATA%\Kalfa\geri-alma`:
+/// büyük veri dolaşan profile girmez. Linux'ta ve `KALFA_VERI_DIZINI`
+/// verildiğinde veri dizinindeki `geri-alma`.
+pub fn geri_alma_dizini(veri: &Path, yerel_veri: &Path, ortam: Option<OsString>) -> PathBuf {
+    if cfg!(windows) && ortam.filter(|d| !d.is_empty()).is_none() {
+        return yerel_veri.join("Kalfa").join("geri-alma");
+    }
+    veri.join("geri-alma")
+}
+
+/// Bir oturumun geri alma deposu.
+pub fn oturum_geri_alma_dizini(kok: &Path, oturum: OturumId) -> PathBuf {
+    kok.join(oturum.to_string())
+}
+
 /// Uçtan uca test derlemesinde Kalfa'nın araç zinciri kökünü (`araclar\`)
 /// verir. Üretim derlemesi bu değişkeni okumaz.
 pub const ARAC_ZINCIRI_DEGISKENI: &str = "KALFA_ARAC_ZINCIRI";

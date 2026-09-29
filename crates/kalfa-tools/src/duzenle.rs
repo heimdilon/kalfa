@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 use crate::arguman;
 use crate::calisma_alani::{CalismaAlani, ikili_mi};
 use crate::diff::birlesik_diff;
+use crate::yaz::onceki_icerigi_koy;
 
 pub struct DosyaDuzenle {
     alan: Arc<CalismaAlani>,
@@ -103,14 +104,18 @@ impl Arac for DosyaDuzenle {
         let yol = arguman::yol(a, "yol")?;
         let (veri, metin) = self.metin_oku(&yol)?;
         let d = uygula(&metin, a)?;
+        let aciklama = format!("`{yol}` dosyasında {} değişiklik yapmak istiyor.", d.adet);
+        let diff = birlesik_diff(yol.as_str(), &metin, &d.yeni);
+        let baglanti_sayisi = self.alan.baglanti_sayisi(&yol)?;
+        let mut hedef = YazmaHedefi {
+            sonraki_ozet: Some(ozet_hex(d.yeni.as_bytes())),
+            ..YazmaHedefi::yeni(yol, Some(ozet_hex(&veri)), baglanti_sayisi)
+        };
+        onceki_icerigi_koy(&mut hedef, veri);
         Ok(Hazirlik {
-            aciklama: format!("`{yol}` dosyasında {} değişiklik yapmak istiyor.", d.adet),
-            diff: Some(birlesik_diff(yol.as_str(), &metin, &d.yeni)),
-            yazilan: vec![YazmaHedefi {
-                onceki_ozet: Some(ozet_hex(&veri)),
-                baglanti_sayisi: self.alan.baglanti_sayisi(&yol)?,
-                yol,
-            }],
+            aciklama,
+            diff: Some(diff),
+            yazilan: vec![hedef],
             ..Default::default()
         })
     }
@@ -142,6 +147,7 @@ impl Arac for DosyaDuzenle {
             icerik: format!("`{yol}` dosyasında {} değişiklik yapıldı.", d.adet),
             kaynak: format!("dosya:{yol}"),
             guvenlik_uyarilari: Vec::new(),
+            degisiklikler: None,
         })
     }
 }

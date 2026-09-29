@@ -9,6 +9,7 @@
   import Ayarlar from './Ayarlar.svelte';
   import DurumCubugu from './DurumCubugu.svelte';
   import Konusma from './Konusma.svelte';
+  import GeriAlmaSayfasi from './GeriAlmaSayfasi.svelte';
   import Menu from './Menu.svelte';
   import OnaySayfasi from './OnaySayfasi.svelte';
   import OturumListesi from './OturumListesi.svelte';
@@ -26,6 +27,19 @@
       .get(acik.oturum)
       ?.ogeler.find((o) => o.tip === 'OnayIstegi' && o.islem === acik.islem);
     return oge?.tip === 'OnayIstegi' && oge.durum === 'Bekliyor' ? oge : null;
+  });
+
+  /** Seçili oturumun açık geri alma planı ve turun ilk mesajı. */
+  const geriAlma = $derived.by(() => {
+    const ekran = durum.aktif;
+    const onizleme = ekran?.geri_alma;
+    if (!ekran || !onizleme) return null;
+    const ilk = ekran.ogeler.find((o) => o.tip === 'KullaniciMesaji' && o.tur === onizleme.tur);
+    return {
+      oturum: ekran.oturum,
+      onizleme,
+      baslik: ilk?.tip === 'KullaniciMesaji' ? ilk.metin : null,
+    };
   });
 </script>
 
@@ -46,6 +60,16 @@
       ogeler={onayIstegi.ogeler}
       onkarar={(kararlar) => durum.onayla(oturum, islem, kararlar)}
       onkapat={() => durum.onayiKapat()}
+    />
+  {/if}
+  {#if geriAlma && !durum.onay}
+    {@const { oturum, onizleme, baslik } = geriAlma}
+    <GeriAlmaSayfasi
+      {onizleme}
+      {baslik}
+      gonderiliyor={durum.geriAliniyor}
+      ongeri={() => durum.turuGeriAl(oturum)}
+      onkapat={() => durum.geriAlmayiKapat(oturum)}
     />
   {/if}
   <div class="gizli-erisilebilir" aria-live="polite">{durum.duyuru}</div>

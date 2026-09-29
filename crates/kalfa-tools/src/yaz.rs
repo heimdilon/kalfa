@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, Hazirlik, YazmaHedefi};
+use kalfa_core::geri_alma::DOSYA_SINIRI;
 use kalfa_core::muhur::ozet_hex;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -11,6 +12,17 @@ use tokio_util::sync::CancellationToken;
 use crate::arguman;
 use crate::calisma_alani::CalismaAlani;
 use crate::diff::birlesik_diff;
+
+/// Önceki içeriği geri alma için hedefe koyar; `DOSYA_SINIRI`'ni aşan içerik
+/// konmaz ve hedef `buyuk` olur (aşama 3 tasarımı §5.3).
+pub(crate) fn onceki_icerigi_koy(hedef: &mut YazmaHedefi, onceki: Vec<u8>) {
+    hedef.onceki_bayt = onceki.len() as u64;
+    if hedef.onceki_bayt > DOSYA_SINIRI {
+        hedef.buyuk = true;
+    } else {
+        hedef.onceki_icerik = Some(onceki.into());
+    }
+}
 
 pub struct DosyaYaz {
     alan: Arc<CalismaAlani>,
@@ -63,14 +75,24 @@ impl Arac for DosyaYaz {
         } else {
             format!("`{yol}` dosyasını oluşturmak istiyor ({satir} satır).")
         };
+        let olusacak_dizinler = if onceki.is_none() {
+            self.alan.olusacak_dizinler(&yol)?
+        } else {
+            Vec::new()
+        };
+        let diff = birlesik_diff(yol.as_str(), &eski, icerik);
+        let mut hedef = YazmaHedefi {
+            olusacak_dizinler,
+            sonraki_ozet: Some(ozet_hex(icerik.as_bytes())),
+            ..YazmaHedefi::yeni(yol, onceki.as_deref().map(ozet_hex), baglanti_sayisi)
+        };
+        if let Some(onceki) = onceki {
+            onceki_icerigi_koy(&mut hedef, onceki);
+        }
         Ok(Hazirlik {
             aciklama,
-            diff: Some(birlesik_diff(yol.as_str(), &eski, icerik)),
-            yazilan: vec![YazmaHedefi {
-                yol,
-                onceki_ozet: onceki.as_deref().map(ozet_hex),
-                baglanti_sayisi,
-            }],
+            diff: Some(diff),
+            yazilan: vec![hedef],
             ..Default::default()
         })
     }
@@ -101,6 +123,7 @@ impl Arac for DosyaYaz {
             icerik: format!("`{yol}` yazıldı ({} bayt).", icerik.len()),
             kaynak: format!("dosya:{yol}"),
             guvenlik_uyarilari: Vec::new(),
+            degisiklikler: None,
         })
     }
 }

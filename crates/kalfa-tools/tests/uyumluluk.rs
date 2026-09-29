@@ -257,6 +257,20 @@ fn kurgu_ile(kok: &Path, ek_okunur: Vec<PathBuf>, kalfa_araclari: Vec<PathBuf>) 
 }
 
 impl Kurgu {
+    /// Kalfa'nın veri dizini gibi kullanılan geçici dizin: yalıtımın özel kökü
+    /// (`yalitim`) bunun altındadır.
+    fn veri(&self) -> &Path {
+        #[cfg(target_os = "linux")]
+        return self._veri.path();
+        #[cfg(windows)]
+        return self
+            ._temizlik
+            .veri
+            .as_ref()
+            .expect("veri dizini temizlikten önce var")
+            .path();
+    }
+
     /// Komutu çalıştırır; başarılıysa çıktıyı, değilse hatayı panikle verir.
     async fn calistir(&self, a: Value) -> String {
         match self.dene(&a).await {
@@ -976,4 +990,72 @@ async fn ic_ice_git_yalitimda_salt_okunur() {
         "gitdir: ../zz\n"
     );
     assert!(!d.path().join("alt/.git/hooks/pre-commit").exists());
+}
+
+/// Aşama 3 tasarımı §5.4: yalıtımlı komutun değiştirdiği dosyalar gerçek
+/// yalıtımda da bulunur. Gizli dosya ve `.git` yazılamaz; görüntüye de
+/// girmezler.
+#[tokio::test]
+async fn yalitimli_kabugun_degisiklikleri_bulunur() {
+    use kalfa_core::arac::DegisiklikTuru::{Degisti, Eklendi, Silindi};
+    let d = TempDir::new().unwrap();
+    std::fs::write(d.path().join("silinecek.txt"), "x").unwrap();
+    std::fs::write(d.path().join("degisecek.txt"), "x").unwrap();
+    std::fs::write(d.path().join("ayni.txt"), "x").unwrap();
+    let k = kurgu(d.path());
+    #[cfg(target_os = "linux")]
+    let komut =
+        "rm silinecek.txt && echo uzun-icerik > degisecek.txt && mkdir alt && echo y > alt/yeni.rs";
+    #[cfg(windows)]
+    let komut = "Remove-Item silinecek.txt; Set-Content degisecek.txt 'uzun-icerik'; \
+                 New-Item -ItemType Directory alt | Out-Null; Set-Content alt/yeni.rs 'y'";
+    let a = betik(komut);
+    let h = k.arac.hazirla(&a).await.expect("hazırlık");
+    let c = k
+        .arac
+        .calistir_akisli(&a, &h, CancellationToken::new(), CiktiGonderici::bos())
+        .await
+        .expect("komut başarılı");
+    let g = c.degisiklikler.expect("kabuk değişiklikleri verir");
+    let dosyalar: Vec<(&str, _)> = g.dosyalar.iter().map(|f| (f.yol.as_str(), f.tur)).collect();
+    assert_eq!(
+        dosyalar,
+        vec![
+            ("alt/yeni.rs", Eklendi),
+            ("degisecek.txt", Degisti),
+            ("silinecek.txt", Silindi),
+        ]
+    );
+    assert!(g.tam_mi());
+}
+
+/// Aşama 3 tasarımı §5.2 (G10): geri alma deposu yalıtımın özel kökünün
+/// kardeşidir; kap üst dizini listeleyebilse de deponun içini okuyamaz.
+/// Windows'ta gerçek konum `%LOCALAPPDATA%\Kalfa\geri-alma`'dır; burada aynı
+/// yerleşim geçici veri dizininde kurulur.
+#[tokio::test]
+async fn geri_alma_deposu_yalitimda_gorunmez() {
+    let d = TempDir::new().unwrap();
+    let k = kurgu(d.path());
+    let depo = k.veri().join("geri-alma").join("oturum");
+    std::fs::create_dir_all(&depo).unwrap();
+    let dosya = depo.join("a".repeat(64));
+    std::fs::write(&dosya, "onceki-hal-sir").unwrap();
+    let yol = dosya.display().to_string();
+    let komut = if cfg!(windows) {
+        format!(
+            "try {{ Get-Content -Raw -ErrorAction Stop -LiteralPath '{yol}' }} catch {{ 'okunamadi' }};              try {{ Get-ChildItem -Name -ErrorAction Stop -LiteralPath '{}' }} catch {{ 'listelenemedi' }}",
+            depo.display()
+        )
+    } else {
+        format!(
+            "cat '{yol}' 2>/dev/null || echo okunamadi; ls '{}' 2>/dev/null || echo listelenemedi",
+            depo.display()
+        )
+    };
+    let cikti = k.calistir(betik(&komut)).await;
+    assert!(!cikti.contains("onceki-hal-sir"), "{cikti}");
+    assert!(!cikti.contains(&"a".repeat(64)), "{cikti}");
+    assert!(cikti.contains("okunamadi"), "{cikti}");
+    assert!(cikti.contains("listelenemedi"), "{cikti}");
 }

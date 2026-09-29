@@ -67,16 +67,29 @@
       {#each g.ogeler as s (s.dosya)}
         {@const anlik = s.oturum ? (durum.ekranlar.get(s.oturum)?.anlik ?? null) : null}
         {@const d = satirDurumu(s.durum, anlik)}
-        <SessionRow
-          title={satirBasligi(s)}
-          preview={s.durum.tip === 'Okunamadi' ? s.durum.neden : (s.calisma_alani ?? undefined)}
-          time={zamanEtiketi(s.son_degisiklik_ms, Date.now())}
-          status={d.status}
-          statusLabel={d.etiket}
-          active={s.oturum !== null && s.oturum === durum.secili}
-          disabled={s.oturum === null}
-          onclick={() => s.oturum && durum.oturumSec(s.oturum)}
-        />
+        <div class={['satir', { secili: s.oturum !== null && s.oturum === durum.secili }]}>
+          <SessionRow
+            title={satirBasligi(s)}
+            preview={s.durum.tip === 'Okunamadi' ? s.durum.neden : (s.calisma_alani ?? undefined)}
+            time={zamanEtiketi(s.son_degisiklik_ms, Date.now())}
+            status={d.status}
+            statusLabel={d.etiket}
+            active={s.oturum !== null && s.oturum === durum.secili}
+            disabled={s.oturum === null}
+            onclick={() => s.oturum && durum.oturumSec(s.oturum)}
+          />
+          {#if s.oturum}
+            {@const oturum = s.oturum}
+            <span class="sil">
+              <IconButton
+                icon="trash-2"
+                size="sm"
+                label={m('liste.sil', { baslik: satirBasligi(s) })}
+                onclick={() => durum.oturumuSil(oturum)}
+              />
+            </span>
+          {/if}
+        </div>
       {/each}
     {:else}
       <p class="bos">{arama.trim() ? m('liste.sonuc_yok') : m('liste.bos')}</p>
@@ -111,6 +124,23 @@
     flex: 1;
     overflow-y: auto;
     padding: 0 10px 12px;
+  }
+  /* Silme düğmesi satırın üstünde durur; seçili satırda, fare ya da odak
+     gelince görünür. */
+  .satir {
+    position: relative;
+  }
+  .sil {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    opacity: 0;
+    transition: var(--transition-control);
+  }
+  .satir:hover .sil,
+  .satir:focus-within .sil,
+  .secili .sil {
+    opacity: 1;
   }
   .grup {
     padding: 10px 8px 6px;

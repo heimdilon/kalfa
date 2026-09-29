@@ -1,7 +1,7 @@
 //! Test desteği: sahte sağlayıcı, sahte araç ve oturum sürücüsü.
 //! Yalnızca `test-destek` özelliğiyle derlenir; burada `expect`/`panic` serbesttir.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -15,10 +15,12 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, Hazirlik, YazmaHedefi};
+use crate::geri_alma::{DosyaDurumu, GeriYukleyici};
 use crate::izin::Siniflandirici;
 use crate::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
 use crate::kayit::{KayitHedefi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
+use crate::muhur::ozet_hex;
 use crate::oturum::{OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci, baslat};
 use crate::protokol::{BitisNedeni, Komut, Olay, Zarf};
 use crate::saglayici::{Saglayici, SaglayiciAkisi};
@@ -188,6 +190,20 @@ impl Saglayici for SahteSaglayici {
     }
 }
 
+/// Sahte yazan aracın hazırlığındaki önceki hâl.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SahteOnceki {
+    /// Önceki özet `surum-N`; içerik verilmez (1b'den beri).
+    Yok,
+    /// İçerik `surum-N`, özeti onun SHA-256'sı; sonraki içerik
+    /// `sahte-<ad>`.
+    Icerikli,
+    /// Önceki hâl geri alma sınırını aşar.
+    Buyuk,
+    /// Dosya yoktu; sonraki içerik `sahte-<ad>`.
+    Yoktu,
+}
+
 /// `{"yol": ...}` alan sahte araç. Okuyan ya da yazan olabilir.
 pub struct SahteArac {
     ad: String,
@@ -197,8 +213,17 @@ pub struct SahteArac {
     yanit: String,
     hata: Option<String>,
     guvenlik_uyarilari: Vec<String>,
+    /// Kabuk gibi değiştirdiği dosyalar (aşama 3a Task 6): çalışınca bunlar
+    /// sonucun `degisiklikler`'ine girer; `dosyalar` verildiyse oraya da
+    /// `kabuk-<ad>` yazılır. `None`: değişiklikler bilinmiyor.
+    degistirdigi: Option<Vec<String>>,
     gecikme: Duration,
     on_hal: AtomicU64,
+    /// Yazan aracın hazırlığında önceki içerik nasıl verilir (aşama 3a).
+    onceki: SahteOnceki,
+    /// Verilirse yazan araç bu bellekteki dosya sistemine yazar; önceki
+    /// içerik de oradan okunur.
+    dosyalar: Option<Arc<SahteGeriYukleyici>>,
     cagrilar: Mutex<Vec<Value>>,
     aktif: AtomicU32,
     azami_aktif: AtomicU32,
@@ -214,8 +239,11 @@ impl SahteArac {
             yanit: format!("{ad} tamam"),
             hata: None,
             guvenlik_uyarilari: Vec::new(),
+            degistirdigi: None,
             gecikme: Duration::ZERO,
             on_hal: AtomicU64::new(0),
+            onceki: SahteOnceki::Yok,
+            dosyalar: None,
             cagrilar: Mutex::new(Vec::new()),
             aktif: AtomicU32::new(0),
             azami_aktif: AtomicU32::new(0),
@@ -255,9 +283,59 @@ impl SahteArac {
         self
     }
 
+    /// Kabuğun sonucundaki değişiklikler; kabuk olmayan araçta ve
+    /// `degistirdigi` verilmediyse yok.
+    fn kabuk_degisiklikleri(&self) -> Option<Box<crate::arac::DosyaDegisiklikleri>> {
+        let yollar = self.degistirdigi.as_ref().filter(|_| self.kabuk)?;
+        Some(Box::new(crate::arac::DosyaDegisiklikleri::olustur(
+            yollar
+                .iter()
+                .map(|y| (y.clone(), crate::arac::DegisiklikTuru::Degisti)),
+            false,
+        )))
+    }
+
+    /// Çalışınca bu dosyaları değiştirmiş gibi davranır (kabuk görüntüsü).
+    pub fn degistirdigi(mut self, yollar: &[&str]) -> Self {
+        self.degistirdigi = Some(yollar.iter().map(|y| (*y).to_string()).collect());
+        self
+    }
+
     pub fn gecikme(mut self, gecikme: Duration) -> Self {
         self.gecikme = gecikme;
         self
+    }
+
+    /// Yazan aracın hazırlığı önceki içeriği (`surum-N`) ve sonraki özeti
+    /// (`sahte-<ad>`) taşır; geri alma bunları saklar.
+    pub fn onceki_icerikli(mut self) -> Self {
+        self.onceki = SahteOnceki::Icerikli;
+        self
+    }
+
+    /// Yazan aracın "dosyası" yoktu: önceki özet yok, sonraki özet var.
+    pub fn onceki_yok(mut self) -> Self {
+        self.onceki = SahteOnceki::Yoktu;
+        self
+    }
+
+    /// Yazan aracın önceki hâli geri alma sınırını aşar (`buyuk`).
+    pub fn onceki_buyuk(mut self) -> Self {
+        self.onceki = SahteOnceki::Buyuk;
+        self
+    }
+
+    /// Yazan araç bellekteki dosya sistemine yazar: hazırlıkta önceki içerik
+    /// oradan okunur (yoksa "yoktu"), çalışınca argümandaki `icerik` (yoksa
+    /// `sahte-<ad>`) yazılır.
+    pub fn dosyalar(mut self, dosyalar: Arc<SahteGeriYukleyici>) -> Self {
+        self.dosyalar = Some(dosyalar);
+        self
+    }
+
+    /// Sahte yazan aracın "yazdığı" içerik.
+    pub fn sonraki_icerik(&self) -> String {
+        format!("sahte-{}", self.ad)
     }
 
     /// Yazma hedefinin "dosyasını" dışarıdan değiştirir: önceki özet değişir.
@@ -292,7 +370,11 @@ impl Arac for SahteArac {
     fn parametre_semasi(&self) -> Value {
         json!({
             "type": "object",
-            "properties": {"yol": {"type": "string"}, "ag": {"type": "boolean"}},
+            "properties": {
+                "yol": {"type": "string"},
+                "ag": {"type": "boolean"},
+                "icerik": {"type": "string"}
+            },
             "required": ["yol"],
             "additionalProperties": false
         })
@@ -332,11 +414,50 @@ impl Arac for SahteArac {
             ..Default::default()
         };
         if self.yazar {
-            h.yazilan.push(YazmaHedefi {
-                yol,
-                onceki_ozet: Some(format!("surum-{}", self.on_hal.load(Ordering::SeqCst))),
-                baglanti_sayisi: 1,
-            });
+            let surum = self.on_hal.load(Ordering::SeqCst);
+            let hedef = match (&self.dosyalar, self.onceki) {
+                (Some(dosyalar), _) => {
+                    let sonraki = argumanlar["icerik"]
+                        .as_str()
+                        .map_or_else(|| self.sonraki_icerik(), str::to_owned);
+                    let mut hedef = YazmaHedefi {
+                        sonraki_ozet: Some(ozet_hex(sonraki.as_bytes())),
+                        ..YazmaHedefi::yeni(yol.clone(), None, 1)
+                    };
+                    if let Some((icerik, baglanti)) = dosyalar.ham(yol.as_str()) {
+                        hedef.onceki_ozet = Some(ozet_hex(&icerik));
+                        hedef.onceki_bayt = icerik.len() as u64;
+                        hedef.onceki_icerik = Some(icerik.into());
+                        hedef.baglanti_sayisi = baglanti;
+                    }
+                    hedef
+                }
+                (None, onceki) => match onceki {
+                    SahteOnceki::Yok => YazmaHedefi::yeni(yol, Some(format!("surum-{surum}")), 1),
+                    SahteOnceki::Icerikli => {
+                        let onceki = format!("surum-{surum}").into_bytes();
+                        YazmaHedefi {
+                            onceki_ozet: Some(ozet_hex(&onceki)),
+                            onceki_bayt: onceki.len() as u64,
+                            onceki_icerik: Some(onceki.into()),
+                            sonraki_ozet: Some(ozet_hex(self.sonraki_icerik().as_bytes())),
+                            ..YazmaHedefi::yeni(yol, None, 1)
+                        }
+                    }
+                    SahteOnceki::Yoktu => YazmaHedefi {
+                        sonraki_ozet: Some(ozet_hex(self.sonraki_icerik().as_bytes())),
+                        ..YazmaHedefi::yeni(yol, None, 1)
+                    },
+                    SahteOnceki::Buyuk => YazmaHedefi {
+                        onceki_ozet: Some(ozet_hex(format!("buyuk-{surum}").as_bytes())),
+                        onceki_bayt: crate::geri_alma::DOSYA_SINIRI + 1,
+                        buyuk: true,
+                        sonraki_ozet: Some(ozet_hex(self.sonraki_icerik().as_bytes())),
+                        ..YazmaHedefi::yeni(yol, None, 1)
+                    },
+                },
+            };
+            h.yazilan.push(hedef);
             h.diff = Some(format!("+sahte {}", self.ad));
         } else {
             h.okunan.push(yol);
@@ -351,17 +472,125 @@ impl Arac for SahteArac {
         iptal: CancellationToken,
     ) -> Result<AracCiktisi, AracHatasi> {
         self.cagrilar.lock().unwrap().push(argumanlar.clone());
+        if let (Some(dosyalar), true) = (&self.dosyalar, self.kabuk) {
+            for yol in self.degistirdigi.iter().flatten() {
+                dosyalar.yaz(yol, format!("kabuk-{}", self.ad).as_bytes());
+            }
+        } else if let (Some(dosyalar), true, None) = (&self.dosyalar, self.yazar, &self.hata) {
+            let yol = argumanlar["yol"].as_str().unwrap_or_default();
+            let icerik = argumanlar["icerik"]
+                .as_str()
+                .map_or_else(|| self.sonraki_icerik(), str::to_owned);
+            dosyalar.yaz(yol, icerik.as_bytes());
+        }
         let simdi = self.aktif.fetch_add(1, Ordering::SeqCst) + 1;
         self.azami_aktif.fetch_max(simdi, Ordering::SeqCst);
         let sonuc = tokio::select! {
             _ = tokio::time::sleep(self.gecikme) => match &self.hata {
                 Some(h) => Err(AracHatasi::Gecersiz(h.clone())),
-                None => Ok(AracCiktisi { icerik: self.yanit.clone(), kaynak: format!("sahte:{}", self.ad), guvenlik_uyarilari: self.guvenlik_uyarilari.clone() }),
+                None => Ok(AracCiktisi {
+                    icerik: self.yanit.clone(),
+                    kaynak: format!("sahte:{}", self.ad),
+                    guvenlik_uyarilari: self.guvenlik_uyarilari.clone(),
+                    degisiklikler: self.kabuk_degisiklikleri(),
+                }),
             },
             _ = iptal.cancelled() => Err(AracHatasi::Iptal),
         };
         self.aktif.fetch_sub(1, Ordering::SeqCst);
         sonuc
+    }
+}
+
+/// Bellekteki dosya sistemi: yol → (içerik, bağlantı sayısı). Geri alma
+/// testlerinde çalışma alanının yerini tutar; sahte yazan araç da buraya
+/// yazabilir (`SahteArac::dosyalar`).
+#[derive(Default)]
+pub struct SahteGeriYukleyici {
+    dosyalar: Mutex<BTreeMap<String, (Vec<u8>, u64)>>,
+    kaldirilan_dizinler: Mutex<Vec<String>>,
+}
+
+impl SahteGeriYukleyici {
+    pub fn yeni() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    pub fn yaz(&self, yol: &str, icerik: &[u8]) {
+        let mut d = self.dosyalar.lock().unwrap();
+        let baglanti = d.get(yol).map_or(1, |(_, b)| *b);
+        d.insert(yol.to_string(), (icerik.to_vec(), baglanti));
+    }
+
+    pub fn oku(&self, yol: &str) -> Option<Vec<u8>> {
+        self.ham(yol).map(|(icerik, _)| icerik)
+    }
+
+    fn ham(&self, yol: &str) -> Option<(Vec<u8>, u64)> {
+        self.dosyalar.lock().unwrap().get(yol).cloned()
+    }
+
+    pub fn sil(&self, yol: &str) {
+        self.dosyalar.lock().unwrap().remove(yol);
+    }
+
+    /// Dosyaya ikinci bir ad (hard link) verilmiş gibi yapar.
+    pub fn baglanti_ekle(&self, yol: &str) {
+        if let Some((_, b)) = self.dosyalar.lock().unwrap().get_mut(yol) {
+            *b += 1;
+        }
+    }
+
+    /// `bos_dizini_kaldir`'ın çağrıldığı dizinler, sırayla.
+    pub fn kaldirilan_dizinler(&self) -> Vec<String> {
+        self.kaldirilan_dizinler.lock().unwrap().clone()
+    }
+}
+
+impl GeriYukleyici for SahteGeriYukleyici {
+    fn durum(&self, yol: &CalismaYolu) -> io::Result<Option<DosyaDurumu>> {
+        Ok(self
+            .ham(yol.as_str())
+            .map(|(icerik, baglanti_sayisi)| DosyaDurumu {
+                ozet: ozet_hex(&icerik),
+                baglanti_sayisi,
+            }))
+    }
+
+    fn geri_yaz(&self, yol: &CalismaYolu, icerik: Option<&[u8]>, beklenen: &str) -> io::Result<()> {
+        let mut d = self.dosyalar.lock().unwrap();
+        let Some((simdiki, baglanti)) = d.get(yol.as_str()) else {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "dosya yok"));
+        };
+        if ozet_hex(simdiki) != beklenen {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Dosya önizlemeden sonra değişti; geri yazılmadı.",
+            ));
+        }
+        if *baglanti > 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Dosyanın başka bir adı var (hard link).",
+            ));
+        }
+        match icerik {
+            Some(icerik) => {
+                d.insert(yol.as_str().to_string(), (icerik.to_vec(), 1));
+            }
+            None => {
+                d.remove(yol.as_str());
+            }
+        }
+        Ok(())
+    }
+
+    fn bos_dizini_kaldir(&self, yol: &CalismaYolu) -> io::Result<bool> {
+        self.kaldirilan_dizinler
+            .lock()
+            .unwrap()
+            .push(yol.as_str().to_string());
+        Ok(false)
     }
 }
 
@@ -479,6 +708,7 @@ pub fn test_baglami(
         araclar: Arc::new(AracKayitDefteri::yeni(araclar).expect("araç kaydı")),
         siniflandirici,
         kilitler: Arc::new(KaynakKilitleri::yeni()),
+        geri_yukleyici: None,
     }
 }
 

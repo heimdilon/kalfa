@@ -19,6 +19,7 @@
   import * as ipc from '../ipc/ana';
   import type { YalitimCalismaAlani } from '../ipc/tipler';
   import type { AnaDurum } from './anaDurum.svelte';
+  import { boyutMetni } from './geriAlma';
 
   let { durum }: { durum: AnaDurum } = $props();
 
@@ -223,6 +224,15 @@
         {/if}
       </Card>
     {/if}
+
+    <Card title={m('ayarlar.geri_alma')} icon="rotate-ccw">
+      <p class="aciklama">{m('ayarlar.geri_alma.aciklama')}</p>
+      {#if durum.geriAlmaBoyutu !== null}
+        <p class="aciklama alt">
+          {m('ayarlar.geri_alma.boyut', { boyut: boyutMetni(durum.geriAlmaBoyutu) })}
+        </p>
+      {/if}
+    </Card>
 
     <Card title={m('ayarlar.gelismis')} icon="settings">
       <Checkbox

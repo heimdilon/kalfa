@@ -112,6 +112,7 @@ impl Arac for SahteKabuk {
             icerik: "Çıkış kodu: 1".into(),
             kaynak: "kabuk:test".into(),
             guvenlik_uyarilari: Vec::new(),
+            degisiklikler: None,
         };
         if self.basarisiz {
             Err(AracHatasi::Basarisiz(c))
@@ -484,6 +485,7 @@ impl Arac for HazirlikliKabuk {
             icerik: "Çıkış kodu: 0".into(),
             kaynak: "kabuk:test".into(),
             guvenlik_uyarilari: Vec::new(),
+            degisiklikler: None,
         })
     }
 }

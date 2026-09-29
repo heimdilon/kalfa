@@ -67,6 +67,7 @@ fn yarim_kayit(dizin: &Path) -> (PathBuf, CagriId) {
             cagri,
             model_cagri_id: "m1".into(),
             arac: "yaz".into(),
+            yedekler: Vec::new(),
         },
     ))
     .unwrap();

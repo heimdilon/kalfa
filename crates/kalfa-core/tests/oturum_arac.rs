@@ -105,7 +105,8 @@ async fn baslangic_kaydi_yazilamazsa_yan_etkili_arac_calismaz() {
         ayarlar(Kip::Proje),
         test_baglami(s.clone(), vec![a(&yaz)], sanal_siniflandirici()),
         BozulanHedef::kalicida_bozuk(),
-    );
+    )
+    .unwrap();
     let mut d = Surucu::yeni(t, o);
     d.gonder(mesaj("yaz")).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);
@@ -136,7 +137,8 @@ async fn grubun_ikinci_kaydi_bozulursa_ilk_arac_da_baslamaz() {
         ayarlar(Kip::Proje),
         test_baglami(s.clone(), vec![a(&yaz)], sanal_siniflandirici()),
         BozulanHedef::kalicidan_sonra_bozuk(1),
-    );
+    )
+    .unwrap();
     let mut d = Surucu::yeni(t, o);
     d.gonder(mesaj("iki dosyaya yaz")).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);
@@ -175,7 +177,8 @@ async fn sonuc_kaydi_bozulursa_kilit_bekleyen_arac_baslamaz() {
         ayarlar(Kip::Proje),
         test_baglami(s, vec![a(&yaz)], sanal_siniflandirici()),
         OturumKaydi::hedefle(Box::new(SonuctaBoz)),
-    );
+    )
+    .unwrap();
     let mut d = Surucu::yeni(t, o);
     d.gonder(mesaj("iki kez yaz")).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);

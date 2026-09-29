@@ -13,11 +13,14 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use super::{Etki, Oturum};
-use crate::arac::{Arac, AracCiktisi, AracHatasi, CiktiGonderici, CiktiParcasi, Hazirlik};
+use crate::arac::{
+    Arac, AracCiktisi, AracHatasi, CiktiGonderici, CiktiParcasi, DosyaDegisiklikleri, Hazirlik,
+};
+use crate::geri_alma::{DIFF_SINIRI, DosyaYedegi, GeriAlinamazNedeni, OncekiHal, diff_sayilari};
 use crate::gorunum::{GORUNMEZ_UYARISI, gorunmez_var_mi};
 use crate::izin::{
-    AYNI_ADIM_UYARISI, Islem, Karar, Kip, Siniflandirici, YolSinifi, derleme_dosyasi_mi,
-    kabuk_karari, karar_ver,
+    AYNI_ADIM_UYARISI, GERI_ALINAMAZ_UYARISI, Islem, Karar, Kip, Siniflandirici, YolSinifi,
+    derleme_dosyasi_mi, kabuk_karari, karar_ver,
 };
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, IslemId};
@@ -25,6 +28,7 @@ use crate::muhur::{OnayMuhru, muhur_hesapla};
 use crate::protokol::{
     AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OnayOgesi, OnaysizDegisiklikler,
 };
+use crate::tur_ozeti::{GeriAlinabilirlik, KomutOzeti, YazilanDosya};
 use crate::yol::CalismaYolu;
 
 /// Araçlardan oturuma gelen ara çıktı kanalının kapasitesi (parça).
@@ -41,6 +45,9 @@ struct Planlanan {
     /// Planlandığı andaki politika sürümü (spec §7.6).
     politika: u64,
     kip: Kip,
+    /// Planlandığında oturumun geri alma deposu vardı: geri alınamayacak
+    /// yazma her kipte onay ister (aşama 3 tasarımı §5.3).
+    geri_alma: bool,
     karar: Karar,
 }
 
@@ -56,6 +63,9 @@ struct CagriSonucu {
     /// (kabukta sıfırdan farklı çıkış kodu; aşama 2 tasarımı §4.5).
     hata_sayilmaz: bool,
     guvenlik_uyarilari: Vec<String>,
+    /// Kabuk çağrısının komutu; kabuk değişiklikleri kaydında.
+    komut: Option<String>,
+    degisiklikler: Option<DosyaDegisiklikleri>,
 }
 
 impl CagriSonucu {
@@ -69,6 +79,8 @@ impl CagriSonucu {
             icerik,
             hata_sayilmaz: false,
             guvenlik_uyarilari: Vec::new(),
+            komut: p.hazirlik.kabuk.as_ref().map(|k| k.komut.clone()),
+            degisiklikler: None,
         }
     }
 }
@@ -138,6 +150,8 @@ impl Oturum {
                         icerik,
                         hata_sayilmaz: false,
                         guvenlik_uyarilari: Vec::new(),
+                        komut: None,
+                        degisiklikler: None,
                     };
                     self.sonuc_isle(s, hata_sayaci).await;
                 }
@@ -280,7 +294,8 @@ impl Oturum {
             .await
             .map_err(|_| "tur iptal edildi".to_string())?
             .map_err(|e| e.to_string())?;
-        let karar = Self::karar(kip, &siniflandirici, &hazirlik);
+        let geri_alma = self.depo.is_some();
+        let karar = Self::karar(kip, &siniflandirici, &hazirlik, geri_alma);
         let muhur = muhur_hesapla(cagri, ad, &argumanlar, &hazirlik);
         let plan = Planlanan {
             cagri,
@@ -292,12 +307,13 @@ impl Oturum {
             muhur,
             politika,
             kip,
+            geri_alma,
             karar: karar.clone(),
         };
         Ok((plan, karar))
     }
 
-    fn karar(kip: Kip, s: &Siniflandirici, hazirlik: &Hazirlik) -> Karar {
+    fn karar(kip: Kip, s: &Siniflandirici, hazirlik: &Hazirlik, geri_alma: bool) -> Karar {
         let mut karar = Karar::Serbest;
         for yol in &hazirlik.okunan {
             let sinif = if s.gizli_mi(yol) {
@@ -318,6 +334,14 @@ impl Oturum {
         }
         if let Some(kabuk) = &hazirlik.kabuk {
             karar = karar.birlestir(kabuk_karari(kip, kabuk));
+        }
+        // Onaysız yazmanın güvenlik ağı geri almadır; önceki hâli saklanamayan
+        // yazma o ağın dışındadır ve her kipte onay ister (K9). Kayıtsız
+        // oturumda geri alma yoktur, kural işlemez.
+        if geri_alma && hazirlik.yazilan.iter().any(|h| !h.geri_alinabilir()) {
+            karar = karar.birlestir(Karar::Onayli {
+                uyarilar: vec![GERI_ALINAMAZ_UYARISI.to_string()],
+            });
         }
         // Görünmez ya da yön değiştiren karakter her kipte onay ister
         // (güvenlik analizi Bulgu 7): kullanıcı gördüğünden farklı bir işlemi
@@ -348,6 +372,7 @@ impl Oturum {
                     .kabuk
                     .is_some()
                     .then(|| self.onaysiz_degisiklikler()),
+                geri_alinabilir: self.onay_geri_alinabilirligi(&p.hazirlik),
             })
             .collect();
         // Yerel iletişim kutusu komutu çekirdekten okur, webview'dan değil
@@ -464,6 +489,22 @@ impl Oturum {
         t
     }
 
+    /// Onay kartının "Geri alınabilir mi" alanı (aşama 3 tasarımı §5.11).
+    fn onay_geri_alinabilirligi(&self, hazirlik: &Hazirlik) -> Option<GeriAlinabilirlik> {
+        let hayir = |neden| Some(GeriAlinabilirlik::Hayir { neden });
+        if hazirlik.kabuk.is_some() {
+            hayir(GeriAlinamazNedeni::Kabuk)
+        } else if hazirlik.yazilan.is_empty() {
+            None
+        } else if self.depo.is_none() {
+            hayir(GeriAlinamazNedeni::Kayitsiz)
+        } else if hazirlik.yazilan.iter().any(|h| !h.geri_alinabilir()) {
+            hayir(GeriAlinamazNedeni::Buyuk)
+        } else {
+            Some(GeriAlinabilirlik::Evet)
+        }
+    }
+
     /// Kabuk onayında gösterilen, oturumdaki onaysız değişiklikler.
     fn onaysiz_degisiklikler(&self) -> OnaysizDegisiklikler {
         OnaysizDegisiklikler {
@@ -490,16 +531,113 @@ impl Oturum {
         }
     }
 
-    /// Onaysız yürütülen çağrının izi: yazdığı dosyalar ve komut.
-    fn onaysiz_isle(&mut self, p: &Planlanan) {
+    /// Onaysız yürütülen çağrının izi: yazdığı dosyalar ve komut. Kabuğun
+    /// değiştirdiği dosyalar tam biliniyorsa onlar listelenir; bilinmiyorsa
+    /// "onaysız bir komut çalıştı" notu kalır (aşama 3 tasarımı §5.4).
+    fn onaysiz_isle(&mut self, p: &Planlanan, degisiklikler: Option<&DosyaDegisiklikleri>) {
         if p.karar != Karar::Serbest {
             return;
         }
         if p.hazirlik.kabuk.is_some() {
-            self.onaysiz_komut = true;
+            match degisiklikler {
+                Some(d) => {
+                    self.onaysiz_yazilanlar.extend(
+                        d.dosyalar
+                            .iter()
+                            .filter_map(|f| CalismaYolu::coz(&f.yol).ok()),
+                    );
+                    if !d.tam_mi() {
+                        self.onaysiz_komut = true;
+                    }
+                }
+                None => self.onaysiz_komut = true,
+            }
         }
         self.onaysiz_yazilanlar
             .extend(p.hazirlik.yazilan.iter().map(|y| y.yol.clone()));
+    }
+
+    /// Yazan çağrının önceki hâllerini depoya koyar ve "başladı" kaydının
+    /// yedeklerini üretir. Depo yoksa (kayıtsız oturum) yedek yoktur.
+    fn yedekle(&self, p: &Planlanan) -> std::io::Result<Vec<DosyaYedegi>> {
+        let Some(depo) = &self.depo else {
+            return Ok(Vec::new());
+        };
+        let hazirlik = &p.hazirlik;
+        // Diff hazırlığın tamamınındır; tek hedefte o dosyanındır.
+        let tek = hazirlik.yazilan.len() == 1;
+        let (eklenen, silinen) = match (&hazirlik.diff, tek) {
+            (Some(diff), true) => diff_sayilari(diff),
+            _ => (0, 0),
+        };
+        let mut yedekler = Vec::with_capacity(hazirlik.yazilan.len());
+        for hedef in &hazirlik.yazilan {
+            let onceki = match (&hedef.onceki_ozet, &hedef.onceki_icerik) {
+                (None, _) => OncekiHal::Yoktu,
+                (Some(ozet), Some(icerik)) if hedef.geri_alinabilir() => {
+                    depo.sakla(ozet, icerik)?;
+                    OncekiHal::Saklandi { ozet: ozet.clone() }
+                }
+                (Some(ozet), _) => OncekiHal::Buyuk {
+                    ozet: ozet.clone(),
+                    bayt: hedef.onceki_bayt,
+                },
+            };
+            // Gizli dosyanın içeriği diff'le kayda girmez (§5.8).
+            let diff = hazirlik
+                .diff
+                .clone()
+                .filter(|d| tek && d.len() <= DIFF_SINIRI)
+                .filter(|_| !self.baglam.siniflandirici.gizli_mi(&hedef.yol));
+            yedekler.push(DosyaYedegi {
+                yol: hedef.yol.clone(),
+                onceki,
+                sonraki: hedef.sonraki_ozet.clone(),
+                olusan_dizinler: hedef.olusacak_dizinler.clone(),
+                eklenen,
+                silinen,
+                diff,
+            });
+        }
+        Ok(yedekler)
+    }
+
+    /// Başlayan çağrıyı tur özetine işler (aşama 3 tasarımı §5.5).
+    fn ozete_isle(&mut self, p: &Planlanan) {
+        let hazirlik = &p.hazirlik;
+        if let Some(kabuk) = &hazirlik.kabuk {
+            self.tur_ozeti.komut_basladi(p.cagri, kabuk.komut.clone());
+        }
+        if hazirlik.yazilan.is_empty() {
+            return;
+        }
+        let tek = hazirlik.yazilan.len() == 1;
+        let (eklenen, silinen) = match (&hazirlik.diff, tek) {
+            (Some(diff), true) => diff_sayilari(diff),
+            _ => (0, 0),
+        };
+        let dosyalar = hazirlik
+            .yazilan
+            .iter()
+            .map(|h| YazilanDosya {
+                yol: h.yol.clone(),
+                olusturuldu: h.onceki_ozet.is_none(),
+                eklenen,
+                silinen,
+                geri_alinabilir: if self.depo.is_none() {
+                    GeriAlinabilirlik::Hayir {
+                        neden: GeriAlinamazNedeni::Kayitsiz,
+                    }
+                } else if !h.geri_alinabilir() {
+                    GeriAlinabilirlik::Hayir {
+                        neden: GeriAlinamazNedeni::Buyuk,
+                    }
+                } else {
+                    GeriAlinabilirlik::Evet
+                },
+            })
+            .collect();
+        self.tur_ozeti.yazma_basladi(p.cagri, dosyalar);
     }
 
     /// Planları paralel yürütür; iptal geldiyse ya da kayıt yazılamadıysa
@@ -512,11 +650,22 @@ impl Oturum {
     ) -> Option<BitisNedeni> {
         let mut calisacak = Vec::with_capacity(planlar.len());
         let mut kaydi_yazilamayan = Vec::new();
+        let mut saklanamayan = Vec::new();
         for p in planlar {
+            // Önceki hâl "başladı" kaydından önce depoya ulaşır; saklanamazsa
+            // araç çalışmaz (aşama 3 tasarımı §5.3).
+            let yedekler = match self.yedekle(&p) {
+                Ok(y) => y,
+                Err(e) => {
+                    saklanamayan.push((p, e));
+                    continue;
+                }
+            };
             let oge = KayitOgesi::AracBasladi {
                 cagri: p.cagri,
                 model_cagri_id: p.model_id.clone(),
                 arac: p.arac.ad().to_string(),
+                yedekler: yedekler.clone(),
             };
             // Yan etkili aracın "başladı" kaydı diske ulaşmadan araç çalışmaz.
             let yazildi = if p.arac.yazar_mi() {
@@ -528,6 +677,10 @@ impl Oturum {
                 kaydi_yazilamayan.push(p);
                 continue;
             }
+            if let Some(tur) = self.tur {
+                self.geri_alma.arac_basladi(tur, p.cagri, yedekler);
+            }
+            self.ozete_isle(&p);
             let olay = Olay::AracCagrisiBasladi {
                 cagri: p.cagri,
                 arac: p.arac.ad().to_string(),
@@ -545,6 +698,14 @@ impl Oturum {
             let icerik = "[çalıştırılmadı: oturum kaydı yazılamadı]".to_string();
             self.sonuc_isle(
                 CagriSonucu::plandan(p, AracDurumu::IptalEdildi, icerik),
+                hata_sayaci,
+            )
+            .await;
+        }
+        for (p, hata) in &saklanamayan {
+            let icerik = format!("[çalıştırılmadı: önceki hâl saklanamadı: {hata}]");
+            self.sonuc_isle(
+                CagriSonucu::plandan(p, AracDurumu::Basarisiz, icerik),
                 hata_sayaci,
             )
             .await;
@@ -602,8 +763,8 @@ impl Oturum {
                             *atlanan.entry(p.cagri).or_default() += bayt;
                         }
                         self.atlanani_bildir(p.cagri, &mut atlanan).await;
-                        self.onaysiz_isle(&p);
                         let s = sonuc_olustur(&p, sonuc, azami);
+                        self.onaysiz_isle(&p, s.degisiklikler.as_ref());
                         self.sonuc_isle(s, hata_sayaci).await;
                     }
                     None => break,
@@ -665,11 +826,17 @@ impl Oturum {
         }
         self.mesaj_ekle(ChatMessage::tool(s.model_id.clone(), s.icerik.clone()))
             .await;
+        self.geri_alma.arac_bitti(s.cagri, s.durum);
+        self.tur_ozeti.arac_bitti(s.cagri, s.durum);
+        self.tur_ozeti.guvenlik_uyarisi(s.guvenlik_uyarilari.len());
         self.kaydet(KayitOgesi::AracBitti {
             cagri: s.cagri,
             durum: s.durum,
         })
         .await;
+        if let Some(d) = &s.degisiklikler {
+            self.kabuk_degisiklikleri_isle(&s, d).await;
+        }
         self.yay(Olay::AracSonucu {
             cagri: s.cagri,
             arac: s.arac,
@@ -689,6 +856,35 @@ impl Oturum {
             })
             .await;
         }
+    }
+}
+
+impl Oturum {
+    /// Kabuğun değiştirdiği dosyalar kayda, tur özetine ve geri alma
+    /// dizinine girer; modele gitmez (aşama 3 tasarımı §5.4).
+    async fn kabuk_degisiklikleri_isle(&mut self, s: &CagriSonucu, d: &DosyaDegisiklikleri) {
+        let komut = s.komut.clone().unwrap_or_default();
+        self.tur_ozeti.komut_degisiklikleri(s.cagri, d);
+        if d.bos_mu() {
+            return;
+        }
+        if let Some(tur) = self.tur {
+            self.geri_alma.komut_degisti(
+                tur,
+                KomutOzeti {
+                    cagri: s.cagri,
+                    komut: komut.clone(),
+                    durum: s.durum,
+                    degisiklikler: Some(d.clone()),
+                },
+            );
+        }
+        self.kaydet(KayitOgesi::KabukDegisiklikleri {
+            cagri: s.cagri,
+            komut,
+            degisiklikler: d.clone(),
+        })
+        .await;
     }
 }
 
@@ -764,7 +960,7 @@ async fn tek_calistir(
         });
     }
     // Etkin git koruması değişmiş olabilir; yeni karar eski onayla geçmez.
-    if Oturum::karar(p.kip, siniflandirici, &taze) != p.karar {
+    if Oturum::karar(p.kip, siniflandirici, &taze, p.geri_alma) != p.karar {
         return Err(AracHatasi::PolitikaDegisti);
     }
     if iptal.is_cancelled() {
@@ -787,11 +983,13 @@ fn sonuc_olustur(
     match sonuc {
         Ok(c) => CagriSonucu {
             guvenlik_uyarilari: c.guvenlik_uyarilari.clone(),
+            degisiklikler: c.degisiklikler.clone().map(|d| *d),
             ..CagriSonucu::plandan(p, AracDurumu::Basarili, model_icerigi(&c, azami))
         },
         Err(AracHatasi::Basarisiz(c)) => CagriSonucu {
             hata_sayilmaz: true,
             guvenlik_uyarilari: c.guvenlik_uyarilari.clone(),
+            degisiklikler: c.degisiklikler.clone().map(|d| *d),
             ..CagriSonucu::plandan(p, AracDurumu::Basarisiz, model_icerigi(&c, azami))
         },
         Err(AracHatasi::Iptal) => {
@@ -861,6 +1059,7 @@ mod sarmal_testleri {
             icerik: icerik.into(),
             kaynak: kaynak.into(),
             guvenlik_uyarilari: Vec::new(),
+            degisiklikler: None,
         }
     }
 

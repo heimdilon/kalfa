@@ -326,6 +326,7 @@ pub fn test_uygulamasi_yalitimla(
         yukseltici: yukseltici.clone(),
         aktarim: AktarimAyarlari::default(),
         yalitim_dizini: dizin.join("yalitim"),
+        geri_alma_dizini: dizin.join("geri-alma"),
         kalfa_araclari: Vec::new(),
         ev_dizini: dizin.join("ev"),
         yalitim,

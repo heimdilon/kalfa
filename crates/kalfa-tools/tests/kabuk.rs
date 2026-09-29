@@ -297,6 +297,48 @@ fn karantinadakiler(dizin: &std::path::Path) -> Vec<String> {
     adlar
 }
 
+/// Aşama 3 tasarımı §5.4: komutun çalışırken değiştirdiği dosyalar sonuca
+/// eklenir. Önceden var olan, `.gitignore` kapsamındaki ve silinen dosyalar
+/// dahildir; `.git`'in içi değildir. Başarısız çıkışta da eklenir.
+#[tokio::test]
+async fn kabugun_degistirdigi_dosyalar_sonuca_eklenir() {
+    use kalfa_core::arac::DegisiklikTuru::{Degisti, Eklendi, Silindi};
+    let (d, arac, _) = kur();
+    std::fs::write(d.path().join("silinecek.txt"), "x").unwrap();
+    std::fs::write(d.path().join("degisecek.txt"), "x").unwrap();
+    std::fs::write(d.path().join("ayni.txt"), "x").unwrap();
+    std::fs::write(d.path().join(".gitignore"), "*.log\n").unwrap();
+    let a = betik(
+        "git init -q && rm silinecek.txt && echo uzun-icerik > degisecek.txt && echo x > yeni.log && mkdir alt && echo y > alt/yeni.rs",
+        "git init -q; Remove-Item silinecek.txt; Set-Content degisecek.txt 'uzun-icerik'; Set-Content yeni.log 'x'; New-Item -ItemType Directory alt | Out-Null; Set-Content alt/yeni.rs 'y'",
+    );
+    let c = calistir_tam(&arac, &a).await.unwrap();
+    let g = c.degisiklikler.expect("kabuk değişiklikleri verir");
+    let dosyalar: Vec<(&str, _)> = g.dosyalar.iter().map(|f| (f.yol.as_str(), f.tur)).collect();
+    assert_eq!(
+        dosyalar,
+        vec![
+            ("alt/yeni.rs", Eklendi),
+            ("degisecek.txt", Degisti),
+            ("silinecek.txt", Silindi),
+            ("yeni.log", Eklendi),
+        ]
+    );
+    assert_eq!(g.toplam, 4);
+    assert!(g.tam_mi());
+    assert_eq!(g.dizinler.len(), 1);
+    assert_eq!(g.dizinler[0].dizin, "alt");
+    assert_eq!(g.dizinler[0].eklenen, 1);
+
+    let a = betik("echo z > b.txt; exit 3", "Set-Content b.txt 'z'; exit 3");
+    let Err(AracHatasi::Basarisiz(c)) = calistir_tam(&arac, &a).await else {
+        panic!("komut başarısız olmalıydı");
+    };
+    let g = c.degisiklikler.expect("başarısız çıkışta da");
+    assert_eq!(g.dosyalar.len(), 1);
+    assert_eq!(g.dosyalar[0].yol, "b.txt");
+}
+
 /// Güvenlik analizi Bulgu 1: düz `git init` yerinde kalır, uyarı yoktur.
 #[tokio::test]
 async fn kabuk_duz_git_init_korunur() {

@@ -71,6 +71,8 @@ export interface OnayOgesi {
   yerel_onay: boolean;
   /** Kabuk öğesinde: oturumda onaysız değişenler (güvenlik analizi Bulgu 3). */
   onaysiz_degisiklikler?: OnaysizDegisiklikler;
+  /** Geri alınabilir mi (aşama 3 tasarımı §5.11); yalnızca okuyan öğede yok. */
+  geri_alinabilir?: GeriAlinabilirlik;
 }
 
 export interface OnaysizDegisiklikler {
@@ -81,6 +83,95 @@ export interface OnaysizDegisiklikler {
 }
 
 export type CiktiAkisi = 'Standart' | 'Hata';
+
+/** Geri almada bir dosyaya ne olacağı (aşama 3 tasarımı §5.7). */
+export type GeriAlmaEylemi =
+  | { tip: 'GeriYukle'; ozet: string }
+  | { tip: 'Sil' }
+  | { tip: 'ZatenOnceki' }
+  | { tip: 'Cakisma'; neden: CakismaNedeni }
+  | { tip: 'GeriAlinamaz'; neden: GeriAlinamazNedeni };
+
+export type CakismaNedeni =
+  | { tip: 'SonrakiTur'; tur: TurId }
+  | { tip: 'Komut' }
+  | { tip: 'BasarisizCagri' }
+  | { tip: 'Elle' }
+  | { tip: 'HardLink' }
+  | { tip: 'Okunamadi'; hata: string };
+
+export type GeriAlinamazNedeni = 'Buyuk' | 'VeriSilindi' | 'Kayitsiz' | 'Kabuk';
+
+/** Değişikliğin geri alınıp alınamayacağı; bilgiyi çekirdek verir. */
+export type GeriAlinabilirlik = { tip: 'Evet' } | { tip: 'Hayir'; neden: GeriAlinamazNedeni };
+
+export interface DosyaOzeti {
+  yol: string;
+  islem: 'Olusturuldu' | 'Degisti';
+  eklenen: number;
+  silinen: number;
+  sonucu_bilinmiyor: boolean;
+  geri_alinabilir: GeriAlinabilirlik;
+}
+
+export type DegisiklikTuru = 'Eklendi' | 'Degisti' | 'Silindi';
+
+/** Bir komutun çalışırken değişen dosyaları; geri alınamaz (K2). */
+export interface DosyaDegisiklikleri {
+  /** En çok 200 dosya; bağımlılık dizinlerinin dışındakiler önce. */
+  dosyalar: { yol: string; tur: DegisiklikTuru }[];
+  /** Üst düzey dizinlerin sayıları. */
+  dizinler?: { dizin: string; eklenen: number; degisen: number; silinen: number }[];
+  /** Bütün değişikliklerin sayısı; `dosyalar`'dan büyükse liste kesildi. */
+  toplam: number;
+  /** Tarama sınırı aşıldı; liste eksik olabilir. */
+  eksik: boolean;
+}
+
+export interface KomutOzeti {
+  cagri: CagriId;
+  komut: string;
+  durum: AracDurumu;
+  degisiklikler?: DosyaDegisiklikleri;
+}
+
+export interface IstekOzeti {
+  sayi: number;
+  istem: number;
+  tamamlama: number;
+  dusunce: number;
+}
+
+/** Tur özeti (aşama 3 tasarımı §5.5). */
+export interface TurOzeti {
+  tur: TurId;
+  dosyalar: DosyaOzeti[];
+  komutlar: KomutOzeti[];
+  istekler: IstekOzeti;
+  guvenlik_uyarisi: number;
+}
+
+export interface PlanOgesi {
+  yol: string;
+  eylem: GeriAlmaEylemi;
+  simdiki: string | null;
+  uyarilar: string[];
+  diff: string | null;
+}
+
+export interface GeriAlmaPlani {
+  ogeler: PlanOgesi[];
+  /** Turun dosya değiştiren komutları; geri alınmaz, yalnızca listelenir. */
+  komutlar?: KomutOzeti[];
+  veri_silindi: boolean;
+}
+
+export interface GeriAlmaSonucu {
+  yol: string;
+  eylem: GeriAlmaEylemi;
+  /** Yürütmede yazılamadıysa nedeni. */
+  hata?: string;
+}
 
 export type OnayKarari = { tip: 'Onayla' } | { tip: 'Reddet'; gerekce: string | null };
 
@@ -107,7 +198,14 @@ export type Olay =
   | { tip: 'Hata'; mesaj: string }
   | { tip: 'Tamamlandi'; neden: BitisNedeni }
   | { tip: 'AktarimDurdu'; neden: AktarimDurmaNedeni }
-  | { tip: 'IstekBilgisi'; istek_id: string | null; yonlendirilen_model: string | null };
+  | { tip: 'IstekBilgisi'; istek_id: string | null; yonlendirilen_model: string | null }
+  /** Geri alma önizlemesi (aşama 3 tasarımı §5.6). */
+  | { tip: 'GeriAlmaPlani'; geri_alinan_tur: TurId; plan: GeriAlmaPlani; muhur: string }
+  | { tip: 'TurGeriAlindi'; geri_alinan_tur: TurId; sonuc: GeriAlmaSonucu[] }
+  /** Depo sınırı yüzünden bu turların önceki hâlleri silindi (§5.2). */
+  | { tip: 'GeriAlmaVerisiSilindi'; turlar: TurId[] }
+  /** Turun özeti; `Tamamlandi`'dan sonra gelir. */
+  | { tip: 'TurOzeti'; ozet: TurOzeti };
 
 export interface Zarf<T> {
   sema: number;
@@ -142,7 +240,19 @@ export type GorunumOgesi =
       sonuc: string | null;
     }
   | { tip: 'TurSonu'; sira: number; tur: TurId | null; neden: BitisNedeni }
-  | { tip: 'GuvenlikUyarisi'; sira: number; tur: TurId | null; mesaj: string };
+  | { tip: 'GuvenlikUyarisi'; sira: number; tur: TurId | null; mesaj: string }
+  | {
+      tip: 'GeriAlma';
+      sira: number;
+      tur: TurId | null;
+      geri_alinan_tur: TurId;
+      sonuc: GeriAlmaSonucu[];
+      /** Başladı kaydı var, bitti kaydı yok. */
+      yarim: boolean;
+    }
+  /** Geri almanın modele bildirimi; kullanıcı balonu değildir. */
+  | { tip: 'KalfaNotu'; sira: number; tur: TurId | null; metin: string }
+  | { tip: 'TurOzeti'; sira: number; tur: TurId | null; ozet: TurOzeti };
 
 export interface GecmisSayfasi {
   ogeler: GorunumOgesi[];

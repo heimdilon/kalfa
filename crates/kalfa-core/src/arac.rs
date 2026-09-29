@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use kalfa_evren::tipler::ToolDef;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -24,6 +25,43 @@ pub struct YazmaHedefi {
     pub onceki_ozet: Option<String>,
     /// Hard link sayısı; dosya yoksa 1.
     pub baglanti_sayisi: u64,
+    /// Dosyanın şu anki içeriği; geri alma için saklanır (aşama 3 tasarımı
+    /// §5.3). Dosya yoksa ya da `DOSYA_SINIRI`'ni aşıyorsa `None`. Mühre
+    /// girmez: içeriği `onceki_ozet` zaten bağlar.
+    pub onceki_icerik: Option<Arc<[u8]>>,
+    /// Dosyanın şu anki boyutu (bayt); dosya yoksa 0.
+    pub onceki_bayt: u64,
+    /// Önceki hâl `DOSYA_SINIRI`'ni aştı: saklanmaz, değişiklik geri alınamaz.
+    pub buyuk: bool,
+    /// Yazılacak içeriğin SHA-256 özeti. Mühre girmez: içeriği argümanlar
+    /// zaten bağlar.
+    pub sonraki_ozet: Option<String>,
+    /// Yazarken oluşacak üst dizinler, sığdan derine. Geri alma boş kalanları
+    /// kaldırır.
+    pub olusacak_dizinler: Vec<CalismaYolu>,
+}
+
+impl YazmaHedefi {
+    /// Geri alma bilgisi taşımayan hedef; yeni alanlar boştur.
+    pub fn yeni(yol: CalismaYolu, onceki_ozet: Option<String>, baglanti_sayisi: u64) -> Self {
+        Self {
+            yol,
+            onceki_ozet,
+            baglanti_sayisi,
+            onceki_icerik: None,
+            onceki_bayt: 0,
+            buyuk: false,
+            sonraki_ozet: None,
+            olusacak_dizinler: Vec::new(),
+        }
+    }
+
+    /// Önceki hâl saklanabilir mi: dosya yoktu ya da içeriği hazırlıkta
+    /// verildi. İçeriği vermeyen (örneğin büyük) hedefin değişikliği geri
+    /// alınamaz.
+    pub fn geri_alinabilir(&self) -> bool {
+        !self.buyuk && (self.onceki_ozet.is_none() || self.onceki_icerik.is_some())
+    }
 }
 
 /// Yürütmeden önce aracın ne yapacağının tarifi: izin kararı, onay kartı ve
@@ -50,6 +88,128 @@ pub struct AracCiktisi {
     /// Bulgu 1): örneğin komutun oluşturduğu tehlikeli `.git`'in karantinası.
     /// Modele de `[güvenlik] …` satırıyla gider.
     pub guvenlik_uyarilari: Vec<String>,
+    /// Kabuğun değiştirdiği dosyalar (aşama 3 tasarımı §5.4); yalnızca kabuk
+    /// doldurur. Kayda ve tur özetine girer, modele gitmez. Kutulu:
+    /// `AracHatasi::Basarisiz` bu tipi taşır.
+    pub degisiklikler: Option<Box<DosyaDegisiklikleri>>,
+}
+
+/// Tek tek listelenen değişikliklerin sınırı; ötekiler dizin sayılarında.
+pub const DEGISIKLIK_LISTE_SINIRI: usize = 200;
+/// Listede sona konan üst düzey dizinler: bir derleme bunların altında
+/// binlerce dosya değiştirir.
+pub const BAGIMLILIK_DIZINLERI: &[&str] = &[
+    "target",
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "dist",
+    "build",
+    ".next",
+    ".cache",
+    ".gradle",
+    "vendor",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum DegisiklikTuru {
+    Eklendi,
+    Degisti,
+    Silindi,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DegisenDosya {
+    /// Çalışma alanına göre yol, `/` ayraçlı.
+    pub yol: String,
+    pub tur: DegisiklikTuru,
+}
+
+/// Bir üst düzey dizinin altındaki değişikliklerin sayıları.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DizinSayisi {
+    pub dizin: String,
+    pub eklenen: u32,
+    pub degisen: u32,
+    pub silinen: u32,
+}
+
+/// Bir komutun çalışırken değişen dosyaları. İçerik kopyalanmaz; komuttan
+/// önceki ve sonraki meta veri görüntülerinin farkıdır. Aynı anda Kalfa
+/// dışında yapılan değişiklikler de burada görünür.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DosyaDegisiklikleri {
+    /// En çok `DEGISIKLIK_LISTE_SINIRI` dosya; bağımlılık dizinlerinin
+    /// dışındakiler önce.
+    pub dosyalar: Vec<DegisenDosya>,
+    /// Üst düzey dizinlerin sayıları.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dizinler: Vec<DizinSayisi>,
+    /// Bütün değişikliklerin sayısı; `dosyalar`'dan büyükse liste kesildi.
+    pub toplam: u32,
+    /// Tarama sınırı aşıldı; liste eksik olabilir.
+    #[serde(default)]
+    pub eksik: bool,
+}
+
+impl DosyaDegisiklikleri {
+    pub fn olustur(
+        degisiklikler: impl IntoIterator<Item = (String, DegisiklikTuru)>,
+        eksik: bool,
+    ) -> Self {
+        let mut hepsi: Vec<(String, DegisiklikTuru)> = degisiklikler.into_iter().collect();
+        let ust = |yol: &str| yol.split_once('/').map(|(d, _)| d.to_string());
+        let bagimlilik =
+            |yol: &str| ust(yol).is_some_and(|d| BAGIMLILIK_DIZINLERI.contains(&d.as_str()));
+        hepsi.sort_by(|a, b| (bagimlilik(&a.0), &a.0).cmp(&(bagimlilik(&b.0), &b.0)));
+        let mut dizinler: Vec<DizinSayisi> = Vec::new();
+        for (yol, tur) in &hepsi {
+            let Some(dizin) = ust(yol) else {
+                continue;
+            };
+            let sayi = match dizinler.iter_mut().find(|d| d.dizin == dizin) {
+                Some(s) => s,
+                None => {
+                    dizinler.push(DizinSayisi {
+                        dizin,
+                        eklenen: 0,
+                        degisen: 0,
+                        silinen: 0,
+                    });
+                    let son = dizinler.len() - 1;
+                    &mut dizinler[son]
+                }
+            };
+            let alan = match tur {
+                DegisiklikTuru::Eklendi => &mut sayi.eklenen,
+                DegisiklikTuru::Degisti => &mut sayi.degisen,
+                DegisiklikTuru::Silindi => &mut sayi.silinen,
+            };
+            *alan = alan.saturating_add(1);
+        }
+        dizinler.sort_by(|a, b| a.dizin.cmp(&b.dizin));
+        let toplam = u32::try_from(hepsi.len()).unwrap_or(u32::MAX);
+        hepsi.truncate(DEGISIKLIK_LISTE_SINIRI);
+        Self {
+            dosyalar: hepsi
+                .into_iter()
+                .map(|(yol, tur)| DegisenDosya { yol, tur })
+                .collect(),
+            dizinler,
+            toplam,
+            eksik,
+        }
+    }
+
+    /// Değişen her dosya listede ve tarama tamam.
+    pub fn tam_mi(&self) -> bool {
+        !self.eksik && self.dosyalar.len() as u64 == u64::from(self.toplam)
+    }
+
+    pub fn bos_mu(&self) -> bool {
+        self.toplam == 0 && !self.eksik
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

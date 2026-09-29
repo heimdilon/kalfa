@@ -4,10 +4,12 @@
 use kalfa_evren::KrediGozlemi;
 use serde::{Deserialize, Serialize};
 
+use crate::geri_alma::{GeriAlmaPlani, GeriAlmaSonucu};
 use crate::izin::Kip;
 use crate::kabuk::KabukTarifi;
 use crate::kimlik::{CagriId, IslemId, OturumId, TurId};
 use crate::muhur::OnayMuhru;
+use crate::tur_ozeti::{GeriAlinabilirlik, TurOzeti};
 
 pub const SEMA_SURUMU: u32 = 1;
 
@@ -48,6 +50,16 @@ pub enum Komut {
     IzinKipiDegistir {
         kip: Kip,
     },
+    /// Turun geri alma planını ister (aşama 3 tasarımı §5.6). Tur sürerken
+    /// reddedilir.
+    GeriAlmaOnizle {
+        tur: TurId,
+    },
+    /// Önizlenen planı mührüyle yürütür.
+    TuruGeriAl {
+        tur: TurId,
+        muhur: OnayMuhru,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +97,11 @@ pub struct OnayOgesi {
     /// Bulgu 3). Mühre girmez: işlemi değil bağlamı anlatır.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onaysiz_degisiklikler: Option<OnaysizDegisiklikler>,
+    /// "Geri alınabilir mi" (aşama 3 tasarımı §5.11): yazan dosya öğesinde
+    /// `Evet` ya da nedeniyle `Hayir`, kabukta `Hayir(Kabuk)`, yalnızca okuyan
+    /// öğede yok. Mühre girmez.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geri_alinabilir: Option<GeriAlinabilirlik>,
 }
 
 /// Kabuk onayında gösterilen bağlam: komut, modelin onaysız yazdığı kodu
@@ -193,5 +210,25 @@ pub enum Olay {
     /// Olay kuyruğu durdu ve oturum kapanıyor; kuyruğun son olayıdır.
     AktarimDurdu {
         neden: AktarimDurmaNedeni,
+    },
+    /// Geri alma önizlemesi (aşama 3 tasarımı §5.6).
+    GeriAlmaPlani {
+        geri_alinan_tur: TurId,
+        plan: GeriAlmaPlani,
+        muhur: OnayMuhru,
+    },
+    TurGeriAlindi {
+        geri_alinan_tur: TurId,
+        sonuc: Vec<GeriAlmaSonucu>,
+    },
+    /// Depo sınırı yüzünden bu turların önceki hâlleri silindi; özetlerindeki
+    /// "Turu geri al" kalkar (§5.2).
+    GeriAlmaVerisiSilindi {
+        turlar: Vec<TurId>,
+    },
+    /// Turun özeti (aşama 3 tasarımı §5.5); `Tamamlandi`'dan sonra, turun
+    /// zarfıyla gelir.
+    TurOzeti {
+        ozet: TurOzeti,
     },
 }

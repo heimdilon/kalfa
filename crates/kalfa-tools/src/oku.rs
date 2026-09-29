@@ -87,6 +87,7 @@ impl Arac for DosyaOku {
                 icerik: "[dosya boş]".into(),
                 kaynak: format!("dosya:{yol}"),
                 guvenlik_uyarilari: Vec::new(),
+                degisiklikler: None,
             });
         }
 
@@ -119,6 +120,7 @@ impl Arac for DosyaOku {
             icerik: cikti,
             kaynak: format!("dosya:{yol}:{bas}-{son}"),
             guvenlik_uyarilari: Vec::new(),
+            degisiklikler: None,
         })
     }
 }

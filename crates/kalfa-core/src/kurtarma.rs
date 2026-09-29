@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use kalfa_evren::tipler::{ChatMessage, Role};
 
+use crate::geri_alma::GeriAlmaDizini;
 use crate::izin::Kip;
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, OturumId};
@@ -35,6 +36,9 @@ pub struct KurtarilmisDurum {
     pub tamamlayicilar: Vec<ChatMessage>,
     pub bilinmeyenler: Vec<BilinmeyenCagri>,
     pub son_sira: u64,
+    /// Turların geri alma bilgisi (aşama 3 tasarımı §5.7). Depoda bunun
+    /// kullanmadığı dosyalar kayda ulaşmamış yakalamalardır ve silinir (§5.2).
+    pub geri_alma: GeriAlmaDizini,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -63,12 +67,15 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
     for zarf in kayitlar {
         match &zarf.yuk {
             KayitOgesi::Mesaj { mesaj } => mesajlar.push(mesaj.clone()),
+            // Geri almanın notu bağlama kullanıcı rolünde girer (§5.9).
+            KayitOgesi::KalfaNotu { metin } => mesajlar.push(ChatMessage::user(metin.clone())),
             KayitOgesi::KipDegisti { kip: k } => kip = *k,
             KayitOgesi::ModelDegisti { model: m } => model = m.clone(),
             KayitOgesi::AracBasladi {
                 cagri,
                 model_cagri_id,
                 arac,
+                ..
             } => {
                 baslayan.insert(
                     model_cagri_id.clone(),
@@ -122,5 +129,6 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
         tamamlayicilar,
         bilinmeyenler,
         son_sira: kayitlar.last().map_or(0, |z| z.sira),
+        geri_alma: GeriAlmaDizini::kayittan(kayitlar),
     })
 }

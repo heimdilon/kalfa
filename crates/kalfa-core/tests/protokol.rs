@@ -99,6 +99,7 @@ fn butun_olaylar_gidip_gelir() {
                 kabuk: None,
                 yerel_onay: false,
                 onaysiz_degisiklikler: None,
+                geri_alinabilir: None,
             }],
         },
         Olay::OnayGerekiyor {
@@ -184,6 +185,7 @@ fn kabuk_ogesi(cagri: CagriId) -> OnayOgesi {
         }),
         yerel_onay: true,
         onaysiz_degisiklikler: None,
+        geri_alinabilir: None,
     }
 }
 

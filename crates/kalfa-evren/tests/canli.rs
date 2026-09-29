@@ -64,3 +64,42 @@ async fn canli_akisli_arac_cagrisi() {
     let arg: serde_json::Value = serde_json::from_str(&cagri.function.arguments).unwrap();
     assert!(arg["sehir"].as_str().unwrap().contains("zmir"));
 }
+
+/// Aşama 3 tasarımı §5.9 (G2): geri almanın Kalfa notu ile sonraki kullanıcı
+/// mesajı art arda iki kullanıcı mesajıdır. Üç profil modeli bunu kabul edip
+/// yanıt vermeli.
+#[tokio::test]
+#[ignore = "canlı EVREN API; EVREN_API_KEY gerekir"]
+async fn canli_art_arda_iki_kullanici_mesaji_kabul_edilir() {
+    for model in ["glm-5.3", "qwen3.8-flash-next", "deepseek-v4-flash"] {
+        let istek = ChatRequest::new(
+            model,
+            vec![
+                ChatMessage::user("Merhaba. a.txt dosyasına 'yeni' yaz."),
+                ChatMessage::assistant(Some("a.txt dosyasına 'yeni' yazdım.".into()), Vec::new()),
+                ChatMessage::user(
+                    "[Kalfa] Kullanıcı \"Merhaba. a.txt dosyasına 'yeni' yaz.\" turunun dosya                      değişikliklerini geri aldı.
+Önceki hâline dönen: a.txt.",
+                ),
+                ChatMessage::user("a.txt şimdi hangi hâlde? Tek cümleyle yanıtla."),
+            ],
+        );
+        let (_, akis) = canli_istemci()
+            .sohbet_akisi(&istek)
+            .await
+            .unwrap_or_else(|e| panic!("{model}: istek reddedildi: {e}"));
+        let olaylar: Vec<_> = akis.collect().await;
+        let metin: String = olaylar
+            .iter()
+            .filter_map(|o| match o {
+                Ok(AkisOlayi::Metin(m)) => Some(m.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            olaylar.iter().all(Result::is_ok),
+            "{model}: akış hatası: {olaylar:?}"
+        );
+        assert!(!metin.trim().is_empty(), "{model}: yanıt boş");
+    }
+}

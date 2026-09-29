@@ -19,7 +19,8 @@ async fn kayit_yazilamazsa_oturum_durur_ve_kayitsiza_donmez() {
         ayarlar(),
         test_baglami(s.clone(), vec![], sanal_siniflandirici()),
         BozulanHedef::hep_bozuk(),
-    );
+    )
+    .unwrap();
     let mut d = Surucu::yeni(t, o);
     d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("Oturum kaydı yazılamadı")))
         .await;
@@ -174,6 +175,8 @@ async fn oturum_kaydi_yazilir() {
     d.gonder(Komut::IzinKipiDegistir { kip: Kip::Proje }).await;
     d.gonder(mesaj("selam")).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    // Tur özeti (aşama 3 tasarımı §5.5) `Tamamlandi`'dan sonra yazılır.
+    d.bekle(|o| matches!(o, Olay::TurOzeti { .. })).await;
 
     let k = OturumKaydi::oku(&yol).unwrap();
     assert!(
@@ -196,10 +199,11 @@ async fn oturum_kaydi_yazilir() {
         |z| matches!(&z.yuk, KayitOgesi::Mesaj { mesaj } if mesaj.role == Role::Assistant && mesaj.content.as_deref() == Some("Merhaba!"))
     ));
     assert_eq!(
-        k.last().unwrap().yuk,
+        k[k.len() - 2].yuk,
         KayitOgesi::TurBitti {
             neden: BitisNedeni::Normal
         }
     );
+    assert!(matches!(k.last().unwrap().yuk, KayitOgesi::TurOzeti { .. }));
     assert!(k.windows(2).all(|w| w[0].sira < w[1].sira));
 }

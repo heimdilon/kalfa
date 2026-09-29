@@ -16,6 +16,7 @@ import type {
   OturumAcilisi,
   OturumId,
   OturumSatiri,
+  TurId,
   UygulamaDurumu,
   YalitimDurumu,
 } from '../ipc/tipler';
@@ -45,6 +46,10 @@ export class AnaDurum {
   /** "Onar" sürüyor mu ve son sonucu (§9.8). */
   onariliyor = $state(false);
   onarim = $state<OnarimSonucu | null>(null);
+  /** Geri alma verisinin toplam boyutu (bayt); Ayarlar açılınca okunur. */
+  geriAlmaBoyutu = $state<number | null>(null);
+  /** Geri alma isteği gönderiliyor; sayfa düğmeleri kapalı. */
+  geriAliniyor = $state(false);
   /** Eski sayfası yüklenen oturumlar; aynı sayfa iki kez istenmez. */
   #eskiYukleniyor = new Set<OturumId>();
   #yenidenAciliyor = new Set<OturumId>();
@@ -161,6 +166,37 @@ export class AnaDurum {
     }
   }
 
+  /** Turun geri alma planını ister; sayfa plan olayı gelince açılır (aşama 3 tasarımı §5.6). */
+  async geriAlmaOnizle(oturum: OturumId, tur: TurId): Promise<void> {
+    await this.#dene(() => ipc.geriAlmaOnizle(oturum, tur));
+  }
+
+  /** Açık planı mührüyle yürütür; sayfa `TurGeriAlindi` gelince kapanır. */
+  async turuGeriAl(oturum: OturumId): Promise<void> {
+    const onizleme = this.ekranlar.get(oturum)?.geri_alma;
+    if (!onizleme || this.geriAliniyor) return;
+    this.geriAliniyor = true;
+    try {
+      await this.#dene(() => ipc.turuGeriAl(oturum, onizleme.tur, onizleme.muhur));
+    } finally {
+      this.geriAliniyor = false;
+    }
+  }
+
+  geriAlmayiKapat(oturum: OturumId): void {
+    this.#uygula(oturum, { tip: 'GeriAlmaKapandi' });
+  }
+
+  /** Oturumu, kaydını ve geri alma verisini siler; onayı Rust yerel pencerede sorar. */
+  async oturumuSil(oturum: OturumId): Promise<void> {
+    const silindi = await this.#dene(() => ipc.oturumuSil(oturum));
+    if (!silindi) return;
+    this.ekranlar.delete(oturum);
+    if (this.secili === oturum) this.secili = null;
+    if (this.onay?.oturum === oturum) this.onay = null;
+    await this.listeyiYenile();
+  }
+
   onayiAc(oturum: OturumId, islem: IslemId): void {
     this.onay = { oturum, islem };
   }
@@ -188,6 +224,8 @@ export class AnaDurum {
     this.teknikRapor = null;
     this.kopyalama = null;
     this.onarim = null;
+    const boyut = await this.#dene(() => ipc.geriAlmaVerisiBoyutu());
+    if (boyut !== undefined) this.geriAlmaBoyutu = boyut;
     const platform = this.uygulama?.platform;
     if (platform !== 'linux' && platform !== 'windows') return;
     const dizinler = await this.#dene(() => ipc.aracZinciriDizinleri());

@@ -8,6 +8,8 @@ import type {
   CagriId,
   CalismaAlani,
   GecmisSayfasi,
+  GeriAlmaPlani,
+  GeriAlmaSonucu,
   KanalMesaji,
   Kip,
   KomutHatasi,
@@ -119,6 +121,12 @@ export class SahteArka {
   };
   /** Bu komutlar verilen hatayla reddedilir. */
   hatalar = new Map<string, KomutHatasi>();
+  /** `oturumu_sil`'in yerel penceresinin yanıtı. */
+  silmeOnayi = true;
+  /** `geri_alma_onizle`'nin yayacağı plan; `null` ise olay gelmez. */
+  geriAlmaPlani: GeriAlmaPlani | null = null;
+  /** `geri_alma_verisi_boyutu`'nun yanıtı. */
+  geriAlmaBoyutu = 0;
   /** Komutun yerine geçen davranış (önizlemenin senaryosu kullanır). */
   ozel = new Map<string, (a: Argumanlar) => unknown>();
 
@@ -267,6 +275,38 @@ export class SahteArka {
       case 'oturumu_kapat':
         this.#kanallar.delete(oturum);
         return null;
+      case 'geri_alma_onizle':
+        if (this.geriAlmaPlani && this.#kanallar.has(oturum)) {
+          const plan = this.geriAlmaPlani;
+          const tur = a.tur as TurId;
+          queueMicrotask(() =>
+            this.olaylar(
+              oturum,
+              [{ tip: 'GeriAlmaPlani', geri_alinan_tur: tur, plan, muhur: `muhur-${tur}` }],
+              null,
+            ),
+          );
+        }
+        return null;
+      case 'turu_geri_al':
+        if (this.geriAlmaPlani && this.#kanallar.has(oturum)) {
+          const sonuc: GeriAlmaSonucu[] = this.geriAlmaPlani.ogeler.map((o) => ({
+            yol: o.yol,
+            eylem: o.eylem,
+          }));
+          const tur = a.tur as TurId;
+          queueMicrotask(() =>
+            this.olaylar(oturum, [{ tip: 'TurGeriAlindi', geri_alinan_tur: tur, sonuc }], null),
+          );
+        }
+        return null;
+      case 'oturumu_sil':
+        if (!this.silmeOnayi) return false;
+        this.#oturumlar.delete(oturum);
+        this.#kanallar.delete(oturum);
+        return true;
+      case 'geri_alma_verisi_boyutu':
+        return this.geriAlmaBoyutu;
       case 'sart_penceresi_durumu':
         return this.sart;
       case 'anahtari_kaydet': {

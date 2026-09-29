@@ -528,3 +528,150 @@ async fn calisma_alani_secici_kalfa_projeleri_ile_acilir() {
     o.t.uygulama.arac_zinciri_dizini_ekle().await.ok();
     assert_eq!(o.t.iletisim.son_baslangic(), None);
 }
+
+// --- Geri alma ve oturumu silme (aşama 3 tasarımı §5.6, §5.10) ---------------
+
+fn geri_alma_deposu(o: &Ortam, oturum: OturumId) -> PathBuf {
+    kalfa_uygulama::dizin::oturum_geri_alma_dizini(&o.veri.path().join("geri-alma"), oturum)
+}
+
+/// Proje kipinde bir tur `a.txt`'yi değiştirir ve `yeni/b.txt`'yi oluşturur.
+async fn yazan_tur(o: &Ortam) -> (OturumId, UnboundedReceiver<KanalMesaji>, TurId) {
+    std::fs::write(o.alan.path().join("a.txt"), "eski").unwrap();
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.iletisim.onay_ver(true);
+    o.t.uygulama
+        .izin_kipi_degistir(oturum, Kip::Proje)
+        .await
+        .unwrap();
+    o.t.uygulama
+        .mesaj_gonder(oturum, "iki dosya".into())
+        .await
+        .unwrap();
+    let olaylar = olay_bekle(&o.t, oturum, &mut rx, |x| {
+        matches!(x, Olay::TurOzeti { .. })
+    })
+    .await;
+    let tur = olaylar
+        .iter()
+        .find_map(|x| match x {
+            Olay::TurOzeti { ozet } => Some(ozet.tur),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(o.alan.path().join("a.txt")).unwrap(),
+        "yeni"
+    );
+    (oturum, rx, tur)
+}
+
+fn yazan_senaryo() -> Vec<SahteYanit> {
+    vec![
+        SahteYanit::araclar(vec![
+            (
+                "dosya_yaz",
+                serde_json::json!({"yol": "a.txt", "icerik": "yeni"}),
+            ),
+            (
+                "dosya_yaz",
+                serde_json::json!({"yol": "yeni/b.txt", "icerik": "b"}),
+            ),
+        ]),
+        SahteYanit::metin("tamam"),
+    ]
+}
+
+#[tokio::test]
+async fn uygulamada_tur_onizlenip_geri_alinir() {
+    let o = ortam(yazan_senaryo()).await;
+    let (oturum, mut rx, tur) = yazan_tur(&o).await;
+    assert!(
+        geri_alma_deposu(&o, oturum).is_dir(),
+        "önceki hâl oturumun deposunda"
+    );
+    o.t.uygulama.geri_alma_onizle(oturum, tur).await.unwrap();
+    let olaylar = olay_bekle(&o.t, oturum, &mut rx, |x| {
+        matches!(x, Olay::GeriAlmaPlani { .. })
+    })
+    .await;
+    let Some(Olay::GeriAlmaPlani { muhur, plan, .. }) = olaylar.into_iter().last() else {
+        unreachable!()
+    };
+    assert_eq!(plan.ogeler.len(), 2);
+    o.t.uygulama.turu_geri_al(oturum, tur, muhur).await.unwrap();
+    olay_bekle(&o.t, oturum, &mut rx, |x| {
+        matches!(x, Olay::TurGeriAlindi { .. })
+    })
+    .await;
+    assert_eq!(
+        std::fs::read_to_string(o.alan.path().join("a.txt")).unwrap(),
+        "eski"
+    );
+    assert!(!o.alan.path().join("yeni").exists(), "boş dizin de kalktı");
+    assert!(o.t.uygulama.geri_alma_verisi_boyutu().await.unwrap() > 0);
+}
+
+#[tokio::test]
+async fn oturumu_sil_kaydi_ve_geri_alma_verisini_siler() {
+    let o = ortam(yazan_senaryo()).await;
+    let (oturum, _rx, _) = yazan_tur(&o).await;
+    let depo = geri_alma_deposu(&o, oturum);
+    assert!(depo.is_dir());
+    let sorulan = o.t.iletisim.sorulanlar().len();
+    assert!(o.t.uygulama.oturumu_sil(oturum).await.unwrap());
+    let sorulanlar = o.t.iletisim.sorulanlar();
+    assert_eq!(sorulanlar.len(), sorulan + 1, "yerel pencere soruldu");
+    assert!(
+        sorulanlar
+            .last()
+            .unwrap()
+            .contains("geri alma verisi kalıcı olarak silinecek"),
+        "{sorulanlar:?}"
+    );
+    // Açık oturum önce kapatıldı.
+    assert_eq!(o.t.uygulama.acik_oturum_sayisi(), 0);
+    assert!(!o.kayit(oturum).exists());
+    assert!(!kalfa_core::kayit::kilit_yolu(&o.kayit(oturum)).exists());
+    assert!(!depo.exists());
+    assert_eq!(o.t.uygulama.geri_alma_verisi_boyutu().await.unwrap(), 0);
+    assert_eq!(o.t.uygulama.uygulama_durumu().son_oturum, None);
+    assert!(o.t.uygulama.oturumlari_listele().await.unwrap().is_empty());
+    let hata = o.t.uygulama.oturum_ac(oturum).await.unwrap_err();
+    assert_eq!(hata.kod, HataKodu::OturumYok);
+}
+
+#[tokio::test]
+async fn yerel_onay_reddedilirse_oturum_silinmez() {
+    let o = ortam(Vec::new()).await;
+    let oturum = o.yeni_oturum().await;
+    o.t.iletisim.onay_ver(false);
+    assert!(!o.t.uygulama.oturumu_sil(oturum).await.unwrap());
+    assert!(o.kayit(oturum).exists());
+    assert_eq!(o.t.uygulama.acik_oturum_sayisi(), 1, "oturum açık kaldı");
+}
+
+#[tokio::test]
+async fn baska_yerde_acik_kayit_silinmez() {
+    let o = ortam(Vec::new()).await;
+    let oturum = o.yeni_oturum().await;
+    o.t.uygulama.oturumu_kapat(oturum).await.unwrap();
+    let _kilit = OturumKaydi::ac(&o.kayit(oturum)).unwrap();
+    o.t.iletisim.onay_ver(true);
+    let hata = o.t.uygulama.oturumu_sil(oturum).await.unwrap_err();
+    assert_eq!(hata.kod, HataKodu::KayitMesgul);
+    assert!(o.kayit(oturum).exists());
+}
+
+#[tokio::test]
+async fn kaydi_olmayan_oturum_silinmez_ve_sorulmaz() {
+    let o = ortam(Vec::new()).await;
+    let hata =
+        o.t.uygulama
+            .oturumu_sil(OturumId::yeni())
+            .await
+            .unwrap_err();
+    assert_eq!(hata.kod, HataKodu::OturumYok);
+    assert!(o.t.iletisim.sorulanlar().is_empty());
+}

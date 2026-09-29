@@ -69,6 +69,7 @@ impl Arac for Deneme {
             icerik: "ok".into(),
             kaynak: "deneme".into(),
             guvenlik_uyarilari: Vec::new(),
+            degisiklikler: None,
         })
     }
 }
@@ -144,11 +145,7 @@ fn muhur_islemin_kendisine_baglidir() {
     let c = CagriId::yeni();
     let a = json!({"yol": "a"});
     let h1 = Hazirlik {
-        yazilan: vec![YazmaHedefi {
-            yol: y("a"),
-            onceki_ozet: Some("x".into()),
-            baglanti_sayisi: 1,
-        }],
+        yazilan: vec![YazmaHedefi::yeni(y("a"), Some("x".into()), 1)],
         ..Default::default()
     };
     let m = muhur_hesapla(c, "yaz", &a, &h1);
@@ -345,5 +342,32 @@ fn io_hatasi_arac_hatasina_donusur() {
         AracHatasi::PolitikaDegisti
             .to_string()
             .contains("İzin kipi")
+    );
+}
+
+#[test]
+fn muhur_yeni_alanlardan_etkilenmez() {
+    let c = CagriId::yeni();
+    let a = json!({"yol": "a"});
+    let yalin = Hazirlik {
+        yazilan: vec![YazmaHedefi::yeni(y("a"), Some("x".into()), 1)],
+        ..Default::default()
+    };
+    let mut dolu = yalin.clone();
+    let hedef = &mut dolu.yazilan[0];
+    hedef.onceki_icerik = Some(Arc::from(&b"eski"[..]));
+    hedef.onceki_bayt = 4;
+    hedef.sonraki_ozet = Some(ozet_hex(b"yeni"));
+    hedef.olusacak_dizinler = vec![y("u")];
+    assert_eq!(
+        muhur_hesapla(c, "yaz", &a, &yalin),
+        muhur_hesapla(c, "yaz", &a, &dolu),
+        "önceki içeriği onceki_ozet, sonrakini argümanlar zaten bağlar"
+    );
+    let mut buyuk = yalin.clone();
+    buyuk.yazilan[0].buyuk = true;
+    assert_eq!(
+        muhur_hesapla(c, "yaz", &a, &yalin),
+        muhur_hesapla(c, "yaz", &a, &buyuk)
     );
 }

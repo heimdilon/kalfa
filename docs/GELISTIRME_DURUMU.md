@@ -1078,13 +1078,44 @@ Tasarımın kendi verdiği kararlar ve gerekçeleri tasarım belgesinin
 döngü, bwrap'ta köprü, Windows'ta tarama maliyeti) bu belge yazılırken
 ölçülmedi; açık noktalar G1–G17'dir.
 
-### 3a — tur özeti ve geri alma (plan hazır)
+### 3a — tur özeti ve geri alma (uygulandı; PR incelemede)
 
 Plan: [`2026-09-28-kalfa-3a-geri-alma.md`](superpowers/plans/2026-09-28-kalfa-3a-geri-alma.md).
-Hafif bir plandır: görevleri, arayüzleri ve önce yazılacak testleri verir;
-kodu önceden doğrulanmadı. Planı Claude yerel makinede uygular ve Windows ile
-WSL'de doğrular. Kod henüz yazılmadı.
+Dal `3a/geri-alma`, PR #19 (tabanı `3/tasarim`, PR #18). Hafif bir plandı;
+platformdan bağımsız görevleri bir bulut oturumu Linux'ta, kalanları ve iki
+platformdaki doğrulamayı Claude yerel makinede yaptı.
 
-**Sıradaki iş:** 3a'nın uygulaması. Windows'ta G6'nın ölçümü (aynı
-AppContainer'da geri döngü ve boru) 3a ile paralel, erkenden yapılır; 3d'nin
-Windows'taki biçimini o belirler.
+- **Tur özeti:** her tur tasarım sistemindeki `TurnSummary` ile biter:
+  dosyalar, komutların değiştirdiği dosyalar, EVREN istekleri, güvenlik
+  uyarıları.
+- **Geri alma:**
+  - Dosya araçları yazmadan önce önceki hâli oturumun deposuna koyar
+    (Windows'ta `%LOCALAPPDATA%\Kalfa\geri-alma`) ve "başladı" kaydına yazar.
+  - "Turu geri al…" önce planı gösterir, sonra mühürle yürütür. Sonradan
+    değişen, bir komutun değiştirdiği ya da hard link'li dosyaya dokunmaz;
+    nedenini söyler.
+  - Kayıttan açılan oturumda da çalışır. Model bir Kalfa notuyla bilgilenir.
+- **Kabuk:** komuttan önce ve sonra meta veri görüntüsü alınır. Değişen
+  dosyalar tur özetinde ve sonraki kabuk onayında listelenir, geri alınmaz.
+- **Onay kartı:** her yazan öğe için "Geri alınabilir mi". 8 MiB'tan büyük
+  dosyaya yazmak kayıtlı oturumda her kipte onay ister.
+- **Oturumu silme:** yerel pencerede onaylanır; kayıt, kilit dosyası ve geri
+  alma verisi birlikte silinir.
+- **Ölçümler:**
+  - G1: 100 000 dosyada görüntünün eki Windows'ta 17 ms, WSL'de 45 ms.
+  - G10 kapandı: depo yalıtımın içinden görünmüyor.
+  - G2 kapandı: üç model art arda iki kullanıcı mesajını kabul ediyor
+    (canlı test).
+
+Ayrıntılar, plandan sapmalar ve doğrulama tablosu planın "Uygulama sonucu"
+bölümünde.
+
+**Açık işler:**
+- Araç planlaması her yazılan hedef için `git config` çalıştırıyor (Windows'ta
+  ~250 ms). Ayrı bir iş olarak işaretlendi.
+
+**Sıradaki iş:**
+- PR #18 (tasarım) ve PR #19'un (3a) incelenmesi ve birleştirilmesi.
+- Ardından 3b (gönderim günlüğü). Windows'ta G6'nın ölçümü (3d) ayrıca
+  bekliyor.
+- 3c'nin senaryo testleri (PR #21) ve 3d'nin prototipi (PR #20) açık.

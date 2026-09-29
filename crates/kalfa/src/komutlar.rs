@@ -9,7 +9,8 @@ use std::sync::Arc;
 use kalfa_core::aktarim::KanalMesaji;
 use kalfa_core::gecmis::GecmisSayfasi;
 use kalfa_core::izin::Kip;
-use kalfa_core::kimlik::OturumId;
+use kalfa_core::kimlik::{OturumId, TurId};
+use kalfa_core::muhur::OnayMuhru;
 use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::hata::KomutHatasi;
@@ -43,6 +44,10 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         model_degistir,
         izin_kipi_degistir,
         oturumu_kapat,
+        geri_alma_onizle,
+        turu_geri_al,
+        oturumu_sil,
+        geri_alma_verisi_boyutu,
         baglanti_ac,
         anahtar_penceresini_ac,
         sart_penceresini_ac,
@@ -171,6 +176,37 @@ pub async fn izin_kipi_degistir(
 #[tauri::command(rename_all = "snake_case")]
 pub async fn oturumu_kapat(u: State<'_, Arc<Uygulama>>, oturum: OturumId) -> Sonuc<()> {
     u.oturumu_kapat(oturum).await
+}
+
+/// Turun geri alma önizlemesi (aşama 3 tasarımı §5.6); plan olay olarak gelir.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn geri_alma_onizle(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    tur: TurId,
+) -> Sonuc<()> {
+    u.geri_alma_onizle(oturum, tur).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn turu_geri_al(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    tur: TurId,
+    muhur: OnayMuhru,
+) -> Sonuc<()> {
+    u.turu_geri_al(oturum, tur, muhur).await
+}
+
+/// Yerel pencerede onaylanır (aşama 3 tasarımı §5.10); vazgeçilirse `false`.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn oturumu_sil(u: State<'_, Arc<Uygulama>>, oturum: OturumId) -> Sonuc<bool> {
+    u.oturumu_sil(oturum).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn geri_alma_verisi_boyutu(u: State<'_, Arc<Uygulama>>) -> Sonuc<u64> {
+    u.geri_alma_verisi_boyutu().await
 }
 
 /// İki pencerede de var: şart metnindeki bağlantılar da yerel onayla açılır.

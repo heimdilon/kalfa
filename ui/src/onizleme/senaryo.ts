@@ -292,11 +292,57 @@ export function anaSenaryosu(windows = false): SahteArka {
               gozlem: { kalan: '1248.75', tutulan: null, istek_id: 'req_2', zaman_ms: Date.now() },
             },
             { tip: 'Tamamlandi', neden: { tip: 'Normal' } },
+            // Tur özeti ve "Turu geri al…" (aşama 3 tasarımı §5.11).
+            {
+              tip: 'TurOzeti',
+              ozet: {
+                tur: t,
+                dosyalar: kararlar
+                  .filter((k) => k.karar.tip === 'Onayla')
+                  .map((_, i) => ({
+                    yol: i === 0 ? 'src/auth.rs' : 'src/depo.rs',
+                    islem: 'Degisti' as const,
+                    eklenen: i === 0 ? 1 : 2,
+                    silinen: i === 0 ? 1 : 2,
+                    sonucu_bilinmiyor: false,
+                    geri_alinabilir: { tip: 'Evet' as const },
+                  })),
+                komutlar: [],
+                istekler: { sayi: 2, istem: 3120, tamamlama: 640, dusunce: 210 },
+                guvenlik_uyarisi: 0,
+              },
+            },
           ]),
       ],
     ]);
     return null;
   });
+  // Geri alma sayfasının önizlemesi: bir dosya geri döner, biri çakışır.
+  arka.geriAlmaPlani = {
+    ogeler: [
+      {
+        yol: 'src/auth.rs',
+        eylem: { tip: 'GeriYukle', ozet: 'onceki' },
+        simdiki: 'simdiki',
+        uyarilar: [],
+        diff: [
+          '--- b/src/auth.rs',
+          '+++ a/src/auth.rs',
+          '@@ -3,1 +3,1 @@',
+          '-const TOKEN_SURESI: Duration = Duration::from_secs(15 * 60);',
+          '+const TOKEN_SURESI: Duration = Duration::from_secs(7 * 24 * 3600);',
+        ].join('\n'),
+      },
+      {
+        yol: 'src/depo.rs',
+        eylem: { tip: 'Cakisma', neden: { tip: 'Elle' } },
+        simdiki: 'elle',
+        uyarilar: [],
+        diff: null,
+      },
+    ],
+    veri_silindi: false,
+  };
   return arka;
 }
 

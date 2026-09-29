@@ -96,6 +96,28 @@ fn her_pencere_yalnizca_kendi_komutlarini_cagirir() {
     }
 }
 
+/// Geri alma ve oturum silme komutları yalnızca ana pencereye açıktır
+/// (aşama 3 tasarımı §5.6, §5.10).
+#[test]
+fn geri_alma_komutlari_yalnizca_ana_pencerede() {
+    let app = uygulama();
+    let ana = pencere(&app, "ana");
+    let sartlar = pencere(&app, "sartlar");
+    for komut in [
+        "geri_alma_onizle",
+        "turu_geri_al",
+        "oturumu_sil",
+        "geri_alma_verisi_boyutu",
+    ] {
+        assert!(ANA_PENCERE_KOMUTLARI.contains(&komut), "{komut}");
+        assert!(izinli(&ana, komut), "ana pencere {komut} çağıramadı");
+        assert!(
+            !izinli(&sartlar, komut),
+            "şart penceresi {komut} çağırabildi"
+        );
+    }
+}
+
 #[test]
 fn cekirdek_ve_eklenti_komutlari_kapali() {
     let app = uygulama();

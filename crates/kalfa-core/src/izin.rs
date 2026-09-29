@@ -10,6 +10,9 @@ use crate::kabuk::{KabukTarifi, YalitimOzeti};
 use crate::yol::CalismaYolu;
 
 pub const GIZLI_UYARISI: &str = "Bu dosyanın içeriği EVREN'e gönderilecek.";
+/// Önceki hâli saklanamayan yazma her kipte onay ister (aşama 3 tasarımı
+/// §5.3, K9): onaysız yazmanın güvenlik ağı geri almadır.
+pub const GERI_ALINAMAZ_UYARISI: &str = "Bu dosyanın önceki hâli geri alma için saklanamayacak kadar büyük (8 MiB üstü); bu değişiklik geri alınamaz.";
 pub const KORUMALI_UYARISI: &str = "Bu yol git'in dizininde ya da kanca dizininde. Git buradaki yapılandırmayı ve kancaları kendiliğinden çalıştırır.";
 pub const BAGLANTI_UYARISI: &str =
     "Bu dosyanın başka bir yerde de adı var (hard link); yazmak o dosyayı da değiştirir.";
@@ -367,21 +370,18 @@ impl Siniflandirici {
     /// oturum sırasında değişebilir. Her derinlikteki `.git` her zaman
     /// korumalıdır.
     pub fn korumali_mi(&self, yol: &CalismaYolu) -> bool {
-        if git_koruma::git_ic_yolu_mu(yol) {
-            return true;
-        }
-        let anahtar = yol.anahtar();
-        git_koruma::korumali_yollar(&self.kok).iter().any(|k| {
-            let k = k.trim_end_matches('/');
-            anahtar == k || anahtar.starts_with(&format!("{k}/"))
-        })
+        korumali_listede(yol, &git_koruma::korumali_yollar(&self.kok))
     }
 
     /// Öncelik: Korumalı > Yapılandırma > Gizli > Normal. Okuma kararı
     /// `gizli_mi`'yi doğrudan kullanır; bu öncelik gizli dosyanın okuma
     /// onayını etkilemez.
     pub fn sinifla(&self, yol: &CalismaYolu) -> YolSinifi {
-        if self.korumali_mi(yol) {
+        self.sinifla_ile(yol, self.korumali_mi(yol))
+    }
+
+    fn sinifla_ile(&self, yol: &CalismaYolu, korumali: bool) -> YolSinifi {
+        if korumali {
             YolSinifi::Korumali
         } else if self.yapilandirma_mi(yol) {
             YolSinifi::Yapilandirma
@@ -391,4 +391,43 @@ impl Siniflandirici {
             YolSinifi::Normal
         }
     }
+
+    /// Birçok yolu aynı anda sınıflandırmak için: git korumaları bir kez
+    /// çözülür. Korumaların çözülmesi `git config` çalıştırır; yol başına
+    /// çözmek büyük bir geri alma planında saniyeler sürerdi.
+    pub fn toplu(&self) -> TopluSiniflandirici<'_> {
+        TopluSiniflandirici {
+            s: self,
+            korumali: git_koruma::korumali_yollar(&self.kok),
+        }
+    }
+}
+
+/// Git korumaları bir anda çözülmüş sınıflandırıcı (`Siniflandirici::toplu`).
+pub struct TopluSiniflandirici<'a> {
+    s: &'a Siniflandirici,
+    korumali: Vec<String>,
+}
+
+impl TopluSiniflandirici<'_> {
+    pub fn sinifla(&self, yol: &CalismaYolu) -> YolSinifi {
+        self.s
+            .sinifla_ile(yol, korumali_listede(yol, &self.korumali))
+    }
+
+    pub fn gizli_mi(&self, yol: &CalismaYolu) -> bool {
+        self.s.gizli_mi(yol)
+    }
+}
+
+/// Her derinlikteki `.git` ya da listedeki bir korumalı yolun altı.
+fn korumali_listede(yol: &CalismaYolu, korumali: &[String]) -> bool {
+    if git_koruma::git_ic_yolu_mu(yol) {
+        return true;
+    }
+    let anahtar = yol.anahtar();
+    korumali.iter().any(|k| {
+        let k = k.trim_end_matches('/');
+        anahtar == k || anahtar.starts_with(&format!("{k}/"))
+    })
 }

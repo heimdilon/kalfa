@@ -4,7 +4,7 @@
 // denetler).
 
 /// Ana pencerenin komutları.
-pub const ANA_PENCERE_KOMUTLARI: [&str; 28] = [
+pub const ANA_PENCERE_KOMUTLARI: [&str; 32] = [
     "uygulama_durumu",
     "oturumlari_listele",
     "calisma_alani_sec",
@@ -19,6 +19,10 @@ pub const ANA_PENCERE_KOMUTLARI: [&str; 28] = [
     "model_degistir",
     "izin_kipi_degistir",
     "oturumu_kapat",
+    "geri_alma_onizle",
+    "turu_geri_al",
+    "oturumu_sil",
+    "geri_alma_verisi_boyutu",
     "baglanti_ac",
     "anahtar_penceresini_ac",
     "sart_penceresini_ac",

@@ -5,6 +5,7 @@
 //! (akış, onay, araç, şart) komut kanalı da dinlenir: iptal her an işler.
 
 mod arac_asamasi;
+mod geri_alma;
 mod model_turu;
 
 use std::collections::{BTreeSet, HashMap};
@@ -20,6 +21,9 @@ use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::AracKayitDefteri;
+use crate::geri_alma::{
+    GeriAlmaDizini, GeriYukleyici, OTURUM_ALT_SINIRI, OTURUM_SINIRI, OncekiHalDeposu,
+};
 use crate::izin::{Kip, Siniflandirici};
 use crate::kayit::{KayitOgesi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
@@ -31,6 +35,7 @@ use crate::protokol::{
 };
 use crate::saglayici::Saglayici;
 use crate::sart_kapisi::SartKapisi;
+use crate::tur_ozeti::TurBiriktirici;
 use crate::yol::CalismaYolu;
 use arac_asamasi::AsamaSonucu;
 
@@ -46,6 +51,11 @@ pub struct Sinirlar {
     pub ayni_hata_esigi: u32,
     /// `Retry-After` beklemesinin üst sınırı.
     pub azami_bekleme: Duration,
+    /// Oturumun geri alma deposu tur sonunda bunu aşmışsa en eski turların
+    /// verisi `geri_alma_oturum_alt`'a inene kadar silinir (aşama 3 tasarımı
+    /// §5.2). Testler küçültür.
+    pub geri_alma_oturum: u64,
+    pub geri_alma_oturum_alt: u64,
 }
 
 impl Default for Sinirlar {
@@ -56,6 +66,8 @@ impl Default for Sinirlar {
             azami_arac_ciktisi: 64 * 1024,
             ayni_hata_esigi: 3,
             azami_bekleme: Duration::from_secs(60),
+            geri_alma_oturum: OTURUM_SINIRI,
+            geri_alma_oturum_alt: OTURUM_ALT_SINIRI,
         }
     }
 }
@@ -70,6 +82,9 @@ pub struct OturumAyarlari {
     pub olay_butcesi: OlayButcesi,
     /// `None`: kayıtsız oturum (spec §6.6).
     pub kayit_yolu: Option<PathBuf>,
+    /// Bu oturumun önceki hâllerinin deposu (aşama 3 tasarımı §5.2). Kayıtsız
+    /// oturumda yok sayılır: geri alma yoktur.
+    pub geri_alma_dizini: Option<PathBuf>,
     pub sistem_mesaji: String,
 }
 
@@ -82,6 +97,7 @@ impl OturumAyarlari {
             sinirlar: Sinirlar::default(),
             olay_butcesi: OlayButcesi::default(),
             kayit_yolu: None,
+            geri_alma_dizini: None,
             sistem_mesaji: varsayilan_sistem_mesaji(calisma_alani),
         }
     }
@@ -111,6 +127,9 @@ pub struct OturumBaglami {
     pub araclar: Arc<AracKayitDefteri>,
     pub siniflandirici: Arc<Siniflandirici>,
     pub kilitler: Arc<KaynakKilitleri>,
+    /// Geri almanın çalışma alanına yazması (aşama 3 tasarımı §5.6); `None`
+    /// ise geri alma kullanılamaz.
+    pub geri_yukleyici: Option<Arc<dyn GeriYukleyici>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -687,11 +706,21 @@ pub fn baslat_kimlikle(
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
 ) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi> {
+    let depo = depo_ac(&ayarlar)?;
     let kayit = match &ayarlar.kayit_yolu {
         Some(yol) => Some(OturumKaydi::olustur(yol)?),
         None => None,
     };
-    Ok(baslat_ic(kimlik, ayarlar, baglam, kayit))
+    Ok(baslat_ic(kimlik, ayarlar, baglam, kayit, depo))
+}
+
+/// Kayıtlı oturumun geri alma deposu. Açılamazsa oturum başlamaz: onay kartı
+/// "geri alınabilir" derken Kalfa sessizce geri alınamaz yazmamalı.
+fn depo_ac(ayarlar: &OturumAyarlari) -> Result<Option<OncekiHalDeposu>, OturumHatasi> {
+    match (&ayarlar.kayit_yolu, &ayarlar.geri_alma_dizini) {
+        (Some(_), Some(dizin)) => Ok(Some(OncekiHalDeposu::ac(dizin)?)),
+        _ => Ok(None),
+    }
 }
 
 /// Kayıttan oturumu sürdürür (spec §6.6). Model ve kip kayıttan gelir (Serbest
@@ -710,6 +739,12 @@ pub fn devam_et(
         kayit_yolu: Some(kayit_yolu.to_path_buf()),
         ..ayarlar
     };
+    let depo = depo_ac(&ayarlar)?;
+    if let Some(depo) = &depo {
+        // Kayda ulaşmamış yakalamalar ve yarım yazmalar. Temizlik başarısız
+        // olursa oturum yine açılır; dosyalar bir sonraki açılışta silinir.
+        let _ = depo.kullanilmayanlari_sil(&durum.geri_alma.kullanilan_ozetler());
+    }
     let (mut oturum, tutamac, alici, kapanis) = Oturum::kur(
         durum.oturum,
         ayarlar,
@@ -717,6 +752,10 @@ pub fn devam_et(
         Some(kayit),
         durum.mesajlar.clone(),
         durum.son_sira,
+        GeriAlmaKurulumu {
+            depo,
+            dizin: durum.geri_alma.clone(),
+        },
     );
     // Önceki süreçte onaysız ne olduğu bilinmiyor.
     oturum.onaysiz_komut = true;
@@ -751,12 +790,24 @@ pub fn devam_et(
 
 /// Uygulamanın verdiği bir kayıt hedefiyle başlatır; `ayarlar.kayit_yolu`
 /// kullanılmaz. Testlerde hata benzeten bir hedef vermek için de kullanılır.
+/// `ayarlar.geri_alma_dizini` verildiyse depo açılır; açılamazsa oturum
+/// başlamaz.
 pub fn baslat_kayitla(
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
     kayit: OturumKaydi,
-) -> (OturumTutamaci, OlayAlici) {
-    baslat_ic(OturumId::yeni(), ayarlar, baglam, Some(kayit))
+) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi> {
+    let depo = match &ayarlar.geri_alma_dizini {
+        Some(dizin) => Some(OncekiHalDeposu::ac(dizin)?),
+        None => None,
+    };
+    Ok(baslat_ic(
+        OturumId::yeni(),
+        ayarlar,
+        baglam,
+        Some(kayit),
+        depo,
+    ))
 }
 
 fn baslat_ic(
@@ -764,9 +815,20 @@ fn baslat_ic(
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
     kayit: Option<OturumKaydi>,
+    depo: Option<OncekiHalDeposu>,
 ) -> (OturumTutamaci, OlayAlici) {
-    let (mut oturum, tutamac, alici, kapanis) =
-        Oturum::kur(kimlik, ayarlar, baglam, kayit, Vec::new(), 0);
+    let (mut oturum, tutamac, alici, kapanis) = Oturum::kur(
+        kimlik,
+        ayarlar,
+        baglam,
+        kayit,
+        Vec::new(),
+        0,
+        GeriAlmaKurulumu {
+            depo,
+            dizin: GeriAlmaDizini::default(),
+        },
+    );
     tokio::spawn(async move {
         let acilis = KayitOgesi::OturumAcildi {
             model: oturum.ayarlar.model.clone(),
@@ -778,6 +840,12 @@ fn baslat_ic(
         let _ = kapanis.send(true);
     });
     (tutamac, alici)
+}
+
+/// Oturumun kurulurken aldığı geri alma durumu (aşama 3 tasarımı §5.2).
+struct GeriAlmaKurulumu {
+    depo: Option<OncekiHalDeposu>,
+    dizin: GeriAlmaDizini,
 }
 
 struct Oturum {
@@ -807,6 +875,13 @@ struct Oturum {
     /// Son kabuk onayından beri onaysız bir komut çalıştı. Kurtarılan
     /// oturumda güvenli taraf olarak `true` başlar.
     onaysiz_komut: bool,
+    /// Önceki hâllerin deposu; kayıtsız oturumda yoktur (aşama 3 tasarımı
+    /// §5.2).
+    depo: Option<OncekiHalDeposu>,
+    /// Turların geri alma bilgisi (§5.7).
+    geri_alma: GeriAlmaDizini,
+    /// Süren turun özet bilgisi (§5.5).
+    tur_ozeti: TurBiriktirici,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -823,6 +898,7 @@ impl Oturum {
         kayit: Option<OturumKaydi>,
         mesajlar: Vec<ChatMessage>,
         sira: u64,
+        geri_alma: GeriAlmaKurulumu,
     ) -> (Self, OturumTutamaci, OlayAlici, watch::Sender<bool>) {
         let (komut_tx, komut_rx) = mpsc::channel(KOMUT_KANALI);
         let (kapanis_tx, kapanis_rx) = watch::channel(false);
@@ -849,6 +925,9 @@ impl Oturum {
             kapandi: false,
             onaysiz_yazilanlar: BTreeSet::new(),
             onaysiz_komut: false,
+            depo: geri_alma.depo,
+            geri_alma: geri_alma.dizin,
+            tur_ozeti: TurBiriktirici::default(),
         };
         (
             oturum,
@@ -950,13 +1029,19 @@ impl Oturum {
                 self.kaydet(KayitOgesi::ModelDegisti { model }).await;
             }
             Komut::KullaniciMesaji { .. } => {
-                self.hata("Önceki tur sürüyor; bitmesini bekleyin ya da iptal edin.")
-                    .await;
+                self.hata(geri_alma::TUR_SURUYOR).await;
             }
             Komut::AracOnayi { .. } | Komut::YerelOnay { .. } => {
                 self.hata("Bu onay artık geçerli değil; bekleyen bir işlem yok.")
                     .await;
             }
+            // Geri alma yalnızca süren bir tur yokken yapılır (aşama 3
+            // tasarımı §5.6).
+            Komut::GeriAlmaOnizle { .. } | Komut::TuruGeriAl { .. } if self.tur.is_some() => {
+                self.hata(geri_alma::TUR_SURUYOR).await;
+            }
+            Komut::GeriAlmaOnizle { tur } => self.geri_alma_onizle(tur).await,
+            Komut::TuruGeriAl { tur, muhur } => self.turu_geri_al(tur, muhur).await,
         }
         Etki::Devam
     }
@@ -967,6 +1052,8 @@ impl Oturum {
         self.iptal = CancellationToken::new();
         *self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()) = Some((tur, self.iptal.clone()));
         self.yay(Olay::TurBasladi).await;
+        self.geri_alma.tur_basladi(tur, &metin);
+        self.tur_ozeti = TurBiriktirici::default();
         self.mesaj_ekle(ChatMessage::user(metin)).await;
         let mut neden = self.tur_dongusu().await;
         *self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()) = None;
@@ -982,6 +1069,13 @@ impl Oturum {
             neden = BitisNedeni::Hata;
         }
         self.yay(Olay::Tamamlandi { neden }).await;
+        self.geri_alma_sinirini_uygula().await;
+        // Özet turun son öğesidir; oturum listesi durumu `TurBitti`'den okur.
+        let veri_silindi = self.geri_alma.tur(tur).is_some_and(|t| t.veri_silindi);
+        let ozet = std::mem::take(&mut self.tur_ozeti).bitir(tur, veri_silindi);
+        self.kaydet(KayitOgesi::TurOzeti { ozet: ozet.clone() })
+            .await;
+        self.yay(Olay::TurOzeti { ozet }).await;
         self.tur = None;
     }
 
