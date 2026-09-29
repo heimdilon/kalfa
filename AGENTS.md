@@ -87,8 +87,16 @@ Değişikliğin dokunduğu yere göre ayrıca:
     değilse yolunu `KALFA_E2E_EDGEDRIVER` ile verin.
 
 Varsayılan testler EVREN anahtarı gerektirmez. Canlı API testleri `#[ignore]`
-ile ayrıdır; açıkça istenmedikçe çalıştırmayın. Bağlantı testleri Windows'ta
-sembolik bağlantı oluşturma izni ister.
+ile ayrıdır. Bir işin doğrulaması gerektiriyorsa ajan onları koşturabilir:
+
+- Anahtar depo kökündeki `.env`'den (`EVREN_API_KEY`, `EVREN_BASE_URL`) okunur:
+  `set -a && . ./.env && set +a && cargo test -p <crate> --test <test> <ad> -- --ignored`.
+- Yalnızca işle ilgili testler koşturulur, bütün `--ignored` takımı değil;
+  kredi harcarlar.
+- Anahtar ekrana, günlüğe ya da commit'e yazılmaz.
+- Şart kabul ucu hiçbir koşulda çağrılmaz (aşağıda "Yapılmayacaklar").
+
+Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni ister.
 
 ### Platform notları
 
