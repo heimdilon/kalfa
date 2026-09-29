@@ -1021,11 +1021,70 @@ test eski beklentiyle düştü, düzeltmeden sonra iki platformda geçti.
 **Açık işler:**
 - Görev 3'ün kurulu makinede yönetici olarak kabulü (kullanıcı; UAC): kurulum,
   "Onar" ve kaldırma kayıt dizininin yeni denetimiyle.
-- Bulgu 8: ağlı komutun çıkışı sınırsız; izin listeli çıkış vekili aşama 3'te
-  ayrı bir tasarımla.
-- Kullanıcının ek gizli kalıpları için ayar arayüzü ve saklama yeri.
-- Güvenlik denetçisi (üst belge §9); sarmal yalnızca bir azaltımdır.
+- Bulgu 8, ek gizli kalıplar ve güvenlik denetçisi aşama 3'e taşındı
+  (aşağıda).
 
-Bağlam özetleme, geri alma, gönderim günlüğü, oturum bütçesi, güvenlik
-denetçisi ve WASM eklentileri sonraki aşamalardadır. Masaüstü
-uygulaması Windows ve Linux'ta çalışıyor; tamamlanmış bir v1 sürümü yoktur.
+Bağlam özetleme, oturum bütçesi ve WASM eklentileri sonraki aşamalardadır.
+Masaüstü uygulaması Windows ve Linux'ta çalışıyor; tamamlanmış bir v1 sürümü
+yoktur.
+
+## Devam eden aşama — 3 (görünürlük)
+
+Tasarım:
+[`2026-09-28-kalfa-3-gorunurluk-design.md`](superpowers/specs/2026-09-28-kalfa-3-gorunurluk-design.md);
+üst belge r3.9. Aşama 3 beş plana bölünür:
+
+- **3a:** tur özeti ve geri alma.
+- **3b:** gönderim günlüğü ve önizleme.
+- **3c:** prompt injection senaryo testleri ve güvenlik denetçisi.
+- **3d:** ağ çıkışının kısıtlanması (Bulgu 8).
+- **3e:** "bu oturumda izin ver" kısayolları, ek gizli kalıplar ve onay
+  kartının kalan alanları.
+
+Bağlam özetleme ve oturum bütçesi aşama 3'ün dışındadır.
+
+### Kullanıcı kararları (2026-09-28)
+
+1–4 tasarım yazılmadan önce, 5–10 PR'da verildi (tasarım §2.1, K1–K10).
+
+1. **Önceki içerik oturumla birlikte saklanır.**
+   - Veri dizininde, kaydın dışındaki bir depoda durur. Dosyaların adı
+     içeriklerinin özetidir; kayda yalnızca özet girer.
+   - Oturum silinene kadar kalır; 3a'ya "Oturumu sil" eklenir.
+   - Sınırlar: dosya başına 8 MiB, oturum başına 512 MiB. Aşılınca en eski
+     turların verisi silinir.
+2. **Kabuğun değiştirdiği dosyalar geri alınamaz, listelenir.** Komuttan önce
+   ve sonra meta veri karşılaştırılır.
+3. **Sonradan değişmiş dosyaya geri almada dokunulmaz;** dosya çakışma olarak
+   listelenir. Önizleme hangi dosyanın döneceğini önceden gösterir.
+4. **Varsayılan listede olmayan host çağrıda istenir** (`ag_hostlari`); onay
+   kartında görünür ve mühre girer. Varsayılan liste crates.io, npm, PyPI ve
+   GitHub'ın indirme uçlarıdır.
+5. **`github.com` varsayılan listede değildir.** git'in `push` ucudur; git
+   işlemleri onu çağrıda ister.
+6. **Windows'ta vekilin ölçümü olumsuz çıkarsa** ağlı komut bugünkü gibi
+   `internetClient` ile çalışır; kart "Ağ: sınırsız (Windows'ta vekil yok)"
+   der.
+7. **Varsayılan gizli kalıplar kapatılamaz.** Yanlış pozitif (örneğin
+   `src/credentials.rs`) Ayarlar'daki "gizli sayılmayanlar" listesiyle
+   çözülür; eklemek yerel pencerede onaylanır.
+8. **Gizli dosyanın önceki hâli de saklanır;** oturum silinince o da silinir.
+9. **Geri alınamayacak kadar büyük dosyaya yazmak her kipte onay ister;**
+   kayıtsız oturum hariç.
+10. **3a'yı Claude yerel makinede uygular.**
+
+Tasarımın kendi verdiği kararlar ve gerekçeleri tasarım belgesinin
+§2.2'sindedir. Windows'a ve Linux'a özgü davranışlar (AppContainer'da geri
+döngü, bwrap'ta köprü, Windows'ta tarama maliyeti) bu belge yazılırken
+ölçülmedi; açık noktalar G1–G17'dir.
+
+### 3a — tur özeti ve geri alma (plan hazır)
+
+Plan: [`2026-09-28-kalfa-3a-geri-alma.md`](superpowers/plans/2026-09-28-kalfa-3a-geri-alma.md).
+Hafif bir plandır: görevleri, arayüzleri ve önce yazılacak testleri verir;
+kodu önceden doğrulanmadı. Planı Claude yerel makinede uygular ve Windows ile
+WSL'de doğrular. Kod henüz yazılmadı.
+
+**Sıradaki iş:** 3a'nın uygulaması. Windows'ta G6'nın ölçümü (aynı
+AppContainer'da geri döngü ve boru) 3a ile paralel, erkenden yapılır; 3d'nin
+Windows'taki biçimini o belirler.

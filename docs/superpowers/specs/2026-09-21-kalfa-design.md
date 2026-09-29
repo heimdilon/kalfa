@@ -1,8 +1,8 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Revizyon:** r3.8 — güvenlik sertleştirmesi (§7.3–§7.6, §9); r3.7 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
-**Durum:** 1a, 1b ve 1c uygulandı; aşama 2'de 2a ve 2b uygulandı, 2c (Windows prototipi) ölçüldü, 2d bekliyor
+**Revizyon:** r3.9 — aşama 3 (görünürlük) tasarımı [ayrı belgede](2026-09-28-kalfa-3-gorunurluk-design.md) (§4.1, §6.6, §6.7, §7.2–§7.7, §9, §11.4, §11.10, §12.3, §13.3–§15); r3.8 — güvenlik sertleştirmesi (§7.3–§7.6, §9); r3.7 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
+**Durum:** 1a, 1b, 1c ve aşama 2 (2a–2d) uygulandı; güvenlik sertleştirmesi uygulandı; aşama 3'ün tasarımı yazıldı, 3a'nın planı hazır
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
 ---
@@ -198,16 +198,24 @@ Her ikisi de bir **zarf** içinde taşınır:
 Zarf<T>  ::= { şema: 1, oturum: OturumId, tur: Option<TurId>, sıra: u64, yük: T }
 
 Command  ::= KullanıcıMesajı | İptal(tur) | AraçOnayı(çağrı, karar, onay_mührü)
+           | YerelOnay(çağrı, onay_mührü)
            | ModelDeğiştir | İzinKipiDeğiştir | OturumSıkıştır
-           | GönderimKararı(öğeler) | TuruGeriAl(tur)
+           | GönderimKararı(öğeler) | GeriAlmaÖnizle(tur) | TuruGeriAl(tur, mühür)
            | ŞartlarıKabulEt(sürüm)
 
 Event    ::= TurBaşladı | TokenParçası | DüşünceParçası | TokenKullanımı
            | AraçÇağrısıBaşladı(çağrı)
            | AraçSonucu(çağrı) | OnayGerekiyor(işlem, onay_mührü)
            | GönderimÖnizlemesi(öğeler) | KrediGözlemi | TurÖzeti(tur)
+           | GeriAlmaPlanı(tur, mühür) | TurGeriAlındı(tur) | DenetimSonucu(çağrı)
            | ŞartOnayıGerekiyor(sürüm, metin) | Hata | Tamamlandı
 ```
+
+Liste kavramsaldır; tam protokol `kalfa-core/src/protokol.rs`'tedir. Aşama 2'nin
+yerel onayı ([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §5.2)
+ve aşama 3'ün eklemeleri ([aşama 3 tasarımı](2026-09-28-kalfa-3-gorunurluk-design.md)
+§4.2) r3.9'da işlendi. Geri alma önce önizlenir, sonra önizlemenin mührüyle
+yürütülür (§6.7).
 
 `sıra` oturum başına tekdüze artar ve kayıt öğeleriyle ortak sayaçtan gelir; bu
 yüzden olay akışında boşluk olağandır. Kopukluğu aktarım katmanının paket
@@ -272,7 +280,8 @@ gözlem** bildirir:
 - CR değerleri ondalık tipte tutulur (`rust_decimal`), asla `f64` değil.
 - Her EVREN çağrısı — ana model, bağlam özetleme, güvenlik denetçisi,
   eklentilerin gömme ve yeniden sıralama çağrıları — amaç etiketi ve istek
-  kimliğiyle kaydedilir. Bütçe (§6.8) ve gönderim günlüğü (§11.10) bu kayda
+  kimliğiyle kaydedilir. HTTP hatasıyla biten istek de kaydedilir: gövdesi
+  gitmiştir (r3.9). Bütçe (§6.8) ve gönderim günlüğü (§11.10) bu kayda
   dayanır.
 
 ### 5.3 İptal ve `billing_pending`
@@ -428,6 +437,11 @@ günlüğüne ve bütçeye girer.
   gelir. "Başladı" kaydı olup "bitti" kaydı olmayan çağrı **sonucu bilinmiyor**
   olarak gösterilir ve **asla otomatik yeniden çalıştırılmaz.** Kullanıcı durumu
   görür; isterse modele yeniden yaptırır.
+  - Gönderim önizlemesi (§11.10) ya da denetçi (§9) beklenirken kapanılırsa,
+    "bitti" kaydı olan ama modele gitmemiş sonucun yerine bir yer tutucu
+    konur: "[sonuç gönderilmedi: …]" (r3.9).
+  - Geri alma (§6.7) yarıda kaldıysa "yarım kaldı" diye gösterilir. Geri alma
+    yeniden istenebilir ve dosyaları iki kez değiştirmez.
 - Devam için açılırken yarım son JSONL satırı son geçerli bayt sınırına kadar
   kesilir; geçerli son kaydın satır sonu eksikse tamamlanır ve onarım diske
   kalıcılaştırılır. Ortadaki bozuk kayıt hata verir. Aynı kayıt dosyasına
@@ -436,43 +450,81 @@ günlüğüne ve bütçeye girer.
   sağlanır. Kilit kaydın kendisine konmaz, çünkü Windows'ta aynı süreçteki
   okumaları da engeller ([1c tasarımı](2026-09-22-kalfa-1c-design.md) §5.2).
 - Bekleyen onaylar ve "bu oturumda izin ver" kısayolları geri yüklenmez. Serbest
-  kipteki oturum Sıkı kipte açılır (§7.5).
+  kipteki oturum Sıkı kipte açılır (§7.5). "Göndermeden önce göster" ayarı son
+  değeriyle açılır, çünkü açık olması güvenli taraftır (r3.9).
 - **Kayıtsız oturum** seçeneği: kayıt diske yazılmaz; o oturumda kurtarma ve geri
   alma çalışmaz, arayüz bunu söyler. Yerelde kayıt tutmamanın EVREN'in kayıt
   politikasını değiştirmediği de ekranda yazar.
-- Oturum silinince kaydı ve geri alma verisi de silinir.
+- **Geri alma verisi** (§6.7) kaydın içinde değil, yanındaki ayrı bir depoda
+  durur. Kayıt geçmiş açılışında tümüyle okunduğu için, dosya içeriklerini oraya
+  gömmek her açılışı yavaşlatırdı (r3.9).
+- Oturum "Oturumu sil" ile silinir; onayı yerel penceredir. Kaydı, kilit
+  dosyası ve geri alma verisi birlikte silinir (r3.9).
 - **Tanılama günlüğü** oturum kaydından ayrıdır: olay kimliği, araç adı, karar,
   hata türü ve istek kimliği içerir; ham prompt, dosya içeriği ve sır içermez.
   Hata raporu paylaşılmadan önce kullanıcıya temizlenmiş bir önizleme gösterilir.
 
 ### 6.7 Tur özeti ve geri alma
 
-- Her tur bir `TurÖzeti` ile biter: dosya araçlarıyla değişen dosyalar (diff'leriyle),
-  kabukla değişen dosyalar, çalıştırılan komutlar ve yapılan EVREN çağrıları.
-- **Kabukla değişen dosyalar**, kabuk çağrısından önce ve sonra alınan çalışma
-  alanı anlık görüntüsünün karşılaştırmasından çıkarılır. Görüntü her dosyanın
-  yolunu, boyutunu, değişiklik zamanını ve dosya kimliğini tutar; meta verisi
-  değişen dosyaların içerik özeti (hash) alınır. `.gitignore` kapsamındaki
-  dosyalar dahildir. `git status` bunun için yetmez: önceden değişmiş bir dosya
-  yeniden değiştiğinde durumu yine `M` kalır ve yok sayılan dosyalar hiç
-  görünmez.
+Ayrıntılar [aşama 3 tasarımında](2026-09-28-kalfa-3-gorunurluk-design.md)
+(§5) yer alır. Bu bölüm r3.9'da yeniden yazıldı.
+
+- **Tur özeti:** her tur bir `TurÖzeti` ile biter. Özette şunlar yer alır:
+  - Dosya araçlarıyla değişen dosyalar ve diff sayıları.
+  - Kabukla değişen dosyalar.
+  - Çalıştırılan komutlar ve ağ bağlantıları.
+  - Yapılan EVREN çağrıları.
+
+  Özet kayda da yazılır.
+- **Kabukla değişen dosyalar:** kabuk çağrısından önce ve sonra alınan meta
+  veri görüntüleri karşılaştırılarak bulunur.
+  - Görüntü her dosyanın yolunu, boyutunu, değişiklik zamanını ve dosya
+    kimliğini tutar. Windows'ta taramada dosya kimliği yoktur; yalnızca boyut
+    ve zaman karşılaştırılır.
+  - İçerik okunmaz, özet (hash) alınmaz. Önceki içerik bilinmediği için özet
+    "değişti mi" sorusunu cevaplamaz. Görüntü, kabuğun zaten yaptığı gizli
+    dosya ve `.git` taramasına eklenir.
+  - `.gitignore` kapsamındaki dosyalar dahildir, `.git`'in içi hariçtir.
+  - `git status` bunun için yetmez: önceden değişmiş bir dosya yeniden
+    değiştiğinde durumu yine `M` kalır, yok sayılan dosyalar ise hiç görünmez.
   - Bilinen sınır: aynı zaman damgası içinde, boyutu değişmeden yapılan bir
     değişiklik kaçabilir.
-  - Tarama maliyeti büyük çalışma alanlarında ölçülür. Tarama sınırı aşılırsa
-    özet bunu açıkça "eksik olabilir" diye işaretler; sessizce eksik kalmaz.
-- **Geri alma:** dosya araçları her yazmadan önce dosyanın önceki hâlini (yoksa
-  "yoktu" bilgisini) oturum kaydına saklar; yazdıktan sonra yeni hâlin özetini
-  (hash) kaydeder.
-- **"Turu geri al"**, turun dosya aracı değişikliklerini ters sırada geri
-  yükler — **yalnızca dosyanın şu anki hâli Kalfa'nın yazdığı hâlle aynıysa.**
-  Arada kullanıcı ya da başka bir tur dosyayı değiştirdiyse o dosyaya
-  dokunulmaz, çakışma olarak listelenir.
-- Kabukla yapılan değişiklikler ve ağ etkileri **geri alınamaz**; tur özeti ve
-  onay kartı bunu açıkça söyler.
-- Geri alma da bir işlemdir: tur özetine ve oturum kaydına girer.
-- Önceki hâli belirli bir boyutun üzerindeki dosyalar için değişiklik "geri
-  alınamaz" olarak işaretlenir ve onay kartında bu yazar. Sınır değeri uygulama
-  planında belirlenir.
+  - Tarama sınırı (500 000 girdi ya da 5 sn) aşılırsa özet açıkça "eksik
+    olabilir" der; sessizce eksik kalmaz.
+- **Önceki hâl:**
+  - Dosya araçları dosyanın önceki hâlini hazırlıkta okur. Önceki hâl yazmadan
+    **önce** oturumun geri alma deposuna yazılır ve kalıcılaştırılır; dosya
+    yoktuysa kayda "yoktu" bilgisi girer.
+  - Önceki ve sonraki hâlin özeti "başladı" kaydına girer.
+  - Depo veri dizinindedir, kaydın yanındadır (Windows'ta dolaşmayan
+    `%LOCALAPPDATA%`). Dosyaların adı içeriklerinin özetidir; geri yüklemeden
+    önce içerik adıyla karşılaştırılır.
+  - Depo yazılamazsa araç çalışmaz.
+- **Sınırlar:**
+  - Önceki hâli 8 MiB'tan büyük dosya saklanmaz; değişikliği "geri alınamaz"
+    olur. Böyle bir yazma her kipte onay ister (§7.5).
+  - Bir oturumun deposu 512 MiB'ı aşarsa en eski turların verisi silinir; o
+    turlar, ekranda açık olanlar dahil, "artık geri alınamaz" diye görünür.
+  - Veri oturum silinene kadar kalır (§6.6).
+- **"Turu geri al":** önce bir önizleme gösterir: hangi dosya geri dönecek,
+  hangisi silinecek, hangisi çakışıyor. Sonra kullanıcının onayıyla ve
+  önizlemenin mührüyle yürütülür.
+  - Dosya yalnızca şu anki hâli, Kalfa'nın o turda yazdığı hâllerden biriyse
+    turun başındaki hâline döner. Başarısız bir çağrının yazmak istediği hâl
+    bunlardan sayılmaz; o hâldeki dosya çakışma olarak listelenir.
+  - Kullanıcı, başka bir tur ya da bir komut arada dosyayı değiştirdiyse o
+    dosyaya dokunulmaz; dosya çakışma olarak, nedeniyle listelenir. Öteki
+    dosyalar geri alınır.
+  - Her tur geri alınabilir. Aynı dosyaya sonraki bir tur da yazdıysa ileti
+    önce o turun geri alınmasını söyler.
+  - Geri alma dosya araçlarının yazma yolundan geçer: bağlantı izlenmez, `.git`
+    takma adı reddedilir, hard link'li dosyaya yazılmaz.
+- **Kabuk etkileri:** kabukla yapılan değişiklikler ve ağ etkileri **geri
+  alınamaz**; tur özeti ve onay kartı bunu açıkça söyler.
+- **Geri alma bir işlemdir:** kayda girer. Model bunu bir "Kalfa notu"yla
+  öğrenir.
+- **Gizli dosyanın önceki hâli** saklanır, ama diff'i kayda yazılmaz. Depo
+  EVREN'e hiçbir yoldan gitmez.
 
 ### 6.8 Döngü ve bütçe sınırları
 
@@ -527,7 +579,7 @@ denetlenebilir kılmaktır.
 | `dosya:oku` | Glob listesi |
 | `dosya:yaz` | Glob listesi |
 | `kabuk:çalıştır` | Yalıtım profiliyle (§7.7) |
-| `kabuk:ağ` | Kabuk çalıştırmasına ağ erişimi — her kipte onaylı |
+| `kabuk:ağ` | Kabuk çalıştırmasına ağ erişimi — her kipte onaylı; yalnızca izin listeli çıkış vekilinden (§7.7, r3.9) |
 | `ağ:istek` | Host allowlist'i (v1'de bu yeteneği kullanan araç yok) |
 | `evren:<uç>` | `chat`, `embeddings`, `rerank` (v1); `ocr`, `asr` sonra |
 
@@ -624,9 +676,18 @@ Kabuk bu bölümün kapsamı dışındadır; onun sınırı §7.7'dir.
   `secrets.{json,yaml,…}`, hizmet hesabı JSON'ları, `.pgpass`, `.htpasswd`,
   `.vault-token`, Docker ve Kubernetes yapılandırması, `.yarnrc.yml`, `*.jks`,
   `*.ovpn`, `*.ppk`, `*.keytab`, `id_ecdsa*`, `id_dsa*`. Kaynak kod adlarını
-  yakalamamak için `secrets.*` gibi geniş kalıplar yoktur. Kullanıcı kalıp
-  ekleyebilir (ayar arayüzü henüz yok; açık iş); varsayılanları yalnızca
-  uygulama ayarlarından kapatabilir, depo içindeki bir dosyadan kapatamaz.
+  yakalamamak için `secrets.*` gibi geniş kalıplar yoktur.
+- **Kullanıcının ek kalıpları ve istisnaları** (r3.9; aşama 3 tasarımı §9.2):
+  - Kullanıcı Ayarlar'dan kalıp ekleyebilir. Eklenen kalıp açık oturumlarda
+    da hemen geçerli olur.
+  - Eklediği bir kalıbı kaldırmak yerel pencerede onaylanır; bu kalıcı bir
+    gevşetmedir.
+  - Varsayılan kalıplar kapatılamaz. Yanlış pozitif (örneğin `credentials*`
+    kalıbına uyan `src/credentials.rs`) "gizli sayılmayanlar" listesiyle
+    çözülür. Bu listeye kalıp eklemek yerel pencerede onaylanır. İstisna
+    yalnızca adın eşleşmesini kaldırır; yalıtımda gizli bir dosyanın hard
+    link'ini açmaz.
+  - Depo içindeki bir dosya kalıpları değiştiremez.
 - Eşleşen bir dosyayı okumak **her kipte** (Serbest dahil) onay ister ve onay
   kartı açıkça söyler: *"Bu dosyanın içeriği EVREN'e gönderilecek."*
 - `grep` ve `glob` gizli dosyaların içeriğini döndürmez; adlarını listeler ve
@@ -642,8 +703,9 @@ Kabuk bu bölümün kapsamı dışındadır; onun sınırı §7.7'dir.
   çalıştırmada bu koruma yoktur ve onay kartı bunu söyler.
 - Eklentilerin EVREN çağrıları, "göndermeden önce göster" açıkken gönderimden
   **önce** durdurulur (§11.10).
-- **Gönderim günlüğü ve önizleme** (§11.10): her EVREN isteğine hangi içeriğin,
-  hangi kaynaktan ve hangi amaçla girdiği kayıtlıdır ve arayüzde görünür.
+- **Gönderim günlüğü ve önizleme** (§11.10): her EVREN isteğine, başarısız
+  olanlar dahil, hangi içeriğin, hangi kaynaktan ve hangi amaçla girdiği
+  kayıtlıdır ve arayüzde görünür.
 
 ### 7.5 Kipler
 
@@ -658,7 +720,11 @@ Her kipte geçerli olanlar: çalışma alanı dışı yol onay ister (§7.3) · 
 yola ve kendiliğinden çalışan yapılandırmaya yazmak onay ister (§7.3) · gizli
 dosya onay ister (§7.4) · ağlı kabuk onay ister · yalıtımsız kabuk onay ister
 (§7.7) · görünmez ya da yön değiştiren karakter taşıyan işlem onay ister (§7.6)
-· onay isteyen bir komutla aynı adımdaki yazma onay ister (§7.6).
+· onay isteyen bir komutla aynı adımdaki yazma onay ister (§7.6) · önceki
+hâli geri alma için saklanamayacak kadar büyük (8 MiB üstü) bir dosyaya yazmak
+onay ister (§6.7; r3.9). Proje ve Serbest kipte onaysız yazmanın güvenlik ağı
+geri almadır; geri alınamayan değişiklik bu ağın dışında kalır. Kayıtsız
+oturumda son kural uygulanmaz.
 
 - **İnceleme kipinde** yazma araçları ve kabuk modele **hiç sunulmaz**; araç
   listesinde yer almazlar. Ajan depoyu okur, plan ve öneri üretir. Reddetmek
@@ -697,6 +763,16 @@ hesaplar:
   kısayol aracın sonraki bütün argümanlarına izin anlamına gelmez. Gizli dosya,
   korumalı yol, çalışma alanı dışı yol, ağlı ya da yalıtımsız kabuk için kısayol
   sunulmaz.
+  - Kabuk kısayolu program adı ve çalışma dizini kapsamındadır; yalnızca
+    program biçiminde, yalıtımlı ve ağsız komuta verilir
+    ([aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §5.3).
+  - Uygulama (r3.9; aşama 3 tasarımı §9.1):
+    - Kısayolu yalnızca çekirdek teklif eder. Teklif, yalnızca kip yüzünden
+      onaylı olan ve hiçbir uyarı taşımayan öğeye yapılır. Arayüz teklifi
+      yalnızca kabul edebilir.
+    - Kısayolla yürüyen çağrı onaysız sayılır; kabuk onayındaki "onaysız
+      değişiklikler" listesine girer.
+    - Kısayollar izin kipi değişince silinir.
 
 **Onaylanan komutun çalıştıracağı kod** (r3.8; güvenlik analizi Bulgu 3, 7):
 
@@ -754,6 +830,23 @@ Dört ilke:
 **Ağ:** ağlı çalıştırma ayrı bir yetenektir (`kabuk:ağ`) ve her kipte onay
 ister. Ağlı çalıştırmada dosya yalıtımı aynen sürer.
 
+**Ağ çıkışı** (r3.9; güvenlik analizi Bulgu 8;
+[aşama 3 tasarımı](2026-09-28-kalfa-3-gorunurluk-design.md) §8):
+
+- Ağlı komut yalnızca Kalfa'nın izin listeli çıkış vekilinden dışarı çıkar.
+- Varsayılan liste paket kayıtlarının ve GitHub'ın indirme uçlarıdır:
+  crates.io, npm, PyPI, `codeload.github.com` ve benzerleri. `github.com`
+  listede değildir, çünkü git'in `push` ucudur; git işlemleri onu çağrıda
+  ister.
+- Başka bir host gerekiyorsa model onu çağrıda ister. Host onay kartında
+  görünür ve mühre girer; çalışırken listeye yeni host eklenmez.
+- Vekil geri döngüye ve bağlantı yerel adreslere hiçbir zaman bağlanmaz. Özel
+  ağa yalnızca kullanıcının Ayarlar'da yerel onayla "özel ağ" işaretiyle
+  eklediği host için bağlanır; model bu yolu açamaz. Ad bir kez çözülür.
+- Vekil TLS'i açmaz; hedefi sınırlar, içeriği değil. İzinli bir hosta kendi
+  kimlik bilgisiyle yükleme yapan bir komut veriyi yine çıkarabilir. Onay bu
+  yüzden her kipte kalır.
+
 **Linux arka ucu — `bubblewrap` + `seccomp`.** Yalıtım boş bir kökten
 (tmpfs) başlar. Seçilmiş sistem yolları ve izinli araç zinciri alt dizinleri
 salt okunur, çalışma alanı ile ona özel geçici ve önbellek dizini yazılabilir
@@ -772,6 +865,13 @@ yerel ayrıcalıklı soketlere de ulaşılamaz (`socketpair` serbesttir).
     dışarıdaysa (worktree, submodule) geri başvurusu doğrulanır ve salt okunur
     bağlanır (r3.6).
   - Gizli bir dosyanın çalışma alanındaki hard link'i de örtülür.
+- *Aşama 3 kararları* ([aşama 3 tasarımı](2026-09-28-kalfa-3-gorunurluk-design.md) §8.5;
+  doğrulanmadı, 3d'de ölçülür):
+  - Ağlı profil de ağ ad alanını ayırır ve `resolv.conf`'u bağlamaz.
+  - Kabın içindeki küçük bir köprü, kabın geri döngüsünde dinler. Kabul ettiği
+    bağlantıları devralınmış bir Unix soketi üzerinden Kalfa'daki vekile
+    verir.
+  - Köprü güvenilir kod sayılmaz; sınır vekildir.
 - *Neden Landlock değil:* Landlock yalnızca izin listesiyle çalışır; yazılabilir
   bir dizinin içinde salt okunur ya da okunamaz alt yol (`.git/hooks`, `.env`)
   tanımlanamaz.
@@ -803,6 +903,13 @@ yerel ayrıcalıklı soketlere de ulaşılamaz (`socketpair` serbesttir).
 - **Ağ:** ağsız çalıştırmada kaba ağ yeteneği verilmez; DNS dahil bağlantı
   yoktur. Ağlı çalıştırmada `internetClient` verilir. Geri döngü iki durumda da
   kapalıdır.
+  - *Aşama 3 kararı* (aşama 3 tasarımı §8.6; ölçülmedi):
+    - Ağlı çalıştırmada da `internetClient` verilmez.
+    - Aynı kaptaki bir köprü, bağlantıları paket SID'ine açık bir adlandırılmış
+      boruyla Kalfa'daki vekile taşır.
+    - Kabın içinde geri döngünün çalışıp çalışmadığı ölçülmedi. Ölçüm olumsuz
+      çıkarsa `internetClient` yedek yol olarak kalır ve onay kartı ağın
+      sınırsız olduğunu söyler (kullanıcı kararı).
 - **İzinlerin yaşam döngüsü:**
   - Çalışma alanının ACL kaydı, çalışma alanı Kalfa'ya ilk eklendiğinde bir kez
     verilir. Büyük ağaçlarda bu zaman alır ve ilerleme gösterilir.
@@ -1094,7 +1201,7 @@ içerik kuralı (§7.4) → denetçi → model.
 | Uygulama | Karşılık geldiği kip | Durum |
 |---|---|---|
 | `Yok` | **kapalı** | Varsayılan |
-| `YapılandırılmışSınıflandırıcı` | **uyar** / **katı** | **v1'de çalışır** — `qwen3.8-flash-next` + `json_schema` ile `{güvenli, kategori, gerekçe}` |
+| `YapılandırılmışSınıflandırıcı` | **uyar** / **katı** | **v1'de çalışır** — `qwen3.8-flash-next` + `json_schema` ile `{guvenli, kategori, gerekce}` (alan adları canlı yanıttaki gibi; r3.9) |
 | `EvrenGuard` | **uyar** / **katı** | Guard ucu açılırsa devreye girer |
 
 Kip, denetçi uygulamasından ayrı bir ayar değildir: `Yok` seçmek "kapalı" kiptir,
@@ -1107,8 +1214,22 @@ uyan bir yanıtla işaretledi (`chat_json_schema_qwen_flash.json`). O çağrıda
 completion token'ının 192'si reasoning'di; denetçinin gecikmesi ve maliyeti
 bununla birlikte ölçülmelidir.
 
-Kapsam: dış kaynaklı her içerik — dosya, kabuk çıktısı, eklenti çıktısı ve araç
-açıklamaları, RAG parçaları; v1.1'de MCP çıktısı.
+Kapsam: dış kaynaklı her içerik — dosya, dosya listesi, kabuk çıktısı, eklenti
+çıktısı ve araç açıklamaları, RAG parçaları; v1.1'de MCP çıktısı.
+
+r3.9'da ([aşama 3 tasarımı](2026-09-28-kalfa-3-gorunurluk-design.md) §7) eklenenler:
+
+- **Denetlenmeyenler:**
+  - Kalfa'nın ürettiği sonuçlar (`[hata]`, "yazıldı"). Araç bunu kendisi
+    bildirir; bildirmeyen aracın sonucu dış kaynaklı sayılır.
+  - Kullanıcının onayıyla okunan gizli dosya. İçeriğin EVREN'e gönderilmesini
+    kullanıcı zaten onayladı; denetçiye de göndermek onu ikinci bir alıcıya
+    göndermek olurdu (§7.4). Sonuç "denetlenmedi" diye işaretlenir.
+- **Çağrı:** denetim bloklu bir sohbet çağrısıdır. İçerik, araç sonucundaki
+  gibi rastgele sınırlı bir sarmalla gider. Denetlenen metin, modelin göreceği
+  kırpılmış metindir.
+- **Denetçi de enjeksiyona uğrayabilir.** Şema yanıtın biçimini zorlar,
+  kararını değil.
 
 ### 9.2 Zamanlama
 
@@ -1118,14 +1239,17 @@ denetlenen içerik, karar gelmeden modele **gitmez**. Bu iki kipte de böyledir:
 - **uyar:** şüpheli içerik, "talimat olarak uygulama" uyarısıyla sarılarak modele
   gider ve arayüzde işaretlenir.
 - **katı:** şüpheli içerik modele gitmez; kullanıcıya gösterilir ve karar
-  kullanıcıya bırakılır.
+  kullanıcıya bırakılır. Karar, gönderim önizlemesinin kartında sorulur
+  (§11.10; r3.9).
 
-Bekleme gecikme ekler; durum çubuğunda görünür.
+Bekleme gecikme ekler; durum çubuğunda görünür. Aynı anda en çok dört denetim
+koşar.
 
 ### 9.3 Başarısızlık
 
-- Zaman aşımı, bozuk JSON, şemaya uymayan yanıt ya da EVREN hatası → karar
-  **bilinmiyor**. Başarılı sınıflandırma sayılmaz.
+- Zaman aşımı (30 sn), bozuk JSON, şemaya uymayan yanıt ya da EVREN hatası →
+  karar **bilinmiyor**. Başarılı sınıflandırma sayılmaz. `429`'da bir kez
+  yeniden denenir (§5.4).
 - **katı** + bilinmiyor → içerik modele gitmez; kullanıcıya "denetlenemedi"
   olarak sorulur.
 - **uyar** + bilinmiyor → içerik "denetlenemedi" işaretiyle gider; arayüzde
@@ -1141,6 +1265,12 @@ içeriğe uygulanır, ajanın kendi ürettiğine değil.
 
 Üç kip: **kapalı** (geliştirici varsayılanı) · **uyar** · **katı**.
 Savunma/kurumsal dağıtımda *katı*, günlük kodlamada *kapalı* mantıklıdır.
+
+- **Maliyet:** her dış kaynaklı araç sonucu için bir istek atılır; tur başına
+  en çok 50 istek eder.
+- **Görünürlük:** istekler gönderim günlüğünde "denetçi" amacıyla görünür.
+- **Kip değişikliği:** kipi düşürmek yerel pencerede onaylanır, yükseltmek
+  onaysızdır (r3.9).
 
 ---
 
@@ -1247,10 +1377,10 @@ Kart araç adını değil, **işlemin kendisini** anlatır:
 | **Ne** | İşlem: "3 dosyayı düzenle", "komut çalıştır" |
 | **Nerede** | Kanonik hedef yollar; çalışma alanı dışıysa uyarı |
 | **Etki** | Diff; kabuk için tam komut ve çalışma dizini |
-| **Veri çıkışı** | Sonucunda EVREN'e ne gideceği ("komut çıktısı", "dosya içeriği"); gizli dosyaysa açık uyarı |
-| **Yalıtım** | Kabuk için: yalıtımlı-ağsız · yalıtımlı-ağlı · yalıtımsız |
-| **Geri alınabilir mi** | Dosya aracı değişikliği: evet (§6.7). Kabuk etkileri: hayır |
-| **Kapsam** | Yalnızca bu çağrı · bu oturumda bu dizin (§7.6) |
+| **Veri çıkışı** | Sonucunda EVREN'e ne gideceği ("komut çıktısı", "dosya içeriği"); gizli dosyaysa açık uyarı. Bunu araç hazırlıkta söyler; çekirdek araç adından tahmin etmez (r3.9) |
+| **Yalıtım** | Kabuk için: yalıtımlı-ağsız · yalıtımlı-ağlı (izin listesindeki hostlar ve çağrının istediği hostlar tek tek; §7.7) · yalıtımsız |
+| **Geri alınabilir mi** | Dosya aracı değişikliği: evet (§6.7). Önceki hâli 8 MiB'tan büyük dosya ya da kayıtsız oturum: hayır. Kabuk etkileri: hayır. Bilgiyi çekirdek verir |
+| **Kapsam** | Yalnızca bu çağrı · bu oturumda bu dizin ya da program (§7.6). Kısayolu yalnızca çekirdek teklif eder |
 
 Metin sade Türkçe bir cümleyle başlar: *"Kalfa `src/main.rs` dosyasında 12 satır
 değiştirmek istiyor. Bu değişiklik geri alınabilir."*
@@ -1391,6 +1521,20 @@ kendi araç çağrısını onaylayabilir. Bu yüzden:
     çağrısıdır ve sonraki gönderimler günlükte tek tek görünmeye devam eder.
 - Gizli dosya kuralı (§7.4) bu ayardan bağımsız olarak her zaman çalışır.
 
+r3.9'da ([aşama 3 tasarımı](2026-09-28-kalfa-3-gorunurluk-design.md) §6) eklenenler:
+
+- **Günlüğün kaynağı:** günlük oturum kaydından türetilir; içerik ikinci kez
+  yazılmaz. Satırlar mesajlara kayıt sırasıyla başvurur.
+- **Neler kaydedilir:**
+  - Her istek denemesi, HTTP hatasıyla bitenler dahil.
+  - Sistem iletisi ve araç tanımları, ilk istekte ve değiştiklerinde.
+- **Önizleme:**
+  - Kurtarılan oturumda son değeriyle açılır.
+  - Önizleme kapalı olsa bile, katı denetçinin şüpheli ya da denetlenemedi
+    bulduğu öğeler aynı kartla sorulur.
+  - Karar beklenirken araç sonucunun `tool` mesajı kayda yazılmaz. Çıkarılan
+    içerik kayda da girmez.
+
 ---
 
 ## 12. Kapsam
@@ -1404,7 +1548,7 @@ kendi araç çağrısını onaylayabilir. Bu yüzden:
 | Ajan | Döngü, kaynak kilitli paralel yürütme, iptal, `reasoning` akışı, döngü ve bütçe sınırları |
 | Oturum | Kayıt ve kurtarma (§6.6), tur özeti ve geri alma (§6.7), kayıtsız oturum |
 | Yerleşik araçlar | Dosya oku/yaz/düzenle, glob, grep (`cap-std` ile), kabuk |
-| Güvenlik | Tehdit modeli, 4 kip (İnceleme dahil), bağlı ve tek kullanımlık onay, gizli dosya kuralı, kabuk yalıtımı (Linux + Windows) |
+| Güvenlik | Tehdit modeli, 4 kip (İnceleme dahil), bağlı ve tek kullanımlık onay, gizli dosya kuralı, kabuk yalıtımı (Linux + Windows), izin listeli ağ çıkışı (§7.7) |
 | Denetçi | `GüvenlikDenetçisi` kancası + `YapılandırılmışSınıflandırıcı` + başarısızlık kuralları |
 | Plugin | wasmtime + WIT 0.1 (`world`, listeleme, depo, ilerleme, iptal) + SDK + manifest zorlaması + kaynak sınırları |
 | Örnek plugin | `kalfa-rag` (kaynaklı yanıtlar) |
@@ -1443,7 +1587,14 @@ teslim edilir:
    bölünür: **2a** kabuk aracı ve süreç sınırları · **2b** Linux arka ucu ·
    **2c** Windows prototipi · **2d** Windows arka ucu.
 3. **Görünürlük:** tur özeti ve geri alma, gönderim günlüğü ve önizleme, "neden
-   izin gerekiyor" kartı, İnceleme kipi, güvenlik denetçisi.
+   izin gerekiyor" kartı, güvenlik denetçisi ve prompt injection senaryo
+   testleri, ağ çıkışının kısıtlanması (güvenlik analizi Bulgu 8). İnceleme
+   kipi 1b'de geldi. Tasarımı
+   [ayrı belgededir](2026-09-28-kalfa-3-gorunurluk-design.md). Beş plana
+   bölünür: **3a** tur özeti ve geri alma · **3b** gönderim günlüğü ve
+   önizleme · **3c** senaryo testleri ve denetçi · **3d** ağ çıkışı · **3e**
+   kısayollar, ek gizli kalıplar ve kartın kalanı. Bağlam özetleme (§6.5) ve
+   oturum bütçesi (§6.8) aşama 3'ün dışındadır.
 4. **Eklenti ve RAG:** WIT 0.1, kaynak sınırları, `kalfa-rag`.
 
 MCP (v1.1) bunlardan sonra gelir.
@@ -1520,6 +1671,12 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | Kullanıcı turu geri alıyor ama bir dosyayı arada kendisi değiştirmiş | O dosyaya dokunulmaz, çakışma olarak listelenir |
 | Paralel model ve eklenti çağrıları farklı bakiye gözlemleri döndürüyor | İstekler ilişkilendirilir; toplam maliyet kesinmiş gibi türetilmez |
 | Denetçi modeli beklenen şemayı üretmiyor | Başarılı sınıflandırma sayılmaz; "bilinmiyor" kuralı işler |
+| Kalfa bir turu geri alırken çöküyor | Yeniden açılışta "yarım kaldı" görünür; geri alma yeniden istenebilir, hiçbir dosyayı iki kez değiştirmez (r3.9) |
+| Model Proje kipinde 8 MiB'tan büyük bir dosyanın üzerine yazmak istiyor | Onay ister; kart "geri alınamaz" der (r3.9) |
+| Önizleme açıkken kullanıcı bir araç sonucunu çıkarıyor | İçerik hiçbir istekte EVREN'e gitmez; modele yer tutucu gider (r3.9) |
+| EVREN isteği `429` ya da `5xx` ile bitiyor | İstek, gövdesi gittiği için gönderim günlüğünde görünür (r3.9) |
+| Ağlı komut izin listesinde olmayan bir hosta bağlanmaya çalışıyor | Vekil reddeder; ret sonuçta ve tur özetinde görünür (r3.9) |
+| İzinli görünen bir host özel ağ ya da geri döngü adresine çözülüyor | Vekil bağlanmaz (r3.9) |
 
 ---
 
@@ -1540,6 +1697,10 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | 11 | Denetçi modeli reasoning'e çok token harcıyor | Denetim gecikmesi ve maliyeti yüksek | Ölçüm; gerekirse reasoning'i kapatma seçeneği araştırılır |
 | 12 | Windows'ta okuma sınırı (`ALL APPLICATION PACKAGES` ile kısıtlı belirteç) bir varsayım | Doğrulanamazsa yalıtılmış süreç yerel kullanıcıların okuyabildiği her şeyi okur | 2c'de ölçüldü: kısıtlı belirteçle tutmadı, AppContainer'la tuttu; Windows arka ucu AppContainer'a geçti (§7.7) |
 | 13 | AppContainer ve çalışma alanına özel `HOME`/`APPDATA` bazı araçları bozabilir | Bilinen klasör yolunu ortam değişkeni yerine sistemden okuyan araçlar yazamaz | Uyumluluk matrisi (§13.2); risk 7 ile aynı azaltma |
+| 14 | Çıkış vekili hedefi sınırlar, içeriği değil | İzinli bir hosta kendi kimlik bilgisiyle yükleme (`npm publish`, `git push`) veri çıkarabilir | Varsayılan liste indirme uçlarıyla sınırlı, `github.com` listede değil; ağlı komut her kipte onay ister; bağlantılar tur özetinde görünür (§7.7) |
+| 15 | Windows'ta vekilin çalışması ölçülmedi: aynı kaptaki geri döngü | Windows'ta ağlı komutun çıkışı sınırsız kalabilir | Aşama 3d'de ölçüm; olumsuzsa `internetClient` yedek yol, kart ağın sınırsız olduğunu açıkça söyler |
+| 16 | Denetçi her dış kaynaklı sonuç için bir istek ekler | Gecikme ve kredi | Varsayılan kapalı; en çok 4 eşzamanlı denetim; gecikme ve token ölçümü (aşama 3 tasarımı G3) |
+| 17 | Geri alma verisi diskte kalır; gizli dosyaların önceki hâlleri de | Diskte büyüme ve gizli içeriğin izinin büyümesi | Kullanıcıya özel izinler; 8 MiB ve 512 MiB sınırları; oturum silme; depo hiçbir istekte EVREN'e gitmez (§6.7) |
 
 ---
 
@@ -1581,7 +1742,16 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | Ortak durum | Geçici dizin ve önbellek çalışma alanına özel | Ortak önbellek projeler arası zehirleme kanalıdır |
 | Korumalı yollar | Ortak izin motorunda, bütün yazma yollarına | Yalnızca kabuk profilinde olsaydı dosya aracıyla aşılırdı |
 | Eklenti gönderim önizlemesi | Host çağrısında, ağa çıkmadan önce | Sonuç kartında gösterim veri çıktıktan sonra olur |
-| Tur özeti | Meta veri + hash anlık görüntüsü | `git status` yeniden değişen ve yok sayılan dosyaları kaçırır |
+| Tur özeti | Meta veri anlık görüntüsü; içerik özeti alınmaz (r3.9) | `git status` yeniden değişen ve yok sayılan dosyaları kaçırır; önceki içerik bilinmeden özet değişikliği kanıtlamaz |
+| Geri alma verisi | Kaydın dışında, içerik adresli depo; oturumla birlikte; dosya başına 8 MiB, oturum başına 512 MiB | Kayıt her geçmiş açılışında tümüyle okunur; kullanıcı kararı (aşama 3 K1) |
+| Kabuk değişiklikleri | Listelenir, geri alınmaz | Komut öncesi kopya her komutta pahalı; git'ten geri yükleme yalıtım dışında git çalıştırır; kullanıcı kararı (K2) |
+| Geri alma çakışması | O dosyaya dokunulmaz, listelenir; önizleme önceden gösterir | Kullanıcının sonraki değişikliği ezilmez; kullanıcı kararı (K3) |
+| Ağ çıkışı | İzin listeli vekil; `github.com` varsayılan listede değil; ek host çağrıda istenir, kartta ve mühürde | Bulgu 8; araç onaylanan tarife göre çalışır; `github.com` git'in `push` ucudur; kullanıcı kararları (K4, K5) |
+| Windows'ta vekil çalışmazsa | `internetClient`; kart ağın sınırsız olduğunu söyler | Kapatmak, ağ gereken işi yalıtımsız çalıştırmaya iterdi; kullanıcı kararı (K6) |
+| Gizli kalıbın yanlış pozitifi | "Gizli sayılmayanlar" listesi, yerel onayla; varsayılan kalıplar kapatılamaz | Bütün bir kalıbı kapatmak gerçek kimlik dosyalarını da açar; kullanıcı kararı (K7) |
+| Gizli dosyanın önceki hâli | Geri alma deposunda saklanır; oturumla silinir | Model `.env`'i Proje kipinde onaysız ezebilir; kullanıcı kararı (K8) |
+| Geri alınamayan yazma | Her kipte onay; kayıtsız oturum hariç | Onaysız yazmanın güvenlik ağı geri almadır; kullanıcı kararı (K9) |
+| Gönderim günlüğü | Kayıttan türetilir; başarısız istekler dahil | İçerik iki kez yazılmaz; gövdesi çıkmış bir istek gizlenmez |
 
 ---
 
@@ -1723,3 +1893,32 @@ uygulandı. Bu belgede değişenler:
 - §7.6: kabuk onayında onaysız değişiklikler, aynı adım kuralı, görünmez
   karakterler ve "Tümünü onayla" istisnaları.
 - §9: araç çıktısı rastgele sınırlı sarmalla gelir.
+
+**r3.9 (2026-09-28):** Aşama 3'ün (görünürlük) tasarımı ayrı belgede:
+[2026-09-28-kalfa-3-gorunurluk-design.md](2026-09-28-kalfa-3-gorunurluk-design.md).
+Kullanıcının on kararı o belgenin §2.1'inde (K1–K10). Bu belgede değişenler:
+- Başlık: durum güncellendi (aşama 2 bitti).
+- §4.1: aşama 2'nin `YerelOnay`'ı; `GeriAlmaÖnizle`, `GeriAlmaPlanı`,
+  `TurGeriAlındı`, `DenetimSonucu`.
+- §5.2: başarısız istek de kaydedilir.
+- §6.6: geri alma verisi kaydın dışında; oturum silme; önizleme ve denetim
+  beklenirken kapanmanın kurtarılması; yarım kalan geri alma.
+- §6.7: baştan yazıldı. Değişenler:
+  - Önceki hâllerin deposu ve sınırları.
+  - Kabuk görüntüsünde içerik özeti alınmıyor; Windows'ta dosya kimliği yok.
+  - Önizleme ve mühürle geri alma; çakışmanın nedenleri.
+  - Kalfa notu; gizli dosyalar.
+- §7.2, §7.7: ağ çıkışı izin listeli vekilden (Bulgu 8); `github.com`
+  varsayılan listede değil; özel ağa yalnızca kullanıcının işaretlediği host
+  çıkar. Linux ve Windows arka uçlarına "aşama 3 kararları" eklendi; ikisi de
+  henüz ölçülmedi.
+- §7.4: kullanıcının ek gizli kalıpları ve "gizli sayılmayanlar"; varsayılanlar
+  kapatılamaz.
+- §7.5: büyük dosyaya yazmak her kipte onay ister.
+- §7.6: kısayolun uygulaması.
+- §9: şema alanları (`guvenli`, `kategori`, `gerekce`), denetlenmeyenler,
+  bloklu çağrı, `429`, katı kipin kartı, kipi düşürmek.
+- §11.4, §11.10: kartın alanları ve günlüğün kaydı.
+- §12.1, §12.3: ağ çıkışı v1 kapsamında; aşama 3 beş plana bölündü; İnceleme
+  kipi 1b'de gelmişti.
+- §13.3, §14, §15: yeni senaryolar, riskler 14–17, kararlar.
