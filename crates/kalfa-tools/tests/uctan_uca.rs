@@ -1,8 +1,11 @@
+use std::path::Path;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
+use kalfa_core::arac::AracHatasi;
 use kalfa_core::arac::AracKayitDefteri;
-use kalfa_core::izin::{GIZLI_UYARISI, Kip, Siniflandirici};
+use kalfa_core::izin::{GIZLI_UYARISI, KORUMALI_UYARISI, Kip, Siniflandirici};
 use kalfa_core::kayit::OturumKaydi;
 use kalfa_core::kurtarma::kurtar;
 use kalfa_core::oturum::{OturumAyarlari, OturumBaglami, baslat};
@@ -449,4 +452,104 @@ async fn kayittan_acilan_oturumda_geri_alma() {
         !o.alan.path().join("a").exists(),
         "turun oluşturduğu boş dizinler de kaldırılır"
     );
+}
+
+fn git(kok: &Path, args: &[&str]) {
+    let durum = Command::new("git")
+        .arg("-C")
+        .arg(kok)
+        .args(args)
+        .status()
+        .expect("git kurulu olmalı");
+    assert!(durum.success(), "git {args:?}");
+}
+
+/// Git korumaları bir yanıtın planlamasında bir kez çözülür (ilk yazan
+/// hazırlıkta); aynı yanıttaki sonraki yazmalar da o çözümle kanca dizinini
+/// korumalı görür.
+#[tokio::test]
+async fn ayni_yanittaki_yazmalar_tek_cozumle_de_kanca_dizinini_korur() {
+    // `.husky` değil: o zaten yapılandırma sınıfındadır ve onay isterdi.
+    let o = ortam();
+    git(o.alan.path(), &["init", "-q"]);
+    git(o.alan.path(), &["config", "core.hooksPath", "kancalar"]);
+    std::fs::create_dir(o.alan.path().join("kancalar")).unwrap();
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::araclar(vec![
+            (
+                "dosya_yaz",
+                json!({"yol": "a.txt", "icerik": "a
+"}),
+            ),
+            (
+                "dosya_yaz",
+                json!({"yol": "kancalar/pre-commit", "icerik": "echo
+"}),
+            ),
+            (
+                "dosya_yaz",
+                json!({"yol": "b.txt", "icerik": "b
+"}),
+            ),
+        ]),
+        SahteYanit::metin("tamam"),
+    ]);
+    let mut d = gercek_araclarla(&o, &s, Kip::Serbest, false);
+    d.gonder(mesaj("yaz")).await;
+
+    let ogeler = onay_bekle(&mut d).await;
+    assert_eq!(ogeler.len(), 1, "yalnızca kanca dizinine yazma onaya gelir");
+    assert_eq!(ogeler[0].hedefler, vec!["kancalar/pre-commit"]);
+    assert_eq!(ogeler[0].uyarilar, vec![KORUMALI_UYARISI]);
+    d.gonder(Komut::AracOnayi {
+        cagri: ogeler[0].cagri,
+        karar: OnayKarari::Onayla,
+        muhur: ogeler[0].muhur.clone(),
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    for yol in ["a.txt", "kancalar/pre-commit", "b.txt"] {
+        assert!(o.alan.path().join(yol).exists(), "{yol}");
+    }
+}
+
+/// Onay beklenirken `core.hooksPath` hedefe çevrilirse eski onay yazdırmaz:
+/// yürütme korumaları planlamadakinden bağımsız, kilit altında yeniden
+/// çözer (spec §7.3).
+#[tokio::test]
+async fn onay_beklerken_kanca_dizini_olan_hedef_eski_onayla_yazilmaz() {
+    let o = ortam();
+    git(o.alan.path(), &["init", "-q"]);
+    std::fs::create_dir(o.alan.path().join("kancalar")).unwrap();
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac(
+            "dosya_yaz",
+            json!({"yol": "kancalar/pre-commit", "icerik": "echo
+"}),
+        ),
+        SahteYanit::metin("tamam"),
+    ]);
+    let mut d = gercek_araclarla(&o, &s, Kip::Siki, false);
+    d.gonder(mesaj("yaz")).await;
+
+    let ogeler = onay_bekle(&mut d).await;
+    assert!(ogeler[0].uyarilar.is_empty(), "planlamada korumalı değil");
+    git(o.alan.path(), &["config", "core.hooksPath", "kancalar"]);
+    d.gonder(Komut::AracOnayi {
+        cagri: ogeler[0].cagri,
+        karar: OnayKarari::Onayla,
+        muhur: ogeler[0].muhur.clone(),
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    assert!(!o.alan.path().join("kancalar/pre-commit").exists());
+    assert_eq!(
+        arac_yanitlari(&s, 1),
+        vec![format!("[çalıştırılmadı] {}", AracHatasi::PolitikaDegisti)]
+    );
+    let durum = d.gecmis.iter().find_map(|z| match &z.yuk {
+        Olay::AracSonucu { durum, .. } => Some(*durum),
+        _ => None,
+    });
+    assert_eq!(durum, Some(AracDurumu::IptalEdildi));
 }

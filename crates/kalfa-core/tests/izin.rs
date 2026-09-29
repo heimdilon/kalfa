@@ -462,6 +462,45 @@ fn core_hookspath_hedefi_korunur() {
     }));
 }
 
+/// Korumaları bir kez çözen sınıflandırıcı (engelleyen ve engellemeyen hâli)
+/// yol başına çözenle aynı sınıfı verir.
+#[tokio::test]
+async fn toplu_siniflandirici_tekliyle_ayni_sinifi_verir() {
+    let d = tempfile::tempdir().unwrap();
+    for args in [
+        &["init", "-q"][..],
+        &["config", "core.hooksPath", ".husky"][..],
+    ] {
+        let durum = Command::new("git")
+            .arg("-C")
+            .arg(d.path())
+            .args(args)
+            .status()
+            .expect("git kurulu olmalı");
+        assert!(durum.success(), "git {args:?}");
+    }
+    let s = Siniflandirici::yeni(d.path(), &[]).unwrap();
+    let toplu = s.toplu();
+    let engellemeden = s.toplu_engellemeden().await;
+    for yol in [
+        ".husky/pre-commit",
+        ".HUSKY/pre-push",
+        ".git/config",
+        "alt/.git/hooks/pre-commit",
+        ".vscode/settings.json",
+        ".env",
+        "node_modules/paket/.env",
+        "src/husky.rs",
+    ] {
+        let yol = y(yol);
+        assert_eq!(toplu.sinifla(&yol), s.sinifla(&yol), "{yol}");
+        assert_eq!(engellemeden.sinifla(&yol), s.sinifla(&yol), "{yol}");
+        assert_eq!(toplu.gizli_mi(&yol), s.gizli_mi(&yol), "{yol}");
+        assert_eq!(engellemeden.gizli_mi(&yol), s.gizli_mi(&yol), "{yol}");
+    }
+    assert_eq!(toplu.sinifla(&y(".husky/pre-commit")), YolSinifi::Korumali);
+}
+
 #[test]
 fn git_yerlesimi_depoda_git_dizininin_tamamini_korur() {
     let d = tempfile::tempdir().unwrap();

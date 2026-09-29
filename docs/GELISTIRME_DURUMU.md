@@ -767,6 +767,23 @@ belirirse komut yine başlamaz; ileti nedeni söyler (aşama 2 tasarımı §3.3)
 | Gerçek yalıtım testleri | `yalitim` 29/29, `uyumluluk` 7/7 (AppContainer) | `yalitim` 17/17, `uyumluluk` 4/4 (bwrap) |
 | 2d-3 birleştikten sonra (ana dal PR dalına birleştirildi) | Çalışma alanı 464, `e2e` özellikli 91, `yalitim` 30/30, `uyumluluk` 11/11 | Çalışma alanı 414, `e2e` özellikli 90, `yalitim` 17/17, `uyumluluk` 6/6 |
 
+### Hız düzeltmesi: git korumaları yanıt başına bir kez (2026-09-28)
+
+Araç planlaması git korumalarını (`git config --get core.hooksPath`) yazma
+hedefi başına ve oturum görevini engelleyerek çözüyordu. Yürütme de aynı
+çözümü her çağrı için, sırayla tekrarlıyordu. Artık planlama korumaları
+model yanıtı başına bir kez, engellemeden çözer. Yürütme ise onları kilit
+altında yeniden çözmeye devam eder (spec §7.3), ama bunu engelleyen iş
+parçacığında yapar.
+
+Windows'ta 20 dosya yazan bir yanıtta ölçülen süreler:
+
+- **Planlama:** 0,5–0,6 s'den 31–40 ms'ye indi.
+- **Toplam:** 1,1–1,3 s'den 0,18–0,33 s'ye indi.
+
+`.git/config`'in doğrudan okunmaması bilinçli bir karardır. Ölçüm ve
+gerekçe [bulgular belgesindedir](superpowers/bulgular/2026-09-28-git-koruma-cozum-olcumu.md).
+
 ### 2d-1 — Windows arka ucu (PR #12)
 
 Plan: [`2026-09-26-kalfa-2d-1-windows.md`](superpowers/plans/2026-09-26-kalfa-2d-1-windows.md).
@@ -1110,9 +1127,8 @@ platformdaki doğrulamayı Claude yerel makinede yaptı.
 Ayrıntılar, plandan sapmalar ve doğrulama tablosu planın "Uygulama sonucu"
 bölümünde.
 
-**Açık işler:**
-- Araç planlaması her yazılan hedef için `git config` çalıştırıyor (Windows'ta
-  ~250 ms). Ayrı bir iş olarak işaretlendi.
+Araç planlamasındaki aynı maliyet (yazılan hedef başına `git config`) PR
+#25'te giderildi; aşağıdaki "Hız düzeltmesi" bölümüne bakın.
 
 **Sıradaki iş:**
 - PR #18 (tasarım) ve PR #19'un (3a) incelenmesi ve birleştirilmesi.

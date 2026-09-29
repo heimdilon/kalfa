@@ -19,8 +19,8 @@ use crate::arac::{
 use crate::geri_alma::{DIFF_SINIRI, DosyaYedegi, GeriAlinamazNedeni, OncekiHal, diff_sayilari};
 use crate::gorunum::{GORUNMEZ_UYARISI, gorunmez_var_mi};
 use crate::izin::{
-    AYNI_ADIM_UYARISI, GERI_ALINAMAZ_UYARISI, Islem, Karar, Kip, Siniflandirici, YolSinifi,
-    derleme_dosyasi_mi, kabuk_karari, karar_ver,
+    AYNI_ADIM_UYARISI, GERI_ALINAMAZ_UYARISI, Islem, Karar, Kip, Siniflandirici,
+    TopluSiniflandirici, YolSinifi, derleme_dosyasi_mi, kabuk_karari, karar_ver,
 };
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, IslemId};
@@ -111,12 +111,17 @@ impl Oturum {
     ) -> AsamaSonucu {
         let mut serbest = Vec::new();
         let mut onayli = Vec::new();
+        // Git korumaları bu yanıtın planlamasında bir kez çözülür (ilk yazan
+        // hazırlıkta); yürütme onları kilit altında yeniden çözer.
+        let siniflandirici = self.baglam.siniflandirici.clone();
+        let mut korumalar = None;
         for tc in cagrilar {
             let cagri = CagriId::yeni();
             let plan = if self.iptal.is_cancelled() {
                 Err("tur iptal edildi".into())
             } else {
-                self.planla(cagri, &tc).await
+                self.planla(cagri, &tc, &siniflandirici, &mut korumalar)
+                    .await
             };
             match plan {
                 Ok((plan, Karar::Serbest)) => serbest.push(plan),
@@ -266,10 +271,16 @@ impl Oturum {
         AsamaSonucu::Devam
     }
 
-    async fn planla(
+    /// `korumalar`: bu model yanıtının planlamasında çözülen git korumaları.
+    /// Yoksa ve hazırlık yazıyorsa burada, engellemeden çözülür. Planın
+    /// kararı onay kartını belirler; son sözü, korumaları yeniden çözen
+    /// yürütme söyler (`tek_calistir`, spec §7.3).
+    async fn planla<'s>(
         &mut self,
         cagri: CagriId,
         tc: &ToolCall,
+        siniflandirici: &'s Siniflandirici,
+        korumalar: &mut Option<TopluSiniflandirici<'s>>,
     ) -> Result<(Planlanan, Karar), String> {
         let ad = tc.function.name.as_str();
         let arac = self
@@ -285,7 +296,6 @@ impl Oturum {
             return Err(format!("`{ad}` aracı şu an kullanılamıyor."));
         }
         let argumanlar = self.baglam.araclar.dogrula(ad, &tc.function.arguments)?;
-        let siniflandirici = self.baglam.siniflandirici.clone();
         // Hazırlık beklerken komut kanalını da işle. Politika sürümünü
         // beklemeden önce al: hazırlık sırasında değişen kip eski işlemi yetkilendirmez.
         let politika = self.politika.load(Ordering::SeqCst);
@@ -294,8 +304,21 @@ impl Oturum {
             .await
             .map_err(|_| "tur iptal edildi".to_string())?
             .map_err(|e| e.to_string())?;
+        if korumalar.is_none() && !hazirlik.yazilan.is_empty() {
+            let cozulen = self
+                .iptal_edilebilir(siniflandirici.toplu_engellemeden())
+                .await
+                .map_err(|_| "tur iptal edildi".to_string())?;
+            *korumalar = Some(cozulen);
+        }
         let geri_alma = self.depo.is_some();
-        let karar = Self::karar(kip, &siniflandirici, &hazirlik, geri_alma);
+        let karar = Self::karar(
+            kip,
+            siniflandirici,
+            korumalar.as_ref(),
+            &hazirlik,
+            geri_alma,
+        );
         let muhur = muhur_hesapla(cagri, ad, &argumanlar, &hazirlik);
         let plan = Planlanan {
             cagri,
@@ -313,7 +336,16 @@ impl Oturum {
         Ok((plan, karar))
     }
 
-    fn karar(kip: Kip, s: &Siniflandirici, hazirlik: &Hazirlik, geri_alma: bool) -> Karar {
+    /// Yazma hedefleri `korumalar`'la sınıflanır. Verilmemişse git korumaları
+    /// burada, engelleyerek bir kez çözülür; async çağıranlar onları önceden
+    /// `toplu_engellemeden` ile çözer.
+    fn karar(
+        kip: Kip,
+        s: &Siniflandirici,
+        korumalar: Option<&TopluSiniflandirici>,
+        hazirlik: &Hazirlik,
+        geri_alma: bool,
+    ) -> Karar {
         let mut karar = Karar::Serbest;
         for yol in &hazirlik.okunan {
             let sinif = if s.gizli_mi(yol) {
@@ -323,14 +355,24 @@ impl Oturum {
             };
             karar = karar.birlestir(karar_ver(kip, Islem::Okuma, sinif, false));
         }
-        for hedef in &hazirlik.yazilan {
-            let yeni = karar_ver(
-                kip,
-                Islem::Yazma,
-                s.sinifla(&hedef.yol),
-                hedef.baglanti_sayisi > 1,
-            );
-            karar = karar.birlestir(yeni);
+        if !hazirlik.yazilan.is_empty() {
+            let yerinde;
+            let korumalar = match korumalar {
+                Some(k) => k,
+                None => {
+                    yerinde = s.toplu();
+                    &yerinde
+                }
+            };
+            for hedef in &hazirlik.yazilan {
+                let yeni = karar_ver(
+                    kip,
+                    Islem::Yazma,
+                    korumalar.sinifla(&hedef.yol),
+                    hedef.baglanti_sayisi > 1,
+                );
+                karar = karar.birlestir(yeni);
+            }
         }
         if let Some(kabuk) = &hazirlik.kabuk {
             karar = karar.birlestir(kabuk_karari(kip, kabuk));
@@ -960,7 +1002,26 @@ async fn tek_calistir(
         });
     }
     // Etkin git koruması değişmiş olabilir; yeni karar eski onayla geçmez.
-    if Oturum::karar(p.kip, siniflandirici, &taze, p.geri_alma) != p.karar {
+    // Korumalar burada, kilit altında ve taze hazırlıktan sonra yeniden
+    // çözülür (spec §7.3); planlamadaki çözüm kullanılmaz. Çözüm engelleyen
+    // iş parçacığında koşar: aynı adımdaki öbür araçlar beklemez.
+    let korumalar = if taze.yazilan.is_empty() {
+        None
+    } else {
+        Some(tokio::select! {
+            biased;
+            _ = iptal.cancelled() => return Err(AracHatasi::Iptal),
+            k = siniflandirici.toplu_engellemeden() => k,
+        })
+    };
+    if Oturum::karar(
+        p.kip,
+        siniflandirici,
+        korumalar.as_ref(),
+        &taze,
+        p.geri_alma,
+    ) != p.karar
+    {
         return Err(AracHatasi::PolitikaDegisti);
     }
     if iptal.is_cancelled() {

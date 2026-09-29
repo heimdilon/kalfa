@@ -401,6 +401,21 @@ impl Siniflandirici {
             korumali: git_koruma::korumali_yollar(&self.kok),
         }
     }
+
+    /// `toplu`'nun async bağlamdaki hâli: `git config` tokio'nun engelleyen
+    /// iş parçacıklarında çalışır. Oturum görevi ve aynı adımda paralel
+    /// yürüyen araçlar onu beklerken durmaz.
+    pub async fn toplu_engellemeden(&self) -> TopluSiniflandirici<'_> {
+        let kok = self.kok.clone();
+        let korumali =
+            match tokio::task::spawn_blocking(move || git_koruma::korumali_yollar(&kok)).await {
+                Ok(k) => k,
+                // Görev çalışamadıysa (çalışma zamanı kapanıyor) korumalar
+                // burada çözülür: karar korumasız verilmez.
+                Err(_) => git_koruma::korumali_yollar(&self.kok),
+            };
+        TopluSiniflandirici { s: self, korumali }
+    }
 }
 
 /// Git korumaları bir anda çözülmüş sınıflandırıcı (`Siniflandirici::toplu`).
