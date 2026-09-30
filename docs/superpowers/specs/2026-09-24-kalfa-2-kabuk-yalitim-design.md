@@ -462,7 +462,13 @@ Bu bölüm yalıtımdan bağımsızdır; yalıtımsız çalıştırmada da geçe
   - **Linux:** `USER`, `LOGNAME`.
   - **Windows:** `SystemRoot`, `windir`, `ComSpec`, `PATHEXT`, `SystemDrive`,
     `ProgramFiles*`, `ProgramData`, `CommonProgramFiles*`,
-    `NUMBER_OF_PROCESSORS`, `PROCESSOR_*`, `OS`.
+    `NUMBER_OF_PROCESSORS`, `PROCESSOR_*`, `OS`, `PSModuleAnalysisCachePath`.
+    Sonuncusu Windows PowerShell'in modül çözümleme önbelleğinin yeridir;
+    geçmezse önbelleği başka yere taşımış makinelerde her komutun ilk
+    cmdlet'i bütün modülleri baştan çözümler (GitHub'ın windows-2025
+    makinesinde komut başına ~25 sn; bulgular
+    `2026-09-30-powershell-modul-onbellegi.md`). Yalıtımlı çalıştırmada geçmez:
+    kapta önbellek çalışma alanına özel `LOCALAPPDATA`'dadır.
 - **Kalfa'nın verdikleri:**
   - Ev ve geçici dizin değişkenleri çalışma alanına özel dizinleri gösterir
     (§7.3): `HOME`, `TMPDIR`; Windows'ta `USERPROFILE`, `APPDATA`,
