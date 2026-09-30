@@ -48,6 +48,11 @@ const WINDOWS: &[&str] = &[
     "HOMEDRIVE",
     "HOMEPATH",
     "USERNAME",
+    // Windows PowerShell'in modül çözümleme önbelleğinin yeri. Bazı imajlar
+    // (GitHub'ın Windows makineleri) önbelleği önceden ısıtıp buraya koyar;
+    // değişken geçmezse her komutun ilk cmdlet'i bütün modülleri baştan
+    // çözümler (windows-2025'te komut başına ~25 sn).
+    "PSModuleAnalysisCachePath",
 ];
 
 /// Bu önekle başlayanlar geçer.
@@ -160,6 +165,19 @@ mod tests {
         assert_eq!(deger(&ortam, "TERM"), Some("dumb"));
         assert_eq!(ortam.iter().filter(|(a, _)| a == "TERM").count(), 1);
         assert_eq!(deger(&ortam, "GIT_TERMINAL_PROMPT"), Some("0"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_modul_onbellegi_gecer() {
+        let ortam = uret([cift(
+            "PSModuleAnalysisCachePath",
+            "C:\\PSModuleAnalysisCachePath\\ModuleAnalysisCache",
+        )]);
+        assert_eq!(
+            deger(&ortam, "PSModuleAnalysisCachePath"),
+            Some("C:\\PSModuleAnalysisCachePath\\ModuleAnalysisCache")
+        );
     }
 
     #[cfg(windows)]

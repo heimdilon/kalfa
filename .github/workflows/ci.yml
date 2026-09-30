@@ -1,0 +1,110 @@
+# Kalfa sürekli tümleştirmesi: AGENTS.md'deki "Kurulum ve doğrulama"
+# komutlarının Linux ve Windows'ta koşan karşılığı. Yalıtım testleri
+# (bwrap, AppContainer) ve uçtan uca testler şimdilik dışarıdadır.
+name: CI
+
+on:
+  push:
+    branches: [kalfa-asama-1]
+  pull_request:
+  workflow_dispatch:
+
+# Aynı dala yeni bir push gelirse eski koşu iptal edilir.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  bicim:
+    name: Rust biçimi
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust araç zincirini kur (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+  arayuz:
+    name: Arayüz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Bağımlılıkları kur
+        run: npm ci
+      - name: Tip ve Svelte denetimi
+        run: npm run check
+      - name: Birim testleri
+        run: npm test
+      - name: Derleme ve paket denetimi
+        run: npm run build
+      # Tauri kabuğu derlenirken `ui/dist` klasörünü gömer; Rust işi bunu indirir.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  rust:
+    name: Rust (${{ matrix.os }})
+    needs: arayuz
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: ui-dist
+          path: ui/dist
+      - name: Linux sistem kütüphaneleri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev
+      - name: Rust araç zincirini kur (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: cargo clippy (e2e özelliği)
+        run: cargo clippy -p kalfa -p kalfa-uygulama --features e2e --all-targets --locked -- -D warnings
+      - name: cargo test
+        if: runner.os == 'Linux'
+        run: cargo test --workspace --locked
+      - name: cargo test (e2e özelliği)
+        if: runner.os == 'Linux'
+        run: cargo test -p kalfa-uygulama -p kalfa --features e2e --locked
+      # Windows makinesi yükseltilmiş yönetici olarak koşar; testler ise
+      # geliştiricinin sıradan hesabını varsayar. Testler burada derlenir,
+      # sonra yönetici olmayan geçici bir kullanıcıyla koşar.
+      - name: Testleri derle (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cargo test --workspace --locked --no-run
+          cargo test -p kalfa-uygulama -p kalfa --features e2e --locked --no-run
+      - name: cargo test, yönetici olmayan kullanıcıyla (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .github/scripts/windows-testleri.ps1

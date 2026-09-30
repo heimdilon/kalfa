@@ -1518,9 +1518,14 @@ fn yalitim_ortami(
     araclar: &[PathBuf],
     ag: bool,
 ) -> Vec<(String, String)> {
+    // PowerShell'in modül önbelleği kapta çalışma alanına özel
+    // `LOCALAPPDATA`'da kalır; geliştiricinin paylaşılan önbellek dosyası
+    // kaba gösterilmez.
     let mut ortam: Vec<(String, String)> = kaynak
         .iter()
-        .filter(|(ad, _)| crate::ortam::izinli_mi(ad))
+        .filter(|(ad, _)| {
+            crate::ortam::izinli_mi(ad) && !ad.eq_ignore_ascii_case("PSModuleAnalysisCachePath")
+        })
         .cloned()
         .collect();
     let system_root = std::env::var_os("SystemRoot")
@@ -1939,6 +1944,32 @@ mod tests {
         let ortam = yalitim_ortami(&[], &ozel, &ayar, &[], false);
         let path = deger_al(&ortam, "PATH").unwrap();
         assert!(!path.contains("Python"), "{path}");
+    }
+
+    /// Yalıtımsız komuta geçen PowerShell modül önbelleği yolu kaba geçmez;
+    /// kapta önbellek çalışma alanına özel `LOCALAPPDATA`'dadır.
+    #[test]
+    fn powershell_modul_onbellegi_kaba_gecmez() {
+        let d = tempfile::tempdir().unwrap();
+        let kok = guvenlik::sade(&d.path().canonicalize().unwrap());
+        let ayar = WindowsAyari {
+            ev: kok.join("ev"),
+            yalitim_dizini: kok.join("yalitim"),
+            ek_okunur: Vec::new(),
+            kalfa_araclari: Vec::new(),
+            git: GitKimligi::default(),
+        };
+        let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, "deneme");
+        let kaynak = vec![(
+            "PSModuleAnalysisCachePath".to_string(),
+            r"C:\PSModuleAnalysisCachePath\ModuleAnalysisCache".to_string(),
+        )];
+        let ortam = yalitim_ortami(&kaynak, &ozel, &ayar, &[], false);
+        assert_eq!(deger_al(&ortam, "PSModuleAnalysisCachePath"), None);
+        assert_eq!(
+            deger_al(&ortam, "LOCALAPPDATA"),
+            Some(ozel.ev.display().to_string())
+        );
     }
 
     #[test]
