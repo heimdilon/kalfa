@@ -109,6 +109,28 @@ Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni ister.
     yazılım GL birleştiricisi gecikme ölçümünü bozuyor.
 - **Windows:** Bir işi bitmiş saymak için iki platformda da yeşil olmalıdır.
 
+### Sürekli tümleştirme (CI)
+
+`.github/workflows/ci.yml`, `kalfa-asama-1`'e her push'ta ve her PR'da koşar.
+
+- **Kapsam:** Yukarıdaki varsayılan komutlar: `cargo fmt`, arayüz
+  (`check`, `test`, `build`), iki clippy ve iki `cargo test` (düz ve `e2e`
+  özellikli). Rust işi Linux'ta ve Windows'ta koşar.
+- **Kapsam dışı:** Yalıtım testleri (bwrap, seccomp, AppContainer) ve uçtan
+  uca testler. Bunlar yukarıdaki gibi yerelde koşturulur; yeşil CI onların
+  yerini tutmaz.
+- **Windows testleri** `.github/scripts/windows-testleri.ps1` ile, yönetici
+  olmayan geçici bir `kalfatest` kullanıcısıyla, tek iş parçacığıyla
+  (`--test-threads=1`) ve geçici dizin `C:\kalfatest-tmp` iken koşar. Testler
+  yönetici hakkı, paralel koşu ya da profildeki `%TEMP%` varsaymamalıdır. Bu
+  betik yalnızca CI makinesi içindir; kullanıcı açar ve sistem ayarı
+  değiştirir, geliştirici makinesinde çalıştırmayın.
+- **Değişiklik:** Buradaki doğrulama komutları değişirse `ci.yml` de aynı
+  PR'da güncellenir. CI değişikliklerinin öneki `derleme:`'dir.
+- **PR:** Kırmızı CI'lı PR birleştirmeye hazır sayılmaz. Hata sizin
+  değişikliğinizden değilse (taban dalda da kırmızıysa) bunu PR'a yazın; testi
+  atlamayın ya da devre dışı bırakmayın.
+
 ## Kod kuralları
 
 - **Dil:**
