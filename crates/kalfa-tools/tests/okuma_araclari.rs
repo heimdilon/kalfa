@@ -66,6 +66,61 @@ async fn buyuk_dosya_tek_satir_istenince_de_okunmaz() {
 }
 
 #[tokio::test]
+async fn okuma_tam_bayt_sinirini_ve_tek_uzun_satiri_kabul_eder() {
+    use kalfa_tools::calisma_alani::OKUMA_BAYT_SINIRI;
+    let (d, a) = alan();
+    dosya(&d, "sinir.txt", &vec![b'a'; OKUMA_BAYT_SINIRI]);
+    let c = calistir(
+        &DosyaOku::yeni(a),
+        json!({"yol":"sinir.txt", "satir_sayisi":1}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(c.kaynak, "dosya:sinir.txt:1-1");
+    assert_eq!(c.icerik.len(), OKUMA_BAYT_SINIRI + 8);
+    assert!(c.icerik.starts_with("     1\ta"));
+}
+
+#[tokio::test]
+async fn seyrek_buyuk_dosyada_arama_eksikligini_bildirir() {
+    let (d, a) = alan();
+    let p = d.path().join("seyrek.txt");
+    std::fs::write(&p, b"aranan\n").unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(p)
+        .unwrap()
+        .set_len(1024 * 1024 * 1024)
+        .unwrap();
+    let c = calistir(&IcerikAra::yeni(a), json!({"desen":"aranan"}))
+        .await
+        .unwrap();
+    assert!(!c.icerik.contains("seyrek.txt:"));
+    assert!(c.icerik.contains("1 dosya okunamadı; arama eksik"));
+}
+
+#[tokio::test]
+async fn iptal_edilmis_okuma_ve_arama_dosya_acmadan_biter() {
+    let (_d, a) = alan();
+    let oku = DosyaOku::yeni(a.clone());
+    let arg = json!({"yol":"olmayan.txt"});
+    let h = oku.hazirla(&arg).await.unwrap();
+    let iptal = CancellationToken::new();
+    iptal.cancel();
+    assert!(matches!(
+        oku.calistir(&arg, &h, iptal.clone()).await,
+        Err(AracHatasi::Iptal)
+    ));
+    let ara = IcerikAra::yeni(a);
+    let arg = json!({"desen":"x"});
+    let h = ara.hazirla(&arg).await.unwrap();
+    assert!(matches!(
+        ara.calistir(&arg, &h, iptal).await,
+        Err(AracHatasi::Iptal)
+    ));
+}
+
+#[tokio::test]
 async fn dosya_oku_bolum_ve_sinirlar() {
     let (d, a) = alan();
     dosya(&d, "b.txt", b"1\n2\n3\n4\n5\n");
