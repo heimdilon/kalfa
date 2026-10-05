@@ -190,6 +190,80 @@ async fn onayli_gizli_duzenleme_calisir_ama_degisen_icerigi_aciklamaz() {
     }
 }
 
+/// Boş düzenleme de bir okuma yetkisidir: eşleşme sayısı gizli içeriği anlatır.
+#[tokio::test]
+async fn gizli_bos_duzenleme_her_kipte_onay_ister() {
+    for kip in [Kip::Siki, Kip::Proje, Kip::Serbest] {
+        for tumu in [false, true] {
+            for onayla in [false, true] {
+                let o = ortam();
+                std::fs::write(o.alan.path().join(".env"), "SIR=iki iki\n").unwrap();
+                let s = SahteSaglayici::yeni(vec![
+                    SahteYanit::arac(
+                        "dosya_duzenle",
+                        json!({
+                        "yol": ".env", "eski_metin": "iki", "yeni_metin": "iki", "tumu": tumu
+                        }),
+                    ),
+                    SahteYanit::metin("bitti"),
+                ]);
+                let mut d = gercek_araclarla(&o, &s, kip, false);
+                d.gonder(mesaj("dene")).await;
+                let ogeler = onay_bekle(&mut d).await;
+                assert_eq!(s.istekler().len(), 1);
+                assert!(ogeler[0].uyarilar.iter().any(|u| u == GIZLI_UYARISI));
+                assert!(!ogeler[0].aciklama.contains("2 kez"));
+                d.gonder(Komut::AracOnayi {
+                    cagri: ogeler[0].cagri,
+                    karar: if onayla {
+                        OnayKarari::Onayla
+                    } else {
+                        OnayKarari::Reddet { gerekce: None }
+                    },
+                    muhur: ogeler[0].muhur.clone(),
+                })
+                .await;
+                assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+                let yanit = &arac_yanitlari(&s, 1)[0];
+                assert_eq!(yanit.contains("2 kez"), onayla && !tumu, "{yanit}");
+                if onayla && tumu {
+                    assert!(!yanit.contains("[hata]"), "{yanit}");
+                }
+                assert_eq!(
+                    std::fs::read_to_string(o.alan.path().join(".env")).unwrap(),
+                    "SIR=iki iki\n"
+                );
+            }
+        }
+    }
+}
+
+/// İçerik okuyan düzenleme ile kör yazma farklı yetkilerdir (K8).
+#[tokio::test]
+async fn gizli_kor_yazma_proje_ve_serbest_kipte_okuma_onayi_istemez() {
+    for kip in [Kip::Proje, Kip::Serbest] {
+        let o = ortam();
+        std::fs::write(o.alan.path().join(".env"), "BENZERSIZ_ESKI_SIR=1\n").unwrap();
+        let s = SahteSaglayici::yeni(vec![
+            SahteYanit::arac("dosya_yaz", json!({"yol": ".env", "icerik": "YENI=2\n"})),
+            SahteYanit::metin("bitti"),
+        ]);
+        let mut d = gercek_araclarla(&o, &s, kip, false);
+        d.gonder(mesaj("yaz")).await;
+        assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+        assert!(
+            !d.gecmis
+                .iter()
+                .any(|o| matches!(o.yuk, Olay::OnayGerekiyor { .. }))
+        );
+        assert!(!arac_yanitlari(&s, 1)[0].contains("BENZERSIZ_ESKI_SIR"));
+        assert_eq!(
+            std::fs::read_to_string(o.alan.path().join(".env")).unwrap(),
+            "YENI=2\n"
+        );
+    }
+}
+
 #[tokio::test]
 async fn ui_siz_tam_dongu_gercek_araclarla() {
     let o = ortam();
