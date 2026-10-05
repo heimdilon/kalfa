@@ -23,23 +23,24 @@ impl DosyaDuzenle {
         Self { alan }
     }
 
-    /// Dosyayı ham bayt ve UTF-8 metin olarak okur.
-    fn metin_oku(&self, yol: &CalismaYolu) -> Result<(Vec<u8>, String), AracHatasi> {
-        let veri = self.alan.oku_varsa(yol)?.ok_or_else(|| {
+    fn veri_oku(&self, yol: &CalismaYolu) -> Result<Vec<u8>, AracHatasi> {
+        self.alan.oku_varsa(yol)?.ok_or_else(|| {
             AracHatasi::Gecersiz(format!("`{yol}` yok; yeni dosya için `dosya_yaz` kullan."))
-        })?;
-        if ikili_mi(&veri) {
-            return Err(AracHatasi::Gecersiz(format!(
-                "`{yol}` ikili (binary) bir dosya; düzenlenmez."
-            )));
-        }
-        let metin = String::from_utf8(veri.clone()).map_err(|_| {
-            AracHatasi::Gecersiz(format!(
-                "`{yol}` UTF-8 değil; `dosya_duzenle` yalnızca metin dosyalarında çalışır."
-            ))
-        })?;
-        Ok((veri, metin))
+        })
     }
+}
+
+fn metni_coz(yol: &CalismaYolu, veri: &[u8]) -> Result<String, AracHatasi> {
+    if ikili_mi(veri) {
+        return Err(AracHatasi::Gecersiz(format!(
+            "`{yol}` ikili (binary) bir dosya; düzenlenmez."
+        )));
+    }
+    String::from_utf8(veri.to_vec()).map_err(|_| {
+        AracHatasi::Gecersiz(format!(
+            "`{yol}` UTF-8 değil; `dosya_duzenle` yalnızca metin dosyalarında çalışır."
+        ))
+    })
 }
 
 struct Duzenleme {
@@ -102,19 +103,40 @@ impl Arac for DosyaDuzenle {
 
     async fn hazirla(&self, a: &Value) -> Result<Hazirlik, AracHatasi> {
         let yol = arguman::yol(a, "yol")?;
-        let (veri, metin) = self.metin_oku(&yol)?;
-        let d = uygula(&metin, a)?;
-        let aciklama = format!("`{yol}` dosyasında {} değişiklik yapmak istiyor.", d.adet);
-        let diff = birlesik_diff(yol.as_str(), &metin, &d.yeni);
+        let veri = self.veri_oku(&yol)?;
         let baglanti_sayisi = self.alan.baglanti_sayisi(&yol)?;
+        let hassas = self.alan.siniflandirici().gizli_mi(&yol) || baglanti_sayisi > 1;
+        let duzenleme = metni_coz(&yol, &veri).and_then(|metin| {
+            let d = uygula(&metin, a)?;
+            Ok((metin, d))
+        });
+        let duzenleme = match duzenleme {
+            Ok(d) => Some(d),
+            // Hata türü, eşleşme yokluğu ve sayısı da içerik bilgisidir.
+            // Hassas okumada bunlar yalnızca onaylı yürütmede yayımlanır.
+            Err(_) if hassas => None,
+            Err(hata) => return Err(hata),
+        };
+        let aciklama = if hassas {
+            format!("`{yol}` dosyasını okuyup düzenlemek istiyor.")
+        } else {
+            format!(
+                "`{yol}` dosyasında {} değişiklik yapmak istiyor.",
+                duzenleme.as_ref().map_or(0, |(_, d)| d.adet)
+            )
+        };
+        let diff = duzenleme
+            .as_ref()
+            .map(|(metin, d)| birlesik_diff(yol.as_str(), metin, &d.yeni));
         let mut hedef = YazmaHedefi {
-            sonraki_ozet: Some(ozet_hex(d.yeni.as_bytes())),
-            ..YazmaHedefi::yeni(yol, Some(ozet_hex(&veri)), baglanti_sayisi)
+            sonraki_ozet: duzenleme.as_ref().map(|(_, d)| ozet_hex(d.yeni.as_bytes())),
+            ..YazmaHedefi::yeni(yol.clone(), Some(ozet_hex(&veri)), baglanti_sayisi)
         };
         onceki_icerigi_koy(&mut hedef, veri);
         Ok(Hazirlik {
             aciklama,
-            diff: Some(diff),
+            diff,
+            okunan: vec![yol],
             yazilan: vec![hedef],
             ..Default::default()
         })
@@ -130,7 +152,7 @@ impl Arac for DosyaDuzenle {
             return Err(AracHatasi::Iptal);
         }
         let yol = arguman::yol(a, "yol")?;
-        let (veri, metin) = self.metin_oku(&yol)?;
+        let veri = self.veri_oku(&yol)?;
         let hedef = h
             .yazilan
             .first()
@@ -141,6 +163,7 @@ impl Arac for DosyaDuzenle {
         {
             return Err(AracHatasi::OnayEskidi);
         }
+        let metin = metni_coz(&yol, &veri)?;
         let d = uygula(&metin, a)?;
         self.alan.yaz(&yol, d.yeni.as_bytes())?;
         Ok(AracCiktisi {

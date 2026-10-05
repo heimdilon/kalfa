@@ -949,11 +949,18 @@ fn gorunmez_icerir(h: &Hazirlik) -> bool {
 }
 
 fn hedefler(h: &Hazirlik) -> Vec<String> {
-    h.okunan
+    let mut hedefler = Vec::new();
+    for hedef in h
+        .okunan
         .iter()
         .map(|y| y.to_string())
         .chain(h.yazilan.iter().map(|y| y.yol.to_string()))
-        .collect()
+    {
+        if !hedefler.contains(&hedef) {
+            hedefler.push(hedef);
+        }
+    }
+    hedefler
 }
 
 /// Taze hazırlığın kabuk tarifini onaylanana göre düzeltir

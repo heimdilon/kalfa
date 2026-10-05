@@ -108,6 +108,89 @@ fn arac_cagrilari_tek_yanitli(s: &SahteSaglayici) {
 }
 
 #[tokio::test]
+async fn gizli_duzenlemenin_icerik_hatalari_onaydan_once_modele_gitmez() {
+    for kip in [Kip::Siki, Kip::Proje, Kip::Serbest] {
+        for (veri, eski) in [
+            (b"SIR=iki iki\n".as_slice(), "yok"),
+            (b"SIR=iki iki\n".as_slice(), "iki"),
+            (b"SIR=\0".as_slice(), "yok"),
+            (&[0xff][..], "yok"),
+        ] {
+            let o = ortam();
+            std::fs::write(o.alan.path().join(".env"), veri).unwrap();
+            let s = SahteSaglayici::yeni(vec![
+                SahteYanit::arac(
+                    "dosya_duzenle",
+                    json!({"yol": ".env", "eski_metin": eski, "yeni_metin": "yeni"}),
+                ),
+                SahteYanit::metin("bitti"),
+            ]);
+            let mut d = gercek_araclarla(&o, &s, kip, false);
+            d.gonder(mesaj("düzenle")).await;
+            let ogeler = onay_bekle(&mut d).await;
+            assert_eq!(
+                s.istekler().len(),
+                1,
+                "{kip:?}: hazırlık sonucu gönderilemez"
+            );
+            assert!(ogeler[0].uyarilar.iter().any(|u| u == GIZLI_UYARISI));
+            d.gonder(Komut::AracOnayi {
+                cagri: ogeler[0].cagri,
+                karar: OnayKarari::Reddet { gerekce: None },
+                muhur: ogeler[0].muhur.clone(),
+            })
+            .await;
+            assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+            let yanitlar = arac_yanitlari(&s, 1);
+            assert!(yanitlar[0].contains("[kullanıcı reddetti]"));
+            for yasak in ["bulunamadı", "kez geçiyor", "ikili", "UTF-8", "SIR="] {
+                assert!(!yanitlar[0].contains(yasak), "{yanitlar:?}");
+            }
+            assert_eq!(std::fs::read(o.alan.path().join(".env")).unwrap(), veri);
+        }
+    }
+}
+
+#[tokio::test]
+async fn onayli_gizli_duzenleme_calisir_ama_degisen_icerigi_aciklamaz() {
+    for degistir in [false, true] {
+        let o = ortam();
+        let dosya = o.alan.path().join(".env");
+        std::fs::write(&dosya, "SIR=eski\n").unwrap();
+        let s = SahteSaglayici::yeni(vec![
+            SahteYanit::arac(
+                "dosya_duzenle",
+                json!({"yol": ".env", "eski_metin": "eski", "yeni_metin": "yeni"}),
+            ),
+            SahteYanit::metin("bitti"),
+        ]);
+        let mut d = gercek_araclarla(&o, &s, Kip::Proje, false);
+        d.gonder(mesaj("düzenle")).await;
+        let ogeler = onay_bekle(&mut d).await;
+        assert_eq!(ogeler[0].hedefler, [".env"]);
+        assert!(ogeler[0].diff.as_deref().unwrap().contains("+SIR=yeni"));
+        if degistir {
+            std::fs::write(&dosya, [0xff]).unwrap();
+        }
+        d.gonder(Komut::AracOnayi {
+            cagri: ogeler[0].cagri,
+            karar: OnayKarari::Onayla,
+            muhur: ogeler[0].muhur.clone(),
+        })
+        .await;
+        assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+        let yanitlar = arac_yanitlari(&s, 1);
+        if degistir {
+            assert!(yanitlar[0].contains("Dosya onaydan sonra değişti"));
+            assert!(!yanitlar[0].contains("UTF-8"));
+            assert_eq!(std::fs::read(&dosya).unwrap(), [0xff]);
+        } else {
+            assert_eq!(std::fs::read_to_string(&dosya).unwrap(), "SIR=yeni\n");
+        }
+    }
+}
+
+#[tokio::test]
 async fn ui_siz_tam_dongu_gercek_araclarla() {
     let o = ortam();
     let dosya = o.alan.path().join("selam.txt");
