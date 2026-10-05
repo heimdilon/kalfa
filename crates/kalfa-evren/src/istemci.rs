@@ -12,6 +12,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::akis::{AkisBirlestirici, AkisOlayi, VeriSonucu};
+use crate::butce::{JSON_BAYT_SINIRI, YANIT_CAGRI_SINIRI, YanitButcesi};
 use crate::hata::{EvrenError, hata_esle};
 use crate::kredi::{YanitMeta, basliklardan};
 use crate::sse::{SseCozucu, VARSAYILAN_AZAMI_OLAY};
@@ -100,7 +101,7 @@ impl EvrenIstemcisi {
             .get(RETRY_AFTER)
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned);
-        let govde = yanit.bytes().await.map_err(ag_hatasi)?;
+        let govde = sinirli_govde(yanit).await?;
         Err(hata_esle(durum, retry_after.as_deref(), &govde))
     }
 
@@ -139,7 +140,15 @@ impl EvrenIstemcisi {
         let (yanit, meta) = self
             .gonder(self.http.post(self.url("chat/completions")).json(&govde))
             .await?;
-        Ok((json_coz(yanit).await?, meta))
+        let cevap: ChatResponse = json_coz(yanit).await?;
+        let mut adet = 0usize;
+        for secim in &cevap.choices {
+            adet = adet
+                .checked_add(secim.message.tool_calls.as_ref().map_or(0, Vec::len))
+                .filter(|n| *n <= YANIT_CAGRI_SINIRI)
+                .ok_or(EvrenError::YanitSiniri)?;
+        }
+        Ok((cevap, meta))
     }
 
     /// Akışlı sohbet. HTTP hatası akış başlamadan `Err` döner; akış sırasındaki
@@ -172,6 +181,7 @@ async fn akisi_isle(yanit: reqwest::Response, tx: Gonderici) {
     let mut baytlar = yanit.bytes_stream();
     let mut cozucu = SseCozucu::yeni(VARSAYILAN_AZAMI_OLAY);
     let mut birlestirici = AkisBirlestirici::yeni();
+    let mut butce = YanitButcesi::default();
 
     loop {
         let parca = tokio::select! {
@@ -187,14 +197,18 @@ async fn akisi_isle(yanit: reqwest::Response, tx: Gonderici) {
                 return;
             }
         };
-        let sse_olaylari = match cozucu.besle(&parca) {
-            Ok(o) => o,
-            Err(e) => {
-                let _ = tx.send(Err(EvrenError::GecersizYanit(e.to_string()))).await;
-                return;
-            }
-        };
-        for sse in sse_olaylari {
+        if let Err(e) = butce.bayt_ekle(parca.len()) {
+            let _ = tx.send(Err(e)).await;
+            return;
+        }
+        for sse in cozucu.veri_olaylari(&parca) {
+            let sse = match sse {
+                Ok(o) => o,
+                Err(e) => {
+                    let _ = tx.send(Err(EvrenError::GecersizYanit(e.to_string()))).await;
+                    return;
+                }
+            };
             match birlestirici.veri_isle(&sse.veri) {
                 Ok(VeriSonucu::Olaylar(olaylar)) => {
                     for o in olaylar {
@@ -233,9 +247,22 @@ async fn son_olaylari_gonder(birlestirici: &mut AkisBirlestirici, tx: &Gonderici
 }
 
 async fn json_coz<T: DeserializeOwned>(yanit: reqwest::Response) -> Result<T, EvrenError> {
-    let govde = yanit.bytes().await.map_err(ag_hatasi)?;
+    let govde = sinirli_govde(yanit).await?;
     serde_json::from_slice(&govde)
         .map_err(|e| EvrenError::GecersizYanit(format!("JSON çözülemedi: {e}")))
+}
+
+async fn sinirli_govde(yanit: reqwest::Response) -> Result<Vec<u8>, EvrenError> {
+    let mut akis = yanit.bytes_stream();
+    let mut govde = Vec::new();
+    while let Some(parca) = akis.next().await {
+        let parca = parca.map_err(ag_hatasi)?;
+        if parca.len() > JSON_BAYT_SINIRI - govde.len() {
+            return Err(EvrenError::YanitSiniri);
+        }
+        govde.extend_from_slice(&parca);
+    }
+    Ok(govde)
 }
 
 pub(crate) fn ag_hatasi(e: reqwest::Error) -> EvrenError {

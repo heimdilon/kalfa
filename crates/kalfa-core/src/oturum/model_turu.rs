@@ -4,6 +4,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use futures_util::StreamExt;
+use kalfa_evren::butce::YanitButcesi;
 use kalfa_evren::tipler::{ChatMessage, ChatRequest, ToolCall};
 use kalfa_evren::{AkisOlayi, YanitMeta};
 
@@ -34,6 +35,7 @@ impl Oturum {
         let mut metin = String::new();
         let mut dusunce = String::new();
         let mut cagrilar = Vec::new();
+        let mut butce = YanitButcesi::default();
 
         let sonuc = loop {
             tokio::select! {
@@ -46,7 +48,12 @@ impl Oturum {
                         break Err(BitisNedeni::Iptal);
                     }
                 }
-                olay = akis.next() => match olay {
+                olay = akis.next() => {
+                    if let Some(Ok(ref o)) = olay && let Err(e) = butce.olay_ekle(o) {
+                        self.hata(e.to_string()).await;
+                        break Err(BitisNedeni::Hata);
+                    }
+                    match olay {
                     Some(Ok(AkisOlayi::Metin(s))) => {
                         metin.push_str(&s);
                         self.yay(Olay::TokenParcasi { metin: s }).await;
@@ -77,6 +84,7 @@ impl Oturum {
                     Some(Err(e)) => {
                         self.hata(e.to_string()).await;
                         break Err(BitisNedeni::Hata);
+                    }
                     }
                 },
             }

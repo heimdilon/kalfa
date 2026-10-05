@@ -155,3 +155,11 @@ fn kredi_gozlemi_serilestirilebilir() {
     let geri: KrediGozlemi = serde_json::from_str(&serde_json::to_string(&k).unwrap()).unwrap();
     assert_eq!(geri, k);
 }
+#[test]
+fn buyuk_hata_govdesi_dogrudan_cagrida_da_cozulmez() {
+    let govde = vec![b'a'; kalfa_evren::butce::JSON_BAYT_SINIRI + 1];
+    assert_eq!(
+        kalfa_evren::hata::hata_esle(500, None, &govde),
+        kalfa_evren::EvrenError::YanitSiniri
+    );
+}

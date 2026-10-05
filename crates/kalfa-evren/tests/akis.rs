@@ -1,5 +1,74 @@
 mod ortak;
 
+#[test]
+fn tek_parcanin_cok_sayida_cikti_olayi_da_sinirlanir() {
+    let secim = serde_json::json!({"index":0,"delta":{"content":"a","reasoning":"b"}});
+    let veri = serde_json::json!({"choices":vec![secim;40_000]}).to_string();
+    assert!(veri.len() < VARSAYILAN_AZAMI_OLAY);
+    let mut b = AkisBirlestirici::yeni();
+    assert_eq!(b.veri_isle(&veri), Err(EvrenError::YanitSiniri));
+    assert_eq!(b.bitir(), Err(EvrenError::YanitSiniri));
+}
+
+#[test]
+fn butce_bitis_nedeninden_sonra_sifirlanmaz_ve_karisik_alanlari_sayar() {
+    use kalfa_evren::butce::{YANIT_BAYT_SINIRI, YANIT_OLAY_SINIRI, YanitButcesi};
+    let mut b = AkisBirlestirici::yeni();
+    b.ekle(parca(r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"x","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"#)).unwrap();
+    for index in 1..128 {
+        b.ekle(serde_json::from_value(serde_json::json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":index}]}}]})).unwrap()).unwrap();
+    }
+    assert!(matches!(
+        b.ekle(parca(
+            r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":128}]}}]}"#
+        )),
+        Err(EvrenError::YanitSiniri)
+    ));
+    assert_eq!(b.bitir(), Err(EvrenError::YanitSiniri));
+    let mut b = YanitButcesi::default();
+    b.olay_ekle(&AkisOlayi::Metin("ü".repeat(YANIT_BAYT_SINIRI / 4)))
+        .unwrap();
+    b.olay_ekle(&AkisOlayi::Dusunce("a".repeat(YANIT_BAYT_SINIRI / 2)))
+        .unwrap();
+    assert_eq!(
+        b.olay_ekle(&AkisOlayi::Metin("a".into())),
+        Err(EvrenError::YanitSiniri)
+    );
+    let mut b = YanitButcesi::default();
+    for _ in 0..YANIT_OLAY_SINIRI {
+        b.olay_ekle(&AkisOlayi::Metin(String::new())).unwrap();
+    }
+    assert_eq!(
+        b.olay_ekle(&AkisOlayi::Metin(String::new())),
+        Err(EvrenError::YanitSiniri)
+    );
+}
+
+#[test]
+fn yanit_boyunca_cagri_sayisi_ve_arguman_toplami_sinirlanir() {
+    let mut b = AkisBirlestirici::yeni();
+    for index in 0..128 {
+        b.ekle(serde_json::from_value(serde_json::json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":index,"id":format!("c{index}"),"function":{"name":"x","arguments":"{}"}}]}}]})).unwrap()).unwrap();
+    }
+    assert!(
+        b.ekle(
+            serde_json::from_value(
+                serde_json::json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":128}]}}]})
+            )
+            .unwrap()
+        )
+        .is_err()
+    );
+    assert!(b.bitir().is_err());
+    let mut b = AkisBirlestirici::yeni();
+    let veri = serde_json::json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"x","arguments":"a".repeat(1024*1024)}}]}}]}).to_string();
+    for _ in 0..31 {
+        b.veri_isle(&veri).unwrap();
+    }
+    assert!(b.veri_isle(&veri).is_err());
+    assert!(b.bitir().is_err());
+}
+
 use kalfa_evren::akis::VeriSonucu;
 use kalfa_evren::sse::{SseCozucu, VARSAYILAN_AZAMI_OLAY};
 use kalfa_evren::tipler::ChatChunk;

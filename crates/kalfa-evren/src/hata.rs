@@ -23,6 +23,8 @@ pub enum EvrenError {
     HizSiniri { tekrar_dene: Option<Duration> },
     #[error("Yanıt akışı yarıda kaldı; model yanıtı tamamlanmadı.")]
     AkisYarimKaldi,
+    #[error("Sağlayıcı yanıtı boyut, olay veya araç çağrısı sınırını aştı; yanıt durduruldu.")]
+    YanitSiniri,
     #[error("EVREN'den beklenmeyen yanıt: {0}")]
     GecersizYanit(String),
     #[error("EVREN'e ulaşılamadı: {0}")]
@@ -37,6 +39,9 @@ pub enum EvrenError {
 
 /// HTTP durum kodu, `Retry-After` başlığı ve gövdeden tipli hata üretir.
 pub fn hata_esle(durum: u16, retry_after: Option<&str>, govde: &[u8]) -> EvrenError {
+    if govde.len() > crate::butce::JSON_BAYT_SINIRI {
+        return EvrenError::YanitSiniri;
+    }
     let (kod, mesaj, evren) = match serde_json::from_slice::<ApiErrorBody>(govde) {
         Ok(g) => (g.error.code, g.error.message, g.error.evren),
         Err(_) => (None, kirp(&String::from_utf8_lossy(govde)), None),

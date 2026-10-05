@@ -12,6 +12,56 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const ANAHTAR: &str = "evren_llm_test_anahtari";
 
+#[tokio::test]
+async fn json_ve_hata_govdesi_eklenmeden_once_sinirlanir() {
+    for durum in [200, 500] {
+        let (s, i) = sunucu_ve_istemci().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(json_yanit(
+                durum,
+                vec![b'a'; kalfa_evren::butce::JSON_BAYT_SINIRI + 1],
+            ))
+            .mount(&s)
+            .await;
+        assert!(matches!(i.modeller().await, Err(EvrenError::YanitSiniri)));
+    }
+}
+
+#[tokio::test]
+async fn bloklu_yanitta_cok_sayida_cagri_kabul_edilmez() {
+    let (s, i) = sunucu_ve_istemci().await;
+    let cagrilar: Vec<_> = (0..129).map(|n| json!({"id":format!("c{n}"),"type":"function","function":{"name":"x","arguments":"{}"}})).collect();
+    Mock::given(method("POST")).and(path("/v1/chat/completions"))
+        .respond_with(json_yanit(200, json!({"id":"r","model":"x","choices":[{"index":0,"message":{"role":"assistant","tool_calls":cagrilar}}]}).to_string().into_bytes()))
+        .mount(&s).await;
+    assert!(matches!(
+        i.sohbet(&ChatRequest::new("x", vec![])).await,
+        Err(EvrenError::YanitSiniri)
+    ));
+}
+
+#[tokio::test]
+async fn yalniz_kararli_acik_tutan_sse_de_toplam_bayt_sinirina_tabidir() {
+    let (s, i) = sunucu_ve_istemci().await;
+    // Tek olay sınırına takılmayan yorumlar da yanıtın ömrüne sayılır.
+    let veri = ": canli\n".repeat(kalfa_evren::butce::YANIT_BAYT_SINIRI / 8 + 1);
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(veri, "text/event-stream"))
+        .mount(&s)
+        .await;
+    let (_, mut akis) = i
+        .sohbet_akisi(&ChatRequest::new("x", vec![]))
+        .await
+        .unwrap();
+    assert!(matches!(
+        akis.next().await,
+        Some(Err(EvrenError::YanitSiniri))
+    ));
+    assert!(akis.next().await.is_none());
+}
+
 async fn sunucu_ve_istemci() -> (MockServer, EvrenIstemcisi) {
     let sunucu = MockServer::start().await;
     let istemci =

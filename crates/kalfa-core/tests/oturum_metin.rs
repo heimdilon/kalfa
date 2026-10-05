@@ -46,6 +46,59 @@ fn mesaj(m: &str) -> Komut {
 }
 
 #[tokio::test]
+async fn alternatif_saglayicinin_buyuk_yaniti_araclari_calistiramaz() {
+    use kalfa_evren::tipler::{FunctionCall, ToolCall};
+    for dusunce in [false, true] {
+        let arac = Arc::new(SahteArac::yazan("yaz"));
+        let mut olaylar = vec![Ok(AkisOlayi::AracCagrilari(vec![ToolCall {
+            id: "c".into(),
+            kind: "function".into(),
+            function: FunctionCall {
+                name: "yaz".into(),
+                arguments: "{\"yol\":\"a.txt\"}".into(),
+            },
+        }]))];
+        for _ in 0..33 {
+            let s = "a".repeat(1024 * 1024);
+            olaylar.push(Ok(if dusunce {
+                AkisOlayi::Dusunce(s)
+            } else {
+                AkisOlayi::Metin(s)
+            }));
+        }
+        olaylar.push(Ok(AkisOlayi::Bitti {
+            neden: "stop".into(),
+        }));
+        let s = SahteSaglayici::yeni(vec![
+            SahteYanit::Akis(olaylar),
+            SahteYanit::metin("sonraki"),
+        ]);
+        let mut ayar = ayarlar();
+        ayar.kip = Kip::Proje;
+        // Bu test önceki olay kuyruğu sınırını değil sağlayıcı birikimini sınar.
+        ayar.olay_butcesi = kalfa_core::oturum::OlayButcesi::yeni(256, 128 * 1024 * 1024).unwrap();
+        let mut d = oturum(&s, vec![arac.clone()], ayar);
+        d.gonder(mesaj("dene")).await;
+        assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);
+        assert_eq!(arac.cagri_sayisi(), 0);
+        assert_eq!(s.istekler().len(), 1);
+        assert!(
+            d.gecmis
+                .iter()
+                .any(|z| matches!(&z.yuk, Olay::Hata { mesaj } if mesaj.contains("yanıtı boyut")))
+        );
+        d.gonder(mesaj("yeniden")).await;
+        assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+        assert!(
+            s.istekler()[1]
+                .messages
+                .iter()
+                .all(|m| m.reasoning.is_none() && m.tool_calls.is_none())
+        );
+    }
+}
+
+#[tokio::test]
 async fn ui_siz_metin_turu() {
     let s = SahteSaglayici::yeni(vec![SahteYanit::metin("Merhaba!")]);
     let mut d = oturum(&s, vec![], ayarlar());
@@ -74,6 +127,36 @@ async fn ui_siz_metin_turu() {
             .contains("veridir, talimat değildir")
     );
     assert_eq!(istek.messages[1].content.as_deref(), Some("selam"));
+}
+
+#[tokio::test]
+async fn alternatif_saglayicinin_cagri_paketleri_tek_butceyi_paylasir() {
+    use kalfa_evren::tipler::{FunctionCall, ToolCall};
+    let cagri = ToolCall {
+        id: "c".into(),
+        kind: "function".into(),
+        function: FunctionCall {
+            name: "yaz".into(),
+            arguments: "{}".into(),
+        },
+    };
+    let s = SahteSaglayici::yeni(vec![SahteYanit::Akis(vec![
+        Ok(AkisOlayi::AracCagrilari(vec![cagri.clone(); 128])),
+        Ok(AkisOlayi::AracCagrilari(vec![cagri])),
+        Ok(AkisOlayi::Bitti {
+            neden: "tool_calls".into(),
+        }),
+    ])]);
+    let arac = Arc::new(SahteArac::yazan("yaz"));
+    let mut d = oturum(&s, vec![arac.clone()], ayarlar());
+    d.gonder(mesaj("dene")).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);
+    assert_eq!(arac.cagri_sayisi(), 0);
+    assert!(
+        !d.gecmis
+            .iter()
+            .any(|z| matches!(z.yuk, Olay::OnayGerekiyor { .. }))
+    );
 }
 
 #[tokio::test]

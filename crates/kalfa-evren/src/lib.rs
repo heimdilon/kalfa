@@ -3,6 +3,7 @@
 //! Tasarım: `docs/superpowers/specs/2026-09-21-kalfa-design.md` §3 ve §5.
 
 pub mod akis;
+pub mod butce;
 pub mod hata;
 pub mod istemci;
 pub mod kredi;

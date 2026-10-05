@@ -27,6 +27,8 @@ pub struct SseOlayi {
 pub enum SseHatasi {
     #[error("SSE olayı {azami} baytlık sınırı aştı")]
     OlayCokBuyuk { azami: usize },
+    #[error("SSE parçasının olay çıktısı {azami} baytlık sınırı aştı")]
+    CiktiCokBuyuk { azami: usize },
 }
 
 #[derive(Debug)]
@@ -64,28 +66,89 @@ impl SseCozucu {
     /// Bir ağ parçasını işler; tamamlanan olayları döndürür.
     pub fn besle(&mut self, parca: &[u8]) -> Result<Vec<SseOlayi>, SseHatasi> {
         let mut olaylar = Vec::new();
-        for &bayt in parca {
-            if self.cr_sonrasi {
-                self.cr_sonrasi = false;
-                if bayt == b'\n' {
-                    continue;
-                }
+        let mut cikti_bayt = 0usize;
+        let azami = crate::butce::YANIT_BAYT_SINIRI.max(
+            self.azami
+                .saturating_mul(3)
+                .saturating_add(std::mem::size_of::<SseOlayi>()),
+        );
+        for olay in self.olaylar(parca) {
+            let olay = olay?;
+            for adet in [
+                std::mem::size_of::<SseOlayi>(),
+                olay.veri.len(),
+                olay.olay.as_ref().map_or(0, String::len),
+                olay.kimlik.as_ref().map_or(0, String::len),
+            ] {
+                cikti_bayt = cikti_bayt
+                    .checked_add(adet)
+                    .filter(|n| *n <= azami)
+                    .ok_or(SseHatasi::CiktiCokBuyuk { azami })?;
             }
-            match bayt {
-                b'\r' => {
-                    self.cr_sonrasi = true;
-                    self.satiri_isle(&mut olaylar)?;
-                }
-                b'\n' => self.satiri_isle(&mut olaylar)?,
-                _ => {
-                    self.satir.push(bayt);
-                    if self.satir.len() > self.azami {
-                        return Err(SseHatasi::OlayCokBuyuk { azami: self.azami });
-                    }
-                }
-            }
+            olaylar.push(olay);
         }
         Ok(olaylar)
+    }
+
+    /// Olayları bir Vec içinde biriktirmeden, tamamlandıkça verir.
+    pub fn olaylar<'a>(
+        &'a mut self,
+        parca: &'a [u8],
+    ) -> impl Iterator<Item = Result<SseOlayi, SseHatasi>> + 'a {
+        self.olay_iter(parca, true)
+    }
+
+    /// Sohbet istemcisi SSE kimliğini kullanmaz; büyük kimliği her yanıtta
+    /// kopyalamaz. Ayrıştırıcının kalıcı kimlik durumu yine korunur.
+    pub(crate) fn veri_olaylari<'a>(
+        &'a mut self,
+        parca: &'a [u8],
+    ) -> impl Iterator<Item = Result<SseOlayi, SseHatasi>> + 'a {
+        self.olay_iter(parca, false)
+    }
+
+    fn olay_iter<'a>(
+        &'a mut self,
+        parca: &'a [u8],
+        kimligi_ekle: bool,
+    ) -> impl Iterator<Item = Result<SseOlayi, SseHatasi>> + 'a {
+        let mut durdu = false;
+        parca.iter().filter_map(move |&bayt| {
+            if durdu {
+                return None;
+            }
+            match self.bayt_isle(bayt, kimligi_ekle) {
+                Ok(Some(olay)) => Some(Ok(olay)),
+                Ok(None) => None,
+                Err(e) => {
+                    durdu = true;
+                    Some(Err(e))
+                }
+            }
+        })
+    }
+
+    fn bayt_isle(&mut self, bayt: u8, kimligi_ekle: bool) -> Result<Option<SseOlayi>, SseHatasi> {
+        if self.cr_sonrasi {
+            self.cr_sonrasi = false;
+            if bayt == b'\n' {
+                return Ok(None);
+            }
+        }
+        match bayt {
+            b'\r' => {
+                self.cr_sonrasi = true;
+                self.satiri_isle(kimligi_ekle)
+            }
+            b'\n' => self.satiri_isle(kimligi_ekle),
+            _ => {
+                self.satir.push(bayt);
+                if self.satir.len() > self.azami {
+                    return Err(SseHatasi::OlayCokBuyuk { azami: self.azami });
+                }
+                Ok(None)
+            }
+        }
     }
 
     /// Akış bitti. Tamamlanmamış olay WHATWG kuralı gereği atılır; dönüş
@@ -94,7 +157,7 @@ impl SseCozucu {
         !self.satir.is_empty() || self.veri_var || self.olay.is_some() || self.alan_var
     }
 
-    fn satiri_isle(&mut self, olaylar: &mut Vec<SseOlayi>) -> Result<(), SseHatasi> {
+    fn satiri_isle(&mut self, kimligi_ekle: bool) -> Result<Option<SseOlayi>, SseHatasi> {
         let ham = std::mem::take(&mut self.satir);
         let mut satir = String::from_utf8_lossy(&ham).into_owned();
         if self.ilk_satir {
@@ -105,7 +168,7 @@ impl SseCozucu {
         }
 
         if satir.is_empty() {
-            if self.veri_var {
+            let olay = if self.veri_var {
                 let mut veri = std::mem::take(&mut self.veri);
                 if veri.ends_with('\n') {
                     veri.pop();
@@ -113,21 +176,26 @@ impl SseCozucu {
                 // `kimlik` burada bilerek `clone`'lanır, `take()` edilmez:
                 // son-olay-kimliği arabelleği dispatch sonrasında
                 // sıfırlanmaz, sonraki olaylara da taşınır.
-                olaylar.push(SseOlayi {
+                Some(SseOlayi {
                     olay: self.olay.take(),
                     veri,
-                    kimlik: self.kimlik.clone(),
-                });
+                    kimlik: if kimligi_ekle {
+                        self.kimlik.clone()
+                    } else {
+                        None
+                    },
+                })
             } else {
                 self.olay = None;
-            }
+                None
+            };
             self.veri_var = false;
             self.alan_var = false;
-            return Ok(());
+            return Ok(olay);
         }
 
         if satir.starts_with(':') {
-            return Ok(());
+            return Ok(None);
         }
 
         let (alan, deger) = match satir.find(':') {
@@ -151,6 +219,6 @@ impl SseCozucu {
             "id" if !deger.contains('\0') => self.kimlik = Some(deger.to_string()),
             _ => {} // "retry" ve bilinmeyen alanlar yok sayılır
         }
-        Ok(())
+        Ok(None)
     }
 }

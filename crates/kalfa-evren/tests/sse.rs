@@ -185,3 +185,49 @@ fn fixture_qwen_akisi() {
 fn fixture_deepseek_akisi() {
     fixture_dogrula("chat_tool_calls_stream_deepseek_flash.sse");
 }
+#[test]
+fn kalici_kimlik_tek_parcada_sinirsiz_kopyalanamaz() {
+    let mut c = SseCozucu::yeni(VARSAYILAN_AZAMI_OLAY);
+    let ham = format!(
+        "id: {}\n{}",
+        "a".repeat(1024 * 1024),
+        "data: {}\n\n".repeat(33)
+    );
+    assert!(c.besle(ham.as_bytes()).is_err());
+}
+
+#[test]
+fn normal_buyuk_yanit_ag_parcalarina_bagli_degildir() {
+    let ham = format!("data: {}\n\n", "a".repeat(1024 * 1024)).repeat(13);
+    let mut c = SseCozucu::yeni(VARSAYILAN_AZAMI_OLAY);
+    assert_eq!(c.besle(ham.as_bytes()).unwrap().len(), 13);
+    let mut c = SseCozucu::yeni(VARSAYILAN_AZAMI_OLAY);
+    let mut toplam = 0;
+    for p in ham.as_bytes().chunks(23_777) {
+        toplam += c.besle(p).unwrap().len();
+    }
+    assert_eq!(toplam, 13);
+    let mut c = SseCozucu::yeni(VARSAYILAN_AZAMI_OLAY);
+    let adet = c
+        .olaylar(ham.as_bytes())
+        .try_fold(0, |adet, o| o.map(|_| adet + 1))
+        .unwrap();
+    assert_eq!(adet, 13);
+}
+
+#[test]
+fn kimlikli_olaylar_teker_teker_birikmeden_tuketilir() {
+    let ham = format!(
+        "id: {}\n{}",
+        "a".repeat(1024 * 1024),
+        "data: {}\n\n".repeat(33)
+    );
+    let mut c = SseCozucu::yeni(VARSAYILAN_AZAMI_OLAY);
+    let mut adet = 0;
+    for olay in c.olaylar(ham.as_bytes()) {
+        let olay = olay.unwrap();
+        assert_eq!(olay.kimlik.as_deref().unwrap().len(), 1024 * 1024);
+        adet += 1;
+    }
+    assert_eq!(adet, 33);
+}
