@@ -305,19 +305,60 @@ fn hooks_path_degeri(kok: &Path) -> Option<String> {
     if !cikti.status.success() {
         return None;
     }
-    let deger = String::from_utf8_lossy(&cikti.stdout).trim().to_string();
+    let deger = String::from_utf8_lossy(&cikti.stdout)
+        .trim_end_matches(['\r', '\n'])
+        .to_string();
     (!deger.is_empty()).then_some(deger)
 }
 
 fn goreli_yap(kok: &Path, hedef: &Path) -> Option<String> {
-    if hedef.is_relative() {
-        return CalismaYolu::coz(&hedef.to_string_lossy())
-            .ok()
-            .map(|y| y.as_str().to_string());
-    }
     let kok = kok.canonicalize().ok()?;
-    let hedef = hedef.canonicalize().ok()?;
+    let mut ust = kok.join(hedef);
+    let mut eksik = Vec::new();
+    let mut baglantilar = 0;
+    // Önce en uzun mevcut üst yol çözülür. Böylece çalışma alanının
+    // dışındaki üst dizinlere ayrı ayrı erişim izni gerekmez.
+    let mut cozulen = loop {
+        match ust.canonicalize() {
+            Ok(gercek) => break gercek,
+            Err(hata) if hata.kind() == std::io::ErrorKind::NotFound => {
+                if std::fs::symlink_metadata(&ust).is_ok_and(|bilgi| bilgi.file_type().is_symlink())
+                {
+                    baglantilar += 1;
+                    if baglantilar > 40 {
+                        return Some(".".to_string());
+                    }
+                    let hedef = match std::fs::read_link(&ust) {
+                        Ok(hedef) => hedef,
+                        Err(_) => return Some(".".to_string()),
+                    };
+                    ust = ust.parent()?.join(hedef);
+                    continue;
+                }
+                eksik.push(ust.components().next_back()?.as_os_str().to_os_string());
+                ust = ust.parent()?.to_path_buf();
+            }
+            // Belirsiz bir git hedefi korumayı sessizce düşürmez.
+            Err(_) => return Some(".".to_string()),
+        }
+    };
+    // Henüz olmayan kanca dizinleri de korunur. Mevcut bağlantının
+    // gerçek hedefi, eksik son bileşenlerdeki `..` uygulanmadan çözülmüştür.
+    for eksik in eksik.iter().rev() {
+        let bilesen = Path::new(eksik).components().next()?;
+        match bilesen {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                cozulen.pop();
+            }
+            bilesen => cozulen.push(bilesen.as_os_str()),
+        }
+    }
+    let hedef = cozulen;
     let goreli = hedef.strip_prefix(&kok).ok()?;
+    if goreli.as_os_str().is_empty() {
+        return Some(".".to_string());
+    }
     CalismaYolu::coz(&goreli.to_string_lossy())
         .ok()
         .map(|y| y.as_str().to_string())

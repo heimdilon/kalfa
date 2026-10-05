@@ -443,6 +443,6 @@ fn korumali_listede(yol: &CalismaYolu, korumali: &[String]) -> bool {
     let anahtar = yol.anahtar();
     korumali.iter().any(|k| {
         let k = k.trim_end_matches('/');
-        anahtar == k || anahtar.starts_with(&format!("{k}/"))
+        k == "." || anahtar == k || anahtar.starts_with(&format!("{k}/"))
     })
 }
