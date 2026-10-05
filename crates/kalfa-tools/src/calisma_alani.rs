@@ -635,6 +635,19 @@ fn gercek_ad_dogrula(ust: &Dir, ad: &str, nesne: &std::fs::File) -> io::Result<(
     #[cfg(windows)]
     {
         use cap_std::fs::OpenOptionsExt;
+        // Hızlı yol: tutamacın kendi uzun adı. Dizin taraması her dosyada
+        // yinelenince arama dizin başına karesel yavaşlıyordu.
+        if let Ok(gercek) = baglanti::gercek_ad(nesne) {
+            let gercek = gercek.to_string_lossy();
+            if gercek == ad || gercek.to_lowercase() == ad.to_lowercase() {
+                return Ok(());
+            }
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Dosyaya gerçek adı dışında bir adla erişilemez.",
+            ));
+        }
+        // Normalleştirilmiş adı vermeyen dosya sistemlerinde dizin taranır.
         let gercek = gercek_ad_bul(ust, ad)?;
         let acilan = if nesne.metadata()?.is_dir() {
             ust.open_dir_nofollow(&gercek)?.into_std_file()
@@ -781,6 +794,11 @@ mod gercek_ad_testleri {
         let normal = ust.open("normal.txt").unwrap().into_std();
         let gizli = ust.open(".env").unwrap().into_std();
         assert!(gercek_ad_dogrula(&ust, "normal.txt", &normal).is_ok());
+        assert!(gercek_ad_dogrula(&ust, "NORMAL.TXT", &normal).is_ok());
+        // Hard link kendi adıyla açılınca o bağlantının adı döner.
+        std::fs::hard_link(d.path().join("normal.txt"), d.path().join("ikinci.txt")).unwrap();
+        let ikinci = ust.open("ikinci.txt").unwrap().into_std();
+        assert!(gercek_ad_dogrula(&ust, "ikinci.txt", &ikinci).is_ok());
         assert_eq!(
             gercek_ad_dogrula(&ust, "normal.txt", &gizli)
                 .unwrap_err()
