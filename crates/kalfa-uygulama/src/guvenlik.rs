@@ -181,6 +181,7 @@ mod tests {
             yerel_onay: true,
             onaysiz_degisiklikler: None,
             geri_alinabilir: None,
+            veri_cikisi: None,
         }
     }
 

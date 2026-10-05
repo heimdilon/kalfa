@@ -122,7 +122,7 @@ pub fn gorunum_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GorunumOgesi> {
     let mut son_sonuc: Option<usize> = None;
     for z in kayitlar {
         match &z.yuk {
-            KayitOgesi::Mesaj { mesaj } => match mesaj.role {
+            KayitOgesi::Mesaj { mesaj, .. } => match mesaj.role {
                 Role::User => ogeler.push(GorunumOgesi::KullaniciMesaji {
                     sira: z.sira,
                     tur: z.tur,
@@ -301,6 +301,8 @@ pub struct DurumOzeti {
     pub istem: u64,
     pub tamamlama: u64,
     pub dusunce: u64,
+    #[serde(default)]
+    pub onizleme_acik: bool,
 }
 
 pub fn durum_ozeti(kayitlar: &[Zarf<KayitOgesi>]) -> DurumOzeti {
@@ -313,6 +315,7 @@ pub fn durum_ozeti(kayitlar: &[Zarf<KayitOgesi>]) -> DurumOzeti {
             }
             KayitOgesi::ModelDegisti { model } => o.model = Some(model.clone()),
             KayitOgesi::KipDegisti { kip } => o.kip = Some(*kip),
+            KayitOgesi::OnizlemeDegisti { acik } => o.onizleme_acik = *acik,
             KayitOgesi::Istek {
                 kredi,
                 yonlendirilen_model,

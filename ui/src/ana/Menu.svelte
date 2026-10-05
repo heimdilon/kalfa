@@ -30,6 +30,15 @@
   <NavItem icon="key-round" onclick={() => durum.anahtariDegistir()}>
     {m('menu.anahtar')}
   </NavItem>
+  {#if durum.secili}
+    <NavItem
+      icon="send"
+      active={durum.gunlukAcik}
+      onclick={() => durum.gunluguAc()}
+    >
+      {m('menu.gunluk')}
+    </NavItem>
+  {/if}
   {#snippet footer()}
     <div class="cizgi"></div>
     <div class="alt-not">{m('uygulama.alt_not')}</div>

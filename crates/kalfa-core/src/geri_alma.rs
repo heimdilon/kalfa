@@ -256,7 +256,7 @@ impl GeriAlmaDizini {
         let mut durumlar: HashMap<CagriId, AracDurumu> = HashMap::new();
         for z in kayitlar {
             match (&z.yuk, z.tur) {
-                (KayitOgesi::Mesaj { mesaj }, Some(tur)) if mesaj.role == Role::User => {
+                (KayitOgesi::Mesaj { mesaj, .. }, Some(tur)) if mesaj.role == Role::User => {
                     dizin.tur_basladi(tur, mesaj.content.as_deref().unwrap_or_default());
                 }
                 (

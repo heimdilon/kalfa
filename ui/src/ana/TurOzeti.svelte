@@ -4,7 +4,7 @@
   görünür; önizlemeyi ister. Araç çağrısı olmayan turun özeti çizilmez.
 -->
 <script lang="ts">
-  import TurnSummary from '../bilesenler/TurnSummary.svelte';
+  import TurnSummary, { type SummaryItem } from '../bilesenler/TurnSummary.svelte';
   import { m } from '../dil/tr';
   import type { TurOzeti } from '../ipc/tipler';
   import { turOzetiGorunumu } from './geriAlma';
@@ -13,16 +13,30 @@
     ozet,
     geriAlindi,
     ongeri,
-  }: { ozet: TurOzeti; geriAlindi: boolean; ongeri?: () => void } = $props();
+    ongunluk,
+  }: {
+    ozet: TurOzeti;
+    geriAlindi: boolean;
+    ongeri?: () => void;
+    ongunluk?: () => void;
+  } = $props();
 
   const g = $derived(turOzetiGorunumu(ozet, geriAlindi));
+  const ogeler = $derived(
+    g.satirlar.map((s): SummaryItem => {
+      if (ongunluk && s.includes('EVREN isteği')) {
+        return { text: s, onclick: ongunluk };
+      }
+      return s;
+    }),
+  );
 </script>
 
 {#if !g.bos}
   <TurnSummary
     class="tur-ozeti-blogu"
     title={m('tur_ozeti.baslik')}
-    items={g.satirlar}
+    items={ogeler}
     note={g.notlar}
     onUndo={g.geriAlinabilir ? ongeri : undefined}
     undoLabel={m('tur_ozeti.geri_al')}

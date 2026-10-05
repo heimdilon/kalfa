@@ -10,7 +10,7 @@ mod ortak;
 use kalfa_core::gorunum::GORUNMEZ_UYARISI;
 use kalfa_core::izin::{AYNI_ADIM_UYARISI, GIZLI_UYARISI, KORUMALI_UYARISI, Kip};
 use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
-use kalfa_core::protokol::{AracDurumu, BitisNedeni, Olay};
+use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, Olay};
 use kalfa_core::test_destek::{SahteSaglayici, SahteYanit};
 use ortak::senaryo::*;
 use serde_json::json;
@@ -324,5 +324,81 @@ async fn s8_gorunmez_karakterli_komut_serbest_kipte_onay_ister() {
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
     assert_eq!(onay_istegi_sayisi(&d), 2, "görünür komut onaysız geçti");
     assert_eq!(sc.yalitici.baslatma_sayisi(), 1);
+    arac_cagrilari_tek_yanitli(&s);
+}
+
+/// S12: önizlemede bir öğe çıkarılıyor (tasarım §7.1, §11.5).
+/// Çıkarılan öğe sonraki istekte yoktur; yer tutucu vardır.
+/// Gönderilen öğe ise sonraki istekte yer alır.
+/// Çıkarılan içerik kayıtta da yer almaz.
+#[tokio::test]
+async fn s12_onizlemede_cikarilan_oge_sonraki_istekte_yoktur() {
+    let sc = Senaryo::yeni(Kip::Proje)
+        .kayitli()
+        .dosya("gizli_rapor.txt", "cok-gizli-veri-3b-9a4f\n")
+        .dosya("kamu_rapor.txt", "kamusal-veri-3b-7c1e\n");
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::araclar(vec![
+            ("dosya_oku", json!({"yol": "gizli_rapor.txt"})),
+            ("dosya_oku", json!({"yol": "kamu_rapor.txt"})),
+        ]),
+        SahteYanit::metin("Raporları inceledim."),
+    ]);
+    let mut d = sc.baslat(&s);
+    d.gonder(Komut::OnizlemeAyarla { acik: true }).await;
+    d.gonder(mesaj("Raporları oku.")).await;
+
+    // Araç aşaması bittiğinde önizleme kartı gelir.
+    let (islem, ogeler) = onizleme_bekle(&mut d).await;
+    assert_eq!(ogeler.len(), 2);
+    let gizli = ogeler
+        .iter()
+        .find(|o| o.kaynak.contains("gizli_rapor.txt"))
+        .expect("gizli rapor önizlemede olmalı");
+    let kamu = ogeler
+        .iter()
+        .find(|o| o.kaynak.contains("kamu_rapor.txt"))
+        .expect("kamu raporu önizlemede olmalı");
+    assert!(kamu.bayt > 0);
+
+    // Gizli raporu gönderme, kamu raporunu gönder:
+    d.gonder(Komut::GonderimKarari {
+        islem,
+        gonderilmeyecekler: vec![gizli.cagri],
+    })
+    .await;
+
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+
+    // İz: çıkarılan içerik hiçbir istekte yok; yer tutucu var.
+    let istekler = butun_istekler(&s);
+    assert!(
+        !istekler.contains("cok-gizli-veri-3b-9a4f"),
+        "çıkarılan içerik istekte olmamalı"
+    );
+    assert!(
+        istekler.contains("[kullanıcı bu içeriği göndermedi]"),
+        "yer tutucu istekte olmalı"
+    );
+    assert!(
+        istekler.contains("kamusal-veri-3b-7c1e"),
+        "gönderilen içerik istekte olmalı"
+    );
+
+    // Son durum: çıkarılan içerik kayıtta da yok.
+    let kayit = std::fs::read_to_string(sc.kayit_yolu()).unwrap();
+    assert!(
+        !kayit.contains("cok-gizli-veri-3b-9a4f"),
+        "çıkarılan içerik kayıtta olmamalı"
+    );
+    assert!(
+        kayit.contains("[kullanıcı bu içeriği göndermedi]"),
+        "yer tutucu kayıtta olmalı"
+    );
+    assert!(
+        kayit.contains("kamusal-veri-3b-7c1e"),
+        "gönderilen içerik kayıtta olmalı"
+    );
+
     arac_cagrilari_tek_yanitli(&s);
 }

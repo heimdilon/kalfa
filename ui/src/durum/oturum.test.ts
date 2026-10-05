@@ -574,3 +574,34 @@ describe('geri alma sayfası (aşama 3 tasarımı §5.6)', () => {
     expect(d.geri_alma).toBeNull();
   });
 });
+
+describe('gönderim önizlemesi (aşama 3b)', () => {
+  const onizleme = (): Olay => ({
+    tip: 'GonderimOnizlemesi',
+    islem: 'i-1',
+    ogeler: [{ cagri: 'c-1', kaynak: 'dosya:a.txt', bayt: 10 }],
+    neden: 'Onizleme',
+  });
+
+  it('karar verilen kart, IPC dönmeden biten turda yanıtlanmış kalır', () => {
+    let d = uygula(acilis(), { tip: 'Kanal', mesaj: paket(1, { tip: 'TurBasladi' }, onizleme()) });
+    d = uygula(d, { tip: 'OnizlemeYanitlandi', islem: 'i-1' });
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(2, { tip: 'Tamamlandi', neden: { tip: 'Normal' } }),
+    });
+    expect(d.ogeler.find((o) => o.tip === 'GonderimOnizlemesi')).toMatchObject({
+      durum: 'Yanitlandi',
+    });
+  });
+
+  it('kararı arka uca ulaşmayan kart yeniden karar bekler', () => {
+    let d = uygula(acilis(), { tip: 'Kanal', mesaj: paket(1, { tip: 'TurBasladi' }, onizleme()) });
+    d = uygula(d, { tip: 'OnizlemeYanitlandi', islem: 'i-1' });
+    d = uygula(d, { tip: 'OnizlemeGonderilemedi', islem: 'i-1' });
+    expect(d.ogeler.find((o) => o.tip === 'GonderimOnizlemesi')).toMatchObject({
+      durum: 'Bekliyor',
+    });
+    expect(d.anlik).toBe('OnayBekliyor');
+  });
+});

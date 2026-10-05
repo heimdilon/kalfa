@@ -69,7 +69,7 @@ impl EvrenIstemcisi {
             .read_timeout(Duration::from_secs(180))
             .user_agent(concat!("kalfa-evren/", env!("CARGO_PKG_VERSION")))
             .build()
-            .map_err(|e| EvrenError::Ag(e.to_string()))?;
+            .map_err(|e| EvrenError::ag_baglanti(e.to_string()))?;
         Ok(Self {
             taban: taban.into().trim_end_matches('/').to_string(),
             anahtar: Arc::new(anahtar),
@@ -266,7 +266,10 @@ async fn sinirli_govde(yanit: reqwest::Response) -> Result<Vec<u8>, EvrenError> 
 }
 
 pub(crate) fn ag_hatasi(e: reqwest::Error) -> EvrenError {
-    EvrenError::Ag(e.to_string())
+    EvrenError::Ag {
+        mesaj: e.to_string(),
+        govde_gitti: !e.is_connect(),
+    }
 }
 
 pub(crate) fn simdi_ms() -> u64 {

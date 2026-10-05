@@ -263,6 +263,37 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
     await waitFor(() => expect(arka.komutlar('arac_onayi')).toHaveLength(1));
   });
 
+  it('bilgi vermeyen araç için onay kartı "araç sonucu" yazar, veri çıkışı olan için türünü yazar', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      {
+        tip: 'OnayGerekiyor',
+        islem: 'i_vc',
+        ogeler: [
+          onayOgesi({
+            cagri: 'c_bilinmeyen',
+            arac: 'ozel_arac',
+            aciklama: 'özel bir iş yapacak',
+          }),
+          onayOgesi({
+            cagri: 'c_oku',
+            arac: 'dosya_oku',
+            aciklama: 'dosya okuyacak',
+            veri_cikisi: 'DosyaIcerigi',
+          }),
+        ],
+      },
+    ]);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    const sayfa = await screen.findByRole('dialog');
+    expect(within(sayfa).getByText('Veri çıkışı')).toBeTruthy();
+    expect(within(sayfa).getByText('Araç sonucu')).toBeTruthy();
+
+    await fireEvent.click(within(sayfa).getByRole('button', { name: /dosya_oku değişikliğini göster/ }));
+    expect(within(sayfa).getByText('Dosya içeriği')).toBeTruthy();
+  });
+
   it('kabuk onayı onaysız değişen dosyaları ve derleme dosyası uyarısını gösterir (Bulgu 3)', async () => {
     const { arka } = await ciz();
     arka.olaylar('o1', [

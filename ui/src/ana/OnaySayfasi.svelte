@@ -22,9 +22,26 @@
   import IconTile from '../bilesenler/IconTile.svelte';
   import Textarea from '../bilesenler/Textarea.svelte';
   import { m } from '../dil/tr';
-  import type { CagriId, OnayGirdisi, OnayOgesi } from '../ipc/tipler';
+  import type { CagriId, OnayGirdisi, OnayOgesi, VeriCikisi } from '../ipc/tipler';
   import { geriAlinabilirlikMetni } from './geriAlma';
   import { kararlariUret, kisaAd, riskliMi, type OnaySecimi } from './onay';
+
+  function veriCikisiMetni(v?: VeriCikisi): string {
+    switch (v) {
+      case 'DosyaIcerigi':
+        return m('onay.veri.DosyaIcerigi');
+      case 'KomutCiktisi':
+        return m('onay.veri.KomutCiktisi');
+      case 'AramaSonuclari':
+        return m('onay.veri.AramaSonuclari');
+      case 'DosyaAdlari':
+        return m('onay.veri.DosyaAdlari');
+      case 'YalnizcaYazildi':
+        return m('onay.veri.YalnizcaYazildi');
+      default:
+        return m('onay.veri.Bilinmiyor');
+    }
+  }
 
   let {
     ogeler,
@@ -237,6 +254,10 @@
           </dd>
         </div>
       {/if}
+      <div class="bilgi">
+        <dt><Icon name="send" size={16} />{m('onay.sayfa.veri_cikisi')}</dt>
+        <dd>{veriCikisiMetni(aktifOge.veri_cikisi)}</dd>
+      </div>
       {#if aktifOge.geri_alinabilir}
         <div class={['bilgi', { uyari: aktifOge.geri_alinabilir.tip === 'Hayir' }]}>
           <dt><Icon name="rotate-ccw" size={16} />{m('onay.sayfa.geri_alinabilir')}</dt>

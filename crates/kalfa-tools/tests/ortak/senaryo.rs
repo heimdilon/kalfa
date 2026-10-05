@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use kalfa_core::arac::Arac;
 use kalfa_core::izin::{Kip, Siniflandirici};
 use kalfa_core::oturum::{OturumAyarlari, OturumBaglami, devam_et};
-use kalfa_core::protokol::{AracDurumu, Komut, Olay, OnayKarari, OnayOgesi};
+use kalfa_core::protokol::{AracDurumu, Komut, Olay, OnayKarari, OnayOgesi, OnizlemeOgesi};
 use kalfa_core::test_destek::*;
 use kalfa_evren::tipler::Role;
 use kalfa_sandbox::{
@@ -188,6 +188,17 @@ pub async fn onay_bekle(d: &mut Surucu) -> Vec<OnayOgesi> {
         .yuk
     {
         Olay::OnayGerekiyor { ogeler, .. } => ogeler,
+        _ => unreachable!(),
+    }
+}
+
+pub async fn onizleme_bekle(d: &mut Surucu) -> (kalfa_core::kimlik::IslemId, Vec<OnizlemeOgesi>) {
+    match d
+        .bekle(|o| matches!(o, Olay::GonderimOnizlemesi { .. }))
+        .await
+        .yuk
+    {
+        Olay::GonderimOnizlemesi { islem, ogeler, .. } => (islem, ogeler),
         _ => unreachable!(),
     }
 }

@@ -9,6 +9,7 @@ import { sar as e2eSar } from '../e2e/kanca';
 import * as ipc from '../ipc/ana';
 import { komutHatasi } from '../ipc/hata';
 import type {
+  CagriId,
   IslemId,
   Kip,
   OnarimSonucu,
@@ -31,6 +32,9 @@ export class AnaDurum {
   hata = $state<string | null>(null);
   /** Açık onay sayfası. */
   onay = $state<{ oturum: OturumId; islem: IslemId } | null>(null);
+  /** Açık gönderim günlüğü (oturum kimliğiyle). */
+  gunlukOturum = $state<OturumId | null>(null);
+  gunlukAcik = $derived(this.gunlukOturum !== null);
   /** Ekran okuyucuya okunan son duyuru (`aria-live`, 1c tasarımı §9.5). */
   duyuru = $state('');
   /** Menünün seçtiği görünüm: oturumlar ya da Ayarlar (aşama 2 tasarımı §10.4). */
@@ -203,6 +207,37 @@ export class AnaDurum {
 
   onayiKapat(): void {
     this.onay = null;
+  }
+
+  gunluguAc(oturum?: OturumId): void {
+    this.gunlukOturum = oturum ?? this.secili;
+  }
+
+  gunluguKapat(): void {
+    this.gunlukOturum = null;
+  }
+
+  async onizlemeAyarla(oturum: OturumId, acik: boolean): Promise<void> {
+    const basarili = await this.#dene(() => ipc.onizlemeAyarla(oturum, acik));
+    if (basarili !== undefined) {
+      this.#uygula(oturum, { tip: 'OnizlemeDegisti', acik });
+    }
+  }
+
+  async gonderimKarari(
+    oturum: OturumId,
+    islem: IslemId,
+    gonderilmeyecekler: CagriId[],
+  ): Promise<void> {
+    // Kart karar gider gitmez kapanır: hızlı bir yanıtta tur, IPC dönmeden
+    // biter ve hâlâ bekleyen kartı geçersiz sayardı.
+    this.#uygula(oturum, { tip: 'OnizlemeYanitlandi', islem });
+    const basarili = await this.#dene(() =>
+      ipc.gonderimKarari(oturum, islem, gonderilmeyecekler),
+    );
+    if (basarili === undefined) {
+      this.#uygula(oturum, { tip: 'OnizlemeGonderilemedi', islem });
+    }
   }
 
   baglantiAc = (adres: string): void => {

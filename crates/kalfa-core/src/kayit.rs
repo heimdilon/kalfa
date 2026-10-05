@@ -26,11 +26,12 @@ use std::path::{Path, PathBuf};
 use same_file::Handle;
 
 use kalfa_evren::KrediGozlemi;
-use kalfa_evren::tipler::ChatMessage;
+use kalfa_evren::tipler::{ChatMessage, ToolDef};
 use serde::{Deserialize, Serialize};
 
 use crate::arac::DosyaDegisiklikleri;
 use crate::geri_alma::{DosyaYedegi, GeriAlmaSonucu};
+use crate::gonderim::{GonderilenOge, IstekSonucu};
 use crate::izin::Kip;
 use crate::kimlik::{CagriId, TurId};
 use crate::muhur::OnayMuhru;
@@ -77,6 +78,8 @@ pub enum KayitOgesi {
     },
     Mesaj {
         mesaj: ChatMessage,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kaynak: Option<String>,
     },
     AracBasladi {
         cagri: CagriId,
@@ -103,6 +106,26 @@ pub enum KayitOgesi {
         kredi: Option<KrediGozlemi>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         yonlendirilen_model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        yeni: Vec<GonderilenOge>,
+        #[serde(default)]
+        onceki: u32,
+        #[serde(default)]
+        sonuc: IstekSonucu,
+    },
+    /// Akış açıldıktan sonra kopan istek (aşama 3b).
+    IstekKoptu {
+        mesaj: String,
+    },
+    /// Model isteğinde gönderilen sistem istemi (aşama 3b).
+    SistemIstemi {
+        metin: String,
+    },
+    /// Model isteğinde gönderilen araç tanımları (aşama 3b).
+    AracTanimlari {
+        tanimlar: Vec<ToolDef>,
     },
     /// Bir model isteğinin token kullanımı; kayıttan açılan oturumun durum
     /// çubuğu bundan toplanır.
@@ -113,6 +136,10 @@ pub enum KayitOgesi {
     },
     KipDegisti {
         kip: Kip,
+    },
+    /// Göndermeden önce gösterme ayarı değişti (aşama 3b).
+    OnizlemeDegisti {
+        acik: bool,
     },
     ModelDegisti {
         model: String,

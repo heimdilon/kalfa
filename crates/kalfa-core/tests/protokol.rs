@@ -100,6 +100,7 @@ fn butun_olaylar_gidip_gelir() {
                 yerel_onay: false,
                 onaysiz_degisiklikler: None,
                 geri_alinabilir: None,
+                veri_cikisi: None,
             }],
         },
         Olay::OnayGerekiyor {
@@ -115,6 +116,8 @@ fn butun_olaylar_gidip_gelir() {
         Olay::IstekBilgisi {
             istek_id: Some("r".into()),
             yonlendirilen_model: Some("glm-5.3".into()),
+            amac: "ana".into(),
+            basarili: true,
         },
         Olay::KrediGozlemi {
             gozlem: KrediGozlemi {
@@ -186,6 +189,7 @@ fn kabuk_ogesi(cagri: CagriId) -> OnayOgesi {
         yerel_onay: true,
         onaysiz_degisiklikler: None,
         geri_alinabilir: None,
+        veri_cikisi: None,
     }
 }
 
@@ -241,4 +245,21 @@ fn zarf_bicimi() {
     assert_eq!(j["sira"], 7);
     assert_eq!(j["yuk"], json!({"tip": "TurBasladi"}));
     gidip_gelir(&z);
+}
+
+#[test]
+fn eski_onay_ogesi_veri_cikissiz_acilir() {
+    let json = serde_json::json!({
+        "cagri": CagriId::yeni().to_string(),
+        "arac": "dosya_oku",
+        "aciklama": "oku",
+        "hedefler": ["a.txt"],
+        "diff": null,
+        "uyarilar": [],
+        "muhur": "m",
+        "kabuk": null,
+        "yerel_onay": false
+    });
+    let oge: OnayOgesi = serde_json::from_value(json).unwrap();
+    assert_eq!(oge.veri_cikisi, None);
 }

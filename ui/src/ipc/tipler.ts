@@ -73,7 +73,16 @@ export interface OnayOgesi {
   onaysiz_degisiklikler?: OnaysizDegisiklikler;
   /** Geri alınabilir mi (aşama 3 tasarımı §5.11); yalnızca okuyan öğede yok. */
   geri_alinabilir?: GeriAlinabilirlik;
+  /** Onay kartında "Veri çıkışı" satırı (aşama 3b, tasarım §9.3). */
+  veri_cikisi?: VeriCikisi;
 }
+
+export type VeriCikisi =
+  | 'DosyaIcerigi'
+  | 'KomutCiktisi'
+  | 'AramaSonuclari'
+  | 'DosyaAdlari'
+  | 'YalnizcaYazildi';
 
 export interface OnaysizDegisiklikler {
   yollar: string[];
@@ -198,14 +207,31 @@ export type Olay =
   | { tip: 'Hata'; mesaj: string }
   | { tip: 'Tamamlandi'; neden: BitisNedeni }
   | { tip: 'AktarimDurdu'; neden: AktarimDurmaNedeni }
-  | { tip: 'IstekBilgisi'; istek_id: string | null; yonlendirilen_model: string | null }
+  | {
+      tip: 'IstekBilgisi';
+      istek_id: string | null;
+      yonlendirilen_model: string | null;
+      amac?: string;
+      basarili?: boolean;
+    }
   /** Geri alma önizlemesi (aşama 3 tasarımı §5.6). */
   | { tip: 'GeriAlmaPlani'; geri_alinan_tur: TurId; plan: GeriAlmaPlani; muhur: string }
   | { tip: 'TurGeriAlindi'; geri_alinan_tur: TurId; sonuc: GeriAlmaSonucu[] }
   /** Depo sınırı yüzünden bu turların önceki hâlleri silindi (§5.2). */
   | { tip: 'GeriAlmaVerisiSilindi'; turlar: TurId[] }
   /** Turun özeti; `Tamamlandi`'dan sonra gelir. */
-  | { tip: 'TurOzeti'; ozet: TurOzeti };
+  | { tip: 'TurOzeti'; ozet: TurOzeti }
+  /** Gönderim öncesi önizleme (aşama 3b). */
+  | { tip: 'GonderimOnizlemesi'; islem: IslemId; ogeler: OnizlemeOgesi[]; neden: OnizlemeNedeni };
+
+export type OnizlemeNedeni = 'Onizleme' | 'Denetim';
+
+export interface OnizlemeOgesi {
+  cagri: CagriId;
+  kaynak: string;
+  bayt: number;
+  denetim?: string;
+}
 
 export interface Zarf<T> {
   sema: number;
@@ -267,6 +293,7 @@ export interface DurumOzeti {
   istem: number;
   tamamlama: number;
   dusunce: number;
+  onizleme_acik?: boolean;
 }
 
 export type OturumDurumu =
@@ -401,3 +428,41 @@ export interface KomutHatasi {
   kod: HataKodu;
   mesaj: string;
 }
+
+export interface GonderilenOge {
+  kaynak: string;
+  sira?: number | null;
+  bayt: number;
+}
+
+export type IstekAsamasi = 'Baglanti' | 'Yanit';
+
+export type IstekSonucu =
+  | { tip: 'Basarili' }
+  | { tip: 'Hata'; asama: IstekAsamasi; mesaj: string };
+
+export interface GunlukToken {
+  istem: number;
+  tamamlama: number;
+  dusunce: number;
+}
+
+export interface GunlukSatiri {
+  sira: number;
+  tur?: TurId | null;
+  zaman?: number | null;
+  amac: string;
+  model?: string | null;
+  yonlendirilen_model?: string | null;
+  istek_id?: string | null;
+  token?: GunlukToken | null;
+  sonuc: IstekSonucu;
+  yeni: GonderilenOge[];
+  onceki: number;
+}
+
+export interface GunlukSayfasi {
+  satirlar: GunlukSatiri[];
+  daha_eski_var: boolean;
+}
+

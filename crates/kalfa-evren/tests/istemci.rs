@@ -191,7 +191,13 @@ async fn hata_durumlari_tipli_doner() {
 #[tokio::test]
 async fn ulasilamayan_sunucu_ag_hatasi() {
     let i = EvrenIstemcisi::yeni("http://127.0.0.1:1/v1", ApiAnahtari::yeni(ANAHTAR)).unwrap();
-    assert!(matches!(i.sart_durumu().await, Err(EvrenError::Ag(_))));
+    assert!(matches!(
+        i.sart_durumu().await,
+        Err(EvrenError::Ag {
+            govde_gitti: false,
+            ..
+        })
+    ));
 }
 
 #[test]

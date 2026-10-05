@@ -40,7 +40,13 @@ impl Kayitci {
     }
 
     fn mesaj(&mut self, tur: TurId, mesaj: ChatMessage) -> u64 {
-        self.ekle(Some(tur), KayitOgesi::Mesaj { mesaj })
+        self.ekle(
+            Some(tur),
+            KayitOgesi::Mesaj {
+                mesaj,
+                kaynak: None,
+            },
+        )
     }
 }
 
@@ -307,6 +313,10 @@ fn durum_ozeti_kayittan_cikarilir() {
             istek_id: Some("r1".into()),
             kredi: Some(gozlem.clone()),
             yonlendirilen_model: Some("deepseek-v4-flash".into()),
+            model: Some("deepseek-v4-flash".into()),
+            yeni: Vec::new(),
+            onceki: 0,
+            sonuc: kalfa_core::gonderim::IstekSonucu::Basarili,
         },
     );
     k.ekle(
@@ -336,8 +346,11 @@ fn durum_ozeti_kayittan_cikarilir() {
             istem: 30,
             tamamlama: 6,
             dusunce: 2,
+            onizleme_acik: false,
         }
     );
+    k.ekle(None, KayitOgesi::OnizlemeDegisti { acik: true });
+    assert!(durum_ozeti(&k.kayitlar).onizleme_acik);
 }
 
 /// Güvenlik analizi Bulgu 1: aracın güvenlik uyarısı olay olarak yayılır,

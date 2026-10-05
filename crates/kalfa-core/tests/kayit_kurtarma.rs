@@ -278,6 +278,7 @@ fn kurtarma_kip_model_ve_sira() {
             9,
             KayitOgesi::Mesaj {
                 mesaj: ChatMessage::user("a"),
+                kaynak: None,
             },
         ),
     ];
@@ -304,6 +305,7 @@ fn eksik_arac_yanitlari_tamamlanir() {
             2,
             KayitOgesi::Mesaj {
                 mesaj: ChatMessage::user("üçünü yap"),
+                kaynak: None,
             },
         ),
         z(
@@ -314,6 +316,7 @@ fn eksik_arac_yanitlari_tamamlanir() {
                     None,
                     vec![cagri("m1", "yaz"), cagri("m2", "oku"), cagri("m3", "oku")],
                 ),
+                kaynak: None,
             },
         ),
         z(
@@ -341,6 +344,7 @@ fn eksik_arac_yanitlari_tamamlanir() {
             6,
             KayitOgesi::Mesaj {
                 mesaj: ChatMessage::tool("m3", "içerik"),
+                kaynak: None,
             },
         ),
         z(

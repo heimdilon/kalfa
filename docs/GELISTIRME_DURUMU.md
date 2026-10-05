@@ -49,6 +49,14 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
   değişiklikler, genişleyen gizli kalıplar, araç çıktısının rastgele sınırlı
   sarmalı, yönetici yardımcısının kayıt dizini denetimi ve görünmez
   karakterler. Ayrıntısı aşağıda.
+- **3a — tur özeti ve geri alma:** PR #19 (`kalfa-asama-1`'de birleşti). Tur
+  özeti, dosya ve komut meta veri yakalamaları, oturum silme.
+- **3b — gönderim günlüğü ve önizleme (uygulandı; PR #22):** İstek denemelerinin
+  kaydı (`IstekSonucu`, `IstekAsamasi`), kaynak etiketleri, sistem iletisi ve
+  araç tanımlarının kaydı, göndermeden önce göster (`Komut::OnizlemeAyarla`,
+  `Olay::GonderimOnizlemesi`, `Komut::GonderimKarari`), onay kartında veri çıkışı
+  gösterimi, arayüz (`GonderimGunlugu.svelte`, `OnizlemeKarti.svelte`), S12 ve
+  e2e testleri. G8 ölçümü kapandı. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -1053,6 +1061,8 @@ Tasarım:
 
 - **3a:** tur özeti ve geri alma.
 - **3b:** gönderim günlüğü ve önizleme.
+  - Plan: [`2026-09-28-kalfa-3b-gonderim-gunlugu.md`](superpowers/plans/2026-09-28-kalfa-3b-gonderim-gunlugu.md)
+    (hafif; uygulayanı kullanıcı seçecek). 3a'dan sonra yürür.
 - **3c:** prompt injection senaryo testleri ve güvenlik denetçisi.
   - Plan: [`2026-09-28-kalfa-3c-senaryolar-denetci.md`](superpowers/plans/2026-09-28-kalfa-3c-senaryolar-denetci.md)
     (hafif; uygulayanı kullanıcı seçecek).
@@ -1137,8 +1147,23 @@ bölümünde.
 Araç planlamasındaki aynı maliyet (yazılan hedef başına `git config`) PR
 #25'te giderildi; aşağıdaki "Hız düzeltmesi" bölümüne bakın.
 
+### 3b — gönderim günlüğü ve göndermeden önce gösterme (uygulandı; PR #22 incelemede)
+
+Plan: [`2026-09-28-kalfa-3b-gonderim-gunlugu.md`](superpowers/plans/2026-09-28-kalfa-3b-gonderim-gunlugu.md).
+Dal `3b/gonderim-gunlugu`, PR #22 (tabanı `kalfa-asama-1`). Uygulama Antigravity tarafından yapıldı.
+
+- **Her istek denemesinin kaydı:** Başarılı ve başarısız (kopan, ağ hatası, HTTP hatası vb.) bütün istekler JSONL'de birer `KayitOgesi::Istek` olarak kaydedilir. `asama: Baglanti` (gövde gitmedi) ve `asama: Yanit` (gövde gitti) ayrımı yapılır. Bağlantı hatasında `gonderilen` sayacı ve son sistem/araç tanımları ilerlemez; sonraki istekte ve kurtarmada öğeler yeniden `yeni` sayılır.
+- **Kaynak etiketleri:** Mesajlara ve araç çıktılarına kaynak etiketleri (`mesaj:kullanıcı`, `model`, `kalfa:sonuç`, `kalfa:not`, `kalfa:sistem`, `kalfa:araçlar`, `dosya:...`, `kabuk:...` vb.) eklenir. `KayitOgesi::Mesaj.kaynak`'a yazılır.
+- **Sistem iletisi ve araç tanımları:** İlk istekte ve değiştiklerinde `KayitOgesi::SistemIstemi` ve `KayitOgesi::AracTanimlari` olarak kaydedilir.
+- **Günlüğün türetimi:** Kayıttan sayfalanarak okunan `GunlukSayfasi` ve `GunlukSatiri` türetilir. Eski kayıtlar da geriye dönük uyumlu açılır ("ayrıntı yok"). `gonderim_ogesi` ile tam metin çekilir.
+- **Göndermeden önce göster (önizleme):** Oturum ayarı `onizleme_acik` açıkken dış kaynaklı araç sonuçları sonraki istekten önce `Olay::GonderimOnizlemesi` ile bekletilir. Çıkarılan öğeler model bağlamına `[kullanıcı bu içeriği göndermedi]` yer tutucusuyla girer ve asıl içerik kayda girmez. Önizleme iptalinde `ONIZLEME_IPTALI` yer tutucusu girer. Kurtarmada kapanan önizleme için `ONIZLEME_KAPANISI` yer tutucusu üretilir. Hata eşiği aşıldığında da önizleme kartı gösterilir; kip değişikliği önizleme beklemesini bozmaz.
+- **Onay kartında "Veri çıkışı":** Her öğe, onaylanırsa EVREN'e ne gideceğini söyler: dosya içeriği, komut çıktısı, arama sonuçları, dosya adları ya da yalnızca "yazıldı" bilgisi. Araç bunu hazırlıkta verir (`Hazirlik.veri_cikisi`); bir risk hesabı değildir.
+- **Arayüz:** Svelte 5 ile `GonderimGunlugu.svelte` (modal diyalog, log tablosu, ayrıntı paneli, tam metin görüntüleyici), `OnizlemeKarti.svelte` ("Gönder" ve "Seçilenleri gönderme" butonları), konuşma durum çubuğunda "Göndermeden önce göster" ayarı, `OnayKarti`'nda "Veri çıkışı" rozeti.
+- **Ölçümler:**
+  - G8 kapandı: Önizleme kartında 50 × 64 KiB öğe durumunda kart gövdesinde içerik taşınmaz; yalnızca meta veriler yer alır. 50 öğelik zarf serileştirildiğinde ~7.5 KiB tutar, 256 KiB olay bütçesine ve 32 KiB test eşiğine rahatça sığar (`g8_onizleme_karti_olay_butcesine_sigar`). Bekleyen sonucun içeriği karardan önce kayda yazılmaz; kullanıcı onu konuşmada araç sonucu olarak görür. `gonderim_ogesi` yalnızca kayda girmiş öğeleri açar.
+- **Senaryo ve e2e:** S12 senaryosu (`s12_onizlemede_cikarilan_oge_sonraki_istekte_yoktur`) ve uçtan uca e2e testi (`07-gonderim.test.mjs`).
+
 **Sıradaki iş:**
-- PR #18 (tasarım) ve PR #19'un (3a) incelenmesi ve birleştirilmesi.
-- Ardından 3b (gönderim günlüğü). Windows'ta G6'nın ölçümü (3d) ayrıca
-  bekliyor.
-- 3c'nin senaryo testleri (PR #21) ve 3d'nin prototipi (PR #20) açık.
+- PR #22'nin (3b) incelenmesi ve birleştirilmesi.
+- Ardından 3c (senaryolar ve denetçi) veya 3d (çıkış vekili).
+

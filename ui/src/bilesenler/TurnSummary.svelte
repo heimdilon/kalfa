@@ -7,10 +7,12 @@
   import Button from './Button.svelte';
   import IconTile from './IconTile.svelte';
 
+  export type SummaryItem = string | { text: string; onclick?: () => void };
+
   interface Props {
     title: string;
     /** Değişiklikler, madde başına bir satır. */
-    items: string[];
+    items: SummaryItem[];
     time?: string;
     /** Yalnızca tur gerçekten geri alınabiliyorsa verilir. */
     onUndo?: () => void;
@@ -36,7 +38,19 @@
     </div>
     {#if items.length > 0}
       <ul>
-        {#each items as it, i (i)}<li>{it}</li>{/each}
+        {#each items as it, i (i)}
+          <li>
+            {#if typeof it === 'string'}
+              {it}
+            {:else if it.onclick}
+              <button type="button" class="baglanti" onclick={it.onclick}>
+                {it.text}
+              </button>
+            {:else}
+              {it.text}
+            {/if}
+          </li>
+        {/each}
       </ul>
     {/if}
     {#each note as n, i (i)}<p class="not">{n}</p>{/each}
@@ -87,5 +101,20 @@
     margin: 10px 0 0;
     font: var(--type-meta);
     color: var(--text-muted);
+  }
+  .baglanti {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: var(--copper-400);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .baglanti:hover {
+    color: var(--copper-300, var(--copper-400));
   }
 </style>

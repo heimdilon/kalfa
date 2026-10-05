@@ -8,7 +8,7 @@ use kalfa_core::aktarim::KanalMesaji;
 use kalfa_core::gecmis::GorunumOgesi;
 use kalfa_core::izin::Kip;
 use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
-use kalfa_core::kimlik::{OturumId, TurId};
+use kalfa_core::kimlik::{IslemId, OturumId, TurId};
 use kalfa_core::protokol::{BitisNedeni, Olay, SEMA_SURUMU, Zarf};
 use kalfa_core::saglayici::Saglayici;
 use kalfa_core::test_destek::{SahteSaglayici, SahteYanit};
@@ -261,12 +261,14 @@ fn eski_kayit(yol: &Path, oturum: OturumId) {
             tur,
             KayitOgesi::Mesaj {
                 mesaj: ChatMessage::user(format!("soru {i}")),
+                kaynak: None,
             },
         );
         yaz(
             tur,
             KayitOgesi::Mesaj {
                 mesaj: ChatMessage::assistant(Some(format!("yanıt {i}")), Vec::new()),
+                kaynak: None,
             },
         );
         yaz(
@@ -674,4 +676,106 @@ async fn kaydi_olmayan_oturum_silinmez_ve_sorulmaz() {
             .unwrap_err();
     assert_eq!(hata.kod, HataKodu::OturumYok);
     assert!(o.t.iletisim.sorulanlar().is_empty());
+}
+
+#[tokio::test]
+async fn gunluk_sayfasi_kayittan() {
+    let o = ortam(vec![SahteYanit::metin("merhaba")]).await;
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .mesaj_gonder(oturum, "selam".into())
+        .await
+        .unwrap();
+    loop {
+        let msg = rx.recv().await.unwrap();
+        if let KanalMesaji::Olaylar { zarflar, .. } = msg
+            && zarflar
+                .iter()
+                .any(|z| matches!(z.yuk, Olay::Tamamlandi { .. }))
+        {
+            break;
+        }
+    }
+
+    let sayfa = o.t.uygulama.gonderim_gunlugu(oturum, None).await.unwrap();
+    assert_eq!(sayfa.satirlar.len(), 1);
+    assert_eq!(sayfa.satirlar[0].model.as_deref(), Some("glm-5.3"));
+    assert!(!sayfa.satirlar[0].yeni.is_empty());
+}
+
+#[tokio::test]
+async fn bilinmeyen_oturum_hata() {
+    let o = ortam(Vec::new()).await;
+    let bilinmeyen = OturumId::yeni();
+    let islem = IslemId::yeni();
+
+    let err1 =
+        o.t.uygulama
+            .gonderim_gunlugu(bilinmeyen, None)
+            .await
+            .unwrap_err();
+    assert_eq!(err1.kod, HataKodu::OturumYok);
+
+    let err2 =
+        o.t.uygulama
+            .gonderim_ogesi(bilinmeyen, 1)
+            .await
+            .unwrap_err();
+    assert_eq!(err2.kod, HataKodu::OturumYok);
+
+    let err3 =
+        o.t.uygulama
+            .onizleme_ayarla(bilinmeyen, true)
+            .await
+            .unwrap_err();
+    assert_eq!(err3.kod, HataKodu::OturumYok);
+
+    let err4 =
+        o.t.uygulama
+            .gonderim_karari(bilinmeyen, islem, Vec::new())
+            .await
+            .unwrap_err();
+    assert_eq!(err4.kod, HataKodu::OturumYok);
+}
+
+#[tokio::test]
+async fn oge_metni_yalnizca_kayittaki_sira() {
+    let o = ortam(vec![SahteYanit::metin("cevabim")]).await;
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .mesaj_gonder(oturum, "ozel_mesaj_12345".into())
+        .await
+        .unwrap();
+    loop {
+        let msg = rx.recv().await.unwrap();
+        if let KanalMesaji::Olaylar { zarflar, .. } = msg
+            && zarflar
+                .iter()
+                .any(|z| matches!(z.yuk, Olay::Tamamlandi { .. }))
+        {
+            break;
+        }
+    }
+
+    let sayfa = o.t.uygulama.gonderim_gunlugu(oturum, None).await.unwrap();
+    assert_eq!(sayfa.satirlar.len(), 1);
+    let sira = sayfa.satirlar[0]
+        .yeni
+        .iter()
+        .find(|o| o.kaynak == "mesaj:kullanıcı")
+        .unwrap()
+        .sira
+        .unwrap();
+
+    let metin = o.t.uygulama.gonderim_ogesi(oturum, sira).await.unwrap();
+    assert_eq!(metin, "ozel_mesaj_12345");
+
+    let err =
+        o.t.uygulama
+            .gonderim_ogesi(oturum, 999_999)
+            .await
+            .unwrap_err();
+    assert_eq!(err.kod, HataKodu::GecersizGirdi);
 }

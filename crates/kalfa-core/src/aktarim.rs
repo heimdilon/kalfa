@@ -90,6 +90,7 @@ pub fn kritik_mi(olay: &Olay) -> bool {
             | Olay::TurGeriAlindi { .. }
             | Olay::GeriAlmaVerisiSilindi { .. }
             | Olay::TurOzeti { .. }
+            | Olay::GonderimOnizlemesi { .. }
     )
 }
 

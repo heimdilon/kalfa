@@ -8,6 +8,7 @@ pub mod arac;
 pub mod gecmis;
 pub mod geri_alma;
 pub mod git_koruma;
+pub mod gonderim;
 pub mod gorunum;
 pub mod izin;
 pub mod kabuk;

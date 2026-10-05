@@ -269,7 +269,10 @@ async fn anahtara_gore_hata_ve_ortak_sart_durumu() {
         Err(EvrenError::AnahtarGecersiz)
     ));
     let agsiz = uretici.uret(AGSIZ_ANAHTAR).unwrap();
-    assert!(matches!(agsiz.sart_durumu().await, Err(EvrenError::Ag(_))));
+    assert!(matches!(
+        agsiz.sart_durumu().await,
+        Err(EvrenError::Ag { .. })
+    ));
 
     let a = uretici.uret("evren_llm_a").unwrap();
     let b = uretici.uret("evren_llm_b").unwrap();

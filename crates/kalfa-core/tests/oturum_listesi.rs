@@ -43,6 +43,7 @@ fn acilis() -> KayitOgesi {
 fn kullanici(m: &str) -> KayitOgesi {
     KayitOgesi::Mesaj {
         mesaj: ChatMessage::user(m),
+        kaynak: None,
     }
 }
 

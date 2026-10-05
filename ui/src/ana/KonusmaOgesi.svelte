@@ -22,6 +22,7 @@
   } from './bicim';
   import { geriAlmaSonucMetni } from './geriAlma';
   import OnayKarti from './OnayKarti.svelte';
+  import OnizlemeKarti from './OnizlemeKarti.svelte';
   import TerminalGorunumu from './TerminalGorunumu.svelte';
   import TurOzeti from './TurOzeti.svelte';
 
@@ -78,6 +79,12 @@
   </ToolCallCard>
 {:else if oge.tip === 'OnayIstegi'}
   <OnayKarti {oge} onincele={() => durum.onayiAc(oturum, oge.islem)} />
+{:else if oge.tip === 'GonderimOnizlemesi'}
+  <OnizlemeKarti
+    {oge}
+    onkarar={(islem, gonderilmeyecekler) =>
+      durum.gonderimKarari(oturum, islem, gonderilmeyecekler)}
+  />
 {:else if oge.tip === 'SartIstegi'}
   <Card tone="accent" icon="shield" title={m('sart.kart.baslik', { surum: oge.surum })}>
     {#snippet actions()}
@@ -121,6 +128,7 @@
     ozet={oge.ozet}
     geriAlindi={oge.geri_alindi}
     ongeri={() => durum.geriAlmaOnizle(oturum, oge.ozet.tur)}
+    ongunluk={() => durum.gunluguAc(oturum)}
   />
 {:else if oge.tip === 'KalfaNotu'}
   <div class="bilgi-satiri">

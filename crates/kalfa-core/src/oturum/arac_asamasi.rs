@@ -27,12 +27,20 @@ use crate::kimlik::{CagriId, IslemId};
 use crate::muhur::{OnayMuhru, muhur_hesapla};
 use crate::protokol::{
     AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OnayOgesi, OnaysizDegisiklikler,
+    OnizlemeNedeni, OnizlemeOgesi,
 };
 use crate::tur_ozeti::{GeriAlinabilirlik, KomutOzeti, YazilanDosya};
 use crate::yol::CalismaYolu;
 
 /// Araçlardan oturuma gelen ara çıktı kanalının kapasitesi (parça).
 const CIKTI_KANALI: usize = 64;
+
+struct BekleyenSonuc {
+    cagri: CagriId,
+    model_id: String,
+    kaynak: String,
+    icerik: String,
+}
 
 struct Planlanan {
     cagri: CagriId,
@@ -59,6 +67,7 @@ struct CagriSonucu {
     anahtar: String,
     durum: AracDurumu,
     icerik: String,
+    kaynak: String,
     /// Başarısızlık, aynı çağrının üst üste başarısızlık sınırına sayılmaz
     /// (kabukta sıfırdan farklı çıkış kodu; aşama 2 tasarımı §4.5).
     hata_sayilmaz: bool,
@@ -77,6 +86,7 @@ impl CagriSonucu {
             anahtar: p.anahtar.clone(),
             durum,
             icerik,
+            kaynak: "kalfa:sonuç".to_string(),
             hata_sayilmaz: false,
             guvenlik_uyarilari: Vec::new(),
             komut: p.hazirlik.kabuk.as_ref().map(|k| k.komut.clone()),
@@ -111,6 +121,7 @@ impl Oturum {
     ) -> AsamaSonucu {
         let mut serbest = Vec::new();
         let mut onayli = Vec::new();
+        let mut bekleyen_sonuclar = Vec::new();
         // Git korumaları bu yanıtın planlamasında bir kez çözülür (ilk yazan
         // hazırlıkta); yürütme onları kilit altında yeniden çözer.
         let siniflandirici = self.baglam.siniflandirici.clone();
@@ -133,7 +144,8 @@ impl Oturum {
                         AracDurumu::Reddedildi,
                         format!("[izin verilmedi] {neden}"),
                     );
-                    self.sonuc_isle(s, hata_sayaci).await;
+                    self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
+                        .await;
                 }
                 Err(mesaj) => {
                     let durum = if self.iptal.is_cancelled() {
@@ -153,12 +165,14 @@ impl Oturum {
                         anahtar: tekrar_anahtari(&tc),
                         durum,
                         icerik,
+                        kaynak: "kalfa:sonuç".to_string(),
                         hata_sayilmaz: false,
                         guvenlik_uyarilari: Vec::new(),
                         komut: None,
                         degisiklikler: None,
                     };
-                    self.sonuc_isle(s, hata_sayaci).await;
+                    self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
+                        .await;
                 }
             }
         }
@@ -174,6 +188,7 @@ impl Oturum {
                         "[çalıştırılmadı: tur iptal edildi]".into(),
                     ),
                     hata_sayaci,
+                    &mut bekleyen_sonuclar,
                 )
                 .await;
             }
@@ -213,6 +228,7 @@ impl Oturum {
                     format!("[çalıştırılmadı] {}", AracHatasi::PolitikaDegisti),
                 ),
                 hata_sayaci,
+                &mut bekleyen_sonuclar,
             )
             .await;
         }
@@ -220,7 +236,8 @@ impl Oturum {
         if !onayli.is_empty() {
             let toplama = self.onay_topla(onayli).await;
             for s in toplama.reddedilen {
-                self.sonuc_isle(s, hata_sayaci).await;
+                self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
+                    .await;
             }
             if let Some(neden) = toplama.iptal {
                 for p in serbest
@@ -233,7 +250,8 @@ impl Oturum {
                         AracDurumu::IptalEdildi,
                         "[çalıştırılmadı: tur iptal edildi]".into(),
                     );
-                    self.sonuc_isle(s, hata_sayaci).await;
+                    self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
+                        .await;
                 }
                 return AsamaSonucu::Bitir(neden);
             }
@@ -250,23 +268,41 @@ impl Oturum {
                     let icerik =
                         "[çalıştırılmadı: izin kipi değişti; gerekirse yeniden dene]".to_string();
                     let s = CagriSonucu::plandan(p, AracDurumu::IptalEdildi, icerik);
-                    self.sonuc_isle(s, hata_sayaci).await;
+                    self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
+                        .await;
                 }
                 return AsamaSonucu::Devam;
             }
             serbest.extend(toplama.onaylanan);
         }
 
-        if let Some(neden) = self.yurut(serbest, hata_sayaci).await {
+        if let Some(neden) = self
+            .yurut(serbest, hata_sayaci, &mut bekleyen_sonuclar)
+            .await
+        {
+            for b in bekleyen_sonuclar {
+                self.mesaj_ekle(
+                    ChatMessage::tool(b.model_id, crate::kurtarma::ONIZLEME_IPTALI.to_string()),
+                    Some("kalfa:sonuç".to_string()),
+                )
+                .await;
+            }
             return AsamaSonucu::Bitir(neden);
         }
         let esik = self.ayarlar.sinirlar.ayni_hata_esigi;
-        if hata_sayaci.values().any(|n| *n >= esik) {
+        let hata_esigi_asildi = hata_sayaci.values().any(|n| *n >= esik);
+        if let Some(neden) = self.gonderim_onizleme_bekle(bekleyen_sonuclar).await {
+            return AsamaSonucu::Bitir(neden);
+        }
+        if hata_esigi_asildi {
             return AsamaSonucu::Bitir(BitisNedeni::Sinir {
                 aciklama: format!(
                     "Aynı araç çağrısı üst üste {esik} kez başarısız oldu; döngü durduruldu."
                 ),
             });
+        }
+        if self.kayit_hatasi.is_some() {
+            return AsamaSonucu::Bitir(BitisNedeni::Hata);
         }
         AsamaSonucu::Devam
     }
@@ -419,6 +455,7 @@ impl Oturum {
                     .is_some()
                     .then(|| self.onaysiz_degisiklikler()),
                 geri_alinabilir: self.onay_geri_alinabilirligi(&p.hazirlik),
+                veri_cikisi: p.hazirlik.veri_cikisi,
             })
             .collect();
         // Yerel iletişim kutusu komutu çekirdekten okur, webview'dan değil
@@ -693,6 +730,7 @@ impl Oturum {
         &mut self,
         planlar: Vec<Planlanan>,
         hata_sayaci: &mut HashMap<String, u32>,
+        bekleyen_sonuclar: &mut Vec<BekleyenSonuc>,
     ) -> Option<BitisNedeni> {
         let mut calisacak = Vec::with_capacity(planlar.len());
         let mut kaydi_yazilamayan = Vec::new();
@@ -745,6 +783,7 @@ impl Oturum {
             self.sonuc_isle(
                 CagriSonucu::plandan(p, AracDurumu::IptalEdildi, icerik),
                 hata_sayaci,
+                bekleyen_sonuclar,
             )
             .await;
         }
@@ -753,6 +792,7 @@ impl Oturum {
             self.sonuc_isle(
                 CagriSonucu::plandan(p, AracDurumu::Basarisiz, icerik),
                 hata_sayaci,
+                bekleyen_sonuclar,
             )
             .await;
         }
@@ -811,7 +851,7 @@ impl Oturum {
                         self.atlanani_bildir(p.cagri, &mut atlanan).await;
                         let s = sonuc_olustur(&p, sonuc, azami);
                         self.onaysiz_isle(&p, s.degisiklikler.as_ref());
-                        self.sonuc_isle(s, hata_sayaci).await;
+                        self.sonuc_isle(s, hata_sayaci, bekleyen_sonuclar).await;
                     }
                     None => break,
                 },
@@ -862,7 +902,12 @@ impl Oturum {
 
     /// Sonucu bağlama, kayda ve arayüze işler. Mesaj `AracBitti`'den önce
     /// yazılır: çökme arada olursa kurtarma sonucu bilir.
-    async fn sonuc_isle(&mut self, s: CagriSonucu, hata_sayaci: &mut HashMap<String, u32>) {
+    async fn sonuc_isle(
+        &mut self,
+        s: CagriSonucu,
+        hata_sayaci: &mut HashMap<String, u32>,
+        bekleyen_sonuclar: &mut Vec<BekleyenSonuc>,
+    ) {
         if s.hata_sayilmaz {
             // Sayaç ne artar ne sıfırlanır.
         } else if s.durum == AracDurumu::Basarisiz {
@@ -870,8 +915,23 @@ impl Oturum {
         } else {
             hata_sayaci.remove(&s.anahtar);
         }
-        self.mesaj_ekle(ChatMessage::tool(s.model_id.clone(), s.icerik.clone()))
+
+        let beklet = self.onizleme_acik && s.kaynak != "kalfa:sonuç";
+        if beklet {
+            bekleyen_sonuclar.push(BekleyenSonuc {
+                cagri: s.cagri,
+                model_id: s.model_id.clone(),
+                kaynak: s.kaynak.clone(),
+                icerik: s.icerik.clone(),
+            });
+        } else {
+            self.mesaj_ekle(
+                ChatMessage::tool(s.model_id.clone(), s.icerik.clone()),
+                Some(s.kaynak.clone()),
+            )
             .await;
+        }
+
         self.geri_alma.arac_bitti(s.cagri, s.durum);
         self.tur_ozeti.arac_bitti(s.cagri, s.durum);
         self.tur_ozeti.guvenlik_uyarisi(s.guvenlik_uyarilari.len());
@@ -902,6 +962,98 @@ impl Oturum {
             })
             .await;
         }
+    }
+
+    /// Göndermeden önce göster: aşamanın dış kaynaklı sonuçlarını önizleme kartı
+    /// olarak sunar ve kullanıcının `Komut::GonderimKarari` vermesini bekler.
+    async fn gonderim_onizleme_bekle(
+        &mut self,
+        bekleyen_sonuclar: Vec<BekleyenSonuc>,
+    ) -> Option<BitisNedeni> {
+        if bekleyen_sonuclar.is_empty() {
+            return None;
+        }
+        let islem = IslemId::yeni();
+        let ogeler: Vec<OnizlemeOgesi> = bekleyen_sonuclar
+            .iter()
+            .map(|b| OnizlemeOgesi {
+                cagri: b.cagri,
+                kaynak: b.kaynak.clone(),
+                bayt: b.icerik.len() as u64,
+                denetim: None,
+            })
+            .collect();
+
+        self.yay(Olay::GonderimOnizlemesi {
+            islem,
+            ogeler,
+            neden: OnizlemeNedeni::Onizleme,
+        })
+        .await;
+
+        let mut gonderilmeyecekler: Option<HashSet<CagriId>> = None;
+        let mut iptal_nedeni = None;
+
+        loop {
+            let Some(komut) = self.tur_komutu_al().await else {
+                iptal_nedeni = Some(BitisNedeni::Iptal);
+                break;
+            };
+
+            match komut {
+                Komut::Iptal { tur } if Some(tur) == self.tur => {
+                    iptal_nedeni = Some(BitisNedeni::Iptal);
+                    break;
+                }
+                Komut::GonderimKarari {
+                    islem: gelen_islem,
+                    gonderilmeyecekler: haric,
+                } => {
+                    if gelen_islem != islem {
+                        self.hata(
+                            "Bu gönderim kararı artık geçerli değil; bekleyen bir önizleme yok.",
+                        )
+                        .await;
+                        continue;
+                    }
+                    gonderilmeyecekler = Some(haric.into_iter().collect());
+                    break;
+                }
+                diger => {
+                    if self.genel_komut(diger).await == Etki::Iptal {
+                        iptal_nedeni = Some(BitisNedeni::Iptal);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(neden) = iptal_nedeni {
+            for b in bekleyen_sonuclar {
+                self.mesaj_ekle(
+                    ChatMessage::tool(b.model_id, crate::kurtarma::ONIZLEME_IPTALI.to_string()),
+                    Some("kalfa:sonuç".to_string()),
+                )
+                .await;
+            }
+            return Some(neden);
+        }
+
+        let haricler = gonderilmeyecekler.unwrap_or_default();
+        for b in bekleyen_sonuclar {
+            let (icerik, kaynak) = if haricler.contains(&b.cagri) {
+                (
+                    "[kullanıcı bu içeriği göndermedi]".to_string(),
+                    "kalfa:sonuç".to_string(),
+                )
+            } else {
+                (b.icerik, b.kaynak)
+            };
+            self.mesaj_ekle(ChatMessage::tool(b.model_id, icerik), Some(kaynak))
+                .await;
+        }
+
+        None
     }
 }
 
@@ -1057,11 +1209,13 @@ fn sonuc_olustur(
 ) -> CagriSonucu {
     match sonuc {
         Ok(c) => CagriSonucu {
+            kaynak: c.kaynak.clone(),
             guvenlik_uyarilari: c.guvenlik_uyarilari.clone(),
             degisiklikler: c.degisiklikler.clone().map(|d| *d),
             ..CagriSonucu::plandan(p, AracDurumu::Basarili, model_icerigi(&c, azami))
         },
         Err(AracHatasi::Basarisiz(c)) => CagriSonucu {
+            kaynak: c.kaynak.clone(),
             hata_sayilmaz: true,
             guvenlik_uyarilari: c.guvenlik_uyarilari.clone(),
             degisiklikler: c.degisiklikler.clone().map(|d| *d),

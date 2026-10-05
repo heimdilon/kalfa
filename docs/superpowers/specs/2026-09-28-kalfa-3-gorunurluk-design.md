@@ -948,6 +948,31 @@ Plandan sapmaların tam listesi planın "Uygulama sonucu" bölümündedir.
 - **Tur özeti** EVREN çağrılarını günlüğe bağlar.
 - **Onay kartındaki "Veri çıkışı"** alanı §9.3'tedir.
 
+### 6.6 Uygulamada netleşenler (3b)
+
+3b'nin uygulaması sırasında tasarımdan ayrılan ya da netleşen noktalar:
+
+- **İstek denemeleri ve bağlantı hatası (§6.2):** Başarısız isteklerde
+  `asama: Baglanti` (gövde gitmedi) durumunda `gonderilen` sayacı ve son sistem
+  istemi / araç tanımları ilerletilmez. Kurtarmada da yalnızca `Basarili` veya
+  `Hata { asama: Yanit }` istekleri `gonderilen` sayacına sayılır. Böylece ağ
+  koptuğunda bir sonraki istekte öğeler yeniden `yeni` sayılır.
+- **Göndermeden önce göster ve hata eşiği (§6.4):**
+  - Üç ardışık hata eşiği aşıldığında da önizleme kartı gösterilir; çıkarılan
+    içerik yer tutucuyla kapatılır.
+  - Önizleme kartı beklerken gelen izin kipi değişiklikleri önizleme beklemesini
+    bozmaz, kart açık kalır.
+  - Önizleme kartı iptal edildiğinde modele `[sonuç gönderilmedi: tur, gönderim
+    önizlemesi beklenirken durduruldu]` metni verilir (`ONIZLEME_IPTALI`).
+  - Önizleme kartında "Gönder" düğmesi yalnızca işaretli öğeleri çıkarıp
+    kalanları gönderir.
+- **Büyük içerik ve G8 ölçümü (§13):** Önizleme kartı gövdesinde içeriğin
+  kendisi taşınmaz; yalnızca meta veriler (`kaynak`, `bayt`, `cagri`,
+  `denetim`) taşınır. 50 × 64 KiB öğeli kart ~7.5 KiB tutar ve 256 KiB olay
+  bütçesine rahatlıkla sığar (`g8_onizleme_karti_olay_butcesine_sigar`). Bekleyen
+  sonucun içeriği karardan önce kayda yazılmaz; kullanıcı onu konuşmada araç
+  sonucu olarak görür. `gonderim_ogesi` yalnızca kayda girmiş öğeleri açar.
+
 ---
 
 ## 7. 3c — Senaryo testleri ve güvenlik denetçisi
@@ -1622,7 +1647,7 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 | G5 | Linux: bwrap'ın `--unshare-net`'inde köprünün `SCM_RIGHTS` ile bağlantı taşıması; cargo, npm, pip ve git'in `HTTPS_PROXY`'ye uyması | 3d, WSL'de `kalfatest` ile |
 | G6 | Windows: aynı AppContainer'daki iki sürecin `127.0.0.1` üzerinden konuşabilmesi; paket SID'ine açık boru; `internetClient`'sız kapta vekille Schannel; geliştirme derlemesinde köprünün ikilisi | 3d, kurulu makinede; olumsuzsa yedek yol (§8.6) |
 | G7 | SNI denetimi ECH kullanan istemcileri bozar; kullanılan araçlarda ECH var mı? | 3d |
-| G8 | Önizleme kartında büyük içerik: 50 × 64 KiB olay bütçesine ve arayüze sığar mı? | 3b, ölçüm |
+| G8 | Önizleme kartında büyük içerik: 50 × 64 KiB olay bütçesine ve arayüze sığar mı? | **Kapandı (3b):** Kart gövdesinde içerik taşınmaz; yalnızca meta veriler (`kaynak`, `bayt`, `cagri`, `denetim`) yer alır. 50 öğelik zarf serileştirildiğinde ~7.5 KiB tutar, 256 KiB olay bütçesine ve 32 KiB test eşiğine rahatça sığar (`g8_onizleme_karti_olay_butcesine_sigar`). Bekleyen sonucun içeriği karardan önce kayda yazılmaz; kullanıcı onu konuşmada araç sonucu olarak görür. `gonderim_ogesi` yalnızca kayda girmiş öğeleri açar. |
 | G9 | Ek gizli kalıpların ve istisnaların paylaşılan kaydının her sınıflandırmada okunmasının maliyeti | 3e |
 | G10 | Windows'ta geri alma deposunun kaptan görünmemesi: A11'in listeleme izniyle `Kalfa\` altındaki adlar görünüyor | **Kapandı (3a):** yalıtımın özel kökünün kardeşi olan depo kaptan okunamıyor ve listelenemiyor; uyumluluk testi `geri_alma_deposu_yalitimda_gorunmez`, Windows'ta gerçek AppContainer'la ve WSL'de bwrap'la. `%LOCALAPPDATA%`'da "ALL APPLICATION PACKAGES" izni yok |
 | G11 | Yazma yarım kalmışsa (çökme) "yine de önceki hâli yaz" seçeneği gerekiyor mu? | Kullanımla; şimdilik sayfada görülüp kopyalanıyor |
@@ -1653,7 +1678,8 @@ sonraki planların uygulayıcısı her planda ayrıca kararlaştırılır.
    - Onay kartında geri alınabilirlik.
    - "Oturumu sil".
    - Arayüz ve uçtan uca testler.
-2. **3b — Gönderim günlüğü ve önizleme.**
+2. **3b — Gönderim günlüğü ve önizleme.** Plan:
+   [`2026-09-28-kalfa-3b-gonderim-gunlugu.md`](../plans/2026-09-28-kalfa-3b-gonderim-gunlugu.md).
    - `Istek` kaydının genişlemesi ve kaynak etiketleri.
    - Sistem iletisi ve araç tanımlarının kaydı.
    - Bekleyen sonuçlar ve önizleme kartı.

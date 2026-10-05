@@ -66,7 +66,7 @@ impl SahteSaglayici {
     fn denetle(&self) -> Result<(), EvrenError> {
         match self.anahtar.as_str() {
             GECERSIZ_ANAHTAR => Err(EvrenError::AnahtarGecersiz),
-            AGSIZ_ANAHTAR => Err(EvrenError::Ag("sahte EVREN'e ulaşılamıyor".into())),
+            AGSIZ_ANAHTAR => Err(EvrenError::ag_baglanti("sahte EVREN'e ulaşılamıyor")),
             _ => Ok(()),
         }
     }

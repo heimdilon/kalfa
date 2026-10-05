@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use crate::izin::Kip;
 use crate::kabuk::KabukTarifi;
 use crate::kimlik::CagriId;
-use crate::protokol::CiktiAkisi;
+use crate::protokol::{CiktiAkisi, VeriCikisi};
 use crate::yol::{CalismaYolu, YolHatasi};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +81,8 @@ pub struct Hazirlik {
     pub gorunmez_icerik: bool,
     /// Kabuk çağrısının tarifi (aşama 2 tasarımı §3.3).
     pub kabuk: Option<KabukTarifi>,
+    /// Onay kartında gösterilen veri çıkışı türü (aşama 3b, tasarım §9.3).
+    pub veri_cikisi: Option<VeriCikisi>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

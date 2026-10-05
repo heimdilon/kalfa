@@ -75,6 +75,19 @@ impl SahteYanit {
             }),
         ])
     }
+
+    pub fn baglanti_hatasi(mesaj: &str) -> Self {
+        Self::Hata(EvrenError::ag_baglanti(mesaj))
+    }
+
+    pub fn akis_kopmasi(parcalar: &[&str], hata: EvrenError) -> Self {
+        let mut olaylar: Vec<Result<AkisOlayi, EvrenError>> = parcalar
+            .iter()
+            .map(|p| Ok(AkisOlayi::Metin((*p).to_string())))
+            .collect();
+        olaylar.push(Err(hata));
+        Self::Akis(olaylar)
+    }
 }
 
 struct SahteSart {
@@ -684,6 +697,10 @@ impl Surucu {
                 _ => None,
             })
             .collect()
+    }
+
+    pub fn olaylar(&self) -> Vec<Olay> {
+        self.gecmis.iter().map(|z| z.yuk.clone()).collect()
     }
 }
 

@@ -2,8 +2,11 @@
 // adlardır: komutlar `rename_all = "snake_case"` ile tanımlıdır.
 import { Channel, invoke } from '@tauri-apps/api/core';
 import type {
+  CagriId,
   CalismaAlani,
   GecmisSayfasi,
+  GunlukSayfasi,
+  IslemId,
   KanalMesaji,
   Kip,
   OnarimSonucu,
@@ -116,3 +119,22 @@ export const yalitimCalismaAlanlari = () =>
 /** Yerel onayı Rust sorar; arayüz yalnızca çalışma alanı kimliğini gönderir. */
 export const yalitimCalismaAlaniniKaldir = (kimlik: string) =>
   invoke<boolean>('yalitim_calisma_alanini_kaldir', { kimlik });
+
+/** Gönderim günlüğü sayfası (aşama 3b). */
+export const gonderimGunlugu = (oturum: OturumId, once_sira?: number | null) =>
+  invoke<GunlukSayfasi>('gonderim_gunlugu', { oturum, once_sira: once_sira ?? null });
+
+/** Gönderilen tek bir öğenin tam metni (aşama 3b). */
+export const gonderimOgesi = (oturum: OturumId, sira: number) =>
+  invoke<string>('gonderim_ogesi', { oturum, sira });
+
+/** Oturumun önizleme ayarını değiştirir (aşama 3b). */
+export const onizlemeAyarla = (oturum: OturumId, acik: boolean) =>
+  invoke<void>('onizleme_ayarla', { oturum, acik });
+
+/** Önizlemede kullanıcının kararı (aşama 3b). */
+export const gonderimKarari = (
+  oturum: OturumId,
+  islem: IslemId,
+  gonderilmeyecekler: CagriId[],
+) => invoke<void>('gonderim_karari', { oturum, islem, gonderilmeyecekler });

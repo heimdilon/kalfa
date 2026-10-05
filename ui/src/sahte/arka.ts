@@ -10,6 +10,7 @@ import type {
   GecmisSayfasi,
   GeriAlmaPlani,
   GeriAlmaSonucu,
+  GunlukSayfasi,
   KanalMesaji,
   Kip,
   KomutHatasi,
@@ -127,6 +128,10 @@ export class SahteArka {
   geriAlmaPlani: GeriAlmaPlani | null = null;
   /** `geri_alma_verisi_boyutu`'nun yanıtı. */
   geriAlmaBoyutu = 0;
+  /** Gönderim günlüğü sayfaları; yoksa boş döner. */
+  gonderimGunlukleri = new Map<OturumId, GunlukSayfasi>();
+  /** `gonderim_ogesi` metinleri; anahtar: `${oturum}:${sira}`. */
+  gonderimOgeleri = new Map<string, string>();
   /** Komutun yerine geçen davranış (önizlemenin senaryosu kullanır). */
   ozel = new Map<string, (a: Argumanlar) => unknown>();
 
@@ -372,6 +377,20 @@ export class SahteArka {
       case 'yalitimsizi_ayarla':
         if (!a.acik || this.yalitimsizOnayi) this.uygulama.yalitimsiz_izinli = Boolean(a.acik);
         return this.uygulama.yalitimsiz_izinli;
+      case 'gonderim_gunlugu': {
+        const sayfa = this.gonderimGunlukleri.get(oturum);
+        return sayfa ?? { satirlar: [], daha_eski_var: false };
+      }
+      case 'gonderim_ogesi': {
+        return this.gonderimOgeleri.get(`${oturum}:${a.sira}`) ?? `Öğe metni (${a.sira})`;
+      }
+      case 'onizleme_ayarla': {
+        const o = this.#oturumlar.get(oturum);
+        if (o) o.acilis.ozet.onizleme_acik = Boolean(a.acik);
+        return null;
+      }
+      case 'gonderim_karari':
+        return null;
       default:
         // mesaj_gonder, turu_iptal_et, arac_onayi, model_degistir, paketi_isledim,
         // baglanti_ac, anahtar_penceresini_ac, sart_penceresini_ac

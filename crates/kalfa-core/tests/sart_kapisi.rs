@@ -89,7 +89,9 @@ impl KapiliSaglayici {
 #[async_trait]
 impl Saglayici for KapiliSaglayici {
     async fn akis(&self, _istek: ChatRequest) -> Result<SaglayiciAkisi, EvrenError> {
-        Err(EvrenError::Ag("test sağlayıcısında model akışı yok".into()))
+        Err(EvrenError::ag_baglanti(
+            "test sağlayıcısında model akışı yok",
+        ))
     }
 
     async fn sart_durumu(&self) -> Result<TermsStatus, EvrenError> {

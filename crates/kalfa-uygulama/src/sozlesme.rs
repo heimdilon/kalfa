@@ -3,6 +3,7 @@
 //! öbürü de aynı commit'te değişir.
 
 use kalfa_core::gecmis::{DurumOzeti, GecmisSayfasi, OturumDurumu, OturumOzeti};
+pub use kalfa_core::gonderim::{GunlukSatiri, GunlukSayfasi, GunlukToken};
 use kalfa_core::kimlik::{CagriId, OturumId};
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::protokol::OnayKarari;

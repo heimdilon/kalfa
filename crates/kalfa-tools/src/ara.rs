@@ -8,6 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use globset::{GlobBuilder, GlobMatcher};
 use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, Hazirlik};
+use kalfa_core::protokol::VeriCikisi;
 use regex::{Regex, RegexBuilder};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -66,6 +67,7 @@ impl Arac for IcerikAra {
         let desen = arguman::metin(a, "desen")?;
         Ok(Hazirlik {
             aciklama: format!("`{desen}` ifadesini çalışma alanında aramak istiyor."),
+            veri_cikisi: Some(VeriCikisi::AramaSonuclari),
             ..Default::default()
         })
     }

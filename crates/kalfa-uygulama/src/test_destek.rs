@@ -35,7 +35,7 @@ impl SaglayiciUretici for SahteUretici {
     fn uret(&self, anahtar: &str) -> Result<Arc<dyn Saglayici>, EvrenError> {
         let hata = match anahtar {
             GECERSIZ_ANAHTAR => EvrenError::AnahtarGecersiz,
-            AGSIZ_ANAHTAR => EvrenError::Ag("bağlantı reddedildi".into()),
+            AGSIZ_ANAHTAR => EvrenError::ag_baglanti("bağlantı reddedildi"),
             _ => return Ok(self.saglayici.clone()),
         };
         let saglayici = SahteSaglayici::yeni(Vec::new());

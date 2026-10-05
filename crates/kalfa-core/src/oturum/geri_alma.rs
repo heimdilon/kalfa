@@ -98,11 +98,18 @@ impl Oturum {
             sonuc: sonuc.clone(),
         })
         .await;
+        let sira = if self.kayit.is_some() {
+            Some(self.sira + 1)
+        } else {
+            None
+        };
         self.kaydet(KayitOgesi::KalfaNotu {
             metin: metin.clone(),
         })
         .await;
         self.mesajlar.push(ChatMessage::user(metin));
+        self.mesaj_bilgileri
+            .push((sira, Some("kalfa:not".to_string())));
         self.yay(Olay::TurGeriAlindi {
             geri_alinan_tur: tur,
             sonuc,

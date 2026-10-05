@@ -19,7 +19,7 @@ fn istek() -> ChatRequest {
 async fn sahte_saglayici_senaryoyu_sirayla_verir() {
     let s = SahteSaglayici::yeni(vec![
         SahteYanit::metin("a"),
-        SahteYanit::Hata(EvrenError::Ag("yok".into())),
+        SahteYanit::Hata(EvrenError::ag_baglanti("yok")),
     ]);
     let akis = s.akis(istek()).await.unwrap();
     assert_eq!(akis.meta.istek_id.as_deref(), Some("sahte-1"));
@@ -33,7 +33,7 @@ async fn sahte_saglayici_senaryoyu_sirayla_verir() {
             })
         ]
     );
-    assert!(matches!(s.akis(istek()).await, Err(EvrenError::Ag(_))));
+    assert!(matches!(s.akis(istek()).await, Err(EvrenError::Ag { .. })));
     assert_eq!(s.istekler().len(), 2);
 }
 

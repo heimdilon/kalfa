@@ -6,6 +6,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import Button from '../bilesenler/Button.svelte';
+  import Checkbox from '../bilesenler/Checkbox.svelte';
   import Composer from '../bilesenler/Composer.svelte';
   import Icon from '../bilesenler/Icon.svelte';
   import IconButton from '../bilesenler/IconButton.svelte';
@@ -121,6 +122,16 @@
         {/if}
       </div>
       <div class="eylemler">
+        <Checkbox
+          label={m('konusma.onizleme_ayari')}
+          checked={ekran.ozet.onizleme_acik ?? false}
+          onchange={(acik) => durum.onizlemeAyarla(ekran.oturum, acik)}
+        />
+        <IconButton
+          icon="send"
+          label={m('konusma.gunluk')}
+          onclick={() => durum.gunluguAc(ekran.oturum)}
+        />
         {#if ekran.kapandi}
           <Button size="sm" iconLeft="rotate-ccw" onclick={() => durum.yenidenAc(ekran.oturum)}>
             {m('konusma.yeniden_ac')}

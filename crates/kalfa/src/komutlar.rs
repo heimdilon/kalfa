@@ -9,14 +9,14 @@ use std::sync::Arc;
 use kalfa_core::aktarim::KanalMesaji;
 use kalfa_core::gecmis::GecmisSayfasi;
 use kalfa_core::izin::Kip;
-use kalfa_core::kimlik::{OturumId, TurId};
+use kalfa_core::kimlik::{CagriId, IslemId, OturumId, TurId};
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::hata::KomutHatasi;
 use kalfa_uygulama::sozlesme::{
-    AnahtarSonucu, CalismaAlani, KabulYaniti, OnarimSonucu, OnayGirdisi, OturumAcilisi,
-    OturumSatiri, SartPenceresiDurumu, UygulamaDurumu, YalitimCalismaAlani,
+    AnahtarSonucu, CalismaAlani, GunlukSayfasi, KabulYaniti, OnarimSonucu, OnayGirdisi,
+    OturumAcilisi, OturumSatiri, SartPenceresiDurumu, UygulamaDurumu, YalitimCalismaAlani,
 };
 use tauri::ipc::Channel;
 use tauri::{Builder, Runtime, State};
@@ -62,6 +62,10 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         yalitimi_onar,
         yalitim_calisma_alanlari,
         yalitim_calisma_alanini_kaldir,
+        gonderim_gunlugu,
+        gonderim_ogesi,
+        onizleme_ayarla,
+        gonderim_karari,
         sart_penceresi_durumu,
         anahtari_kaydet,
         sartlari_kabul_et,
@@ -303,6 +307,43 @@ pub async fn yalitim_calisma_alanini_kaldir(
     kimlik: String,
 ) -> Sonuc<bool> {
     u.yalitim_calisma_alanini_kaldir(&kimlik).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gonderim_gunlugu(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    once_sira: Option<u64>,
+) -> Sonuc<GunlukSayfasi> {
+    u.gonderim_gunlugu(oturum, once_sira).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gonderim_ogesi(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    sira: u64,
+) -> Sonuc<String> {
+    u.gonderim_ogesi(oturum, sira).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn onizleme_ayarla(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    acik: bool,
+) -> Sonuc<()> {
+    u.onizleme_ayarla(oturum, acik).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gonderim_karari(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    islem: IslemId,
+    gonderilmeyecekler: Vec<CagriId>,
+) -> Sonuc<()> {
+    u.gonderim_karari(oturum, islem, gonderilmeyecekler).await
 }
 
 // --- Şart penceresi ---

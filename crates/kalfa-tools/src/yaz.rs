@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, Hazirlik, YazmaHedefi};
 use kalfa_core::geri_alma::DOSYA_SINIRI;
 use kalfa_core::muhur::ozet_hex;
+use kalfa_core::protokol::VeriCikisi;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -125,6 +126,7 @@ impl Arac for DosyaYaz {
             diff,
             gorunmez_icerik,
             yazilan: vec![hedef],
+            veri_cikisi: Some(VeriCikisi::YalnizcaYazildi),
             ..Default::default()
         })
     }

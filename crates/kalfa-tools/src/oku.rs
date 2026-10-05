@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, Hazirlik};
+use kalfa_core::protokol::VeriCikisi;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -61,6 +62,7 @@ impl Arac for DosyaOku {
             aciklama: format!("`{yol}` dosyasını okumak istiyor."),
             okuma_baglanti_sayilari: vec![(yol.clone(), sayi)],
             okunan: vec![yol],
+            veri_cikisi: Some(VeriCikisi::DosyaIcerigi),
             ..Default::default()
         })
     }

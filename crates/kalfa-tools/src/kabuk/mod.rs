@@ -20,7 +20,7 @@ use kalfa_core::arac::{
 use kalfa_core::git_koruma;
 use kalfa_core::izin::Siniflandirici;
 use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
-use kalfa_core::protokol::CiktiAkisi;
+use kalfa_core::protokol::{CiktiAkisi, VeriCikisi};
 use kalfa_core::yol::CalismaYolu;
 use kalfa_sandbox::git_denetimi::{GitDenetimi, yeni_git_denetle};
 use kalfa_sandbox::tarama::AdliGirdiler;
@@ -497,6 +497,7 @@ impl Arac for KabukAraci {
         Ok(Hazirlik {
             aciklama: format!("`{}` komutunu çalıştırmak istiyor.", kisa(&istek.gosterim)),
             tum_calisma_alani: true,
+            veri_cikisi: Some(VeriCikisi::KomutCiktisi),
             kabuk: Some(KabukTarifi {
                 komut: istek.gosterim,
                 bicim,

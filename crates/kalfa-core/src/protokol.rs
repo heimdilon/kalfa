@@ -60,6 +60,16 @@ pub enum Komut {
         tur: TurId,
         muhur: OnayMuhru,
     },
+    /// Göndermeden önce gösterme ayarı (aşama 3b).
+    OnizlemeAyarla {
+        acik: bool,
+    },
+    /// Gönderim önizlemesi kararı (aşama 3b).
+    GonderimKarari {
+        islem: IslemId,
+        #[serde(default)]
+        gonderilmeyecekler: Vec<CagriId>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +112,19 @@ pub struct OnayOgesi {
     /// öğede yok. Mühre girmez.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geri_alinabilir: Option<GeriAlinabilirlik>,
+    /// Onay kartında "Veri çıkışı" satırı (aşama 3b, tasarım §9.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub veri_cikisi: Option<VeriCikisi>,
+}
+
+/// Onay kartında "Veri çıkışı" satırı (aşama 3b, tasarım §9.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VeriCikisi {
+    DosyaIcerigi,
+    KomutCiktisi,
+    AramaSonuclari,
+    DosyaAdlari,
+    YalnizcaYazildi,
 }
 
 /// Kabuk onayında gösterilen bağlam: komut, modelin onaysız yazdığı kodu
@@ -188,6 +211,10 @@ pub enum Olay {
     IstekBilgisi {
         istek_id: Option<String>,
         yonlendirilen_model: Option<String>,
+        #[serde(default)]
+        amac: String,
+        #[serde(default)]
+        basarili: bool,
     },
     KrediGozlemi {
         gozlem: KrediGozlemi,
@@ -231,4 +258,27 @@ pub enum Olay {
     TurOzeti {
         ozet: TurOzeti,
     },
+    /// Gönderim öncesi önizleme (aşama 3b).
+    GonderimOnizlemesi {
+        islem: IslemId,
+        ogeler: Vec<OnizlemeOgesi>,
+        neden: OnizlemeNedeni,
+    },
+}
+
+/// Gönderim önizlemesinin gösterilme nedeni.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OnizlemeNedeni {
+    Onizleme,
+    Denetim,
+}
+
+/// Gönderim önizleme kartındaki bir öğe.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OnizlemeOgesi {
+    pub cagri: CagriId,
+    pub kaynak: String,
+    pub bayt: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub denetim: Option<String>,
 }

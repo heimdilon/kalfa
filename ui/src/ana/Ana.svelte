@@ -10,6 +10,7 @@
   import DurumCubugu from './DurumCubugu.svelte';
   import Konusma from './Konusma.svelte';
   import GeriAlmaSayfasi from './GeriAlmaSayfasi.svelte';
+  import GonderimGunlugu from './GonderimGunlugu.svelte';
   import Menu from './Menu.svelte';
   import OnaySayfasi from './OnaySayfasi.svelte';
   import OturumListesi from './OturumListesi.svelte';
@@ -70,6 +71,13 @@
       gonderiliyor={durum.geriAliniyor}
       ongeri={() => durum.turuGeriAl(oturum)}
       onkapat={() => durum.geriAlmayiKapat(oturum)}
+    />
+  {/if}
+  {#if durum.gunlukOturum}
+    <GonderimGunlugu
+      oturum={durum.gunlukOturum}
+      istekSayaci={durum.ekranlar.get(durum.gunlukOturum)?.istek_sayaci ?? 0}
+      onkapat={() => durum.gunluguKapat()}
     />
   {/if}
   <div class="gizli-erisilebilir" aria-live="polite">{durum.duyuru}</div>

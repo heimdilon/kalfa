@@ -10,9 +10,10 @@ use kalfa_core::aktarim::{KrediTutamaci, Paketleyici};
 use kalfa_core::arac::AracKayitDefteri;
 use kalfa_core::gecmis::{self, DurumOzeti, GecmisSayfasi};
 use kalfa_core::geri_alma::GeriYukleyici;
+use kalfa_core::gonderim::{GunlukSayfasi, gunluk_sayfasi, gunluk_uret, oge_metni};
 use kalfa_core::izin::{Kip, Siniflandirici};
 use kalfa_core::kayit::OturumKaydi;
-use kalfa_core::kimlik::{OturumId, TurId};
+use kalfa_core::kimlik::{CagriId, IslemId, OturumId, TurId};
 use kalfa_core::kurtarma::kurtar;
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::oturum::{self, OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci};
@@ -305,6 +306,58 @@ impl Uygulama {
         .await
         .map_err(ic_hata)?
         .map_err(KomutHatasi::kayit)
+    }
+
+    /// `once_sira`'dan önceki gönderim günlüğü sayfası (aşama 3b).
+    pub async fn gonderim_gunlugu(
+        &self,
+        oturum: OturumId,
+        once_sira: Option<u64>,
+    ) -> Result<GunlukSayfasi, KomutHatasi> {
+        let yol = dizin::kayit_yolu(&self.oturum_dizini, oturum);
+        tokio::task::spawn_blocking(move || -> io::Result<GunlukSayfasi> {
+            let kayitlar = OturumKaydi::oku(&yol)?;
+            let satirlar = gunluk_uret(&kayitlar);
+            Ok(gunluk_sayfasi(&satirlar, once_sira, SAYFA_TURU))
+        })
+        .await
+        .map_err(ic_hata)?
+        .map_err(KomutHatasi::kayit)
+    }
+
+    /// Kayıttaki bir sıranın tam metnini döndürür (aşama 3b).
+    pub async fn gonderim_ogesi(&self, oturum: OturumId, sira: u64) -> Result<String, KomutHatasi> {
+        let yol = dizin::kayit_yolu(&self.oturum_dizini, oturum);
+        tokio::task::spawn_blocking(move || -> Result<String, KomutHatasi> {
+            let kayitlar = OturumKaydi::oku(&yol).map_err(KomutHatasi::kayit)?;
+            oge_metni(&kayitlar, sira).ok_or_else(|| KomutHatasi::gecersiz("Öğe bulunamadı."))
+        })
+        .await
+        .map_err(ic_hata)?
+    }
+
+    /// Göndermeden önce göster ayarını değiştirir (aşama 3b).
+    pub async fn onizleme_ayarla(&self, oturum: OturumId, acik: bool) -> Result<(), KomutHatasi> {
+        self.tutamac(oturum)?
+            .gonder(Komut::OnizlemeAyarla { acik })
+            .await?;
+        Ok(())
+    }
+
+    /// Göndermeden önce göster kararını iletir (aşama 3b).
+    pub async fn gonderim_karari(
+        &self,
+        oturum: OturumId,
+        islem: IslemId,
+        gonderilmeyecekler: Vec<CagriId>,
+    ) -> Result<(), KomutHatasi> {
+        self.tutamac(oturum)?
+            .gonder(Komut::GonderimKarari {
+                islem,
+                gonderilmeyecekler,
+            })
+            .await?;
+        Ok(())
     }
 
     /// Oturumun olaylarını paketleyip `yazici`ya yazan köprüyü başlatır.

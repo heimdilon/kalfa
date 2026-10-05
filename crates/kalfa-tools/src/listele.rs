@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use globset::GlobBuilder;
 use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, Hazirlik};
+use kalfa_core::protokol::VeriCikisi;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -50,6 +51,7 @@ impl Arac for DosyaListele {
         let desen = arguman::metin(a, "desen")?;
         Ok(Hazirlik {
             aciklama: format!("`{desen}` desenine uyan dosyaları listelemek istiyor."),
+            veri_cikisi: Some(VeriCikisi::DosyaAdlari),
             ..Default::default()
         })
     }

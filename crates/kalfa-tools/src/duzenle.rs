@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, Hazirlik, YazmaHedefi};
 use kalfa_core::muhur::ozet_hex;
+use kalfa_core::protokol::VeriCikisi;
 use kalfa_core::yol::CalismaYolu;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -164,6 +165,7 @@ impl Arac for DosyaDuzenle {
             gorunmez_icerik,
             okunan: vec![yol],
             yazilan: vec![hedef],
+            veri_cikisi: Some(VeriCikisi::YalnizcaYazildi),
             ..Default::default()
         })
     }

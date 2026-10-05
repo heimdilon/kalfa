@@ -637,3 +637,16 @@ async fn sunulmayan_arac_tanimlanmaz_ve_cagrisi_calismaz() {
         "sonuç modele nedeni söylemeli"
     );
 }
+
+#[tokio::test]
+async fn bilgi_vermeyen_arac_icin_kart_arac_sonucu_yazar() {
+    let yaz = Arc::new(SahteArac::yazan("yaz"));
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac("yaz", yol("b.txt")),
+        SahteYanit::metin("peki"),
+    ]);
+    let mut d = oturum(&s, vec![a(&yaz)], ayarlar(Kip::Siki));
+    d.gonder(mesaj("yaz")).await;
+    let ogeler = onay_bekle(&mut d).await;
+    assert_eq!(ogeler[0].veri_cikisi, None);
+}

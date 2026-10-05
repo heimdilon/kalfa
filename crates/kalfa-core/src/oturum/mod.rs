@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kalfa_evren::tipler::{ChatMessage, ToolCall};
+use kalfa_evren::tipler::{ChatMessage, ToolCall, ToolDef};
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -750,8 +750,15 @@ pub fn devam_et(
         ayarlar,
         baglam,
         Some(kayit),
-        durum.mesajlar.clone(),
-        durum.son_sira,
+        BaglamGirdisi {
+            mesajlar: durum.mesajlar.clone(),
+            sira: durum.son_sira,
+            gonderilen: durum.gonderilen,
+            mesaj_bilgileri: durum.mesaj_bilgileri.clone(),
+            son_sistem_istemi: durum.son_sistem_istemi.clone(),
+            son_arac_tanimlari: durum.son_arac_tanimlari.clone(),
+            onizleme_acik: durum.onizleme_acik,
+        },
         GeriAlmaKurulumu {
             depo,
             dizin: durum.geri_alma.clone(),
@@ -765,7 +772,9 @@ pub fn devam_et(
         let kip = oturum.ayarlar.kip;
         oturum.kaydet(KayitOgesi::KipDegisti { kip }).await;
         for mesaj in tamamlayicilar {
-            oturum.mesaj_ekle(mesaj).await;
+            oturum
+                .mesaj_ekle(mesaj, Some("kalfa:sonuç".to_string()))
+                .await;
         }
         for b in bilinmeyenler {
             oturum
@@ -822,8 +831,15 @@ fn baslat_ic(
         ayarlar,
         baglam,
         kayit,
-        Vec::new(),
-        0,
+        BaglamGirdisi {
+            mesajlar: Vec::new(),
+            sira: 0,
+            gonderilen: 0,
+            mesaj_bilgileri: Vec::new(),
+            son_sistem_istemi: None,
+            son_arac_tanimlari: None,
+            onizleme_acik: false,
+        },
         GeriAlmaKurulumu {
             depo,
             dizin: GeriAlmaDizini::default(),
@@ -860,6 +876,11 @@ struct Oturum {
     kayit_hatasi: Option<String>,
     sira: u64,
     mesajlar: Vec<ChatMessage>,
+    pub(super) gonderilen: usize,
+    pub(super) mesaj_bilgileri: Vec<(Option<u64>, Option<String>)>,
+    pub(super) son_sistem_istemi: Option<(Option<u64>, String)>,
+    pub(super) son_arac_tanimlari: Option<(Option<u64>, Vec<ToolDef>)>,
+    pub(super) onizleme_acik: bool,
     tur: Option<TurId>,
     iptal: CancellationToken,
     /// Süren tur ve belirteci; `OturumTutamaci::iptal_et` bunu kullanır.
@@ -890,14 +911,23 @@ enum Etki {
     Iptal,
 }
 
+struct BaglamGirdisi {
+    mesajlar: Vec<ChatMessage>,
+    sira: u64,
+    gonderilen: usize,
+    mesaj_bilgileri: Vec<(Option<u64>, Option<String>)>,
+    son_sistem_istemi: Option<(Option<u64>, String)>,
+    son_arac_tanimlari: Option<(Option<u64>, Vec<ToolDef>)>,
+    onizleme_acik: bool,
+}
+
 impl Oturum {
     fn kur(
         kimlik: OturumId,
         ayarlar: OturumAyarlari,
         baglam: OturumBaglami,
         kayit: Option<OturumKaydi>,
-        mesajlar: Vec<ChatMessage>,
-        sira: u64,
+        baglam_girdisi: BaglamGirdisi,
         geri_alma: GeriAlmaKurulumu,
     ) -> (Self, OturumTutamaci, OlayAlici, watch::Sender<bool>) {
         let (komut_tx, komut_rx) = mpsc::channel(KOMUT_KANALI);
@@ -915,8 +945,13 @@ impl Oturum {
             olay_kapanma,
             kayit,
             kayit_hatasi: None,
-            sira,
-            mesajlar,
+            sira: baglam_girdisi.sira,
+            mesajlar: baglam_girdisi.mesajlar,
+            gonderilen: baglam_girdisi.gonderilen,
+            mesaj_bilgileri: baglam_girdisi.mesaj_bilgileri,
+            son_sistem_istemi: baglam_girdisi.son_sistem_istemi,
+            son_arac_tanimlari: baglam_girdisi.son_arac_tanimlari,
+            onizleme_acik: baglam_girdisi.onizleme_acik,
             tur: None,
             iptal: CancellationToken::new(),
             aktif_tur: aktif_tur.clone(),
@@ -1042,6 +1077,13 @@ impl Oturum {
             }
             Komut::GeriAlmaOnizle { tur } => self.geri_alma_onizle(tur).await,
             Komut::TuruGeriAl { tur, muhur } => self.turu_geri_al(tur, muhur).await,
+            Komut::OnizlemeAyarla { acik } => {
+                self.onizleme_acik = acik;
+                self.kaydet(KayitOgesi::OnizlemeDegisti { acik }).await;
+            }
+            Komut::GonderimKarari { .. } => {
+                self.hata("Bekleyen bir gönderim önizlemesi yok.").await;
+            }
         }
         Etki::Devam
     }
@@ -1054,7 +1096,11 @@ impl Oturum {
         self.yay(Olay::TurBasladi).await;
         self.geri_alma.tur_basladi(tur, &metin);
         self.tur_ozeti = TurBiriktirici::default();
-        self.mesaj_ekle(ChatMessage::user(metin)).await;
+        self.mesaj_ekle(
+            ChatMessage::user(metin),
+            Some("mesaj:kullanıcı".to_string()),
+        )
+        .await;
         let mut neden = self.tur_dongusu().await;
         *self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()) = None;
         if self.kayit_hatasi.is_some() {
@@ -1132,8 +1178,11 @@ impl Oturum {
     /// çağrılar da bir yanıtla kapatılır.
     async fn cagrilari_kapat(&mut self, cagrilar: &[ToolCall], neden: &str) {
         for tc in cagrilar {
-            self.mesaj_ekle(ChatMessage::tool(tc.id.clone(), neden))
-                .await;
+            self.mesaj_ekle(
+                ChatMessage::tool(tc.id.clone(), neden),
+                Some("kalfa:sonuç".to_string()),
+            )
+            .await;
         }
     }
 
@@ -1222,11 +1271,18 @@ impl Oturum {
         }
     }
 
-    async fn mesaj_ekle(&mut self, mesaj: ChatMessage) {
+    async fn mesaj_ekle(&mut self, mesaj: ChatMessage, kaynak: Option<String>) {
+        let sira = if self.kayit.is_some() {
+            Some(self.sira + 1)
+        } else {
+            None
+        };
         self.kaydet(KayitOgesi::Mesaj {
             mesaj: mesaj.clone(),
+            kaynak: kaynak.clone(),
         })
         .await;
         self.mesajlar.push(mesaj);
+        self.mesaj_bilgileri.push((sira, kaynak));
     }
 }

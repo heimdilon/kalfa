@@ -135,7 +135,7 @@ impl Uygulama {
         match saglayici.sart_durumu().await {
             Ok(_) => {}
             Err(EvrenError::AnahtarGecersiz) => return Ok(AnahtarSonucu::Gecersiz),
-            Err(EvrenError::Ag(_)) => return Ok(AnahtarSonucu::Ulasilamadi),
+            Err(EvrenError::Ag { .. }) => return Ok(AnahtarSonucu::Ulasilamadi),
             Err(e) => return Err(e.into()),
         }
         let u = self.clone();

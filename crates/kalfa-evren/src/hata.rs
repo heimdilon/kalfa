@@ -27,14 +27,37 @@ pub enum EvrenError {
     YanitSiniri,
     #[error("EVREN'den beklenmeyen yanıt: {0}")]
     GecersizYanit(String),
-    #[error("EVREN'e ulaşılamadı: {0}")]
-    Ag(String),
+    #[error("EVREN'e ulaşılamadı: {mesaj}")]
+    Ag { mesaj: String, govde_gitti: bool },
     #[error("EVREN hatası ({durum}): {mesaj}")]
     Sunucu {
         durum: u16,
         kod: Option<String>,
         mesaj: String,
     },
+}
+
+impl EvrenError {
+    pub fn ag_baglanti(mesaj: impl Into<String>) -> Self {
+        Self::Ag {
+            mesaj: mesaj.into(),
+            govde_gitti: false,
+        }
+    }
+
+    pub fn ag_yanit(mesaj: impl Into<String>) -> Self {
+        Self::Ag {
+            mesaj: mesaj.into(),
+            govde_gitti: true,
+        }
+    }
+
+    pub fn ag(mesaj: impl Into<String>, govde_gitti: bool) -> Self {
+        Self::Ag {
+            mesaj: mesaj.into(),
+            govde_gitti,
+        }
+    }
 }
 
 /// HTTP durum kodu, `Retry-After` başlığı ve gövdeden tipli hata üretir.

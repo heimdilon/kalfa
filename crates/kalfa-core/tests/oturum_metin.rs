@@ -185,8 +185,8 @@ async fn ikinci_tur_onceki_baglami_tasir() {
 
 #[tokio::test]
 async fn model_hatasi_turu_hata_ile_bitirir() {
-    let s = SahteSaglayici::yeni(vec![SahteYanit::Hata(EvrenError::Ag(
-        "bağlantı reddedildi".into(),
+    let s = SahteSaglayici::yeni(vec![SahteYanit::Hata(EvrenError::ag_baglanti(
+        "bağlantı reddedildi",
     ))]);
     let mut d = oturum(&s, vec![], ayarlar());
     d.gonder(mesaj("selam")).await;
@@ -279,7 +279,7 @@ async fn oturum_kaydi_yazilir() {
         )
     );
     assert!(k.iter().any(
-        |z| matches!(&z.yuk, KayitOgesi::Mesaj { mesaj } if mesaj.role == Role::Assistant && mesaj.content.as_deref() == Some("Merhaba!"))
+        |z| matches!(&z.yuk, KayitOgesi::Mesaj { mesaj, .. } if mesaj.role == Role::Assistant && mesaj.content.as_deref() == Some("Merhaba!"))
     ));
     assert_eq!(
         k[k.len() - 2].yuk,

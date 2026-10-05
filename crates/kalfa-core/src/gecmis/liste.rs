@@ -204,7 +204,7 @@ fn sondan_durum_bul(dosya: &mut File, boyut: u64) -> io::Result<OturumDurumu> {
         for zarf in kayitlar.iter().rev() {
             match &zarf.yuk {
                 KayitOgesi::TurBitti { neden } => return Ok(bitisten(neden)),
-                KayitOgesi::Mesaj { mesaj } if mesaj.role == Role::User => {
+                KayitOgesi::Mesaj { mesaj, .. } if mesaj.role == Role::User => {
                     return Ok(OturumDurumu::YarimKaldi);
                 }
                 _ => {}
@@ -219,7 +219,7 @@ fn sondan_durum_bul(dosya: &mut File, boyut: u64) -> io::Result<OturumDurumu> {
 
 fn baslik(kayitlar: &[Zarf<KayitOgesi>]) -> Option<String> {
     let metin = kayitlar.iter().find_map(|z| match &z.yuk {
-        KayitOgesi::Mesaj { mesaj } if mesaj.role == Role::User => mesaj.content.clone(),
+        KayitOgesi::Mesaj { mesaj, .. } if mesaj.role == Role::User => mesaj.content.clone(),
         _ => None,
     })?;
     let satir = metin.lines().map(str::trim).find(|s| !s.is_empty())?;
@@ -235,7 +235,7 @@ fn durum_bul(kayitlar: &[Zarf<KayitOgesi>], tamami: bool) -> OturumDurumu {
     let son_mesaj = kayitlar
         .iter()
         .rev()
-        .find(|z| matches!(&z.yuk, KayitOgesi::Mesaj { mesaj } if mesaj.role == Role::User))
+        .find(|z| matches!(&z.yuk, KayitOgesi::Mesaj { mesaj, .. } if mesaj.role == Role::User))
         .map(|z| z.sira);
     let son_bitis = kayitlar.iter().rev().find_map(|z| match &z.yuk {
         KayitOgesi::TurBitti { neden } => Some((z.sira, neden)),

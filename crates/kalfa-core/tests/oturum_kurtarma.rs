@@ -51,6 +51,7 @@ fn yarim_kayit(dizin: &Path) -> (PathBuf, CagriId) {
         2,
         KayitOgesi::Mesaj {
             mesaj: ChatMessage::user("a.txt'ye yaz"),
+            kaynak: None,
         },
     ))
     .unwrap();
@@ -58,6 +59,7 @@ fn yarim_kayit(dizin: &Path) -> (PathBuf, CagriId) {
         3,
         KayitOgesi::Mesaj {
             mesaj: ChatMessage::assistant(None, vec![tc]),
+            kaynak: None,
         },
     ))
     .unwrap();

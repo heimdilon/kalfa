@@ -17,6 +17,8 @@ import type {
   Kip,
   Olay,
   OnayOgesi,
+  OnizlemeNedeni,
+  OnizlemeOgesi,
   OturumAcilisi,
   OturumId,
   SaltOkunurNedeni,
@@ -70,7 +72,15 @@ export type EkranOgesi =
     })
   | (Ortak & { tip: 'KalfaNotu'; metin: string })
   /** `geri_alindi`: sonradan bu tur geri alındı (aşama 3 tasarımı §5.11). */
-  | (Ortak & { tip: 'TurOzeti'; ozet: TurOzeti; geri_alindi: boolean });
+  | (Ortak & { tip: 'TurOzeti'; ozet: TurOzeti; geri_alindi: boolean })
+  /** Gönderim önizlemesi (aşama 3b). */
+  | (Ortak & {
+      tip: 'GonderimOnizlemesi';
+      islem: IslemId;
+      ogeler: OnizlemeOgesi[];
+      neden: OnizlemeNedeni;
+      durum: 'Bekliyor' | 'Yanitlandi' | 'Gecersiz';
+    });
 
 /** Açık geri alma sayfası: son gelen plan ve mührü (aşama 3 tasarımı §5.6). */
 export interface GeriAlmaOnizlemesi {
@@ -103,6 +113,8 @@ export interface OturumEkrani {
   yerel_sayac: number;
   /** Geri alma sayfası açıksa gösterdiği plan. */
   geri_alma: GeriAlmaOnizlemesi | null;
+  /** Bu oturumdaki İstekBilgisi olaylarının sayısı (günlük ekranını yenilemek için). */
+  istek_sayaci: number;
 }
 
 export type Girdi =
@@ -112,6 +124,10 @@ export type Girdi =
   | { tip: 'OnayYanitlandi'; islem: IslemId }
   | { tip: 'ModelDegisti'; model: string }
   | { tip: 'KipDegisti'; kip: Kip }
+  | { tip: 'OnizlemeYanitlandi'; islem: IslemId }
+  /** Gönderim kararı arka uca ulaşmadı; kart yeniden karar bekler. */
+  | { tip: 'OnizlemeGonderilemedi'; islem: IslemId }
+  | { tip: 'OnizlemeDegisti'; acik: boolean }
   /** Geri alma sayfası karar verilmeden kapandı. */
   | { tip: 'GeriAlmaKapandi' };
 
@@ -186,6 +202,7 @@ export function acilistanEkran(acilis: OturumAcilisi): OturumEkrani {
     bosluk: false,
     yerel_sayac: 0,
     geri_alma: null,
+    istek_sayaci: 0,
   };
 }
 
@@ -225,12 +242,47 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
         }
         return o;
       });
-      const bekleyenOnayVar = d.ogeler.some((o) => o.tip === 'OnayIstegi' && o.durum === 'Bekliyor');
+      const bekleyenOnayVar = d.ogeler.some(
+        (o) => (o.tip === 'OnayIstegi' || o.tip === 'GonderimOnizlemesi') && o.durum === 'Bekliyor',
+      );
       if (eslesenIstekGuncellendi && d.anlik === 'OnayBekliyor' && !bekleyenOnayVar) {
         d.anlik = 'Calisiyor';
       }
       return d;
     }
+    case 'OnizlemeYanitlandi': {
+      const d = kopya(durum);
+      let eslesenIstekGuncellendi = false;
+      d.ogeler = d.ogeler.map((o) => {
+        if (o.tip === 'GonderimOnizlemesi' && o.islem === girdi.islem && o.durum === 'Bekliyor') {
+          eslesenIstekGuncellendi = true;
+          return { ...o, durum: 'Yanitlandi' };
+        }
+        return o;
+      });
+      const bekleyenOnayVar = d.ogeler.some(
+        (o) => (o.tip === 'OnayIstegi' || o.tip === 'GonderimOnizlemesi') && o.durum === 'Bekliyor',
+      );
+      if (eslesenIstekGuncellendi && d.anlik === 'OnayBekliyor' && !bekleyenOnayVar) {
+        d.anlik = 'Calisiyor';
+      }
+      return d;
+    }
+    case 'OnizlemeGonderilemedi': {
+      const d = kopya(durum);
+      let geriAlindi = false;
+      d.ogeler = d.ogeler.map((o) => {
+        if (o.tip === 'GonderimOnizlemesi' && o.islem === girdi.islem && o.durum === 'Yanitlandi') {
+          geriAlindi = true;
+          return { ...o, durum: 'Bekliyor' };
+        }
+        return o;
+      });
+      if (geriAlindi && d.anlik === 'Calisiyor') d.anlik = 'OnayBekliyor';
+      return d;
+    }
+    case 'OnizlemeDegisti':
+      return { ...durum, ozet: { ...durum.ozet, onizleme_acik: girdi.acik } };
     case 'ModelDegisti':
       return { ...durum, ozet: { ...durum.ozet, model: girdi.model } };
     case 'KipDegisti':
@@ -352,9 +404,24 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
       };
       return;
     case 'IstekBilgisi':
+      d.istek_sayaci += 1;
       if (yuk.yonlendirilen_model !== null) {
         d.ozet = { ...d.ozet, yonlendirilen_model: yuk.yonlendirilen_model };
       }
+      return;
+    case 'GonderimOnizlemesi':
+      akisiKapat(d);
+      d.ogeler.push({
+        tip: 'GonderimOnizlemesi',
+        anahtar: `c-${z.sira}`,
+        sira: z.sira,
+        tur: z.tur,
+        islem: yuk.islem,
+        ogeler: yuk.ogeler,
+        neden: yuk.neden,
+        durum: 'Bekliyor',
+      });
+      d.anlik = 'OnayBekliyor';
       return;
     case 'GuvenlikUyarisi':
       d.ogeler.push({
@@ -482,6 +549,7 @@ function akisiKapat(d: OturumEkrani) {
 function bekleyenleriKapat(d: OturumEkrani) {
   d.ogeler = d.ogeler.map((o) => {
     if (o.tip === 'OnayIstegi' && o.durum === 'Bekliyor') return { ...o, durum: 'Gecersiz' };
+    if (o.tip === 'GonderimOnizlemesi' && o.durum === 'Bekliyor') return { ...o, durum: 'Gecersiz' };
     if (o.tip === 'SartIstegi' && o.durum === 'Bekliyor') return { ...o, durum: 'Cozuldu' };
     return o;
   });
