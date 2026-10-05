@@ -1,6 +1,7 @@
 # AGENTS.md — Kalfa
 
-Bu depoda çalışan kodlama ajanları (Codex, Claude Code ve benzerleri) için yönergeler.
+Bu depoda çalışan kodlama ajanları (Antigravity, Claude Code ve benzerleri) için
+yönergeler.
 
 Kalfa, EVREN LLM Gateway için Türkçe, açık kaynak bir ajan harness'ı: Rust
 workspace'i, Tauri v2 masaüstü kabuğu ve Svelte 5 arayüzü. Sahibi ve telif
@@ -182,7 +183,8 @@ Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni ister.
 - **Planlı işler:**
   1. Claude planı yazar ve PR'ı açar. Planın kodu önceden iki platformda
      doğrulanmıştır.
-  2. Codex PR'daki planı uygular.
+  2. Antigravity PR'daki planı uygular. Kullanıcı Antigravity'de bu klasörde
+     bir proje açar; Claude ona başlangıç prompt'unu verir.
   3. Claude inceler ve Windows ile WSL'de doğrular.
   4. Kullanıcının onayıyla PR squash olarak birleştirilir.
 - **Plana bağlılık:** Plandan sapmanız gerekirse durun, gerekçeyi PR'a yazın.
@@ -190,7 +192,7 @@ Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni ister.
 - **Commit mesajları:** Türkçe ve önekli yazılır: `sandbox:`, `çekirdek:`,
   `araçlar:`, `uygulama:`, `ui:`, `e2e:`, `docs:`, `prototip:`, `derleme:`
   (workspace ve derleme ayarları).
-  - Codex'in commit'lerine Claude satırı eklenmez.
+  - Antigravity'nin commit'lerine Claude satırı eklenmez.
   - Claude'un commit'leri `Co-Authored-By` satırı taşır.
 - **Worktree'ler:** Her worktree'nin `target`'ı 12–25 GB tutar. PR birleşince
   ya da deneme bitince worktree'yi aynı oturumda kaldırın:
@@ -222,8 +224,9 @@ Tasarım AppContainer'a göredir (aşama 2 tasarımı §9; 2c'de ölçüldü).
   `SetFileSecurityW` ile yazılır, `SE_DACL_AUTO_INHERIT_REQ` bayrağıyla.
   `SetNamedSecurityInfo` mirası bütün sürücüye yayar. Mirassız her izin
   (örneğin üst dizinlere listeleme) aynı yolla yazılır ve silinir.
-- **Gerçek yalıtım testleri** Codex'in Windows yalıtımının içinde koşamaz
-  (`CreateAppContainerProfile` açılamıyor); kurulu makinede Claude koşturur.
+- **Gerçek yalıtım testleri** başka bir ajanın kendi yalıtımı içinde koşamaz
+  (Codex'in yalıtımında `CreateAppContainerProfile` açılamıyordu); kurulu
+  makinede Claude koşturur.
   Testler makinede Kalfa AppContainer profili ya da `S-1-15-2-` ACE'si
   bırakmamalıdır.
 - **Prototip:** Ölçüm aracı ve betikler `prototip/windows-yalitim/`'dedir
