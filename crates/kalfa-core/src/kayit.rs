@@ -11,6 +11,13 @@
 //! kendisine konmaz; Windows'ta dosya kilidi aynı süreçteki okumaları da
 //! engellerdi. Çoklu hardlink'i olan kayıtlar açık hata ile reddedilir; bu
 //! alias'lar için ortak bir sidecar adı üretilemez.
+//!
+//! Kilit bırakılırken tanıtıcı kapatılmadan önce açıkça çözülür
+//! (`KayitKilidi`). Unix'te `flock` açık dosya tanımına bağlıdır: başka bir iş
+//! parçacığının başlattığı alt süreç `fork` ile `exec` arasında tanıtıcının
+//! kopyasını taşır ve yalnızca kapatılan kilit o kopya kapanana kadar
+//! çözülmezdi. Kilidi kapatan oturum aynı süreçte hemen yeniden açılamaz ya da
+//! silinemezdi.
 
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -173,7 +180,7 @@ impl KayitHedefi for File {
 pub struct OturumKaydi {
     hedef: Box<dyn KayitHedefi>,
     /// Kayıt yanındaki sidecar kilidi, kayıt açık kaldığı sürece tutulur.
-    _kilit: Option<File>,
+    _kilit: Option<KayitKilidi>,
 }
 
 impl Drop for OturumKaydi {
@@ -283,8 +290,20 @@ impl OturumKaydi {
     }
 }
 
+/// Tutulan sidecar kilidi. Bırakılırken tanıtıcı kapatılmadan önce kilit
+/// açıkça çözülür: alt süreçlerin `exec` öncesi taşıdığı tanıtıcı kopyaları
+/// kilidi tutmaya devam etmesin (modül belgesi).
+struct KayitKilidi(File);
+
+impl Drop for KayitKilidi {
+    fn drop(&mut self) {
+        // Çözme başarısız olursa kilit tanıtıcı kapanınca yine çözülür.
+        let _ = self.0.unlock();
+    }
+}
+
 struct KilitliKayitYolu {
-    dosya: File,
+    dosya: KayitKilidi,
     yol: PathBuf,
     beklenen: Option<Handle>,
 }
@@ -357,7 +376,7 @@ fn kilitle(kayit: &Path) -> io::Result<KilitliKayitYolu> {
     let dosya = secenek.open(sidecar_yolu(&yol))?;
     match dosya.try_lock() {
         Ok(()) => Ok(KilitliKayitYolu {
-            dosya,
+            dosya: KayitKilidi(dosya),
             yol,
             beklenen,
         }),
@@ -471,4 +490,45 @@ pub(crate) fn coz(veri: &[u8]) -> io::Result<(Vec<Zarf<KayitOgesi>>, usize)> {
         bas = sonraki;
     }
     Ok((kayitlar, gecerli))
+}
+
+#[cfg(test)]
+mod testler {
+    use super::*;
+
+    /// Alt sürecin `fork` ile `exec` arasında taşıdığı tanıtıcı kopyası
+    /// `try_clone` ile taklit edilir: kopya aynı açık dosya tanımını paylaşır.
+    fn kilit_kopyasi(kayit: &OturumKaydi) -> File {
+        kayit._kilit.as_ref().unwrap().0.try_clone().unwrap()
+    }
+
+    #[test]
+    fn kilit_tanitici_kopyasi_kapanan_kaydi_tutmaz() {
+        let dizin = tempfile::tempdir().unwrap();
+        let yol = dizin.path().join("oturum.jsonl");
+        let kayit = OturumKaydi::olustur(&yol).unwrap();
+        let kopya = kilit_kopyasi(&kayit);
+        drop(kayit);
+        let kayit = OturumKaydi::ac(&yol).expect("kopya kilidi tutmamalı");
+        assert_eq!(
+            OturumKaydi::ac(&yol).err().map(|e| e.kind()),
+            Some(io::ErrorKind::ResourceBusy),
+            "açık kayıt yine korunur"
+        );
+        drop(kopya);
+        drop(kayit);
+    }
+
+    #[test]
+    fn kilit_tanitici_kopyasi_kapanan_kaydin_silinmesini_engellemez() {
+        let dizin = tempfile::tempdir().unwrap();
+        let yol = dizin.path().join("oturum.jsonl");
+        let kayit = OturumKaydi::olustur(&yol).unwrap();
+        let kopya = kilit_kopyasi(&kayit);
+        drop(kayit);
+        OturumKaydi::sil(&yol, || Ok(())).expect("kopya silmeyi engellememeli");
+        assert!(!yol.exists());
+        assert!(!kilit_yolu(&yol).exists());
+        drop(kopya);
+    }
 }
