@@ -363,7 +363,20 @@ impl Siniflandirici {
     /// Bağımlılık dizinlerinin altındaki yollar gizli sayılmaz; tarama yine de
     /// oralara iner ve gizli dosyaların hard link'lerini bulur.
     pub fn gizli_mi(&self, yol: &CalismaYolu) -> bool {
-        !bagimlilik_dizininde_mi(yol) && self.gizli.is_match(yol.as_str())
+        if bagimlilik_dizininde_mi(yol) {
+            return false;
+        }
+        // Gizli bir dizinin adı, altındaki normal dosya adıyla kaybolmaz.
+        let mut aday = yol.as_str();
+        loop {
+            if self.gizli.is_match(aday) {
+                return true;
+            }
+            match aday.rsplit_once('/') {
+                Some((ust, _)) => aday = ust,
+                None => return false,
+            }
+        }
     }
 
     /// Git korumaları her çağrıda yeniden çözülür (spec §7.3): `core.hooksPath`

@@ -8,6 +8,29 @@ fn y(s: &str) -> CalismaYolu {
     CalismaYolu::coz(s).unwrap()
 }
 
+#[test]
+fn gizli_dizinin_alt_yollari_ayni_okuma_sinirindadir() {
+    let d = tempfile::tempdir().unwrap();
+    let s = Siniflandirici::yeni(d.path(), &["ozel/kasa".into()]).unwrap();
+    for yol in [
+        "credentials/token.txt",
+        "a/CREDENTIALS-prod/ic/token.txt",
+        ".env/ic/normal.txt",
+        "ozel/kasa/ic/normal.txt",
+    ] {
+        assert!(s.gizli_mi(&y(yol)), "{yol}");
+    }
+    for yol in [
+        "normal/token.txt",
+        "ozel/kasaba/token.txt",
+        "src/secrets.rs",
+        "node_modules/credentials/token.txt",
+        "credentials/node_modules/token.txt",
+    ] {
+        assert!(!s.gizli_mi(&y(yol)), "{yol}");
+    }
+}
+
 fn onayli(uyarilar: &[&str]) -> Karar {
     Karar::Onayli {
         uyarilar: uyarilar.iter().map(|s| s.to_string()).collect(),

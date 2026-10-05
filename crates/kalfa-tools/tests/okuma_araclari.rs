@@ -259,3 +259,26 @@ async fn hard_link_sayisi() {
         1
     );
 }
+
+#[tokio::test]
+async fn gizli_dizin_cocugu_aramaya_ve_normal_listeye_giremez() {
+    let (d, a) = alan();
+    dosya(&d, "credentials/token.txt", b"BENZERSIZ_SIR=123");
+    dosya(&d, "normal/token.txt", b"BENZERSIZ_SIR=normal");
+    let c = calistir(
+        &IcerikAra::yeni(a.clone()),
+        json!({"desen":"BENZERSIZ_SIR"}),
+    )
+    .await
+    .unwrap();
+    assert!(!c.icerik.contains("123"));
+    assert!(c.icerik.contains("normal/token.txt:1:"));
+    assert!(c.icerik.contains("1 gizli dosya aranmadı"));
+    let c = calistir(&DosyaListele::yeni(a), json!({"desen":"**/token.txt"}))
+        .await
+        .unwrap();
+    assert!(
+        c.icerik
+            .contains("credentials/token.txt (gizli: içeriği onay ister)")
+    );
+}

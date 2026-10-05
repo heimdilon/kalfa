@@ -374,6 +374,36 @@ async fn disari_cikma_ve_gizli_dosya_uctan_uca() {
 }
 
 #[tokio::test]
+async fn gizli_dizin_cocugunun_okumasi_her_kipte_onay_ister() {
+    for kip in [Kip::Inceleme, Kip::Siki, Kip::Proje, Kip::Serbest] {
+        let o = ortam();
+        std::fs::create_dir(o.alan.path().join("credentials")).unwrap();
+        std::fs::write(
+            o.alan.path().join("credentials/token.txt"),
+            "BENZERSIZ_SIR=123",
+        )
+        .unwrap();
+        let s = SahteSaglayici::yeni(vec![
+            SahteYanit::arac("dosya_oku", json!({"yol":"credentials/token.txt"})),
+            SahteYanit::metin("bitti"),
+        ]);
+        let mut d = gercek_araclarla(&o, &s, kip, false);
+        d.gonder(mesaj("oku")).await;
+        let ogeler = onay_bekle(&mut d).await;
+        assert_eq!(s.istekler().len(), 1);
+        assert!(ogeler[0].uyarilar.iter().any(|u| u == GIZLI_UYARISI));
+        d.gonder(Komut::AracOnayi {
+            cagri: ogeler[0].cagri,
+            karar: OnayKarari::Reddet { gerekce: None },
+            muhur: ogeler[0].muhur.clone(),
+        })
+        .await;
+        assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+        assert!(!arac_yanitlari(&s, 1)[0].contains("BENZERSIZ_SIR"));
+    }
+}
+
+#[tokio::test]
 async fn baglanti_takma_adlari_serbest_kipte_bile_yetki_atlatamaz() {
     let o = ortam();
     std::fs::write(o.alan.path().join(".env"), "BENZERSIZ_SIR=123").unwrap();
