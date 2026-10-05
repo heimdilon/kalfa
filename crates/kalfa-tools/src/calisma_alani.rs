@@ -9,14 +9,14 @@
 //! Bulgu 1): çekirdek `.git`'i adıyla tanıyıp korumalı sayar; git dizinine
 //! başka bir adla (8.3 kısa ad gibi) yazılamaz.
 
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
 use cap_std::fs::{Dir, File, OpenOptions};
-use ignore::WalkBuilder;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use kalfa_core::arac::AracHatasi;
 use kalfa_core::geri_alma::{DosyaDurumu, GeriYukleyici};
 use kalfa_core::izin::Siniflandirici;
@@ -34,6 +34,13 @@ pub struct CalismaAlani {
     kok: PathBuf,
     dizin: Dir,
     siniflandirici: Arc<Siniflandirici>,
+}
+
+struct TaramaCercevesi {
+    dizin: Dir,
+    goreli: String,
+    girisler: cap_std::fs::ReadDir,
+    eski_uzunluk: [usize; 3],
 }
 
 impl CalismaAlani {
@@ -90,7 +97,14 @@ impl CalismaAlani {
         if iptal.is_cancelled() {
             return Err(AracHatasi::Iptal);
         }
-        let mut dosya = self.dosya_ac(yol)?.into_std();
+        Self::sinirli_tutamaci_oku(self.dosya_ac(yol)?.into_std(), iptal, onayli_baglanti)
+    }
+
+    fn sinirli_tutamaci_oku(
+        mut dosya: std::fs::File,
+        iptal: &CancellationToken,
+        onayli_baglanti: Option<u64>,
+    ) -> Result<Vec<u8>, AracHatasi> {
         let denetle = || -> Result<(), AracHatasi> {
             let sayi = baglanti::sayi(&dosya)?;
             if onayli_baglanti.map_or(sayi > 1, |onayli| sayi != onayli) {
@@ -316,41 +330,149 @@ impl CalismaAlani {
         Handle::from_file(std_dosya).map(Some)
     }
 
-    /// Çalışma alanındaki dosyaları döner. Yalnızca depo kökündeki
-    /// `.gitignore` kuralları uygulanır; global git dışlamaları kullanılmaz.
+    /// Çalışma alanındaki dosyaları döner. Yerel `.ignore`, `.gitignore` ve
+    /// `.git/info/exclude` yalnız denetimli tutamaçtan okunur; global git
+    /// dışlamaları kullanılmaz.
     /// `.git` ve sembolik bağlantılar izlenmez. İşlem engelleyicidir; araçlar
     /// bunu `spawn_blocking` içinde çağırır.
     pub fn dosyalar(&self, iptal: &CancellationToken) -> Result<Vec<CalismaYolu>, AracHatasi> {
-        let gezgin = WalkBuilder::new(&self.kok)
-            .hidden(false)
-            .parents(false)
-            .require_git(false)
-            .git_global(false)
-            .git_ignore(true)
-            .follow_links(false)
-            .filter_entry(|g| !g.file_name().to_string_lossy().eq_ignore_ascii_case(".git"))
-            .build();
         let mut sonuc = Vec::new();
-
-        for giris in gezgin {
+        let mut kurallar = [Vec::new(), Vec::new(), Vec::new()];
+        let kok =
+            self.tarama_cercevesi(self.dizin.try_clone()?, String::new(), &mut kurallar, iptal)?;
+        let mut cerceveler = vec![kok];
+        while let Some(cerceve) = cerceveler.last_mut() {
             if iptal.is_cancelled() {
                 return Err(AracHatasi::Iptal);
             }
-            let Ok(giris) = giris else { continue };
-            if !giris.file_type().is_some_and(|t| t.is_file()) {
-                continue;
-            }
-            let Ok(goreli) = giris.path().strip_prefix(&self.kok) else {
+            let Some(giris) = cerceve.girisler.next() else {
+                let uzunluk = cerceve.eski_uzunluk;
+                cerceveler.pop();
+                for (aile, eski) in kurallar.iter_mut().zip(uzunluk) {
+                    aile.truncate(eski);
+                }
                 continue;
             };
-            if let Ok(yol) = CalismaYolu::coz(&goreli.to_string_lossy()) {
+            let Ok(giris) = giris else { continue };
+            let ad = giris.file_name();
+            let Some(ad) = ad.to_str() else { continue };
+            if ad.eq_ignore_ascii_case(".git") {
+                continue;
+            }
+            let Ok(tur) = giris.file_type() else { continue };
+            if !tur.is_file() && !tur.is_dir() {
+                continue;
+            }
+            let goreli_yol = if cerceve.goreli.is_empty() {
+                ad.to_string()
+            } else {
+                format!("{}/{ad}", cerceve.goreli)
+            };
+            let Ok(yol) = CalismaYolu::coz(&goreli_yol) else {
+                continue;
+            };
+            let tam = self.kok.join(&goreli_yol);
+            // Öncelik: .ignore, .gitignore, info/exclude; her türde en yakın dizin.
+            let eslesme = kurallar.iter().find_map(|aile| {
+                aile.iter()
+                    .rev()
+                    .map(|k| k.matched(&tam, tur.is_dir()))
+                    .find(|m| !m.is_none())
+            });
+            if eslesme.is_some_and(|m| m.is_ignore()) {
+                continue;
+            }
+            if tur.is_dir() {
+                let Ok(alt) = cerceve.dizin.open_dir_nofollow(ad) else {
+                    continue;
+                };
+                gercek_ad_dogrula(&cerceve.dizin, ad, &alt.try_clone()?.into_std_file())?;
+                let alt = self.tarama_cercevesi(alt, goreli_yol, &mut kurallar, iptal)?;
+                cerceveler.push(alt);
+            } else {
                 sonuc.push(yol);
             }
         }
-
         sonuc.sort();
         Ok(sonuc)
     }
+
+    fn dislama_kurali(
+        &self,
+        dizin: &str,
+        ad: &str,
+        iptal: &CancellationToken,
+    ) -> Result<Option<Gitignore>, AracHatasi> {
+        let goreli = if dizin.is_empty() {
+            ad.to_string()
+        } else {
+            format!("{dizin}/{ad}")
+        };
+        let yol = CalismaYolu::coz(&goreli)?;
+        let dosya = match self.dosya_ac(&yol) {
+            Ok(d) => d.into_std(),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
+                return Ok(None);
+            }
+            Err(_) => return Err(dislama_hatasi()),
+        };
+        if self.siniflandirici.gizli_mi(&yol) {
+            return Err(dislama_hatasi());
+        }
+        let veri = Self::sinirli_tutamaci_oku(dosya, iptal, None).map_err(|e| {
+            if e == AracHatasi::Iptal {
+                e
+            } else {
+                dislama_hatasi()
+            }
+        })?;
+        let kok = self.kok.join(dizin);
+        let mut yapici = GitignoreBuilder::new(kok);
+        for (no, satir) in io::Cursor::new(veri).lines().enumerate() {
+            let Ok(satir) = satir else { break };
+            let satir = if no == 0 {
+                satir.trim_start_matches('\u{feff}')
+            } else {
+                &satir
+            };
+            // Eski gezgin gibi geçersiz kuralları atlar; içerik hata metnine girmez.
+            let _ = yapici.add_line(None, satir);
+        }
+        yapici.build().map(Some).map_err(|_| dislama_hatasi())
+    }
+
+    fn tarama_cercevesi(
+        &self,
+        dizin: Dir,
+        goreli: String,
+        kurallar: &mut [Vec<Gitignore>; 3],
+        iptal: &CancellationToken,
+    ) -> Result<TaramaCercevesi, AracHatasi> {
+        if iptal.is_cancelled() {
+            return Err(AracHatasi::Iptal);
+        }
+        let eski_uzunluk = kurallar.each_ref().map(Vec::len);
+        for (tur, ad) in [(0, ".ignore"), (1, ".gitignore"), (2, ".git/info/exclude")] {
+            if let Some(kural) = self.dislama_kurali(&goreli, ad, iptal)? {
+                kurallar[tur].push(kural);
+            }
+        }
+        Ok(TaramaCercevesi {
+            girisler: dizin.entries()?,
+            dizin,
+            goreli,
+            eski_uzunluk,
+        })
+    }
+}
+
+fn dislama_hatasi() -> AracHatasi {
+    AracHatasi::Gecersiz("Dışlama dosyası güvenle okunamadı; listeleme ve arama yapılmadı.".into())
 }
 
 /// Geri alma dosya araçlarının yazma yolundan geçer (aşama 3 tasarımı §5.6):

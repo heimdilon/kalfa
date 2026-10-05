@@ -89,6 +89,126 @@ async fn hazirliktan_sonra_baglanti_eklenen_okuma_icerik_dondurmez() {
     ));
 }
 
+#[tokio::test]
+async fn sir_aliasi_dislama_kurali_olarak_da_okunmaz() {
+    for ad in [
+        ".gitignore",
+        ".ignore",
+        ".git/info/exclude",
+        "alt/.gitignore",
+        "alt/.ignore",
+        "alt/.git/info/exclude",
+    ] {
+        let (d, a) = alan();
+        dosya(&d, ".env", b"TOKEN=aday123\n");
+        let p = d.path().join(ad);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::hard_link(d.path().join(".env"), &p).unwrap();
+        dosya(&d, "TOKEN=aday123", b"aranan\n");
+        dosya(&d, "TOKEN=diger", b"aranan\n");
+        dosya(&d, "alt/TOKEN=aday123", b"aranan\n");
+        for arac in [
+            &DosyaListele::yeni(a.clone()) as &dyn Arac,
+            &IcerikAra::yeni(a.clone()),
+        ] {
+            let args = if arac.ad() == "dosya_listele" {
+                json!({"desen":"**/*"})
+            } else {
+                json!({"desen":"aranan"})
+            };
+            let hata = calistir(arac, args).await.unwrap_err();
+            assert!(!hata.to_string().contains("aday123"), "{ad}: {hata}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn guvenli_dislama_ic_ice_negation_ve_tur_onceligini_korur() {
+    let (d, a) = alan();
+    dosya(
+        &d,
+        ".gitignore",
+        "\u{feff}*.log\n/kok.txt\nkapali/\n*.tmp\n\\#isim\n".as_bytes(),
+    );
+    dosya(&d, ".ignore", b"*.yasak\n!ortak.log\n");
+    dosya(&d, ".git/info/exclude", b"*.dis\n");
+    dosya(&d, "alt/.gitignore", b"!tut.log\n!izin.yasak\n*.alt\n");
+    dosya(&d, "alt/.ignore", b"!izin.yasak\nortak.log\n");
+    dosya(&d, "kapali/.gitignore", b"!acik.txt\n");
+    for ad in [
+        "kok.txt",
+        "alt/kok.txt",
+        "sil.log",
+        "alt/tut.log",
+        "alt/ortak.log",
+        "ortak.log",
+        "alt/izin.yasak",
+        "yasak.yasak",
+        "kapali/acik.txt",
+        "alt/sil.alt",
+        "sil.dis",
+        "#isim",
+        "tek.txt",
+    ] {
+        dosya(&d, ad, b"aranan\n");
+    }
+    let yollar = a.dosyalar(&CancellationToken::new()).unwrap();
+    for ad in [
+        "alt/kok.txt",
+        "alt/tut.log",
+        "ortak.log",
+        "alt/izin.yasak",
+        "tek.txt",
+    ] {
+        assert!(yollar.iter().any(|y| y.as_str() == ad), "{ad}: {yollar:?}");
+    }
+    for ad in [
+        "kok.txt",
+        "sil.log",
+        "alt/ortak.log",
+        "yasak.yasak",
+        "kapali/acik.txt",
+        "alt/sil.alt",
+        "sil.dis",
+        "#isim",
+    ] {
+        assert!(!yollar.iter().any(|y| y.as_str() == ad), "{ad}: {yollar:?}");
+    }
+}
+
+#[tokio::test]
+async fn sabit_baglanti_alan_disinda_ve_bagimlilikta_da_onayli_tarif_ister() {
+    let (d, a) = alan();
+    let dis = tempfile::tempdir().unwrap();
+    std::fs::write(dis.path().join(".env"), b"SIR=disarida\n").unwrap();
+    std::fs::create_dir(d.path().join("node_modules")).unwrap();
+    std::fs::hard_link(
+        dis.path().join(".env"),
+        d.path().join("node_modules/normal.txt"),
+    )
+    .unwrap();
+    let oku = DosyaOku::yeni(a.clone());
+    let args = json!({"yol":"node_modules/normal.txt"});
+    let h = oku.hazirla(&args).await.unwrap();
+    assert_eq!(h.okuma_baglanti_sayilari[0].1, 2);
+    let c = calistir(&IcerikAra::yeni(a), json!({"desen":"SIR="}))
+        .await
+        .unwrap();
+    assert!(!c.icerik.contains("SIR=disarida"));
+    assert!(c.icerik.contains("1 dosya okunamadı"));
+    std::fs::hard_link(dis.path().join(".env"), d.path().join("ek.txt")).unwrap();
+    assert!(matches!(
+        oku.calistir(&args, &h, CancellationToken::new()).await,
+        Err(AracHatasi::OnayEskidi)
+    ));
+    std::fs::remove_file(d.path().join("ek.txt")).unwrap();
+    std::fs::remove_file(dis.path().join(".env")).unwrap();
+    assert!(matches!(
+        oku.calistir(&args, &h, CancellationToken::new()).await,
+        Err(AracHatasi::OnayEskidi)
+    ));
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn bekleyen_fifo_hazirligi_olay_dongusunu_durdurmaz() {
