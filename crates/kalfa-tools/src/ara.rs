@@ -32,6 +32,7 @@ struct AramaSonucu {
     satirlar: Vec<String>,
     kesildi: bool,
     gizli_atlanan: usize,
+    okunamayan: usize,
 }
 
 #[async_trait]
@@ -112,6 +113,12 @@ impl Arac for IcerikAra {
                 s.gizli_atlanan
             ));
         }
+        if s.okunamayan > 0 {
+            icerik.push_str(&format!(
+                "\n[{} dosya okunamadı; arama eksik]",
+                s.okunamayan
+            ));
+        }
         Ok(AracCiktisi {
             icerik,
             kaynak: format!("arama:{desen}"),
@@ -131,6 +138,7 @@ fn ara(
         satirlar: Vec::new(),
         kesildi: false,
         gizli_atlanan: 0,
+        okunamayan: 0,
     };
     'dosyalar: for yol in alan.dosyalar(iptal)? {
         if iptal.is_cancelled() {
@@ -143,7 +151,14 @@ fn ara(
             s.gizli_atlanan += 1;
             continue;
         }
-        let Ok(veri) = alan.oku(&yol) else { continue };
+        let veri = match alan.sinirli_oku(&yol, iptal) {
+            Ok(veri) => veri,
+            Err(AracHatasi::Iptal) => return Err(AracHatasi::Iptal),
+            Err(_) => {
+                s.okunamayan += 1;
+                continue;
+            }
+        };
         if ikili_mi(&veri) {
             continue;
         }

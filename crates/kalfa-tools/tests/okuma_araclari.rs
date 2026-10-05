@@ -40,6 +40,32 @@ async fn dosya_oku_satir_numarali() {
 }
 
 #[tokio::test]
+async fn buyuk_dosya_tek_satir_istenince_de_okunmaz() {
+    let (d, a) = alan();
+    // Süreci tüketmeden eski sınırsız okuma yolunu gösterir.
+    let p = d.path().join("buyuk.txt");
+    let mut veri = vec![b'a'; 8 * 1024 * 1024 + 1];
+    veri[..10].copy_from_slice(b"bulunacak\n");
+    std::fs::write(&p, veri).unwrap();
+    let sonuc = calistir(
+        &DosyaOku::yeni(a.clone()),
+        json!({"yol":"buyuk.txt", "satir_sayisi":1}),
+    )
+    .await;
+    assert!(
+        sonuc.is_err(),
+        "boyut sınırı çıktı sınırından önce uygulanmalı"
+    );
+    dosya(&d, "normal.txt", b"bulunacak\n");
+    let sonuc = calistir(&IcerikAra::yeni(a), json!({"desen":"bulunacak"}))
+        .await
+        .unwrap();
+    assert!(!sonuc.icerik.contains("buyuk.txt:"));
+    assert!(sonuc.icerik.contains("normal.txt:1:"));
+    assert!(sonuc.icerik.contains("1 dosya okunamadı; arama eksik"));
+}
+
+#[tokio::test]
 async fn dosya_oku_bolum_ve_sinirlar() {
     let (d, a) = alan();
     dosya(&d, "b.txt", b"1\n2\n3\n4\n5\n");

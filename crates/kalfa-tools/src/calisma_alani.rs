@@ -27,6 +27,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::baglanti;
 
+/// Metin okuma ve arama tek dosyada en çok 8 MiB tutar.
+pub const OKUMA_BAYT_SINIRI: usize = 8 * 1024 * 1024;
+
 pub struct CalismaAlani {
     kok: PathBuf,
     dizin: Dir,
@@ -58,6 +61,22 @@ impl CalismaAlani {
         let mut veri = Vec::new();
         dosya.read_to_end(&mut veri)?;
         Ok(veri)
+    }
+
+    /// Çıktı satır sınırından önce, açılan tutamacın baytlarını sınırlar.
+    pub fn sinirli_oku(
+        &self,
+        yol: &CalismaYolu,
+        iptal: &CancellationToken,
+    ) -> Result<Vec<u8>, AracHatasi> {
+        if iptal.is_cancelled() {
+            return Err(AracHatasi::Iptal);
+        }
+        let mut dosya = self.dosya_ac(yol)?;
+        if dosya.metadata()?.len() > OKUMA_BAYT_SINIRI as u64 {
+            return Err(okuma_siniri_hatasi());
+        }
+        sinirli_veri_oku(&mut dosya, iptal)
     }
 
     /// Yalnızca üst dizinler açılır; son bileşen çağıranın yapacağı dosya
@@ -392,4 +411,60 @@ fn git_takma_adi_reddet(git: &Handle, ad: &str, nesne: &std::fs::File) -> io::Re
 /// İlk 8 KiB'ta NUL baytı varsa dosya ikili sayılır.
 pub(crate) fn ikili_mi(veri: &[u8]) -> bool {
     veri.iter().take(8192).any(|b| *b == 0)
+}
+
+fn okuma_siniri_hatasi() -> AracHatasi {
+    AracHatasi::Gecersiz("Dosya 8 MiB okuma sınırını aşıyor; okunmadı.".into())
+}
+
+fn sinirli_veri_oku(
+    okuyucu: &mut impl Read,
+    iptal: &CancellationToken,
+) -> Result<Vec<u8>, AracHatasi> {
+    let mut veri = Vec::new();
+    let mut tampon = [0; 64 * 1024];
+    loop {
+        if iptal.is_cancelled() {
+            return Err(AracHatasi::Iptal);
+        }
+        let adet = okuyucu.read(&mut tampon)?;
+        if adet == 0 {
+            return Ok(veri);
+        }
+        if adet > OKUMA_BAYT_SINIRI - veri.len() {
+            return Err(okuma_siniri_hatasi());
+        }
+        veri.extend_from_slice(&tampon[..adet]);
+    }
+}
+
+#[cfg(test)]
+mod okuma_siniri_testleri {
+    use super::*;
+
+    #[test]
+    fn buyuyen_kaynak_metadata_olmadan_da_sinirlanir() {
+        let iptal = CancellationToken::new();
+        assert!(
+            sinirli_veri_oku(&mut io::repeat(b'a').take(OKUMA_BAYT_SINIRI as u64), &iptal).is_ok()
+        );
+        assert!(sinirli_veri_oku(&mut io::repeat(b'a'), &iptal).is_err());
+    }
+
+    #[test]
+    fn okuma_sirasinda_iptal_tamponlar_arasinda_islenir() {
+        struct IptalEden(CancellationToken);
+        impl Read for IptalEden {
+            fn read(&mut self, b: &mut [u8]) -> io::Result<usize> {
+                b.fill(b'a');
+                self.0.cancel();
+                Ok(b.len())
+            }
+        }
+        let iptal = CancellationToken::new();
+        assert!(matches!(
+            sinirli_veri_oku(&mut IptalEden(iptal.clone()), &iptal),
+            Err(AracHatasi::Iptal)
+        ));
+    }
 }

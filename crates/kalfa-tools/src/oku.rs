@@ -69,7 +69,13 @@ impl Arac for DosyaOku {
             return Err(AracHatasi::Iptal);
         }
         let yol = arguman::yol(a, "yol")?;
-        let veri = self.alan.oku(&yol)?;
+        let alan = self.alan.clone();
+        let okuma_yolu = yol.clone();
+        let okuma_iptali = iptal.clone();
+        let veri =
+            tokio::task::spawn_blocking(move || alan.sinirli_oku(&okuma_yolu, &okuma_iptali))
+                .await
+                .map_err(|e| AracHatasi::GirisCikis(e.to_string()))??;
         if iptal.is_cancelled() {
             return Err(AracHatasi::Iptal);
         }
@@ -80,8 +86,7 @@ impl Arac for DosyaOku {
         }
 
         let metin = String::from_utf8_lossy(&veri);
-        let satirlar: Vec<&str> = metin.lines().collect();
-        let toplam = satirlar.len();
+        let toplam = metin.lines().count();
         if toplam == 0 {
             return Ok(AracCiktisi {
                 icerik: "[dosya boş]".into(),
@@ -107,7 +112,7 @@ impl Arac for DosyaOku {
 
         let son = (bas - 1).saturating_add(adet).min(toplam);
         let mut cikti = String::new();
-        for (i, satir) in satirlar.iter().enumerate().take(son).skip(bas - 1) {
+        for (i, satir) in metin.lines().enumerate().take(son).skip(bas - 1) {
             let _ = writeln!(cikti, "{:>6}\t{satir}", i + 1);
         }
         if son < toplam {
