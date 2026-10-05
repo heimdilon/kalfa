@@ -13,6 +13,22 @@ fn y(s: &str) -> CalismaYolu {
     CalismaYolu::coz(s).unwrap()
 }
 
+#[test]
+fn okuma_baglanti_sayisi_muhre_baglanir() {
+    let cagri = CagriId::yeni();
+    let mut h = Hazirlik {
+        okunan: vec![y("a.txt")],
+        okuma_baglanti_sayilari: vec![(y("a.txt"), 1)],
+        ..Default::default()
+    };
+    let ilk = muhur_hesapla(cagri, "dosya_oku", &json!({"yol":"a.txt"}), &h);
+    h.okuma_baglanti_sayilari[0].1 = 2;
+    assert_ne!(
+        ilk,
+        muhur_hesapla(cagri, "dosya_oku", &json!({"yol":"a.txt"}), &h)
+    );
+}
+
 struct Deneme {
     ad: &'static str,
     yazar: bool,

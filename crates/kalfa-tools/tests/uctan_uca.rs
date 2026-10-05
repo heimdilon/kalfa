@@ -69,6 +69,43 @@ async fn onay_bekle(d: &mut Surucu) -> Vec<OnayOgesi> {
     }
 }
 
+#[tokio::test]
+async fn gizli_dosyanin_normal_sabit_baglantisi_her_kipte_okuma_onayi_ister() {
+    for kip in [Kip::Inceleme, Kip::Siki, Kip::Proje, Kip::Serbest] {
+        for onayla in [false, true] {
+            let o = ortam();
+            std::fs::write(o.alan.path().join(".env"), "SIR=yalniz_onayla\n").unwrap();
+            std::fs::hard_link(o.alan.path().join(".env"), o.alan.path().join("normal.txt"))
+                .unwrap();
+            let s = SahteSaglayici::yeni(vec![
+                SahteYanit::arac("dosya_oku", json!({"yol": "normal.txt"})),
+                SahteYanit::metin("bitti"),
+            ]);
+            let mut d = gercek_araclarla(&o, &s, kip, false);
+            d.gonder(mesaj("oku")).await;
+            let ogeler = onay_bekle(&mut d).await;
+            assert_eq!(s.istekler().len(), 1);
+            assert!(ogeler[0].uyarilar.iter().any(|u| u == GIZLI_UYARISI));
+            assert!(ogeler[0].diff.is_none());
+            d.gonder(Komut::AracOnayi {
+                cagri: ogeler[0].cagri,
+                karar: if onayla {
+                    OnayKarari::Onayla
+                } else {
+                    OnayKarari::Reddet { gerekce: None }
+                },
+                muhur: ogeler[0].muhur.clone(),
+            })
+            .await;
+            assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+            assert_eq!(
+                arac_yanitlari(&s, 1)[0].contains("SIR=yalniz_onayla"),
+                onayla
+            );
+        }
+    }
+}
+
 fn arac_yanitlari(s: &SahteSaglayici, istek: usize) -> Vec<String> {
     s.istekler()[istek]
         .messages

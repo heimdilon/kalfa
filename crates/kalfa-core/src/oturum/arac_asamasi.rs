@@ -353,7 +353,11 @@ impl Oturum {
             } else {
                 YolSinifi::Normal
             };
-            karar = karar.birlestir(karar_ver(kip, Islem::Okuma, sinif, false));
+            let coklu = hazirlik
+                .okuma_baglanti_sayilari
+                .iter()
+                .any(|(hedef, sayi)| hedef == yol && *sayi > 1);
+            karar = karar.birlestir(karar_ver(kip, Islem::Okuma, sinif, coklu));
         }
         if !hazirlik.yazilan.is_empty() {
             let yerinde;

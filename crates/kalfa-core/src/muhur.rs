@@ -39,6 +39,13 @@ pub fn muhur_hesapla(
         alan(&mut h, b"o");
         alan(&mut h, yol.as_bytes());
     }
+    let mut sayilar: Vec<_> = hazirlik.okuma_baglanti_sayilari.iter().collect();
+    sayilar.sort_unstable();
+    for (yol, sayi) in sayilar {
+        alan(&mut h, b"ob");
+        alan(&mut h, yol.as_str().as_bytes());
+        alan(&mut h, &sayi.to_le_bytes());
+    }
     let mut yazilan: Vec<_> = hazirlik.yazilan.iter().collect();
     yazilan.sort_by(|a, b| a.yol.cmp(&b.yol));
     for hedef in yazilan {

@@ -52,8 +52,14 @@ impl Arac for DosyaOku {
 
     async fn hazirla(&self, a: &Value) -> Result<Hazirlik, AracHatasi> {
         let yol = arguman::yol(a, "yol")?;
+        let alan = self.alan.clone();
+        let okuma_yolu = yol.clone();
+        let sayi = tokio::task::spawn_blocking(move || alan.baglanti_sayisi(&okuma_yolu))
+            .await
+            .map_err(|e| AracHatasi::GirisCikis(e.to_string()))??;
         Ok(Hazirlik {
             aciklama: format!("`{yol}` dosyasını okumak istiyor."),
+            okuma_baglanti_sayilari: vec![(yol.clone(), sayi)],
             okunan: vec![yol],
             ..Default::default()
         })
@@ -62,20 +68,27 @@ impl Arac for DosyaOku {
     async fn calistir(
         &self,
         a: &Value,
-        _h: &Hazirlik,
+        h: &Hazirlik,
         iptal: CancellationToken,
     ) -> Result<AracCiktisi, AracHatasi> {
         if iptal.is_cancelled() {
             return Err(AracHatasi::Iptal);
         }
         let yol = arguman::yol(a, "yol")?;
+        let sayi = h
+            .okuma_baglanti_sayilari
+            .iter()
+            .find(|(hedef, _)| hedef == &yol)
+            .map(|(_, sayi)| *sayi)
+            .ok_or(AracHatasi::OnayEskidi)?;
         let alan = self.alan.clone();
         let okuma_yolu = yol.clone();
         let okuma_iptali = iptal.clone();
-        let veri =
-            tokio::task::spawn_blocking(move || alan.sinirli_oku(&okuma_yolu, &okuma_iptali))
-                .await
-                .map_err(|e| AracHatasi::GirisCikis(e.to_string()))??;
+        let veri = tokio::task::spawn_blocking(move || {
+            alan.sinirli_onayli_oku(&okuma_yolu, &okuma_iptali, sayi)
+        })
+        .await
+        .map_err(|e| AracHatasi::GirisCikis(e.to_string()))??;
         if iptal.is_cancelled() {
             return Err(AracHatasi::Iptal);
         }

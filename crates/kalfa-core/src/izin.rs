@@ -271,12 +271,15 @@ pub fn kabuk_karari(kip: Kip, tarif: &KabukTarifi) -> Karar {
 
 pub fn karar_ver(kip: Kip, islem: Islem, sinif: YolSinifi, coklu_baglanti: bool) -> Karar {
     match islem {
-        Islem::Okuma => match sinif {
-            YolSinifi::Gizli => Karar::Onayli {
-                uyarilar: vec![GIZLI_UYARISI.to_string()],
-            },
-            YolSinifi::Normal | YolSinifi::Korumali | YolSinifi::Yapilandirma => Karar::Serbest,
-        },
+        Islem::Okuma => {
+            if sinif == YolSinifi::Gizli || coklu_baglanti {
+                Karar::Onayli {
+                    uyarilar: vec![GIZLI_UYARISI.to_string()],
+                }
+            } else {
+                Karar::Serbest
+            }
+        }
         Islem::Yazma => {
             if kip == Kip::Inceleme {
                 return Karar::Yasak {

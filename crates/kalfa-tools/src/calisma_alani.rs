@@ -69,14 +69,45 @@ impl CalismaAlani {
         yol: &CalismaYolu,
         iptal: &CancellationToken,
     ) -> Result<Vec<u8>, AracHatasi> {
+        self.sinirli_okuma(yol, iptal, None)
+    }
+
+    pub(crate) fn sinirli_onayli_oku(
+        &self,
+        yol: &CalismaYolu,
+        iptal: &CancellationToken,
+        baglanti: u64,
+    ) -> Result<Vec<u8>, AracHatasi> {
+        self.sinirli_okuma(yol, iptal, Some(baglanti))
+    }
+
+    fn sinirli_okuma(
+        &self,
+        yol: &CalismaYolu,
+        iptal: &CancellationToken,
+        onayli_baglanti: Option<u64>,
+    ) -> Result<Vec<u8>, AracHatasi> {
         if iptal.is_cancelled() {
             return Err(AracHatasi::Iptal);
         }
-        let mut dosya = self.dosya_ac(yol)?;
+        let mut dosya = self.dosya_ac(yol)?.into_std();
+        let denetle = || -> Result<(), AracHatasi> {
+            let sayi = baglanti::sayi(&dosya)?;
+            if onayli_baglanti.map_or(sayi > 1, |onayli| sayi != onayli) {
+                return Err(AracHatasi::OnayEskidi);
+            }
+            Ok(())
+        };
+        denetle()?;
         if dosya.metadata()?.len() > OKUMA_BAYT_SINIRI as u64 {
             return Err(okuma_siniri_hatasi());
         }
-        sinirli_veri_oku(&mut dosya, iptal)
+        let veri = sinirli_veri_oku(&mut dosya, iptal)?;
+        let sayi = baglanti::sayi(&dosya)?;
+        if onayli_baglanti.map_or(sayi > 1, |onayli| sayi != onayli) {
+            return Err(AracHatasi::OnayEskidi);
+        }
+        Ok(veri)
     }
 
     /// Yalnızca üst dizinler açılır; son bileşen çağıranın yapacağı dosya

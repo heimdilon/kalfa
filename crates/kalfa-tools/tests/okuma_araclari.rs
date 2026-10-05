@@ -40,6 +40,85 @@ async fn dosya_oku_satir_numarali() {
 }
 
 #[tokio::test]
+async fn arama_coklu_baglantinin_icerigini_atlar_okuma_onayli_tarifle_calisir() {
+    let (d, a) = alan();
+    dosya(&d, ".env", b"SIR=aranan\n");
+    std::fs::hard_link(d.path().join(".env"), d.path().join("normal.txt")).unwrap();
+    dosya(&d, "tek.txt", b"aranan normal\n");
+    let c = calistir(&IcerikAra::yeni(a.clone()), json!({"desen":"aranan"}))
+        .await
+        .unwrap();
+    assert!(!c.icerik.contains("SIR="));
+    assert!(!c.icerik.contains("normal.txt:"));
+    assert!(c.icerik.contains("tek.txt:1:"));
+    assert!(c.icerik.contains("1 dosya okunamadı; arama eksik"));
+
+    dosya(&d, "kaynak.txt", b"mesru icerik\n");
+    std::fs::hard_link(d.path().join("kaynak.txt"), d.path().join("kopya.txt")).unwrap();
+    let oku = DosyaOku::yeni(a.clone());
+    let args = json!({"yol":"kopya.txt"});
+    let h = oku.hazirla(&args).await.unwrap();
+    assert_eq!(h.okuma_baglanti_sayilari[0].1, 2);
+    assert!(
+        oku.calistir(&args, &h, CancellationToken::new())
+            .await
+            .unwrap()
+            .icerik
+            .contains("mesru icerik")
+    );
+    assert!(matches!(
+        a.sinirli_oku(
+            &CalismaYolu::coz("kopya.txt").unwrap(),
+            &CancellationToken::new()
+        ),
+        Err(AracHatasi::OnayEskidi)
+    ));
+}
+
+#[tokio::test]
+async fn hazirliktan_sonra_baglanti_eklenen_okuma_icerik_dondurmez() {
+    let (d, a) = alan();
+    dosya(&d, "normal.txt", b"SIR=onaysiz\n");
+    let oku = DosyaOku::yeni(a);
+    let args = json!({"yol":"normal.txt"});
+    let h = oku.hazirla(&args).await.unwrap();
+    std::fs::hard_link(d.path().join("normal.txt"), d.path().join(".env")).unwrap();
+    assert!(matches!(
+        oku.calistir(&args, &h, CancellationToken::new()).await,
+        Err(AracHatasi::OnayEskidi)
+    ));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn bekleyen_fifo_hazirligi_olay_dongusunu_durdurmaz() {
+    let (d, a) = alan();
+    let p = d.path().join("boru");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&p)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let serbest_birakan = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        std::fs::OpenOptions::new().write(true).open(p).unwrap();
+    });
+    let oku = DosyaOku::yeni(a);
+    let sonuc = tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        oku.hazirla(&json!({"yol":"boru"})),
+    )
+    .await;
+    serbest_birakan.join().unwrap();
+    assert!(
+        sonuc.is_err(),
+        "hazırlık, olay döngüsünün zaman aşımını engellememeli"
+    );
+}
+
+#[tokio::test]
 async fn buyuk_dosya_tek_satir_istenince_de_okunmaz() {
     let (d, a) = alan();
     // Süreci tüketmeden eski sınırsız okuma yolunu gösterir.

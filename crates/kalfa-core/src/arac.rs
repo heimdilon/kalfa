@@ -69,6 +69,8 @@ impl YazmaHedefi {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Hazirlik {
     pub okunan: Vec<CalismaYolu>,
+    /// Okunacak dosyanın bağlantı sayısı; içerik okunmadan alınır ve mühre girer.
+    pub okuma_baglanti_sayilari: Vec<(CalismaYolu, u64)>,
     pub yazilan: Vec<YazmaHedefi>,
     /// Hangi yollara dokunacağı önceden bilinemeyen iş (kabuk, aşama 2).
     pub tum_calisma_alani: bool,
