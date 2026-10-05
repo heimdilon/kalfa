@@ -104,7 +104,7 @@ impl CalismaAlani {
                 return Ok((dizin, ad.to_string()));
             }
 
-            dizin = match dizin.open_dir_nofollow(ad) {
+            let sonraki = match dizin.open_dir_nofollow(ad) {
                 Ok(d) => d,
                 Err(e) if olustur && e.kind() == io::ErrorKind::NotFound => {
                     match dizin.create_dir(ad) {
@@ -118,6 +118,8 @@ impl CalismaAlani {
                 }
                 Err(e) => return Err(e),
             };
+            gercek_ad_dogrula(&dizin, ad, &sonraki.try_clone()?.into_std_file())?;
+            dizin = sonraki;
             ad_onceki = Some(ad);
         }
 
@@ -132,7 +134,8 @@ impl CalismaAlani {
     /// tasarımı §4.1).
     pub fn dizin_dogrula(&self, yol: &CalismaYolu) -> io::Result<()> {
         let (ust, ad) = self.ust_dizin(yol, false)?;
-        ust.open_dir_nofollow(ad)?;
+        let dizin = ust.open_dir_nofollow(&ad)?;
+        gercek_ad_dogrula(&ust, &ad, &dizin.into_std_file())?;
         Ok(())
     }
 
@@ -151,6 +154,7 @@ impl CalismaAlani {
             if sonuc.is_empty() {
                 match dizin.open_dir_nofollow(ad) {
                     Ok(d) => {
+                        gercek_ad_dogrula(&dizin, ad, &d.try_clone()?.into_std_file())?;
                         dizin = d;
                         continue;
                     }
@@ -173,13 +177,15 @@ impl CalismaAlani {
         let (ust, ad) = self.ust_dizin(yol, false)?;
         let mut secenek = OpenOptions::new();
         secenek.read(true).follow(FollowSymlinks::No);
-        let dosya = ust.open_with(ad, &secenek)?;
+        ad_degistirmeyi_engelle(&mut secenek);
+        let dosya = ust.open_with(&ad, &secenek)?;
         if !dosya.metadata()?.is_file() {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "Yalnızca normal dosyalar açılabilir",
             ));
         }
+        gercek_ad_dogrula(&ust, &ad, &dosya.try_clone()?.into_std())?;
         Ok(dosya)
     }
 
@@ -212,6 +218,7 @@ impl CalismaAlani {
         // `truncate` yerine önce no-follow açıp sonra set_len kullanılır. Son
         // bileşen son anda symlink/junction yapılırsa open_with başarısız olur.
         secenek.write(true).create(true).follow(FollowSymlinks::No);
+        ad_degistirmeyi_engelle(&mut secenek);
         let mut dosya = ust.open_with(&ad, &secenek)?;
         if !dosya.metadata()?.is_file() {
             return Err(io::Error::new(
@@ -219,6 +226,7 @@ impl CalismaAlani {
                 "Yalnızca normal dosyalara yazılabilir",
             ));
         }
+        gercek_ad_dogrula(&ust, &ad, &dosya.try_clone()?.into_std())?;
         // `.git` bir dosyaysa (worktree, alt modül) son bileşen de denetlenir.
         if let Some(g) = &git {
             git_takma_adi_reddet(g, &ad, &dosya.try_clone()?.into_std())?;
@@ -232,6 +240,8 @@ impl CalismaAlani {
     /// Bağlantı izlenmez: bağlantının kendisi taşınır. Yeni yolu döner.
     pub fn karantinaya_al(&self, yol: &CalismaYolu, damga: &str) -> io::Result<CalismaYolu> {
         let (ust, ad) = self.ust_dizin(yol, false)?;
+        #[cfg(windows)]
+        gercek_ad_bul(&ust, &ad)?;
         for sira in 0..100 {
             let yeni = match sira {
                 0 => format!("{ad}.kalfa-karantina-{damga}"),
@@ -335,6 +345,7 @@ impl GeriYukleyici for CalismaAlani {
         let (ust, ad) = self.ust_dizin_denetimli(yol, false, git.as_ref())?;
         let mut secenek = OpenOptions::new();
         secenek.read(true).write(true).follow(FollowSymlinks::No);
+        ad_degistirmeyi_engelle(&mut secenek);
         let mut dosya = ust.open_with(&ad, &secenek)?;
         if !dosya.metadata()?.is_file() {
             return Err(io::Error::new(
@@ -342,6 +353,7 @@ impl GeriYukleyici for CalismaAlani {
                 "Yalnızca normal dosyalar geri yazılabilir",
             ));
         }
+        gercek_ad_dogrula(&ust, &ad, &dosya.try_clone()?.into_std())?;
         if let Some(g) = &git {
             git_takma_adi_reddet(g, &ad, &dosya.try_clone()?.into_std())?;
         }
@@ -378,6 +390,16 @@ impl GeriYukleyici for CalismaAlani {
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
             Err(e) => return Err(e),
         };
+        #[cfg(windows)]
+        {
+            let dizin = match ust.open_dir_nofollow(&ad) {
+                Ok(d) => d,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+                Err(e) => return Err(e),
+            };
+            gercek_ad_dogrula(&ust, &ad, &dizin.try_clone()?.into_std_file())?;
+            drop(dizin);
+        }
         match ust.remove_dir(&ad) {
             Ok(()) => Ok(true),
             Err(e)
@@ -391,6 +413,69 @@ impl GeriYukleyici for CalismaAlani {
             Err(e) => Err(e),
         }
     }
+}
+
+/// Açılan nesneye ulaşan yazım, gerçek dizin girdisinin adı olmalıdır.
+/// Kısa adın biçimini tahmin etmek yerine uzun adı ve tutamaç kimliğini bağlar.
+fn gercek_ad_dogrula(ust: &Dir, ad: &str, nesne: &std::fs::File) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        use cap_std::fs::OpenOptionsExt;
+        let gercek = gercek_ad_bul(ust, ad)?;
+        let acilan = if nesne.metadata()?.is_dir() {
+            ust.open_dir_nofollow(&gercek)?.into_std_file()
+        } else {
+            let mut secenek = OpenOptions::new();
+            // Kimlik için veri okuma yetkisi gerekmez; kör yazma korunur.
+            secenek.access_mode(0).follow(FollowSymlinks::No);
+            ust.open_with(&gercek, &secenek)?.into_std()
+        };
+        if Handle::from_file(acilan)? != Handle::from_file(nesne.try_clone()?)? {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Dosya adı ile açılan nesne uyuşmuyor.",
+            ));
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (ust, ad, nesne);
+    Ok(())
+}
+
+#[cfg(windows)]
+fn gercek_ad_bul(ust: &Dir, ad: &str) -> io::Result<std::ffi::OsString> {
+    let mut harf_farki = None;
+    for giris in ust.entries()? {
+        let ad_girdisi = giris?.file_name();
+        if let Some(g) = ad_girdisi.to_str() {
+            // Windows'ta harfe duyarlı dizinlerde iki ayrı nesne bulunabilir.
+            if g == ad {
+                return Ok(ad_girdisi);
+            }
+            if g.to_lowercase() == ad.to_lowercase() {
+                harf_farki = Some(ad_girdisi);
+            }
+        }
+    }
+    if let Some(ad) = harf_farki {
+        return Ok(ad);
+    }
+    Err(io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "Dosyaya gerçek adı dışında bir adla erişilemez.",
+    ))
+}
+
+fn ad_degistirmeyi_engelle(secenek: &mut OpenOptions) {
+    #[cfg(windows)]
+    {
+        use cap_std::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE};
+        // Ad ile kimlik doğrulandıktan sonra açık dosya yeniden adlandırılamaz.
+        secenek.share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE);
+    }
+    #[cfg(not(windows))]
+    let _ = secenek;
 }
 
 /// Nesne kökteki `.git`'in kendisiyse ve ona `.git` adıyla ulaşılmadıysa
@@ -466,5 +551,27 @@ mod okuma_siniri_testleri {
             sinirli_veri_oku(&mut IptalEden(iptal.clone()), &iptal),
             Err(AracHatasi::Iptal)
         ));
+    }
+}
+
+#[cfg(all(test, windows))]
+mod gercek_ad_testleri {
+    use super::*;
+
+    #[test]
+    fn ayni_adla_degisik_nesne_onaylanan_tutamaci_degistiremez() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("normal.txt"), b"normal").unwrap();
+        std::fs::write(d.path().join(".env"), b"sir").unwrap();
+        let ust = Dir::open_ambient_dir(d.path(), ambient_authority()).unwrap();
+        let normal = ust.open("normal.txt").unwrap().into_std();
+        let gizli = ust.open(".env").unwrap().into_std();
+        assert!(gercek_ad_dogrula(&ust, "normal.txt", &normal).is_ok());
+        assert_eq!(
+            gercek_ad_dogrula(&ust, "normal.txt", &gizli)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
     }
 }
