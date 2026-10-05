@@ -183,17 +183,6 @@ pub struct OturumKaydi {
     _kilit: Option<KayitKilidi>,
 }
 
-impl Drop for OturumKaydi {
-    /// Kilit açıkça bırakılır. flock kilidi açık dosya tanımına bağlıdır;
-    /// eşzamanlı başlatılan bir alt süreç `fork` ile `exec` arasında
-    /// tanımlayıcının kopyasını tutuyorsa yalnızca kapatmak kilidi bırakmaz.
-    fn drop(&mut self) {
-        if let Some(kilit) = &self._kilit {
-            let _ = kilit.unlock();
-        }
-    }
-}
-
 impl OturumKaydi {
     /// Yeni kayıt oluşturur; dosya zaten varsa hata döner.
     pub fn olustur(yol: &Path) -> io::Result<Self> {
