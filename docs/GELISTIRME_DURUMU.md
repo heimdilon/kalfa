@@ -1054,6 +1054,13 @@ Tasarım:
 - **3a:** tur özeti ve geri alma.
 - **3b:** gönderim günlüğü ve önizleme.
 - **3c:** prompt injection senaryo testleri ve güvenlik denetçisi.
+  - Plan: [`2026-09-28-kalfa-3c-senaryolar-denetci.md`](superpowers/plans/2026-09-28-kalfa-3c-senaryolar-denetci.md)
+    (hafif; uygulayanı kullanıcı seçecek).
+  - Senaryo düzeneği (`kalfa-tools/tests/ortak/senaryo.rs`) ve S1–S8
+    (`kalfa-tools/tests/senaryolar.rs`) yazıldı; bugünkü kodla Linux'ta
+    geçiyor. Windows'ta koşturulmadı.
+  - Denetçi 3b'nin bekleyen sonuç mekanizmasını kullanır; katı kip 3b'den
+    sonra gelir.
 - **3d:** ağ çıkışının kısıtlanması (Bulgu 8).
 - **3e:** "bu oturumda izin ver" kısayolları, ek gizli kalıplar ve onay
   kartının kalan alanları.

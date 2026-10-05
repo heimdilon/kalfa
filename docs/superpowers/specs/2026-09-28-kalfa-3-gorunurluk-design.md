@@ -1659,7 +1659,9 @@ sonraki planların uygulayıcısı her planda ayrıca kararlaştırılır.
    - Bekleyen sonuçlar ve önizleme kartı.
    - Günlük ekranı (`LogTable`, `SourceTag`).
    - Kartın "Veri çıkışı" alanı.
-3. **3c — Senaryo testleri ve denetçi.**
+3. **3c — Senaryo testleri ve denetçi.** Plan:
+   [`2026-09-28-kalfa-3c-senaryolar-denetci.md`](../plans/2026-09-28-kalfa-3c-senaryolar-denetci.md).
+   Senaryo düzeneği ve S1–S8 plandan önce yapıldı.
    - Önce senaryo altyapısı ve S1–S8 (bugünkü kodla geçmeli).
    - Sonra denetçi: `Saglayici::sohbet`, `max_tokens`,
      `YapilandirilmisSiniflandirici`.
