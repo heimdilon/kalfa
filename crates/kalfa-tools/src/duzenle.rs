@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::arguman;
 use crate::calisma_alani::{CalismaAlani, ikili_mi};
-use crate::diff::birlesik_diff;
+use crate::diff::sinirli_diff;
 use crate::yaz::onceki_icerigi_koy;
 
 pub struct DosyaDuzenle {
@@ -48,6 +48,8 @@ struct Duzenleme {
     adet: usize,
 }
 
+const DUZENLEME_BAYT_SINIRI: usize = 32 * 1024 * 1024;
+
 fn uygula(icerik: &str, a: &Value) -> Result<Duzenleme, AracHatasi> {
     let eski = arguman::metin(a, "eski_metin")?;
     let yeni = arguman::metin(a, "yeni_metin")?;
@@ -55,22 +57,40 @@ fn uygula(icerik: &str, a: &Value) -> Result<Duzenleme, AracHatasi> {
     if eski.is_empty() {
         return Err(AracHatasi::Gecersiz("`eski_metin` boş olamaz.".into()));
     }
-    match icerik.matches(eski).count() {
-        0 => Err(AracHatasi::Gecersiz(
+    let n = icerik.matches(eski).count();
+    if n == 0 {
+        return Err(AracHatasi::Gecersiz(
             "`eski_metin` dosyada bulunamadı; dosyayı yeniden okuyup metni birebir ver.".into(),
-        )),
-        n if n > 1 && !tumu => Err(AracHatasi::Gecersiz(format!(
-            "`eski_metin` dosyada {n} kez geçiyor; daha fazla bağlam ekle ya da `tumu: true` kullan."
-        ))),
-        n if tumu => Ok(Duzenleme {
-            yeni: icerik.replace(eski, yeni),
-            adet: n,
-        }),
-        _ => Ok(Duzenleme {
-            yeni: icerik.replacen(eski, yeni, 1),
-            adet: 1,
-        }),
+        ));
     }
+    if n > 1 && !tumu {
+        return Err(AracHatasi::Gecersiz(format!(
+            "`eski_metin` dosyada {n} kez geçiyor; daha fazla bağlam ekle ya da `tumu: true` kullan."
+        )));
+    }
+    let adet = if tumu { n } else { 1 };
+    let boyut = eski
+        .len()
+        .checked_mul(adet)
+        .and_then(|cikar| icerik.len().checked_sub(cikar))
+        .and_then(|kalan| {
+            yeni.len()
+                .checked_mul(adet)
+                .and_then(|ekle| kalan.checked_add(ekle))
+        });
+    if boyut.is_none_or(|b| b > DUZENLEME_BAYT_SINIRI) {
+        return Err(AracHatasi::Gecersiz(
+            "Düzenleme 32 MiB çıktı sınırını aşıyor; dosya değiştirilmedi.".into(),
+        ));
+    }
+    Ok(Duzenleme {
+        yeni: if tumu {
+            icerik.replace(eski, yeni)
+        } else {
+            icerik.replacen(eski, yeni, 1)
+        },
+        adet,
+    })
 }
 
 #[async_trait]
@@ -117,7 +137,7 @@ impl Arac for DosyaDuzenle {
             Err(_) if hassas => None,
             Err(hata) => return Err(hata),
         };
-        let aciklama = if hassas {
+        let mut aciklama = if hassas {
             format!("`{yol}` dosyasını okuyup düzenlemek istiyor.")
         } else {
             format!(
@@ -127,7 +147,12 @@ impl Arac for DosyaDuzenle {
         };
         let diff = duzenleme
             .as_ref()
-            .map(|(metin, d)| birlesik_diff(yol.as_str(), metin, &d.yeni));
+            .and_then(|(metin, d)| sinirli_diff(yol.as_str(), metin, &d.yeni));
+        let gorunmez_icerik = kalfa_core::gorunum::gorunmez_var_mi(&String::from_utf8_lossy(&veri))
+            || kalfa_core::gorunum::gorunmez_var_mi(arguman::metin(a, "yeni_metin")?);
+        if !hassas && diff.is_none() {
+            aciklama.push_str(" Diff, boyut sınırı nedeniyle gösterilemiyor.");
+        }
         let mut hedef = YazmaHedefi {
             sonraki_ozet: duzenleme.as_ref().map(|(_, d)| ozet_hex(d.yeni.as_bytes())),
             ..YazmaHedefi::yeni(yol.clone(), Some(ozet_hex(&veri)), baglanti_sayisi)
@@ -136,6 +161,7 @@ impl Arac for DosyaDuzenle {
         Ok(Hazirlik {
             aciklama,
             diff,
+            gorunmez_icerik,
             okunan: vec![yol],
             yazilan: vec![hedef],
             ..Default::default()

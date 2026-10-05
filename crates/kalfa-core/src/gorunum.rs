@@ -4,7 +4,7 @@
 //! yüzeylerinde `⟨U+XXXX⟩` olarak gösterilir ve işlem her kipte onay ister.
 
 pub const GORUNMEZ_UYARISI: &str = "Bu işlemin metninde görünmeyen ya da yazı yönünü \
-değiştiren karakterler var; bunlar ⟨U+…⟩ olarak gösteriliyor.";
+değiştiren karakterler var; gösterilen metinlerde bunlar ⟨U+…⟩ biçiminde işaretlenir.";
 
 /// Unicode 16.0 `Cf` (biçim) karakterleri; `DerivedGeneralCategory.txt`'ten.
 const BICIM_ARALIKLARI: &[(u32, u32)] = &[
@@ -40,6 +40,9 @@ const HANGUL_DOLGU: &[char] = &['\u{115F}', '\u{1160}', '\u{3164}', '\u{FFA0}'];
 pub fn gorunmez_mi(c: char) -> bool {
     if c == '\n' || c == '\t' {
         return false;
+    }
+    if c.is_ascii() {
+        return c.is_ascii_control();
     }
     if c.is_control() || c == '\u{2028}' || c == '\u{2029}' || HANGUL_DOLGU.contains(&c) {
         return true;

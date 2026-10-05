@@ -77,6 +77,8 @@ pub struct Hazirlik {
     /// Sade Türkçe tek cümle: "`a.txt` dosyasını okumak istiyor."
     pub aciklama: String,
     pub diff: Option<String>,
+    /// Diff boyut nedeniyle gösterilmese de görünmez içerik onay kuralı korunur.
+    pub gorunmez_icerik: bool,
     /// Kabuk çağrısının tarifi (aşama 2 tasarımı §3.3).
     pub kabuk: Option<KabukTarifi>,
 }

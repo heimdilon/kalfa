@@ -18,9 +18,9 @@ use cap_std::ambient_authority;
 use cap_std::fs::{Dir, File, OpenOptions};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use kalfa_core::arac::AracHatasi;
-use kalfa_core::geri_alma::{DosyaDurumu, GeriYukleyici};
+use kalfa_core::geri_alma::{DOSYA_SINIRI, DosyaDurumu, GeriYukleyici};
 use kalfa_core::izin::Siniflandirici;
-use kalfa_core::muhur::ozet_hex;
+use kalfa_core::muhur::akistan_ozetle;
 use kalfa_core::yol::CalismaYolu;
 use same_file::Handle;
 use tokio_util::sync::CancellationToken;
@@ -41,6 +41,14 @@ struct TaramaCercevesi {
     goreli: String,
     girisler: cap_std::fs::ReadDir,
     eski_uzunluk: [usize; 3],
+}
+
+pub(crate) struct OncekiDosya {
+    pub ozet: String,
+    pub bayt: u64,
+    pub icerik: Option<Vec<u8>>,
+    pub baglanti_sayisi: u64,
+    pub gorunmez_icerik: bool,
 }
 
 impl CalismaAlani {
@@ -65,9 +73,14 @@ impl CalismaAlani {
 
     pub fn oku(&self, yol: &CalismaYolu) -> io::Result<Vec<u8>> {
         let mut dosya = self.dosya_ac(yol)?;
-        let mut veri = Vec::new();
-        dosya.read_to_end(&mut veri)?;
-        Ok(veri)
+        if dosya.metadata()?.len() > OKUMA_BAYT_SINIRI as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::FileTooLarge,
+                "Dosya 8 MiB okuma sınırını aşıyor; okunmadı.",
+            ));
+        }
+        sinirli_veri_oku(&mut dosya, &CancellationToken::new())
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     /// Çıktı satır sınırından önce, açılan tutamacın baytlarını sınırlar.
@@ -244,7 +257,64 @@ impl CalismaAlani {
 
     /// Dosyanın SHA-256 özeti; dosya yoksa `None`.
     pub fn icerik_ozeti(&self, yol: &CalismaYolu) -> io::Result<Option<String>> {
-        Ok(self.oku_varsa(yol)?.map(|veri| ozet_hex(&veri)))
+        Ok(self.onceki_dosya(yol, false, None)?.map(|d| d.ozet))
+    }
+
+    pub(crate) fn onceki_dosya(
+        &self,
+        yol: &CalismaYolu,
+        sakla: bool,
+        iptal: Option<&CancellationToken>,
+    ) -> io::Result<Option<OncekiDosya>> {
+        if iptal.is_some_and(CancellationToken::is_cancelled) {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "İptal edildi."));
+        }
+        let mut dosya = match self.dosya_ac(yol) {
+            Ok(d) => d,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        Self::acik_dosyayi_ozetle(&mut dosya, sakla, iptal).map(Some)
+    }
+
+    fn acik_dosyayi_ozetle(
+        dosya: &mut File,
+        sakla: bool,
+        iptal: Option<&CancellationToken>,
+    ) -> io::Result<OncekiDosya> {
+        let boyut = dosya.metadata()?.len();
+        let baglanti_sayisi = baglanti::sayi(&dosya.try_clone()?.into_std())?;
+        // Sürekli büyüyen dosya sonsuz özet işine dönüşmez.
+        let azami = boyut
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("Dosya boyutu taşması."))?;
+        let mut okuyucu = (&mut *dosya).take(azami);
+        let okunan = akistan_ozetle(
+            &mut okuyucu,
+            if sakla { DOSYA_SINIRI as usize } else { 0 },
+            || {
+                if iptal.is_some_and(CancellationToken::is_cancelled) {
+                    Err(io::Error::new(io::ErrorKind::Interrupted, "İptal edildi."))
+                } else {
+                    Ok(())
+                }
+            },
+        )?;
+        if okunan.bayt != boyut
+            || dosya.metadata()?.len() != boyut
+            || baglanti::sayi(&dosya.try_clone()?.into_std())? != baglanti_sayisi
+        {
+            return Err(io::Error::other(
+                "Dosya okuma sırasında değişti; işlem yapılmadı.",
+            ));
+        }
+        Ok(OncekiDosya {
+            ozet: okunan.ozet,
+            bayt: okunan.bayt,
+            icerik: okunan.icerik,
+            baglanti_sayisi,
+            gorunmez_icerik: okunan.gorunmez_icerik,
+        })
     }
 
     /// Hard link sayısı; dosya yoksa 1.
@@ -480,16 +550,9 @@ fn dislama_hatasi() -> AracHatasi {
 /// link'li dosyaya yazılmaz ve yazmadan hemen önce şimdiki özet denetlenir.
 impl GeriYukleyici for CalismaAlani {
     fn durum(&self, yol: &CalismaYolu) -> io::Result<Option<DosyaDurumu>> {
-        let mut dosya = match self.dosya_ac(yol) {
-            Ok(d) => d,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(e),
-        };
-        let mut veri = Vec::new();
-        dosya.read_to_end(&mut veri)?;
-        Ok(Some(DosyaDurumu {
-            ozet: ozet_hex(&veri),
-            baglanti_sayisi: baglanti::sayi(&dosya.into_std())?,
+        Ok(self.onceki_dosya(yol, false, None)?.map(|d| DosyaDurumu {
+            ozet: d.ozet,
+            baglanti_sayisi: d.baglanti_sayisi,
         }))
     }
 
@@ -510,9 +573,7 @@ impl GeriYukleyici for CalismaAlani {
         if let Some(g) = &git {
             git_takma_adi_reddet(g, &ad, &dosya.try_clone()?.into_std())?;
         }
-        let mut veri = Vec::new();
-        dosya.read_to_end(&mut veri)?;
-        if ozet_hex(&veri) != beklenen {
+        if Self::acik_dosyayi_ozetle(&mut dosya, false, None)?.ozet != beklenen {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "Dosya önizlemeden sonra değişti; geri yazılmadı.",

@@ -50,6 +50,24 @@ fn durum_ozeti_ve_baglanti_sayisini_verir() {
 }
 
 #[test]
+fn buyuk_dosyanin_durumu_ve_geri_yazmasi_akisli_ozetlenir() {
+    let (d, a) = alan();
+    let boyut = 16 * 1024 * 1024;
+    let p = d.path().join("buyuk.txt");
+    std::fs::File::create(&p).unwrap().set_len(boyut).unwrap();
+    let ozet = ozet_hex(&vec![0; boyut as usize]);
+    assert_eq!(a.durum(&y("buyuk.txt")).unwrap().unwrap().ozet, ozet);
+    assert_eq!(a.icerik_ozeti(&y("buyuk.txt")).unwrap().unwrap(), ozet);
+    assert!(
+        a.geri_yaz(&y("buyuk.txt"), Some(b"eski"), &ozet_hex(b"yanlis"))
+            .is_err()
+    );
+    assert_eq!(std::fs::metadata(&p).unwrap().len(), boyut);
+    a.geri_yaz(&y("buyuk.txt"), Some(b"eski"), &ozet).unwrap();
+    assert_eq!(std::fs::read(p).unwrap(), b"eski");
+}
+
+#[test]
 fn geri_yaz_onceki_icerigi_koyar() {
     let (d, a) = alan();
     std::fs::write(d.path().join("x.txt"), "yeni ve daha uzun\n").unwrap();

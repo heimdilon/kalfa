@@ -4,13 +4,102 @@ use async_trait::async_trait;
 use kalfa_core::arac::*;
 use kalfa_core::izin::Kip;
 use kalfa_core::kimlik::CagriId;
-use kalfa_core::muhur::{muhur_hesapla, ozet_hex};
+use kalfa_core::muhur::{akistan_ozetle, muhur_hesapla, ozet_hex};
 use kalfa_core::yol::CalismaYolu;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 fn y(s: &str) -> CalismaYolu {
     CalismaYolu::coz(s).unwrap()
+}
+
+#[test]
+fn akisli_ozet_sinirda_saklar_asimda_tamponu_birakir() {
+    for veri in [b"abc".as_slice(), b"abcd", b"abcde"] {
+        let sonuc = akistan_ozetle(&mut std::io::Cursor::new(veri), 4, || Ok(())).unwrap();
+        assert_eq!(sonuc.ozet, ozet_hex(veri));
+        assert_eq!(sonuc.bayt, veri.len() as u64);
+        assert_eq!(
+            sonuc.icerik.as_deref(),
+            if veri.len() <= 4 { Some(veri) } else { None }
+        );
+    }
+    let bos = akistan_ozetle(&mut std::io::empty(), 0, || Ok(())).unwrap();
+    assert_eq!(bos.ozet, ozet_hex(b""));
+}
+
+#[test]
+fn akisli_gorunmez_denetimi_bolunen_utf8_ve_crlf_icin_dogrudur() {
+    for karakter in ["\u{200b}", "\u{e0001}"] {
+        for geride in [1, 2, 3] {
+            let mut veri = vec![b'a'; 64 * 1024 - geride];
+            veri.extend_from_slice(karakter.as_bytes());
+            let sonuc = akistan_ozetle(&mut std::io::Cursor::new(&veri), 0, || Ok(())).unwrap();
+            assert!(sonuc.gorunmez_icerik);
+            assert_eq!(sonuc.ozet, ozet_hex(&veri));
+        }
+    }
+    let mut veri = vec![b'a'; 64 * 1024 - 1];
+    veri.extend_from_slice(b"\r\nnormal\r\n");
+    let sonuc = akistan_ozetle(&mut std::io::Cursor::new(&veri), 0, || Ok(())).unwrap();
+    assert!(
+        !sonuc.gorunmez_icerik,
+        "parça sonunda CRLF görünmez karakter değildir"
+    );
+    veri.push(b'\r');
+    assert!(
+        akistan_ozetle(&mut std::io::Cursor::new(veri), 0, || Ok(()))
+            .unwrap()
+            .gorunmez_icerik
+    );
+}
+
+#[test]
+fn diff_olmadan_gorunmez_icerik_bilgisi_muhre_baglanir() {
+    let cagri = CagriId::yeni();
+    let mut h = Hazirlik::default();
+    let once = muhur_hesapla(cagri, "dosya_yaz", &json!({}), &h);
+    h.gorunmez_icerik = true;
+    assert_ne!(once, muhur_hesapla(cagri, "dosya_yaz", &json!({}), &h));
+}
+
+#[test]
+fn akisli_ozet_buyuk_kaynaktan_sabit_parcalar_okur_ve_iptali_isler() {
+    struct Kaynak {
+        kalan: usize,
+        okunan: usize,
+    }
+    impl std::io::Read for Kaynak {
+        fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
+            assert!(b.len() <= 64 * 1024);
+            let n = b.len().min(self.kalan);
+            b[..n].fill(b'a');
+            self.kalan -= n;
+            self.okunan += n;
+            Ok(n)
+        }
+    }
+    let mut kaynak = Kaynak {
+        kalan: 16 * 1024 * 1024,
+        okunan: 0,
+    };
+    let sonuc = akistan_ozetle(&mut kaynak, 8 * 1024 * 1024, || Ok(())).unwrap();
+    assert!(sonuc.icerik.is_none());
+    assert_eq!(sonuc.bayt, 16 * 1024 * 1024);
+    let mut denetim = 0;
+    kaynak.kalan = 16 * 1024 * 1024;
+    kaynak.okunan = 0;
+    let hata = akistan_ozetle(&mut kaynak, 0, || {
+        denetim += 1;
+        if denetim == 4 {
+            Err(std::io::ErrorKind::Interrupted.into())
+        } else {
+            Ok(())
+        }
+    })
+    .unwrap_err();
+    assert_eq!(hata.kind(), std::io::ErrorKind::Interrupted);
+    assert_eq!(kaynak.okunan, 3 * 64 * 1024);
 }
 
 #[test]

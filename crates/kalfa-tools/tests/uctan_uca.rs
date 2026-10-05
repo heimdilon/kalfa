@@ -106,6 +106,58 @@ async fn gizli_dosyanin_normal_sabit_baglantisi_her_kipte_okuma_onayi_ister() {
     }
 }
 
+#[tokio::test]
+async fn diff_gosterilmeyen_gorunmez_icerik_yine_onay_ister() {
+    for kip in [Kip::Proje, Kip::Serbest] {
+        for kayitli in [false, true] {
+            for duzenle in [false, true] {
+                let o = ortam();
+                let (ad, args) = if duzenle {
+                    std::fs::write(o.alan.path().join("a.txt"), "a\n".repeat(4097)).unwrap();
+                    (
+                        "dosya_duzenle",
+                        json!({"yol":"a.txt", "eski_metin":"a", "yeni_metin":"\u{200b}", "tumu":true}),
+                    )
+                } else {
+                    (
+                        "dosya_yaz",
+                        json!({"yol":"a.txt", "icerik":"\u{200b}\n".repeat(4097)}),
+                    )
+                };
+                let s = SahteSaglayici::yeni(vec![
+                    SahteYanit::arac(ad, args),
+                    SahteYanit::metin("bitti"),
+                ]);
+                let mut d = gercek_araclarla(&o, &s, kip, kayitli);
+                d.gonder(mesaj("yaz")).await;
+                let ogeler = onay_bekle(&mut d).await;
+                assert!(ogeler[0].diff.is_none());
+                assert!(
+                    ogeler[0]
+                        .uyarilar
+                        .iter()
+                        .any(|u| u == kalfa_core::gorunum::GORUNMEZ_UYARISI)
+                );
+                d.gonder(Komut::AracOnayi {
+                    cagri: ogeler[0].cagri,
+                    karar: OnayKarari::Reddet { gerekce: None },
+                    muhur: ogeler[0].muhur.clone(),
+                })
+                .await;
+                assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+                if duzenle {
+                    assert_eq!(
+                        std::fs::read_to_string(o.alan.path().join("a.txt")).unwrap(),
+                        "a\n".repeat(4097)
+                    );
+                } else {
+                    assert!(!o.alan.path().join("a.txt").exists());
+                }
+            }
+        }
+    }
+}
+
 fn arac_yanitlari(s: &SahteSaglayici, istek: usize) -> Vec<String> {
     s.istekler()[istek]
         .messages

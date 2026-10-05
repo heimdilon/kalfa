@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::io::{self, Read};
 
 use crate::arac::Hazirlik;
 use crate::kimlik::CagriId;
@@ -14,6 +15,71 @@ pub struct OnayMuhru(pub String);
 
 pub fn ozet_hex(veri: &[u8]) -> String {
     hex::encode(Sha256::digest(veri))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct OzetliOkuma {
+    pub ozet: String,
+    pub bayt: u64,
+    /// Sınır aşılınca bırakılır; kısmi eski içerik geri alma için kullanılmaz.
+    pub icerik: Option<Vec<u8>>,
+    pub gorunmez_icerik: bool,
+}
+
+/// Sabit tamponla özetler; içerik yalnız saklama sınırına kadar tutulur.
+/// Çağıranın iptal/okuma denetimi her parçadan önce çalışır.
+pub fn akistan_ozetle(
+    okuyucu: &mut impl Read,
+    saklama_siniri: usize,
+    mut denetle: impl FnMut() -> io::Result<()>,
+) -> io::Result<OzetliOkuma> {
+    let mut h = Sha256::new();
+    let mut bayt = 0_u64;
+    let mut icerik = Some(Vec::new());
+    let mut tampon = [0_u8; 64 * 1024 + 3];
+    let mut onceki_adet = 0;
+    let mut gorunmez_icerik = false;
+    loop {
+        denetle()?;
+        let adet = okuyucu.read(&mut tampon[3..])?;
+        if adet == 0 {
+            gorunmez_icerik |= crate::gorunum::gorunmez_var_mi(&String::from_utf8_lossy(
+                &tampon[3 - onceki_adet..3],
+            ));
+            break;
+        }
+        bayt = bayt
+            .checked_add(adet as u64)
+            .ok_or_else(|| io::Error::other("Dosya boyutu taşması."))?;
+        h.update(&tampon[3..3 + adet]);
+        if !gorunmez_icerik {
+            // Parçada bölünen UTF-8 ve CRLF sonraki parçada tamamlanır.
+            let son = 3 + adet;
+            let tarama_sonu = if tampon[son - 1] == b'\r' {
+                son - 1
+            } else {
+                son
+            };
+            gorunmez_icerik = crate::gorunum::gorunmez_var_mi(&String::from_utf8_lossy(
+                &tampon[3 - onceki_adet..tarama_sonu],
+            ));
+        }
+        if let Some(veri) = &mut icerik {
+            if adet > saklama_siniri.saturating_sub(veri.len()) {
+                icerik = None;
+            } else {
+                veri.extend_from_slice(&tampon[3..3 + adet]);
+            }
+        }
+        onceki_adet = (onceki_adet + adet).min(3);
+        tampon.copy_within(3 + adet - onceki_adet..3 + adet, 3 - onceki_adet);
+    }
+    Ok(OzetliOkuma {
+        ozet: hex::encode(h.finalize()),
+        bayt,
+        icerik,
+        gorunmez_icerik,
+    })
 }
 
 fn alan(h: &mut Sha256, veri: &[u8]) {
@@ -32,6 +98,9 @@ pub fn muhur_hesapla(
     alan(&mut h, cagri.to_string().as_bytes());
     alan(&mut h, arac.as_bytes());
     alan(&mut h, argumanlar.to_string().as_bytes());
+    if hazirlik.gorunmez_icerik {
+        alan(&mut h, b"gorunmez-icerik");
+    }
 
     let mut okunan: Vec<&str> = hazirlik.okunan.iter().map(|y| y.as_str()).collect();
     okunan.sort_unstable();

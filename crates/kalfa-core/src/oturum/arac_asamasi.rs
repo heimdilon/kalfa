@@ -937,6 +937,9 @@ impl Oturum {
 /// Onay yüzeyinde gösterilen metinlerden biri görünmez karakter taşıyor mu:
 /// komut, dizin, diff, okunan ve yazılan yollar.
 fn gorunmez_icerir(h: &Hazirlik) -> bool {
+    if h.gorunmez_icerik {
+        return true;
+    }
     let kabuk = h
         .kabuk
         .iter()

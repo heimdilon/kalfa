@@ -425,6 +425,10 @@ async fn buyuk_dosyanin_onceki_icerigi_tasinmaz() {
     assert_eq!(hedef.onceki_ozet.as_deref(), Some(ozet_hex(&veri).as_str()));
     assert_eq!(hedef.onceki_bayt, boyut as u64);
     assert!(!hedef.geri_alinabilir());
+    assert!(
+        h.diff.is_none(),
+        "büyük önceki içerik diff için de yüklenmemeli"
+    );
 
     // Sınırdaki dosya saklanır.
     let tam = vec![b'b'; kalfa_core::geri_alma::DOSYA_SINIRI as usize];
@@ -437,6 +441,80 @@ async fn buyuk_dosyanin_onceki_icerigi_tasinmaz() {
     assert_eq!(
         h.yazilan[0].onceki_icerik.as_deref().map(<[u8]>::len),
         Some(tam.len())
+    );
+}
+
+#[tokio::test]
+async fn buyuk_onceki_dosya_duzenleme_hazirliginde_reddedilir() {
+    let (d, a) = alan();
+    let veri = vec![b'a'; kalfa_core::geri_alma::DOSYA_SINIRI as usize + 1];
+    std::fs::write(d.path().join("buyuk.txt"), &veri).unwrap();
+    let args = json!({"yol":"buyuk.txt", "eski_metin":"a", "yeni_metin":"a", "tumu":true});
+    assert!(DosyaDuzenle::yeni(a).hazirla(&args).await.is_err());
+}
+
+#[tokio::test]
+async fn seyrek_buyuk_dosyaya_kor_yazma_akisli_ozetle_calisir() {
+    let (d, a) = alan();
+    let p = d.path().join("seyrek.txt");
+    let boyut = 32 * 1024 * 1024;
+    std::fs::File::create(&p).unwrap().set_len(boyut).unwrap();
+    let yaz = DosyaYaz::yeni(a.clone());
+    let args = json!({"yol":"seyrek.txt", "icerik":"kisa\n"});
+    let h = yaz.hazirla(&args).await.unwrap();
+    assert!(
+        h.okunan.is_empty(),
+        "kör yazma K8 okuma onayına dönüşmemeli"
+    );
+    assert_eq!(h.yazilan[0].onceki_bayt, boyut);
+    assert!(h.yazilan[0].buyuk);
+    assert!(h.yazilan[0].onceki_icerik.is_none());
+    assert!(h.diff.is_none());
+    assert!(h.aciklama.contains("Diff, boyut sınırı"));
+    assert_eq!(
+        h.yazilan[0].onceki_ozet.as_deref(),
+        Some(ozet_hex(&vec![0; boyut as usize]).as_str())
+    );
+    assert!(
+        a.oku(&kalfa_core::yol::CalismaYolu::coz("seyrek.txt").unwrap())
+            .is_err()
+    );
+    calistir(&yaz, &args, &h).await.unwrap();
+    assert_eq!(std::fs::read(&p).unwrap(), b"kisa\n");
+}
+
+#[tokio::test]
+async fn duzenleme_cikti_cogalmasi_tahsis_oncesi_sinirlanir() {
+    let (d, a) = alan();
+    let eski = vec![b'a'; 1024];
+    std::fs::write(d.path().join("a.txt"), &eski).unwrap();
+    let args =
+        json!({"yol":"a.txt", "eski_metin":"a", "yeni_metin":"b".repeat(64 * 1024), "tumu":true});
+    let hata = DosyaDuzenle::yeni(a).hazirla(&args).await.unwrap_err();
+    assert!(hata.to_string().contains("32 MiB çıktı sınırı"));
+    assert_eq!(std::fs::read(d.path().join("a.txt")).unwrap(), eski);
+}
+
+#[tokio::test]
+async fn cok_satirli_diff_tablolari_hazirlikta_olusturulmaz() {
+    let (d, a) = alan();
+    std::fs::write(d.path().join("a.txt"), "a\n".repeat(4097)).unwrap();
+    let yaz = DosyaYaz::yeni(a.clone());
+    let h = yaz
+        .hazirla(&json!({"yol":"a.txt", "icerik":"kisa"}))
+        .await
+        .unwrap();
+    assert!(h.diff.is_none());
+    assert!(!h.yazilan[0].buyuk);
+    assert!(h.yazilan[0].onceki_icerik.is_some());
+    let duzenle = DosyaDuzenle::yeni(a);
+    let args = json!({"yol":"a.txt", "eski_metin":"a", "yeni_metin":"b", "tumu":true});
+    let h = duzenle.hazirla(&args).await.unwrap();
+    assert!(h.diff.is_none());
+    calistir(&duzenle, &args, &h).await.unwrap();
+    assert_eq!(
+        std::fs::read_to_string(d.path().join("a.txt")).unwrap(),
+        "b\n".repeat(4097)
     );
 }
 
