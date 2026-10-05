@@ -131,3 +131,33 @@ async fn evren_saglayici_istemciyi_sarar() {
     let olaylar: Vec<_> = a.olaylar.collect().await;
     assert!(olaylar.iter().any(|o| matches!(o, Ok(AkisOlayi::AracCagrilari(v)) if v[0].function.arguments == "{\"sehir\": \"İzmir\"}")));
 }
+
+#[tokio::test]
+async fn sahte_sohbet_kuyrugu_sirayla_yanitlar() {
+    let s = SahteSaglayici::yeni(vec![]);
+    s.sohbet_ekle(kalfa_core::test_destek::SahteSohbet::Metin(
+        "yanit 1".into(),
+    ));
+    s.sohbet_ekle(kalfa_core::test_destek::SahteSohbet::Json(
+        json!({"guvenli": true}),
+    ));
+    s.sohbet_ekle(kalfa_core::test_destek::SahteSohbet::Hata(
+        EvrenError::ag_baglanti("hata"),
+    ));
+
+    let (c1, meta1) = s.sohbet(istek()).await.unwrap();
+    assert_eq!(c1.choices[0].message.content.as_deref(), Some("yanit 1"));
+    assert_eq!(meta1.istek_id.as_deref(), Some("sahte-sohbet-1"));
+
+    let (c2, meta2) = s.sohbet(istek()).await.unwrap();
+    assert_eq!(
+        c2.choices[0].message.content.as_deref(),
+        Some(r#"{"guvenli":true}"#)
+    );
+    assert_eq!(meta2.istek_id.as_deref(), Some("sahte-sohbet-2"));
+
+    let h3 = s.sohbet(istek()).await;
+    assert!(matches!(h3, Err(EvrenError::Ag { .. })));
+
+    assert_eq!(s.sohbet_istekleri().len(), 3);
+}

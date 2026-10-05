@@ -199,6 +199,7 @@ impl Arac for DosyaDuzenle {
             kaynak: format!("dosya:{yol}"),
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
+            kalfa_uretimi: true,
         })
     }
 }

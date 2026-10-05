@@ -4,7 +4,7 @@
 // denetler).
 
 /// Ana pencerenin komutları.
-pub const ANA_PENCERE_KOMUTLARI: [&str; 36] = [
+pub const ANA_PENCERE_KOMUTLARI: [&str; 38] = [
     "uygulama_durumu",
     "oturumlari_listele",
     "calisma_alani_sec",
@@ -37,6 +37,8 @@ pub const ANA_PENCERE_KOMUTLARI: [&str; 36] = [
     "yalitimi_onar",
     "yalitim_calisma_alanlari",
     "yalitim_calisma_alanini_kaldir",
+    "denetci_kipi",
+    "denetci_kipini_ayarla",
     "gonderim_gunlugu",
     "gonderim_ogesi",
     "onizleme_ayarla",

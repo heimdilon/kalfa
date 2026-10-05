@@ -638,6 +638,7 @@ impl Arac for KabukAraci {
             kaynak: istek.kaynak,
             guvenlik_uyarilari,
             degisiklikler: degisiklikler.map(Box::new),
+            kalfa_uretimi: false,
         };
         if sonuc.bitis == Bitis::Cikti(Some(0)) && !karantina_basarisiz {
             Ok(cikti)

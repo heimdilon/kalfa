@@ -114,8 +114,8 @@ describe('gönderim günlüğü ve önizleme', () => {
       if (cb && !cb.checked) cb.click();
     });
 
-    // "Seçilenleri gönderme" düğmesine bas
-    await k.dugme('Seçilenleri gönderme');
+    // İşaretli öğe varken tek düğme işaretlileri çıkarıp gönderir (3c Görev 8)
+    await k.dugme('İşaretlileri çıkarıp gönder');
 
     // Turun bitmesini bekle
     assert.equal(await k.turSonuBekle(2), 'Normal');

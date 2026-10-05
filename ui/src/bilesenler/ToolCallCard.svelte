@@ -20,6 +20,8 @@
     class?: string;
     /** Çıktı önizlemesi; çoğunlukla bir CodeBlock. */
     children?: Snippet;
+    /** Başlığın altında rozetler (örneğin güvenlik denetçisinin, 3c). */
+    rozet?: Snippet;
   }
 
   let {
@@ -31,6 +33,7 @@
     icon = 'file-text',
     class: sinif,
     children,
+    rozet,
   }: Props = $props();
 
   const DURUM_IKONU: Record<Durum, IkonAdi> = {
@@ -49,6 +52,7 @@
       <div class="ad">{tool}</div>
       {#if target}<div class="hedef">{target}</div>{/if}
       {#if meta}<div class="ozet">{meta}</div>{/if}
+      {#if rozet}<div class="rozetler">{@render rozet()}</div>{/if}
     </div>
     <span class={['durum', `d-${status}`]}>
       <Icon
@@ -78,6 +82,9 @@
   .metinler {
     flex: 1;
     min-width: 0;
+  }
+  .rozetler {
+    margin-top: 6px;
   }
   .ad {
     font: var(--fw-semibold) var(--text-small) / 1.3 var(--font-sans);

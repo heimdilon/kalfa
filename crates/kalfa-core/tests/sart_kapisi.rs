@@ -94,6 +94,15 @@ impl Saglayici for KapiliSaglayici {
         ))
     }
 
+    async fn sohbet(
+        &self,
+        _istek: ChatRequest,
+    ) -> Result<(kalfa_evren::tipler::ChatResponse, kalfa_evren::YanitMeta), EvrenError> {
+        Err(EvrenError::ag_baglanti(
+            "test sağlayıcısında bloklu sohbet yok",
+        ))
+    }
+
     async fn sart_durumu(&self) -> Result<TermsStatus, EvrenError> {
         Self::bekle(&self.durum_blok).await;
         let surum = self.surum.load(Ordering::SeqCst);

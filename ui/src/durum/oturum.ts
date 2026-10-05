@@ -6,6 +6,7 @@ import type {
   AracDurumu,
   BitisNedeni,
   CagriId,
+  DenetimSonucu,
   DurumOzeti,
   GecmisSayfasi,
   GeriAlmaPlani,
@@ -52,6 +53,8 @@ export type EkranOgesi =
       sonuc: string | null;
       /** Kabuğun canlı çıktısı; kayıttan gelen çağrıda yok. */
       terminal: Terminal | null;
+      /** Güvenlik denetçisinin rozeti (3c); eski kayıtta ve kapalı kipte yok. */
+      denetim: DenetimRozeti | null;
     })
   | (Ortak & {
       tip: 'OnayIstegi';
@@ -117,6 +120,9 @@ export interface OturumEkrani {
   istek_sayaci: number;
 }
 
+/** Araç kartındaki denetim rozetinin durumu (3c Görev 8). */
+export type DenetimRozeti = { tip: 'Suruyor' } | { tip: 'Atlandi' } | DenetimSonucu;
+
 export type Girdi =
   | { tip: 'Kanal'; mesaj: KanalMesaji }
   | { tip: 'EskiSayfa'; sayfa: GecmisSayfasi }
@@ -159,6 +165,7 @@ export function gecmisOgesi(o: GorunumOgesi): EkranOgesi {
         durum: o.durum,
         sonuc: o.sonuc,
         terminal: null,
+        denetim: o.denetim ?? null,
       };
     case 'TurSonu':
       return { ...o, anahtar: `g-${o.sira}-s` };
@@ -347,6 +354,7 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
         durum: 'Suruyor',
         sonuc: null,
         terminal: null,
+        denetim: null,
       });
       return;
     case 'AracSonucu': {
@@ -356,6 +364,15 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
       if (o?.tip === 'AracCagrisi') d.ogeler[i] = { ...o, durum: yuk.durum, sonuc: yuk.icerik };
       return;
     }
+    case 'DenetimBasladi':
+      denetimiIsle(d, yuk.cagri, { tip: 'Suruyor' });
+      return;
+    case 'DenetimSonucu':
+      denetimiIsle(d, yuk.cagri, yuk.sonuc);
+      return;
+    case 'DenetimAtlandi':
+      denetimiIsle(d, yuk.cagri, { tip: 'Atlandi' });
+      return;
     case 'AracCiktisiParcasi': {
       const i = d.ogeler.findLastIndex((o) => o.tip === 'AracCagrisi' && o.cagri === yuk.cagri);
       const o = d.ogeler[i];
@@ -543,6 +560,13 @@ function akisaEkle(d: OturumEkrani, z: Zarf<Olay>, alan: 'metin' | 'dusunce', me
 function akisiKapat(d: OturumEkrani) {
   const son = d.ogeler.at(-1);
   if (son?.tip === 'Yanit' && son.akista) d.ogeler[d.ogeler.length - 1] = { ...son, akista: false };
+}
+
+/** Denetçinin rozeti, çağrının kartına (3c Görev 8). */
+function denetimiIsle(d: OturumEkrani, cagri: CagriId, rozet: DenetimRozeti) {
+  const i = d.ogeler.findLastIndex((o) => o.tip === 'AracCagrisi' && o.cagri === cagri);
+  const o = d.ogeler[i];
+  if (o?.tip === 'AracCagrisi') d.ogeler[i] = { ...o, denetim: rozet };
 }
 
 /** Tur bittiğinde karar bekleyen kartlar artık karar almaz. */

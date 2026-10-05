@@ -7,7 +7,7 @@
 <script lang="ts">
   import StatusBar from '../bilesenler/StatusBar.svelte';
   import StatusItem from '../bilesenler/StatusItem.svelte';
-  import { KIP_ADI, m } from '../dil/tr';
+  import { DENETCI_KIPI_ADI, KIP_ADI, m } from '../dil/tr';
   import type { AnaDurum } from './anaDurum.svelte';
   import { kredi, saat, sayi } from './bicim';
 
@@ -84,6 +84,15 @@
       {#if ozet.kip}
         <StatusItem icon="shield" tone="accent">{m(KIP_ADI[ozet.kip])}</StatusItem>
       {/if}
+    {/if}
+    {#if durum.denetci}
+      <StatusItem
+        icon={durum.denetci.ayar_hatasi ? 'triangle-alert' : 'shield-check'}
+        tone={durum.denetci.ayar_hatasi ? 'warn' : undefined}
+        title={durum.denetci.ayar_hatasi ?? m('durum.denetci_ipucu')}
+      >
+        {m('durum.denetci', { kip: m(DENETCI_KIPI_ADI[durum.denetci.kip]) })}
+      </StatusItem>
     {/if}
   {/snippet}
 </StatusBar>

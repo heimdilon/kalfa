@@ -10,7 +10,8 @@
   import Card from '../bilesenler/Card.svelte';
   import Checkbox from '../bilesenler/Checkbox.svelte';
   import SourceTag from '../bilesenler/SourceTag.svelte';
-  import { m } from '../dil/tr';
+  import { untrack } from 'svelte';
+  import { denetimKategorisi, m } from '../dil/tr';
   import type { EkranOgesi } from '../durum/oturum';
   import type { CagriId, IslemId } from '../ipc/tipler';
 
@@ -22,7 +23,26 @@
     onkarar: (islem: IslemId, gonderilmeyecekler: CagriId[]) => void;
   } = $props();
 
-  let secilenler = $state<Set<CagriId>>(new Set());
+  // İşaretin anlamı "gönderme"dir. Katı denetimde şüpheli ve denetlenemeyen
+  // öğeler işaretli gelir; kullanıcı işareti kaldırırsa gider (3c Görev 6).
+  let secilenler = $state<Set<CagriId>>(
+    untrack(() =>
+      oge.neden === 'Denetim'
+        ? new Set(oge.ogeler.filter((o) => o.denetim).map((o) => o.cagri))
+        : new Set(),
+    ),
+  );
+
+  /** Çekirdeğin etiketi ("şüpheli: <kategori>", "denetlenemedi") okunur metne. */
+  function denetimEtiketi(etiket: string): string {
+    if (etiket.startsWith('şüpheli: ')) {
+      return m('denetim.rozet.supheli', {
+        kategori: denetimKategorisi(etiket.slice('şüpheli: '.length)),
+      });
+    }
+    if (etiket === 'denetlenemedi') return m('denetim.rozet.bilinmiyor');
+    return etiket;
+  }
 
   const baslik = $derived(
     oge.neden === 'Denetim'
@@ -48,17 +68,12 @@
       <Button
         variant="primary"
         size="sm"
+        title={m('onizleme.kart.isaret_ipucu')}
         onclick={() => onkarar(oge.islem, Array.from(secilenler))}
       >
-        {m('onizleme.kart.gonder')}
-      </Button>
-      <Button
-        variant="secondary"
-        size="sm"
-        disabled={secilenler.size === 0}
-        onclick={() => onkarar(oge.islem, Array.from(secilenler))}
-      >
-        {m('onizleme.kart.secilenleri_gonderme')}
+        {secilenler.size === 0
+          ? m('onizleme.kart.gonder')
+          : m('onizleme.kart.isaretlileri_cikar')}
       </Button>
     {:else if oge.durum === 'Yanitlandi'}
       <Badge tone="ok">{m('onizleme.kart.yanitlandi')}</Badge>
@@ -78,7 +93,7 @@
         {/if}
         <SourceTag kaynak={o.kaynak} bayt={o.bayt} />
         {#if o.denetim}
-          <span class="denetim-uyarisi">{o.denetim}</span>
+          <span class="denetim-uyarisi">{denetimEtiketi(o.denetim)}</span>
         {/if}
       </li>
     {/each}

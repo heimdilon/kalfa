@@ -175,6 +175,7 @@ impl Arac for Deneme {
             kaynak: "deneme".into(),
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
+            kalfa_uretimi: false,
         })
     }
 }

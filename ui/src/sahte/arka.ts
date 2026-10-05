@@ -5,6 +5,8 @@ import type { Channel } from '@tauri-apps/api/core';
 import { mockIPC } from '@tauri-apps/api/mocks';
 import { KIPLER } from '../ipc/tipler';
 import type {
+  DenetciDurumu,
+  DenetimKipi,
   CagriId,
   CalismaAlani,
   GecmisSayfasi,
@@ -115,6 +117,7 @@ export class SahteArka {
   yukseltmeOnayi = true;
   /** Şart penceresinin durumu ve gösterilecek metin. */
   sart: SartPenceresiDurumu = { tip: 'Tamam' };
+  denetci: DenetciDurumu = { kip: 'Kapali' };
   sartMetni: SartMetni = {
     surum: 1,
     esasli: true,
@@ -241,6 +244,11 @@ export class SahteArka {
     switch (komut) {
       case 'uygulama_durumu':
         return this.uygulama;
+      case 'denetci_kipi':
+        return this.denetci;
+      case 'denetci_kipini_ayarla':
+        this.denetci = { kip: a.kip as DenetimKipi };
+        return this.denetci;
       case 'oturumlari_listele':
         return [...this.#oturumlar.values()]
           .map((o) => o.satir)

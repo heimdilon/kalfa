@@ -181,3 +181,19 @@ fn mesaj_serilestirme_reasoning_gondermez() {
     let bos = serde_json::to_value(ChatMessage::assistant(Some("x".into()), vec![])).unwrap();
     assert!(bos.get("tool_calls").is_none());
 }
+
+#[test]
+fn max_tokens_verilmezse_govdede_yok() {
+    let mut req = ChatRequest::new("glm-5.3", vec![ChatMessage::user("merhaba")]);
+    req.max_tokens = None;
+    let json = serde_json::to_string(&req).unwrap();
+    assert!(!json.contains("max_tokens"));
+}
+
+#[test]
+fn max_tokens_govdeye_yazilir() {
+    let mut req = ChatRequest::new("glm-5.3", vec![ChatMessage::user("merhaba")]);
+    req.max_tokens = Some(2048);
+    let json = serde_json::to_string(&req).unwrap();
+    assert!(json.contains(r#""max_tokens":2048"#));
+}

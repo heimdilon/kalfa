@@ -222,9 +222,27 @@ export type Olay =
   /** Turun özeti; `Tamamlandi`'dan sonra gelir. */
   | { tip: 'TurOzeti'; ozet: TurOzeti }
   /** Gönderim öncesi önizleme (aşama 3b). */
-  | { tip: 'GonderimOnizlemesi'; islem: IslemId; ogeler: OnizlemeOgesi[]; neden: OnizlemeNedeni };
+  | { tip: 'GonderimOnizlemesi'; islem: IslemId; ogeler: OnizlemeOgesi[]; neden: OnizlemeNedeni }
+  /** Denetçi başladı (aşama 3c). */
+  | { tip: 'DenetimBasladi'; cagri: CagriId }
+  /** Denetçi sonucu (aşama 3c). */
+  | { tip: 'DenetimSonucu'; cagri: CagriId; sonuc: DenetimSonucu }
+  | { tip: 'DenetimAtlandi'; cagri: CagriId };
 
 export type OnizlemeNedeni = 'Onizleme' | 'Denetim';
+
+export type DenetimKipi = 'Kapali' | 'Uyar' | 'Kati';
+
+/** Denetçi kipi ve `ayarlar.json`'ın durumu (3c Görev 7). */
+export interface DenetciDurumu {
+  kip: DenetimKipi;
+  ayar_hatasi?: string;
+}
+
+export type DenetimSonucu =
+  | { tip: 'Guvenli' }
+  | { tip: 'Supheli'; kategori: string; gerekce: string }
+  | { tip: 'Bilinmiyor'; neden: string };
 
 export interface OnizlemeOgesi {
   cagri: CagriId;
@@ -264,6 +282,7 @@ export type GorunumOgesi =
       /** `null`: sonuç kaydı yok, çağrı hiç başlamadı. */
       durum: AracDurumu | null;
       sonuc: string | null;
+      denetim?: DenetimSonucu | null;
     }
   | { tip: 'TurSonu'; sira: number; tur: TurId | null; neden: BitisNedeni }
   | { tip: 'GuvenlikUyarisi'; sira: number; tur: TurId | null; mesaj: string }
@@ -294,6 +313,7 @@ export interface DurumOzeti {
   tamamlama: number;
   dusunce: number;
   onizleme_acik?: boolean;
+  denetci_kipi?: DenetimKipi;
 }
 
 export type OturumDurumu =

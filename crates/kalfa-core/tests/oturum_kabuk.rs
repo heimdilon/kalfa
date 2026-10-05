@@ -113,6 +113,7 @@ impl Arac for SahteKabuk {
             kaynak: "kabuk:test".into(),
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
+            kalfa_uretimi: false,
         };
         if self.basarisiz {
             Err(AracHatasi::Basarisiz(c))
@@ -486,6 +487,7 @@ impl Arac for HazirlikliKabuk {
             kaynak: "kabuk:test".into(),
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
+            kalfa_uretimi: false,
         })
     }
 }

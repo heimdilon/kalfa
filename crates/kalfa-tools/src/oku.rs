@@ -108,6 +108,7 @@ impl Arac for DosyaOku {
                 kaynak: format!("dosya:{yol}"),
                 guvenlik_uyarilari: Vec::new(),
                 degisiklikler: None,
+                kalfa_uretimi: false,
             });
         }
 
@@ -141,6 +142,7 @@ impl Arac for DosyaOku {
             kaynak: format!("dosya:{yol}:{bas}-{son}"),
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
+            kalfa_uretimi: false,
         })
     }
 }

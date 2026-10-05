@@ -7,7 +7,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use kalfa_core::saglayici::{Saglayici, SaglayiciAkisi};
-use kalfa_evren::tipler::{ChatRequest, Role, TermsStatus, TermsText};
+use kalfa_evren::tipler::{
+    ChatMessage, ChatRequest, ChatResponse, Choice, Role, TermsStatus, TermsText,
+};
 use kalfa_evren::{EvrenError, YanitMeta};
 
 use super::senaryo::{self, Adim, Senaryo};
@@ -18,6 +20,8 @@ use crate::evren::SaglayiciUretici;
 pub const GECERSIZ_ANAHTAR: &str = "evren_llm_gecersiz";
 /// Bu anahtarla EVREN'e ulaşılamaz.
 pub const AGSIZ_ANAHTAR: &str = "evren_llm_agsiz";
+/// Denetçinin sahtesi bu işareti taşıyan içeriği şüpheli bulur (3c, e2e).
+pub const SUPHELI_ISARETI: &str = "e2e-supheli";
 
 const SART_SURUMU: u32 = 1;
 const SART_METNI: &str =
@@ -118,6 +122,40 @@ impl Saglayici for SahteSaglayici {
             },
             olaylar: senaryo::akis(adimlar, arac),
         })
+    }
+
+    async fn sohbet(&self, istek: ChatRequest) -> Result<(ChatResponse, YanitMeta), EvrenError> {
+        self.denetle()?;
+        let no = self.evren.istek_sayaci.fetch_add(1, Ordering::Relaxed);
+        // Denetçinin sahtesi: denetlenen içerik işareti taşıyorsa şüpheli bulur.
+        let supheli = istek.messages.iter().any(|m| {
+            m.content
+                .as_deref()
+                .is_some_and(|c| c.contains(SUPHELI_ISARETI))
+        });
+        let govde = if supheli {
+            r#"{"guvenli":false,"kategori":"talimat_enjeksiyonu","gerekce":"e2e sahte"}"#
+        } else {
+            r#"{"guvenli":true,"kategori":"yok","gerekce":"e2e sahte"}"#
+        };
+        let yanit = ChatResponse {
+            id: format!("e2e-sohbet-{no}"),
+            model: istek.model.clone(),
+            choices: vec![Choice {
+                index: 0,
+                message: ChatMessage::assistant(Some(govde.into()), vec![]),
+                finish_reason: Some("stop".into()),
+            }],
+            usage: None,
+        };
+        Ok((
+            yanit,
+            YanitMeta {
+                istek_id: Some(format!("e2e-sohbet-{no}")),
+                yonlendirilen_model: Some(istek.model),
+                kredi: None,
+            },
+        ))
     }
 
     async fn sart_durumu(&self) -> Result<TermsStatus, EvrenError> {

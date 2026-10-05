@@ -156,7 +156,7 @@ describe('gönderim günlüğü ve önizleme kartı (aşama 3b)', () => {
     await waitFor(() => expect(screen.getByText('Ayrıntı yok')).toBeTruthy());
   });
 
-  it('OnizlemeKarti öğeleri listeler, Gönder tümünü yollar, Seçilenleri gönderme seçileni çıkarır', async () => {
+  it('OnizlemeKarti öğeleri listeler, Gönder tümünü yollar, işaretliyle düğme işaretliyi çıkarır', async () => {
     let sonKarar: { islem: string; gonderilmeyecekler: string[] } | null = null;
     const oge = {
       anahtar: 'c-1',
@@ -195,17 +195,14 @@ describe('gönderim günlüğü ve önizleme kartı (aşama 3b)', () => {
     expect(kutular.length).toBe(2);
     await fireEvent.click(kutular[0]);
 
-    // İşaretli öğe varken "Gönder" yalnızca işaretsizleri yollar (işaretlileri çıkarır)
-    await fireEvent.click(gonderDugmesi);
-    expect(sonKarar).toEqual({ islem: 'islem-1', gonderilmeyecekler: ['c1'] });
-
-    // "Seçilenleri gönderme" de işaretlileri çıkarır
-    const cikarmaDugmesi = screen.getByRole('button', { name: 'Seçilenleri gönderme' });
+    // İşaretli öğe varken tek düğme işaretlileri çıkarıp kalanları yollar (3c Görev 8)
+    const cikarmaDugmesi = screen.getByRole('button', { name: 'İşaretlileri çıkarıp gönder' });
     await fireEvent.click(cikarmaDugmesi);
     expect(sonKarar).toEqual({ islem: 'islem-1', gonderilmeyecekler: ['c1'] });
+    expect(screen.queryByRole('button', { name: 'Seçilenleri gönderme' })).toBeNull();
   });
 
-  it('OnizlemeKarti neden: Denetim olduğunda öğeler seçili gelmez', async () => {
+  it('OnizlemeKarti neden: Denetim olduğunda işaretli öğe "gönderme" diye işaretli gelir', async () => {
     const oge = {
       anahtar: 'c-2',
       sira: 2,
@@ -226,8 +223,9 @@ describe('gönderim günlüğü ve önizleme kartı (aşama 3b)', () => {
       },
     });
 
+    // İşaretin anlamı "gönderme"dir; denetçinin işaretlediği öğe gönderilmemek üzere gelir.
     const kutu = screen.getByRole<HTMLInputElement>('checkbox');
-    expect(kutu.checked).toBe(false);
+    expect(kutu.checked).toBe(true);
   });
 
   it('oturumda "Göndermeden önce göster" anahtarı komutu çağırır', async () => {

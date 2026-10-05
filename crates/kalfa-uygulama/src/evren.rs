@@ -57,6 +57,13 @@ impl Saglayici for DegisirSaglayici {
         self.simdiki()?.akis(istek).await
     }
 
+    async fn sohbet(
+        &self,
+        istek: ChatRequest,
+    ) -> Result<(kalfa_evren::tipler::ChatResponse, kalfa_evren::YanitMeta), EvrenError> {
+        self.simdiki()?.sohbet(istek).await
+    }
+
     async fn sart_metni(&self) -> Result<TermsText, EvrenError> {
         self.simdiki()?.sart_metni().await
     }

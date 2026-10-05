@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use kalfa_core::aktarim::KanalMesaji;
+use kalfa_core::denetci::DenetimKipi;
 use kalfa_core::gecmis::GecmisSayfasi;
 use kalfa_core::izin::Kip;
 use kalfa_core::kimlik::{CagriId, IslemId, OturumId, TurId};
@@ -15,8 +16,9 @@ use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::hata::KomutHatasi;
 use kalfa_uygulama::sozlesme::{
-    AnahtarSonucu, CalismaAlani, GunlukSayfasi, KabulYaniti, OnarimSonucu, OnayGirdisi,
-    OturumAcilisi, OturumSatiri, SartPenceresiDurumu, UygulamaDurumu, YalitimCalismaAlani,
+    AnahtarSonucu, CalismaAlani, DenetciDurumu, GunlukSayfasi, KabulYaniti, OnarimSonucu,
+    OnayGirdisi, OturumAcilisi, OturumSatiri, SartPenceresiDurumu, UygulamaDurumu,
+    YalitimCalismaAlani,
 };
 use tauri::ipc::Channel;
 use tauri::{Builder, Runtime, State};
@@ -62,6 +64,8 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         yalitimi_onar,
         yalitim_calisma_alanlari,
         yalitim_calisma_alanini_kaldir,
+        denetci_kipi,
+        denetci_kipini_ayarla,
         gonderim_gunlugu,
         gonderim_ogesi,
         onizleme_ayarla,
@@ -373,4 +377,19 @@ pub async fn sartlari_reddet(u: State<'_, Arc<Uygulama>>) -> Sonuc<()> {
 #[tauri::command(rename_all = "snake_case")]
 pub async fn sart_metnini_goster(u: State<'_, Arc<Uygulama>>) -> Sonuc<SartPenceresiDurumu> {
     u.sart_metnini_goster().await
+}
+
+/// Denetçi kipi ve ayar dosyasının durumu (3c Görev 7).
+#[tauri::command(rename_all = "snake_case")]
+pub async fn denetci_kipi(u: State<'_, Arc<Uygulama>>) -> Sonuc<DenetciDurumu> {
+    Ok(u.denetci_kipi())
+}
+
+/// Denetçi kipini değiştirir; düşürmek yerel pencerede onaylanır.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn denetci_kipini_ayarla(
+    u: State<'_, Arc<Uygulama>>,
+    kip: DenetimKipi,
+) -> Sonuc<DenetciDurumu> {
+    u.denetci_kipini_ayarla(kip).await
 }

@@ -6,6 +6,7 @@
 
 pub mod anahtar;
 pub mod arayuz;
+pub mod ayarlar;
 pub mod calisma_alanlari;
 pub mod dizin;
 pub mod evren;

@@ -4,6 +4,8 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import type {
   CagriId,
   CalismaAlani,
+  DenetciDurumu,
+  DenetimKipi,
   GecmisSayfasi,
   GunlukSayfasi,
   IslemId,
@@ -105,6 +107,13 @@ export const aracZinciriOnarimGerekli = () => invoke<boolean>('arac_zinciri_onar
 /** Yalıtımsız çalıştırma anahtarı; açmayı Rust yerel pencerede sorar. Yeni değeri döner. */
 export const yalitimsiziAyarla = (acik: boolean) =>
   invoke<boolean>('yalitimsizi_ayarla', { acik });
+
+/** Denetçi kipi ve ayar dosyasının durumu (3c Görev 7). */
+export const denetciKipi = () => invoke<DenetciDurumu>('denetci_kipi');
+
+/** Denetçi kipini değiştirir; düşürmek yerel pencerede onaylanır. */
+export const denetciKipiniAyarla = (kip: DenetimKipi) =>
+  invoke<DenetciDurumu>('denetci_kipini_ayarla', { kip });
 
 /** BT için teknik rapor (aşama 2 tasarımı §9.8), düz metin. */
 export const yalitimTeknikRaporu = () => invoke<string>('yalitim_teknik_raporu');

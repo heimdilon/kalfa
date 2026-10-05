@@ -126,6 +126,7 @@ impl Arac for IcerikAra {
             kaynak: format!("arama:{desen}"),
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
+            kalfa_uretimi: false,
         })
     }
 }

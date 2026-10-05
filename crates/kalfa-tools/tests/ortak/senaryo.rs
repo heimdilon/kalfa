@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use kalfa_core::arac::Arac;
+use kalfa_core::denetci::DenetimKipi;
 use kalfa_core::izin::{Kip, Siniflandirici};
 use kalfa_core::oturum::{OturumAyarlari, OturumBaglami, devam_et};
 use kalfa_core::protokol::{AracDurumu, Komut, Olay, OnayKarari, OnayOgesi, OnizlemeOgesi};
@@ -90,7 +91,9 @@ pub struct Senaryo {
     pub alan: TempDir,
     kayitlar: TempDir,
     kip: Kip,
+    denetci_kipi: DenetimKipi,
     kayitli: bool,
+    geri_alinabilir: bool,
     kabuk: Option<Kabuk>,
     pub yalitici: Arc<SenaryoYaliticisi>,
 }
@@ -101,13 +104,21 @@ impl Senaryo {
             alan: tempfile::tempdir().unwrap(),
             kayitlar: tempfile::tempdir().unwrap(),
             kip,
+            denetci_kipi: DenetimKipi::Kapali,
             kayitli: false,
+            geri_alinabilir: false,
             kabuk: None,
             yalitici: Arc::new(SenaryoYaliticisi {
                 hazir: false,
                 baslatma: AtomicUsize::new(0),
             }),
         }
+    }
+
+    /// Denetçi kipini ayarlar (varsayılan: Kapali).
+    pub fn denetci_kipi(mut self, kip: DenetimKipi) -> Self {
+        self.denetci_kipi = kip;
+        self
     }
 
     /// Çalışma alanına bir dosya koyar; üst dizinler oluşturulur.
@@ -121,6 +132,14 @@ impl Senaryo {
     /// Oturum kaydı çalışma alanının dışında tutulur.
     pub fn kayitli(mut self) -> Self {
         self.kayitli = true;
+        self
+    }
+
+    /// Geri alma açık: araçlar yazmadan önce yedek alır, tur geri alınabilir
+    /// (S11). Kayıt da açılır; geri alma deposu kaydın yanındadır.
+    pub fn geri_alinabilir(mut self) -> Self {
+        self.kayitli = true;
+        self.geri_alinabilir = true;
         self
     }
 
@@ -145,8 +164,12 @@ impl Senaryo {
     fn ayarlar(&self) -> OturumAyarlari {
         let mut ayar = OturumAyarlari::yeni("glm-5.3", self.alan.path());
         ayar.kip = self.kip;
+        ayar.denetci_kipi = self.denetci_kipi;
         if self.kayitli {
             ayar.kayit_yolu = Some(self.kayit_yolu());
+        }
+        if self.geri_alinabilir {
+            ayar.geri_alma_dizini = Some(self.kayitlar.path().join("geri-alma"));
         }
         ayar
     }
@@ -155,6 +178,7 @@ impl Senaryo {
         let siniflandirici = Arc::new(Siniflandirici::yeni(self.alan.path(), &[]).unwrap());
         let calisma_alani = CalismaAlani::ac(siniflandirici.clone()).unwrap();
         let mut araclar: Vec<Arc<dyn Arac>> = varsayilan_araclar(calisma_alani.clone());
+        let geri_yukleyici = calisma_alani.clone();
         if let Some(k) = self.kabuk {
             araclar.push(Arc::new(KabukAraci::yeni(
                 calisma_alani,
@@ -163,7 +187,12 @@ impl Senaryo {
                 Arc::new(AtomicBool::new(k.yalitimsiz_izni)),
             )));
         }
-        test_baglami(s.clone(), araclar, siniflandirici)
+        let mut baglam = test_baglami(s.clone(), araclar, siniflandirici);
+        if self.geri_alinabilir {
+            baglam.geri_yukleyici =
+                Some(geri_yukleyici as Arc<dyn kalfa_core::geri_alma::GeriYukleyici>);
+        }
+        baglam
     }
 
     pub fn baslat(&self, s: &Arc<SahteSaglayici>) -> Surucu {

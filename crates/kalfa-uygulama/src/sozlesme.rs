@@ -197,3 +197,12 @@ pub enum KabulYaniti {
     /// Aynı anda "Kabul etmiyorum" da verildi; ret geçerli.
     Kilitli,
 }
+
+/// Denetçi kipi ve ayar dosyasının durumu (3c Görev 7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DenetciDurumu {
+    pub kip: kalfa_core::denetci::DenetimKipi,
+    /// `ayarlar.json` okunamadıysa nedeni; kip o zaman kapalıdır.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ayar_hatasi: Option<String>,
+}

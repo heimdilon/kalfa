@@ -1044,7 +1044,8 @@ DenetimKipi   ::= Kapali | Uyar | Kati
       `additionalProperties: false`.
     - `kategori` değerleri: `yok`, `talimat_enjeksiyonu`, `veri_sizdirma`,
       `yetki_yukseltme`, `diger`. Canlıda yalnızca `talimat_enjeksiyonu`
-      gözlendi (G4).
+      gözlendi; veri sızdırma içeren örnekte de (G4, [ölçüm](../bulgular/2026-10-06-kalfa-3c-denetci-olcumu.md)).
+      Kategori yalnızca rozetin metnidir; kararı `guvenli` belirler.
   - **İstem:**
     - Sistem iletisi görevi anlatır. İçerik, araç sonucundaki gibi çağrı
       başına rastgele bir sınır taşıyan sarmalla gider.
@@ -1055,7 +1056,10 @@ DenetimKipi   ::= Kapali | Uyar | Kati
     - `ChatRequest`'e `max_tokens` eklenir; denetçi için 2 048.
     - Reasoning bu bütçeyi tüketirse JSON yarım kalır ve sonuç `Bilinmiyor`
       olur.
-    - EVREN'de `max_tokens` davranışı doğrulanmadı (G3).
+    - EVREN `max_tokens`'a uyar ve reasoning'i de bu bütçeden sayar. Bütçe
+      reasoning'de biterse `finish_reason` `length` olur ve içerik hiç gelmez;
+      sonuç `Bilinmiyor { neden: "bozuk JSON" }` olur (G3, [ölçüm](../bulgular/2026-10-06-kalfa-3c-denetci-olcumu.md)).
+      Ölçülen reasoning 95–297 token'dır; 2 048 yeterli.
 - **`Yok`** uygulaması kapalı kiptir (üst belge §9.1). `EvrenGuard` v1 dışında
   kalır (üst belge §12.2).
 
@@ -1107,9 +1111,10 @@ DenetimKipi   ::= Kapali | Uyar | Kati
     gösterilir (üst belge §5.2).
   - Fiyat sıfırdan büyük olunca tahmini maliyet de eklenir.
 - **Gecikme:** durum çubuğunda "Denetleniyor…" olarak görünür (üst belge §9.2).
-- **Ölçülmedi:** gecikme, token ve reasoning'in kapatılıp kapatılamayacağı
-  (`chat_template_kwargs`) canlı istek ister. Bu belge yazılırken canlı istek
-  yapılmadı (G3). Kullanıcı `#[ignore]` testle koşturur.
+- **Ölçüldü (G3, [ölçüm](../bulgular/2026-10-06-kalfa-3c-denetci-olcumu.md)):** küçük bir içerikte denetim
+  1,9–2,4 sn sürdü; ~250 istem ve 305–385 tamamlama token'ı, bunun dörtte üçü
+  reasoning. `chat_template_kwargs` denenmedi: `ChatRequest`'te serbest alan
+  yok ve 2 sn'lik gecikme bunu gerektirmedi.
 
 ### 7.5 Başarısızlık ve kipler (üst belge §9.2, §9.3)
 
@@ -1137,6 +1142,38 @@ DenetimKipi   ::= Kapali | Uyar | Kati
 - **Araç kartı** denetimin durumunu bir rozetle gösterir: denetleniyor ·
   şüpheli: talimat enjeksiyonu · denetlenemedi · denetlenmedi: gizli.
 - **Komutlar:** `denetci_kipi` ve `denetci_kipini_ayarla(kip)`.
+
+### 7.7 Uygulamada netleşenler (3c)
+
+3c'nin uygulaması sırasında tasarımdan ayrılan ya da netleşen noktalar:
+
+- **Katı kipin kartı (§7.5):** Kart 3b'nin önizleme kartıdır
+  (`GonderimNedeni::Denetim`).
+  - İşaretin anlamı "gönderme"dir. Şüpheli ve denetlenemeyen öğeler işaretli
+    gelir; kullanıcı işareti kaldırırsa gider.
+  - Kartta tek düğme vardır. İşaretli öğe yoksa "Gönder", varsa "İşaretlileri
+    çıkarıp gönder" der. 3b'nin iki düğmesi bununla teke indi.
+  - Önizleme kapalıyken karta yalnızca işaretli öğeler gelir. Önizleme
+    açıkken bütün dış kaynaklı öğeler gelir; şüpheliler işaretlidir.
+  - Kullanıcının kararı `KayitOgesi::DenetimKarari { cagri, gonderildi }`
+    olarak kayda yazılır. Gönderilmeyen içerik kayda da girmez; yerine 3b'nin
+    yer tutucusu girer.
+- **Denetçinin kendi isteği (§7.3):** Gönderim günlüğüne amacı `denetci`
+  olan bir `Istek` olarak girer ve kullanım kaydı yazılır. Böylece denetçiye
+  giden içerik de günlükte görünür.
+- **Kip ve örnek (§7.6):**
+  - Denetçi uygulamada tek örnektir. 4'lük eşzamanlılık sınırı bütün
+    oturumlarda ortaktır.
+  - Kip `ayarlar.json`'dadır. Açık oturumlar onu her turun başında okur;
+    tur sırasında değişmez.
+  - Dosya bozuksa varsayılan (kapalı) kullanılır. Durum çubuğu uyarı
+    simgesiyle "Denetçi: kapalı" gösterir ve ipucunda nedeni söyler.
+- **Gizli dosya (§7.3):** Denetlenmeyen gizli okuma `Olay::DenetimAtlandi`
+  ile bildirilir ve araç kartında "Denetlenmedi: gizli olabilir" rozetiyle
+  görünür.
+- **Senaryolar (§7.1):** S9 bozuk JSON ve EVREN hatası yollarını sınar.
+  Zaman aşımı yolu denetçinin birim testindedir; 30 sn'lik gerçek bekleme
+  senaryoyu yavaşlatırdı.
 
 ---
 
@@ -1642,8 +1679,8 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 |---|---|---|
 | G1 | Kabuk görüntüsünün maliyeti ve Windows'ta dosya kimliği olmadan kaçırma oranı. Hedef: 100 000 dosyada, taramanın `stat` eki 150 ms'nin altında. | **Süre ölçüldü (3a):** 100 000 dosyada görüntünün eki Windows'ta 17 ms (55 → 72 ms), WSL'de 45 ms (14 → 59 ms; ext4, medyan). Kaçırma oranı ölçülmedi: kimlik olmadan kaçan tek durum, dosyayı silip aynı boyut ve zamanla yeniden yazmaktır; kullanımla izlenir |
 | G2 | Art arda iki kullanıcı mesajını (Kalfa notu ve kullanıcı) `glm-5.3`, `qwen3.8-flash-next` ve `deepseek-v4-flash` kabul ediyor mu? | **Kapandı (3a, 2026-09-29):** üç model de art arda iki kullanıcı mesajını kabul edip yanıt verdi; canlı test `kalfa-evren/tests/canli.rs`, `canli_art_arda_iki_kullanici_mesaji_kabul_edilir` |
-| G3 | Denetçinin gecikmesi ve token maliyeti; reasoning kapatılabilir mi (`chat_template_kwargs`); EVREN'de `max_tokens`'ın davranışı | 3c, canlı; kullanıcı koşturur |
-| G4 | Denetçinin `kategori` değerlerinden yalnızca `talimat_enjeksiyonu` gözlendi | 3c, canlı |
+| G3 | Denetçinin gecikmesi ve token maliyeti; reasoning kapatılabilir mi (`chat_template_kwargs`); EVREN'de `max_tokens`'ın davranışı | **Kapandı (3c, 2026-10-06):** küçük içerikte 1,9–2,4 sn; tamamlamanın dörtte üçü reasoning. `max_tokens`'a uyuluyor; bütçe reasoning'de biterse içerik gelmiyor ve sonuç `Bilinmiyor` oluyor; 2 048 yeterli. `chat_template_kwargs` denenmedi, gerekmedi. [ölçüm](../bulgular/2026-10-06-kalfa-3c-denetci-olcumu.md) |
+| G4 | Denetçinin `kategori` değerlerinden yalnızca `talimat_enjeksiyonu` gözlendi | **Kapandı (3c, 2026-10-06):** veri sızdırma içeren örnekte de `talimat_enjeksiyonu` geldi. Kategori yalnızca rozetin metni olduğu için kod değişmedi; dağılım kullanımla izlenir. [ölçüm](../bulgular/2026-10-06-kalfa-3c-denetci-olcumu.md) |
 | G5 | Linux: bwrap'ın `--unshare-net`'inde köprünün `SCM_RIGHTS` ile bağlantı taşıması; cargo, npm, pip ve git'in `HTTPS_PROXY`'ye uyması | 3d, WSL'de `kalfatest` ile |
 | G6 | Windows: aynı AppContainer'daki iki sürecin `127.0.0.1` üzerinden konuşabilmesi; paket SID'ine açık boru; `internetClient`'sız kapta vekille Schannel; geliştirme derlemesinde köprünün ikilisi | 3d, kurulu makinede; olumsuzsa yedek yol (§8.6) |
 | G7 | SNI denetimi ECH kullanan istemcileri bozar; kullanılan araçlarda ECH var mı? | 3d |

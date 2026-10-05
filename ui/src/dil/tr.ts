@@ -4,6 +4,7 @@
 import type {
   AktarimDurmaNedeni,
   AracDurumu,
+  DenetimKipi,
   Kip,
   ModelProfili,
   YalitimYoklukNedeni,
@@ -249,7 +250,23 @@ export const tr = {
   'onizleme.kart.baslik': 'Gönderim önizlemesi ({sayi} öğe)',
   'onizleme.kart.denetim_baslik': 'Gönderim önizlemesi (Güvenlik denetimi, {sayi} öğe)',
   'onizleme.kart.gonder': 'Gönder',
-  'onizleme.kart.secilenleri_gonderme': 'Seçilenleri gönderme',
+  'onizleme.kart.isaretlileri_cikar': 'İşaretlileri çıkarıp gönder',
+  'onizleme.kart.isaret_ipucu': 'İşaretli öğeler gönderilmez; yerine "kullanıcı bu içeriği göndermedi" gider.',
+  'denetim.rozet.suruyor': 'Denetleniyor…',
+  'denetim.rozet.supheli': 'Şüpheli: {kategori}',
+  'denetim.rozet.bilinmiyor': 'Denetlenemedi',
+  'denetim.rozet.atlandi': 'Denetlenmedi: gizli olabilir',
+  'denetim.kategori.talimat_enjeksiyonu': 'talimat enjeksiyonu',
+  'denetim.kategori.veri_sizdirma': 'veri sızdırma',
+  'denetim.kategori.yetki_yukseltme': 'yetki yükseltme',
+  'denetim.kategori.diger': 'diğer',
+  'denetim.kategori.yok': 'belirtilmedi',
+  'durum.denetci': 'Denetçi: {kip}',
+  'durum.denetci_ipucu': 'Güvenlik denetçisinin kipi. Dış kaynaklı araç sonuçları modele gitmeden önce bir modelle denetlenir.',
+  'durum.denetci_ayar_hatasi': '{hata}',
+  'denetci.kip.Kapali': 'kapalı',
+  'denetci.kip.Uyar': 'uyar',
+  'denetci.kip.Kati': 'katı',
   'onizleme.kart.yanitlandi': 'Yanıtlandı',
   'onizleme.kart.gecersiz': 'Tur bitti; karar gerekmiyor',
 
@@ -400,6 +417,26 @@ export function m(anahtar: MetinAnahtari, degerler: Record<string, string | numb
 
 // Çekirdekten gelen değerlerin adları. `Record` her değerin karşılığı olduğunu
 // derleme sırasında denetler.
+export const DENETCI_KIPI_ADI: Record<DenetimKipi, MetinAnahtari> = {
+  Kapali: 'denetci.kip.Kapali',
+  Uyar: 'denetci.kip.Uyar',
+  Kati: 'denetci.kip.Kati',
+};
+
+const DENETIM_KATEGORISI: Record<string, MetinAnahtari> = {
+  talimat_enjeksiyonu: 'denetim.kategori.talimat_enjeksiyonu',
+  veri_sizdirma: 'denetim.kategori.veri_sizdirma',
+  yetki_yukseltme: 'denetim.kategori.yetki_yukseltme',
+  diger: 'denetim.kategori.diger',
+  yok: 'denetim.kategori.yok',
+};
+
+/** Denetçinin kategorisinin okunur adı; bilinmeyen kategori olduğu gibi. */
+export function denetimKategorisi(kategori: string): string {
+  const anahtar = DENETIM_KATEGORISI[kategori];
+  return anahtar ? m(anahtar) : kategori;
+}
+
 export const KIP_ADI: Record<Kip, MetinAnahtari> = {
   Inceleme: 'kip.Inceleme',
   Siki: 'kip.Siki',

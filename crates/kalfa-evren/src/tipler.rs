@@ -137,6 +137,8 @@ pub struct ChatRequest {
     pub stream_options: Option<StreamOptions>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
 }
 
 impl ChatRequest {
@@ -148,6 +150,7 @@ impl ChatRequest {
             stream: false,
             stream_options: None,
             response_format: None,
+            max_tokens: None,
         }
     }
 }

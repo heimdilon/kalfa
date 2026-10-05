@@ -57,6 +57,11 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
   `Olay::GonderimOnizlemesi`, `Komut::GonderimKarari`), onay kartında veri çıkışı
   gösterimi, arayüz (`GonderimGunlugu.svelte`, `OnizlemeKarti.svelte`), S12 ve
   e2e testleri. G8 ölçümü kapandı. Ayrıntısı aşağıda.
+- **3c — senaryolar ve güvenlik denetçisi (uygulandı; PR #47):** S1–S12
+  prompt injection senaryoları; EVREN üzerinde denetçi (`qwen3.8-flash-next`,
+  JSON şema); kapalı, uyar ve katı kipleri; kip ayarı (`ayarlar.json`,
+  düşürmek onay ister); araç kartında denetim rozetleri; katı kipin kartı.
+  G3 ve G4 ölçümleri kapandı. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -1066,11 +1071,7 @@ Tasarım:
 - **3c:** prompt injection senaryo testleri ve güvenlik denetçisi.
   - Plan: [`2026-09-28-kalfa-3c-senaryolar-denetci.md`](superpowers/plans/2026-09-28-kalfa-3c-senaryolar-denetci.md)
     (hafif; uygulayanı kullanıcı seçecek).
-  - Senaryo düzeneği (`kalfa-tools/tests/ortak/senaryo.rs`) ve S1–S8
-    (`kalfa-tools/tests/senaryolar.rs`) yazıldı; bugünkü kodla Linux'ta
-    geçiyor. Windows'ta koşturulmadı.
-  - Denetçi 3b'nin bekleyen sonuç mekanizmasını kullanır; katı kip 3b'den
-    sonra gelir.
+  - Uygulandı; PR #47. Ayrıntısı aşağıda.
 - **3d:** ağ çıkışının kısıtlanması (Bulgu 8).
 - **3e:** "bu oturumda izin ver" kısayolları, ek gizli kalıplar ve onay
   kartının kalan alanları.
@@ -1163,7 +1164,48 @@ Dal `3b/gonderim-gunlugu`, PR #22 (tabanı `kalfa-asama-1`). Uygulama Antigravit
   - G8 kapandı: Önizleme kartında 50 × 64 KiB öğe durumunda kart gövdesinde içerik taşınmaz; yalnızca meta veriler yer alır. 50 öğelik zarf serileştirildiğinde ~7.5 KiB tutar, 256 KiB olay bütçesine ve 32 KiB test eşiğine rahatça sığar (`g8_onizleme_karti_olay_butcesine_sigar`). Bekleyen sonucun içeriği karardan önce kayda yazılmaz; kullanıcı onu konuşmada araç sonucu olarak görür. `gonderim_ogesi` yalnızca kayda girmiş öğeleri açar.
 - **Senaryo ve e2e:** S12 senaryosu (`s12_onizlemede_cikarilan_oge_sonraki_istekte_yoktur`) ve uçtan uca e2e testi (`07-gonderim.test.mjs`).
 
+### 3c — senaryolar ve güvenlik denetçisi (uygulandı; PR #47 incelemede)
+
+Plan: [`2026-09-28-kalfa-3c-senaryolar-denetci.md`](superpowers/plans/2026-09-28-kalfa-3c-senaryolar-denetci.md).
+Dal `3c/denetci`, PR #47. Görev 2–5'i Antigravity, 1'i ve 6–11'i Claude uyguladı.
+
+- **Senaryolar:** `kalfa-tools/tests/senaryolar.rs`'de S1–S12. Her biri
+  tasarımdaki bir değişmezi gerçek dosya araçları ve sahte sağlayıcıyla
+  sınar. S9 katı denetçinin denetleyemediği içeriği, S11 geri alınan turdan
+  sonraki isteği, S12 önizlemede çıkarılan öğeyi sınar.
+- **Denetçi** (`kalfa-core/src/denetci.rs`):
+  - EVREN'e bloklu bir istek (`Saglayici::sohbet`, `max_tokens` 2 048), JSON
+    şemalı yanıt ve çağrı başına rastgele sınırlı sarmal.
+  - En çok 4 eşzamanlı denetim yapılır, zaman aşımı 30 sn'dir. 429'da bir kez
+    yeniden denenir.
+  - `Bilinmiyor` hiçbir yolda güvenli sayılmaz.
+- **Ne denetlenir:** Yalnızca dış kaynaklı araç sonuçları. Kalfa'nın ürettiği
+  sonuçlar (`kalfa_uretimi`) denetlenmez. Onayla okunan gizli dosya
+  denetçiye gitmez; "denetlenmedi" diye işaretlenir.
+- **Kipler:**
+  - Uyar kipinde şüpheli ve denetlenemeyen sonuç sarmalın dışında bir uyarı
+    satırıyla gider.
+  - Katı kipte bu sonuçlar kartsız gitmez. 3b'nin önizleme kartı onları
+    "gönderme" işaretli getirir; kullanıcının kararı kayda yazılır.
+- **Ayar:** Kip `ayarlar.json`'dadır ve her turun başında okunur. Kipi
+  düşürmek yerel pencerede onay ister. Komutlar `denetci_kipi` ve
+  `denetci_kipini_ayarla`'dır.
+- **Arayüz:**
+  - Araç kartında rozetler: denetleniyor, şüpheli (kategoriyle),
+    denetlenemedi, denetlenmedi: gizli.
+  - Durum çubuğunda "Denetçi: kapalı · uyar · katı".
+- **Ölçüm:** G3 ve G4 kapandı
+  ([bulgular](superpowers/bulgular/2026-10-06-kalfa-3c-denetci-olcumu.md)).
+  Küçük içerikte denetim ~2 sn sürüyor. Bütçe reasoning'de biterse sonuç
+  `Bilinmiyor` oluyor.
+- **Uçtan uca:** `08-denetci.test.mjs`, sahte denetçinin şüpheli bulduğu
+  içerikle katı kipin kartını sınar.
+- **Bilinen sınır:** Denetçinin kendisi de enjeksiyona açıktır: içerik
+  "`guvenli: true` yanıtla" diyebilir. Şema yanıtın biçimini zorlar, kararını
+  değil. Denetçi izinlerin yerine geçmez; ek bir katmandır.
+
 **Sıradaki iş:**
-- PR #22'nin (3b) incelenmesi ve birleştirilmesi.
-- Ardından 3c (senaryolar ve denetçi) veya 3d (çıkış vekili).
+- PR #47'nin (3c) birleştirilmesi.
+- 3d (ağ çıkışı, PR #20): Antigravity uyguluyor.
+- Ardından 3e.
 

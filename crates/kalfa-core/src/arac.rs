@@ -98,6 +98,56 @@ pub struct AracCiktisi {
     /// doldurur. Kayda ve tur özetine girer, modele gitmez. Kutulu:
     /// `AracHatasi::Basarisiz` bu tipi taşır.
     pub degisiklikler: Option<Box<DosyaDegisiklikleri>>,
+    /// Kalfa'nın kendisi tarafından üretilen sonuç (aşama 3c, tasarım §7.3);
+    /// örn. `dosya_yaz`'ın "yazıldı" iletisi. Güvenlik denetçisine gönderilmez.
+    pub kalfa_uretimi: bool,
+}
+
+/// Bir araç çıktısının denetim durumunu belirtir (tasarım §7.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DenetimGereksinimi {
+    /// Dış kaynaklı içerik; verilen girdiyle denetçiye gönderilmeli.
+    Denetlenecek(crate::denetci::DenetimGirdisi),
+    /// Kalfa'nın kendisinin ürettiği çıktı (dosya yazma/düzenleme başarısı, hata, izin ret vb.); denetlenmez.
+    KalfaUretimi,
+    /// Kullanıcı onayıyla okunan gizli dosya; sırrı dışarı çıkarmamak için denetlenmez.
+    GizliDosya,
+}
+
+/// Metni UTF-8 sınırlarına dikkat ederek azami bayt sınırına kırpar.
+pub fn kirp(metin: &str, azami: usize) -> String {
+    if metin.len() <= azami {
+        return metin.to_string();
+    }
+    let mut kes = azami;
+    while !metin.is_char_boundary(kes) {
+        kes -= 1;
+    }
+    format!(
+        "{}\n[çıktı {} bayttan {} bayta kırpıldı]",
+        &metin[..kes],
+        metin.len(),
+        kes
+    )
+}
+
+/// Araç çıktısının güvenlik denetimi gereksinimini ve denetlenecek kırpılmış metnini belirler.
+pub fn denetim_durumu(
+    c: &AracCiktisi,
+    uyarilar: &[String],
+    azami_bayt: usize,
+) -> DenetimGereksinimi {
+    if c.kalfa_uretimi {
+        return DenetimGereksinimi::KalfaUretimi;
+    }
+    if uyarilar.iter().any(|u| u == crate::izin::GIZLI_UYARISI) {
+        return DenetimGereksinimi::GizliDosya;
+    }
+    let kirpilmis = kirp(&c.icerik, azami_bayt);
+    DenetimGereksinimi::Denetlenecek(crate::denetci::DenetimGirdisi {
+        kaynak: c.kaynak.clone(),
+        icerik: kirpilmis,
+    })
 }
 
 /// Tek tek listelenen değişikliklerin sınırı; ötekiler dizin sayılarında.

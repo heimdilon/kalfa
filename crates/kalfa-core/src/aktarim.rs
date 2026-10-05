@@ -91,6 +91,8 @@ pub fn kritik_mi(olay: &Olay) -> bool {
             | Olay::GeriAlmaVerisiSilindi { .. }
             | Olay::TurOzeti { .. }
             | Olay::GonderimOnizlemesi { .. }
+            | Olay::DenetimBasladi { .. }
+            | Olay::DenetimSonucu { .. }
     )
 }
 

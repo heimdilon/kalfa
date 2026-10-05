@@ -60,6 +60,11 @@ pub struct Uygulama {
     /// Kabuk komutlarını başlatan arka uç (aşama 2 tasarımı §3.2).
     pub(crate) yalitici: Arc<dyn Yalitici>,
     pub(crate) yalitim_ayarlari: Arc<YalitimAyarlari>,
+    /// `ayarlar.json` (3c Görev 7).
+    pub(crate) ayarlar: Arc<crate::ayarlar::Ayarlar>,
+    /// Bütün oturumların paylaştığı denetçi: eşzamanlı denetim sınırı uygulama
+    /// geneldedir.
+    pub(crate) denetci: Arc<dyn kalfa_core::denetci::GuvenlikDenetcisi>,
     pub(crate) yalitim_dinleyici: Dinleyici,
     pub(crate) alanlar: Arc<CalismaAlaniKaydi>,
     ic: Mutex<IcDurum>,
@@ -88,6 +93,10 @@ impl Uygulama {
         let evren = Arc::new(DegisirSaglayici::default());
         let kapi = Arc::new(SartKapisi::yeni(evren.clone()));
         let yalitim_ayarlari = Arc::new(YalitimAyarlari::oku(&b.veri_dizini));
+        let ayarlar = Arc::new(crate::ayarlar::Ayarlar::oku(&b.veri_dizini));
+        let denetci: Arc<dyn kalfa_core::denetci::GuvenlikDenetcisi> = Arc::new(
+            kalfa_core::denetci::YapilandirilmisSiniflandirici::yeni(evren.clone()),
+        );
         let yalitim_dinleyici = Dinleyici::default();
         let yalitici = yalitici_kur(
             b.yalitim,
@@ -111,6 +120,8 @@ impl Uygulama {
             aktarim: b.aktarim,
             yalitici,
             yalitim_ayarlari,
+            ayarlar,
+            denetci,
             yalitim_dinleyici,
             alanlar: Arc::new(CalismaAlaniKaydi::yeni(&b.veri_dizini)),
             veri_dizini: b.veri_dizini,

@@ -50,7 +50,8 @@ WebdriverIO.
 - **Canlı ölçüm (G3, G4):** gecikme, token, reasoning ve kategoriler canlı
   istek ister. Bu plan yazılırken canlı istek yapılmadı. `#[ignore]` testi
   kullanıcı koşturur (Görev 10).
-- **Uygulayan:** kullanıcı karar verecek (tasarım §14).
+- **Uygulayan:** Antigravity (kullanıcının kararı, 2026-10-05). İnceleme ve iki
+  platform doğrulaması Claude'dadır.
 
 **Bağımlılıklar:**
 - **3b:** bekleyen sonuç mekanizması (§6.4), gönderim kartı ve günlükteki
@@ -68,7 +69,7 @@ denetimi (aşama 4, v1.1); içerikte anahtar biçimi taraması (G14).
   varsayılan kapalı. Model `qwen3.8-flash-next`'tir ve değiştirilemez. Onayla
   okunan gizli dosya denetçiye gitmez. `Bilinmiyor` hiçbir zaman "güvenli"
   sayılmaz.
-- **Kullanıcıya kalan:** uygulayan (Claude ya da Codex).
+- **Uygulayan:** Antigravity (2026-10-05).
 
 ## Güvenlik serisinden sonra (2026-10-05)
 
@@ -88,6 +89,32 @@ Plan yazıldıktan sonra güvenlik serisi (#33–#45) birleşti. Bu plana etkisi
 - **Arama iletisi (#36).** `icerik_ara` okunamayan dosyaları "[N dosya
   okunamadı; arama eksik]" satırıyla bildirir. Bu satır araç sonucunun
   parçasıdır, Kalfa iletisi değildir; denetlenen metne girer.
+
+## 3b'den sonra (2026-10-05)
+
+3b birleşti (#22). Bu planın "3b'nin mekanizması" dediği şeyler artık kodda
+şu adlarla duruyor; görevler bunları genişletir, yenisini yazmaz:
+
+- **Bekletme:** `oturum/arac_asamasi.rs`.
+  - `BekleyenSonuc` ve aşama başına `bekleyen_sonuclar`.
+  - Bekleme koşulu bugün `self.onizleme_acik && s.kaynak != "kalfa:sonuç"`.
+  - 3c bu koşulu genişletir:
+    - Sonuç **dış kaynaklıysa** (Görev 4'ün `kalfa_uretimi == false`'u; `kaynak` karşılaştırması onunla değişir)
+    - ve önizleme açıksa ya da denetçi kipi kapalı değilse
+
+    bekler.
+  - Uyar kipinde de sonuç, denetim bitene kadar modele gitmez (Görev 5).
+- **Kart:** `gonderim_onizleme_bekle`, `Olay::GonderimOnizlemesi { islem, ogeler, neden }`, `Komut::GonderimKarari`.
+  - `OnizlemeNedeni::Denetim` ve `OnizlemeOgesi.denetim: Option<String>` hazır; 3c bunları doldurur.
+  - Önizleme ve denetim aynı aşamada birlikte gerekiyorsa tek kart açılır. `neden` `Denetim` olur; şüpheli öğeler işaretlidir.
+- **Kartta işaretin anlamı "gönderme"dir** (`OnizlemeKarti.svelte`).
+  - Katı kipte şüpheli ve denetlenemeyen öğeler işaretli gelir (plan: "seçili gelmez").
+  - Kullanıcı işareti kaldırırsa öğe gider; karar kayda yazılır (Görev 6).
+- **Önizleme kartının iki düğmesi bugün aynı işi yapıyor** (#22'deki takip notu). Görev 8 bunu tek düğmeye indirir: işaret yokken "Gönder", varken "İşaretlileri çıkarıp gönder".
+- **Durdurma ve kurtarma:** `kurtarma::ONIZLEME_IPTALI` ve `ONIZLEME_KAPANISI` var. Denetim beklerken durdurulan ya da kapanan oturum aynı metinleri kullanır.
+- **Gönderim günlüğü:** `istek_kaydet(amac, …)` ve `istek_kaydet_hata(amac, …)` (`oturum/model_turu.rs`). Denetçinin isteği `amac: "denetci"` ile ve aynı sonuç kurallarıyla kaydedilir (Görev 6). Bağlantı hatasında gönderilen sayılmaz kuralı onun için de geçerlidir.
+- **S12 3b ile geldi** (`senaryolar.rs`). Görev 9'da kalanlar S9, S10 ve S11.
+- **Uçtan uca:** Windows'ta `msedgedriver` WebView2 ile aynı sürüm olmalıdır. Sürücü yoksa testleri yaz, PR'a not et; Claude koşturur.
 
 ## Global Constraints
 
@@ -135,7 +162,7 @@ Plan yazıldıktan sonra güvenlik serisi (#33–#45) birleşti. Bu plana etkisi
   - Görev, Windows'ta ve WSL'de (Ubuntu-24.04) yeşil olmadan bitmiş sayılmaz.
 - **Commit:** Türkçe ve önekli (`çekirdek:`, `araçlar:`, `uygulama:`, `ui:`,
   `e2e:`, `docs:`). Claude'un commit'leri `Co-Authored-By` satırı taşır;
-  Codex'inkiler taşımaz.
+  Antigravity'ninkiler taşımaz.
 - **Dokunulmayanlar:** `design/`, `.env`, `Screenshot*.png`, `refs/shot-*.png`,
   kökteki `tasks.png`.
 
@@ -319,8 +346,10 @@ gönderim kartı. Testler: `oturum_denetim.rs`, `senaryolar.rs` (S9).
 
 **Interfaces:**
 - Şüpheli ve `Bilinmiyor` sonuç modele gitmez.
-- Gönderim kartı sorar; öğe seçili gelmez. `Bilinmiyor` için kart
-  "denetlenemedi" der.
+- Gönderim kartı sorar. Kartta işaretin anlamı "gönderme"dir: şüpheli ve
+  `Bilinmiyor` öğe işaretli gelir, kullanıcı işareti kaldırmadıkça gitmez.
+  Arayüz ilk işaretleri `OnizlemeNedeni::Denetim` ve öğenin `denetim`
+  etiketinden türetir. `Bilinmiyor` için kart "denetlenemedi" der.
 - Kullanıcının "gönder" kararı modele giden sonucu değiştirmez; yalnızca
   gönderilmesine izin verir. Karar kayda yazılır.
 - Gönderim günlüğüne amacı `denetci` olan bir `Istek` girer ve denetlenen
@@ -329,8 +358,8 @@ gönderim kartı. Testler: `oturum_denetim.rs`, `senaryolar.rs` (S9).
 - [ ] **Step 1: Başarısız testleri yaz:**
   - S9: katı denetçi bozuk JSON üretiyor ya da zaman aşımına uğruyor; içerik
     modele gitmez, kart "denetlenemedi" der.
-  - `kati_kipte_supheli_sonuc_kartta_secili_gelmez`.
-  - `gonder_karari_kayda_yazilir_icerigi_degistirmez`.
+  - `kati_kipte_supheli_sonuc_kartta_isaretli_gelir_ve_karardan_once_gitmez`.
+  - `kati_kipte_gonder_karari_kayda_yazilir_ve_uyari_satiri_kalir`.
   - `denetci_istegi_gunlukte_amaciyla`.
 - [ ] **Step 2–5:** uygula, denetle, commit `çekirdek: katı kipte denetçi`.
 
@@ -417,4 +446,23 @@ gönderim kartı. Testler: `oturum_denetim.rs`, `senaryolar.rs` (S9).
 
 ## Uygulama sonucu
 
-(Uygulamayla doldurulur.)
+Dal `3c/denetci`, PR #47. Görev 1'i Claude, 2–5'i Antigravity, 6–11'i Claude
+uyguladı. Antigravity, 3c'nin prompt injection örnekleri yüzünden kendi
+sağlayıcısının içerik filtresine takıldığı için Görev 6'dan sonra devam
+edemedi.
+
+- **Görevler:** 1–11'in hepsi yapıldı. Tasarımdan ayrılan ve netleşen
+  noktalar aşama 3 tasarımının §7.7'sindedir. En önemlisi, katı kipin kartında
+  işaretin anlamının "gönderme" olması ve tek düğmedir.
+- **Ölçüm (Görev 10):** G3 ve G4 kapandı
+  ([bulgular](../bulgular/2026-10-06-kalfa-3c-denetci-olcumu.md)). Görev 3'teki
+  bütçe (2 048) ve zaman aşımı (30 sn) değişmedi.
+- **Doğrulama:**
+  - Windows ve WSL: `cargo test --workspace`, iki clippy, `e2e` özellikli
+    testler.
+  - Yalnızca WSL'de (`kalfatest`): yalıtım ve uyumluluk testleri.
+  - Arayüz: Vitest 290/290, `npm run check` 0 hata 0 uyarı.
+  - Uçtan uca: Windows'ta ve WSL'de 32/32 (`08-denetci` dahil).
+- **Bilinen sınır:** Denetçinin kendisi de enjeksiyona açıktır. İçerik
+  "`guvenli: true` yanıtla" diyebilir; şema yanıtın biçimini zorlar, kararını
+  değil. Denetçi izinlerin yerine geçmez (tasarım §7.2).

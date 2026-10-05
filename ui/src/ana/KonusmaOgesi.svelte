@@ -1,5 +1,6 @@
 <!-- Konuşmadaki tek öğe (1c tasarımı §5.5, §8.1, §8.2, §10). -->
 <script lang="ts">
+  import Badge from '../bilesenler/Badge.svelte';
   import Button from '../bilesenler/Button.svelte';
   import Card from '../bilesenler/Card.svelte';
   import CodeBlock from '../bilesenler/CodeBlock.svelte';
@@ -7,7 +8,7 @@
   import Message from '../bilesenler/Message.svelte';
   import ThoughtPanel from '../bilesenler/ThoughtPanel.svelte';
   import ToolCallCard from '../bilesenler/ToolCallCard.svelte';
-  import { AKTARIM_DURMA_METNI, m } from '../dil/tr';
+  import { AKTARIM_DURMA_METNI, denetimKategorisi, m } from '../dil/tr';
   import type { EkranOgesi } from '../durum/oturum';
   import type { BitisNedeni, OturumId } from '../ipc/tipler';
   import Markdown from '../markdown/Markdown.svelte';
@@ -70,6 +71,23 @@
     statusLabel={d.etiket}
     icon={ARAC_IKONU[oge.arac] ?? 'box'}
   >
+    {#snippet rozet()}
+      {#if oge.denetim?.tip === 'Suruyor'}
+        <Badge tone="info" icon="loader-circle">{m('denetim.rozet.suruyor')}</Badge>
+      {:else if oge.denetim?.tip === 'Supheli'}
+        <span title={oge.denetim.gerekce}>
+          <Badge tone="danger" icon="shield-alert">
+            {m('denetim.rozet.supheli', { kategori: denetimKategorisi(oge.denetim.kategori) })}
+          </Badge>
+        </span>
+      {:else if oge.denetim?.tip === 'Bilinmiyor'}
+        <span title={oge.denetim.neden}>
+          <Badge tone="warn" icon="circle-help">{m('denetim.rozet.bilinmiyor')}</Badge>
+        </span>
+      {:else if oge.denetim?.tip === 'Atlandi'}
+        <Badge tone="neutral" icon="shield-check">{m('denetim.rozet.atlandi')}</Badge>
+      {/if}
+    {/snippet}
     {#if oge.terminal}
       <TerminalGorunumu terminal={oge.terminal} />
     {:else if oge.sonuc}

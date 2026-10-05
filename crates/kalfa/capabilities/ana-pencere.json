@@ -35,6 +35,8 @@
     "allow-yalitimi-onar",
     "allow-yalitim-calisma-alanlari",
     "allow-yalitim-calisma-alanini-kaldir",
+    "allow-denetci-kipi",
+    "allow-denetci-kipini-ayarla",
     "allow-gonderim-gunlugu",
     "allow-gonderim-ogesi",
     "allow-onizleme-ayarla",

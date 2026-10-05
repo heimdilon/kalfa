@@ -2,7 +2,7 @@
 //! testler sahte bir sağlayıcıyla koşar (spec §4.2).
 
 use async_trait::async_trait;
-use kalfa_evren::tipler::{ChatRequest, TermsStatus, TermsText};
+use kalfa_evren::tipler::{ChatRequest, ChatResponse, TermsStatus, TermsText};
 use kalfa_evren::{AkisKanali, EvrenError, EvrenIstemcisi, YanitMeta};
 
 pub struct SaglayiciAkisi {
@@ -13,6 +13,7 @@ pub struct SaglayiciAkisi {
 #[async_trait]
 pub trait Saglayici: Send + Sync {
     async fn akis(&self, istek: ChatRequest) -> Result<SaglayiciAkisi, EvrenError>;
+    async fn sohbet(&self, istek: ChatRequest) -> Result<(ChatResponse, YanitMeta), EvrenError>;
     async fn sart_durumu(&self) -> Result<TermsStatus, EvrenError>;
     async fn sart_metni(&self) -> Result<TermsText, EvrenError>;
     async fn sart_kabul(&self, surum: u32) -> Result<(), EvrenError>;
@@ -34,6 +35,10 @@ impl Saglayici for EvrenSaglayici {
     async fn akis(&self, istek: ChatRequest) -> Result<SaglayiciAkisi, EvrenError> {
         let (meta, olaylar) = self.istemci.sohbet_akisi(&istek).await?;
         Ok(SaglayiciAkisi { meta, olaylar })
+    }
+
+    async fn sohbet(&self, istek: ChatRequest) -> Result<(ChatResponse, YanitMeta), EvrenError> {
+        self.istemci.sohbet(&istek).await
     }
 
     async fn sart_durumu(&self) -> Result<TermsStatus, EvrenError> {

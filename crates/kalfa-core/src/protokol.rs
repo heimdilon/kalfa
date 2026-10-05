@@ -4,6 +4,7 @@
 use kalfa_evren::KrediGozlemi;
 use serde::{Deserialize, Serialize};
 
+use crate::denetci::DenetimSonucu;
 use crate::geri_alma::{GeriAlmaPlani, GeriAlmaSonucu};
 use crate::izin::Kip;
 use crate::kabuk::KabukTarifi;
@@ -263,6 +264,20 @@ pub enum Olay {
         islem: IslemId,
         ogeler: Vec<OnizlemeOgesi>,
         neden: OnizlemeNedeni,
+    },
+    /// Güvenlik denetçisi çağrıyı incelemeye başladı (aşama 3c).
+    DenetimBasladi {
+        cagri: CagriId,
+    },
+    /// Dış kaynaklı sonuç onayla okunan gizli (ya da çok bağlantılı) bir
+    /// dosyadan geldiği için denetçiye gönderilmedi (aşama 3c, Görev 4 ve 8).
+    DenetimAtlandi {
+        cagri: CagriId,
+    },
+    /// Güvenlik denetçisinin sonucu (aşama 3c).
+    DenetimSonucu {
+        cagri: CagriId,
+        sonuc: DenetimSonucu,
     },
 }
 

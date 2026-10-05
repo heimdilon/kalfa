@@ -30,6 +30,7 @@ use kalfa_evren::tipler::{ChatMessage, ToolDef};
 use serde::{Deserialize, Serialize};
 
 use crate::arac::DosyaDegisiklikleri;
+use crate::denetci::DenetimSonucu;
 use crate::geri_alma::{DosyaYedegi, GeriAlmaSonucu};
 use crate::gonderim::{GonderilenOge, IstekSonucu};
 use crate::izin::Kip;
@@ -181,6 +182,19 @@ pub enum KayitOgesi {
     /// Turun özeti (§5.5); `TurBitti`'den sonra, aynı tur kimliğiyle.
     TurOzeti {
         ozet: TurOzeti,
+    },
+    /// Katı kipte işaretli bir öğe için kullanıcının kararı (aşama 3c, Görev 6).
+    /// İçerik değişmez; yalnızca gönderilip gönderilmediği yazılır.
+    DenetimKarari {
+        cagri: CagriId,
+        gonderildi: bool,
+    },
+    /// Güvenlik denetçisinin sonucu (aşama 3c).
+    Denetim {
+        cagri: CagriId,
+        sonuc: DenetimSonucu,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        istek_id: Option<String>,
     },
 }
 

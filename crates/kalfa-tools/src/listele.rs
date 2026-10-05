@@ -101,6 +101,7 @@ impl Arac for DosyaListele {
             kaynak: format!("listeleme:{desen}"),
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
+            kalfa_uretimi: false,
         })
     }
 }

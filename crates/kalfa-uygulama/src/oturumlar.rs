@@ -736,6 +736,8 @@ impl Uygulama {
             kilitler: self.kilitler.al(kok)?,
             sart_kapisi: self.kapi.clone(),
             geri_yukleyici: Some(geri_yukleyici),
+            denetci: self.denetci.clone(),
+            denetci_kipi: Some(self.ayarlar.denetci_kipi_kaynagi()),
         })
     }
 

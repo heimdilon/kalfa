@@ -23,7 +23,7 @@ pub struct KrediGozlemi {
     pub zaman_ms: u64,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct YanitMeta {
     pub istek_id: Option<String>,
     pub yonlendirilen_model: Option<String>,

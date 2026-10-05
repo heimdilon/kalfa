@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use kalfa_evren::tipler::{ChatMessage, Role, ToolDef};
 
+use crate::denetci::DenetimSonucu;
 use crate::geri_alma::GeriAlmaDizini;
 use crate::gonderim::{IstekAsamasi, IstekSonucu};
 use crate::izin::Kip;
@@ -53,6 +54,8 @@ pub struct KurtarilmisDurum {
     pub son_arac_tanimlari: Option<(Option<u64>, Vec<ToolDef>)>,
     /// Göndermeden önce göster ayarı (aşama 3b).
     pub onizleme_acik: bool,
+    /// Kayıttan okunan güvenlik denetimi sonuçları (aşama 3c).
+    pub denetimler: HashMap<CagriId, DenetimSonucu>,
     /// Turların geri alma bilgisi (aşama 3 tasarımı §5.7). Depoda bunun
     /// kullanmadığı dosyalar kayda ulaşmamış yakalamalardır ve silinir (§5.2).
     pub geri_alma: GeriAlmaDizini,
@@ -87,6 +90,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
     let mut baslayan: HashMap<String, BilinmeyenCagri> = HashMap::new();
     let mut biten: HashSet<CagriId> = HashSet::new();
     let mut onizleme_acik = false;
+    let mut denetimler = HashMap::new();
 
     for zarf in kayitlar {
         match &zarf.yuk {
@@ -162,6 +166,9 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
             KayitOgesi::AracBitti { cagri, .. } => {
                 biten.insert(*cagri);
             }
+            KayitOgesi::Denetim { cagri, sonuc, .. } => {
+                denetimler.insert(*cagri, sonuc.clone());
+            }
             _ => {}
         }
     }
@@ -211,6 +218,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
         son_sistem_istemi,
         son_arac_tanimlari,
         onizleme_acik,
+        denetimler,
         geri_alma: GeriAlmaDizini::kayittan(kayitlar),
     })
 }

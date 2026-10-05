@@ -21,6 +21,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::AracKayitDefteri;
+use crate::denetci::{DenetimKipi, GuvenlikDenetcisi};
 use crate::geri_alma::{
     GeriAlmaDizini, GeriYukleyici, OTURUM_ALT_SINIRI, OTURUM_SINIRI, OncekiHalDeposu,
 };
@@ -86,6 +87,7 @@ pub struct OturumAyarlari {
     /// oturumda yok sayılır: geri alma yoktur.
     pub geri_alma_dizini: Option<PathBuf>,
     pub sistem_mesaji: String,
+    pub denetci_kipi: DenetimKipi,
 }
 
 impl OturumAyarlari {
@@ -99,6 +101,7 @@ impl OturumAyarlari {
             kayit_yolu: None,
             geri_alma_dizini: None,
             sistem_mesaji: varsayilan_sistem_mesaji(calisma_alani),
+            denetci_kipi: DenetimKipi::default(),
         }
     }
 }
@@ -130,6 +133,11 @@ pub struct OturumBaglami {
     /// Geri almanın çalışma alanına yazması (aşama 3 tasarımı §5.6); `None`
     /// ise geri alma kullanılamaz.
     pub geri_yukleyici: Option<Arc<dyn GeriYukleyici>>,
+    pub denetci: Arc<dyn GuvenlikDenetcisi>,
+    /// Uygulamanın denetçi kipi ayarı (3c Görev 7). Verilirse her turun
+    /// başında buradan okunur; tur sürerken değişen kip o turu etkilemez.
+    /// `None` ise `OturumAyarlari::denetci_kipi` kullanılır.
+    pub denetci_kipi: Option<Arc<std::sync::RwLock<DenetimKipi>>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -903,6 +911,8 @@ struct Oturum {
     geri_alma: GeriAlmaDizini,
     /// Süren turun özet bilgisi (§5.5).
     tur_ozeti: TurBiriktirici,
+    /// Süren turun başında okunan güvenlik denetçisi kipi (aşama 3c).
+    pub(super) tur_denetci_kipi: DenetimKipi,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -936,6 +946,7 @@ impl Oturum {
         let (olay_tx, olay_rx) = OlayKanali::yeni(ayarlar.olay_butcesi, aktif_tur.clone());
         let olay_kapanma = olay_tx.kapanma();
         let bekleyen_onaylar = BekleyenOnaylar::default();
+        let tur_denetci_kipi = ayarlar.denetci_kipi;
         let oturum = Self {
             kimlik,
             ayarlar,
@@ -963,6 +974,7 @@ impl Oturum {
             depo: geri_alma.depo,
             geri_alma: geri_alma.dizin,
             tur_ozeti: TurBiriktirici::default(),
+            tur_denetci_kipi,
         };
         (
             oturum,
@@ -1091,6 +1103,12 @@ impl Oturum {
     async fn tur_calistir(&mut self, metin: String) {
         let tur = TurId::yeni();
         self.tur = Some(tur);
+        self.tur_denetci_kipi = self
+            .baglam
+            .denetci_kipi
+            .as_ref()
+            .map(|k| *k.read().unwrap_or_else(|z| z.into_inner()))
+            .unwrap_or(self.ayarlar.denetci_kipi);
         self.iptal = CancellationToken::new();
         *self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()) = Some((tur, self.iptal.clone()));
         self.yay(Olay::TurBasladi).await;

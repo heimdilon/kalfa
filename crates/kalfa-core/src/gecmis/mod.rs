@@ -14,6 +14,7 @@ use kalfa_evren::KrediGozlemi;
 use kalfa_evren::tipler::Role;
 use serde::{Deserialize, Serialize};
 
+use crate::denetci::DenetimSonucu;
 use crate::geri_alma::GeriAlmaSonucu;
 use crate::izin::Kip;
 use crate::kayit::KayitOgesi;
@@ -47,6 +48,8 @@ pub enum GorunumOgesi {
         /// `None`: sonuç kaydı yok, çağrı hiç başlamadı.
         durum: Option<AracDurumu>,
         sonuc: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        denetim: Option<DenetimSonucu>,
     },
     TurSonu {
         sira: u64,
@@ -147,6 +150,7 @@ pub fn gorunum_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GorunumOgesi> {
                             argumanlar: tc.function.arguments.clone(),
                             durum: None,
                             sonuc: None,
+                            denetim: None,
                         });
                     }
                 }
@@ -253,6 +257,14 @@ pub fn gorunum_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GorunumOgesi> {
                     {
                         veri_silindi_isle(&mut ozet.dosyalar);
                     }
+                }
+            }
+            KayitOgesi::Denetim { cagri, sonuc, .. } => {
+                let yer = kalfa_yeri.get(cagri).copied();
+                if let Some(GorunumOgesi::AracCagrisi { denetim, .. }) =
+                    yer.and_then(|i| ogeler.get_mut(i))
+                {
+                    *denetim = Some(sonuc.clone());
                 }
             }
             _ => {}

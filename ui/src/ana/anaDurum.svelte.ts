@@ -9,6 +9,7 @@ import { sar as e2eSar } from '../e2e/kanca';
 import * as ipc from '../ipc/ana';
 import { komutHatasi } from '../ipc/hata';
 import type {
+  DenetciDurumu,
   CagriId,
   IslemId,
   Kip,
@@ -58,12 +59,17 @@ export class AnaDurum {
   #eskiYukleniyor = new Set<OturumId>();
   #yenidenAciliyor = new Set<OturumId>();
 
+  /** Denetçi kipi ve ayar dosyasının durumu (3c Görev 8); Ayarlar'da değişir (3e). */
+  denetci = $state<DenetciDurumu | null>(null);
   aktif = $derived(this.secili ? (this.ekranlar.get(this.secili) ?? null) : null);
 
   /** Pencere açılınca: uygulama durumu, liste ve son açık oturum (1c tasarımı §5.6). */
   async baslat(): Promise<void> {
     await this.#dene(async () => {
       this.uygulama = await ipc.uygulamaDurumu();
+    });
+    await this.#dene(async () => {
+      this.denetci = await ipc.denetciKipi();
     });
     await this.#dene(() => ipc.yalitimiDinle((d) => this.#yalitimYaz(d)));
     await this.listeyiYenile();

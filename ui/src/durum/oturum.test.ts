@@ -605,3 +605,59 @@ describe('gönderim önizlemesi (aşama 3b)', () => {
     expect(d.anlik).toBe('OnayBekliyor');
   });
 });
+
+describe('güvenlik denetçisinin rozeti (aşama 3c, Görev 8)', () => {
+  const basladi = (): Olay => ({
+    tip: 'AracCagrisiBasladi',
+    cagri: 'c-1',
+    arac: 'dosya_oku',
+    aciklama: 'a.rs',
+  });
+
+  function rozet(d: OturumEkrani) {
+    const o = d.ogeler.find((x) => x.tip === 'AracCagrisi');
+    return o?.tip === 'AracCagrisi' ? o.denetim : undefined;
+  }
+
+  it('denetleniyor → şüpheli', () => {
+    let d = uygula(acilis(), { tip: 'Kanal', mesaj: paket(1, { tip: 'TurBasladi' }, basladi()) });
+    expect(rozet(d)).toBeNull();
+    d = uygula(d, { tip: 'Kanal', mesaj: paket(2, { tip: 'DenetimBasladi', cagri: 'c-1' }) });
+    expect(rozet(d)).toEqual({ tip: 'Suruyor' });
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(3, {
+        tip: 'DenetimSonucu',
+        cagri: 'c-1',
+        sonuc: { tip: 'Supheli', kategori: 'veri_sizdirma', gerekce: 'g' },
+      }),
+    });
+    expect(rozet(d)).toEqual({ tip: 'Supheli', kategori: 'veri_sizdirma', gerekce: 'g' });
+  });
+
+  it('gizli okuma denetlenmedi diye işaretlenir; başka çağrının rozeti değişmez', () => {
+    let d = uygula(acilis(), { tip: 'Kanal', mesaj: paket(1, { tip: 'TurBasladi' }, basladi()) });
+    d = uygula(d, { tip: 'Kanal', mesaj: paket(2, { tip: 'DenetimAtlandi', cagri: 'c-1' }) });
+    expect(rozet(d)).toEqual({ tip: 'Atlandi' });
+    d = uygula(d, { tip: 'Kanal', mesaj: paket(3, { tip: 'DenetimBasladi', cagri: 'yok' }) });
+    expect(rozet(d)).toEqual({ tip: 'Atlandi' });
+  });
+
+  it('geçmişteki denetim rozete gelir; eski kayıtta rozet yok', () => {
+    const cagri = (denetim?: { tip: 'Bilinmiyor'; neden: string }) => ({
+      tip: 'AracCagrisi' as const,
+      sira: 3,
+      tur: 't-0',
+      model_cagri_id: 'm-1',
+      arac: 'dosya_oku',
+      argumanlar: '{}',
+      durum: 'Basarili' as const,
+      sonuc: 'x',
+      ...(denetim ? { denetim } : {}),
+    });
+    const ile = acilis({ ogeler: [cagri({ tip: 'Bilinmiyor', neden: 'zaman aşımı' })], daha_eski_var: false });
+    expect(rozet(ile)).toEqual({ tip: 'Bilinmiyor', neden: 'zaman aşımı' });
+    const eski = acilis({ ogeler: [cagri()], daha_eski_var: false });
+    expect(rozet(eski)).toBeNull();
+  });
+});

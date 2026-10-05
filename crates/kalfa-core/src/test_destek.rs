@@ -9,7 +9,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, stream};
-use kalfa_evren::tipler::{ChatRequest, FunctionCall, TermsStatus, TermsText, ToolCall};
+use kalfa_evren::tipler::{
+    ChatMessage, ChatRequest, ChatResponse, Choice, FunctionCall, TermsStatus, TermsText, ToolCall,
+};
 use kalfa_evren::{AkisOlayi, EvrenError, YanitMeta};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -90,6 +92,15 @@ impl SahteYanit {
     }
 }
 
+/// Sahte sağlayıcının bir `sohbet()` çağrısına vereceği bloklu yanıt.
+#[derive(Debug, Clone)]
+pub enum SahteSohbet {
+    Json(Value),
+    Metin(String),
+    Hata(EvrenError),
+    Gecikme(Duration),
+}
+
 struct SahteSart {
     surum: u32,
     metin: String,
@@ -99,6 +110,8 @@ struct SahteSart {
 pub struct SahteSaglayici {
     senaryo: Mutex<VecDeque<SahteYanit>>,
     istekler: Mutex<Vec<ChatRequest>>,
+    sohbet_senaryo: Mutex<VecDeque<SahteSohbet>>,
+    sohbet_istekleri: Mutex<Vec<ChatRequest>>,
     sart: Mutex<SahteSart>,
     durum_hatasi: Mutex<Option<EvrenError>>,
 }
@@ -108,6 +121,8 @@ impl SahteSaglayici {
         Arc::new(Self {
             senaryo: Mutex::new(senaryo.into()),
             istekler: Mutex::new(Vec::new()),
+            sohbet_senaryo: Mutex::new(VecDeque::new()),
+            sohbet_istekleri: Mutex::new(Vec::new()),
             sart: Mutex::new(SahteSart {
                 surum: 1,
                 metin: "# Sahte kullanım şartları".into(),
@@ -119,6 +134,14 @@ impl SahteSaglayici {
 
     pub fn istekler(&self) -> Vec<ChatRequest> {
         self.istekler.lock().unwrap().clone()
+    }
+
+    pub fn sohbet_ekle(&self, yanit: SahteSohbet) {
+        self.sohbet_senaryo.lock().unwrap().push_back(yanit);
+    }
+
+    pub fn sohbet_istekleri(&self) -> Vec<ChatRequest> {
+        self.sohbet_istekleri.lock().unwrap().clone()
     }
 
     pub fn kabul_edilen_surumler(&self) -> Vec<u32> {
@@ -166,6 +189,79 @@ impl Saglayici for SahteSaglayici {
                 ),
             }),
             SahteYanit::Hata(hata) => Err(hata),
+        }
+    }
+
+    async fn sohbet(&self, istek: ChatRequest) -> Result<(ChatResponse, YanitMeta), EvrenError> {
+        let model = istek.model.clone();
+        let sira = {
+            let mut istekler = self.sohbet_istekleri.lock().unwrap();
+            istekler.push(istek);
+            istekler.len()
+        };
+        let yanit = self
+            .sohbet_senaryo
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("sahte sohbet senaryosunda yanıt kalmadı");
+        let meta = YanitMeta {
+            istek_id: Some(format!("sahte-sohbet-{sira}")),
+            yonlendirilen_model: Some(model.clone()),
+            ..Default::default()
+        };
+        match yanit {
+            SahteSohbet::Json(deger) => {
+                let metin = deger.to_string();
+                let message = ChatMessage::assistant(Some(metin), Vec::new());
+                Ok((
+                    ChatResponse {
+                        id: format!("sahte-sohbet-{sira}"),
+                        model,
+                        choices: vec![Choice {
+                            index: 0,
+                            message,
+                            finish_reason: Some("stop".to_string()),
+                        }],
+                        usage: None,
+                    },
+                    meta,
+                ))
+            }
+            SahteSohbet::Metin(metin) => {
+                let message = ChatMessage::assistant(Some(metin), Vec::new());
+                Ok((
+                    ChatResponse {
+                        id: format!("sahte-sohbet-{sira}"),
+                        model,
+                        choices: vec![Choice {
+                            index: 0,
+                            message,
+                            finish_reason: Some("stop".to_string()),
+                        }],
+                        usage: None,
+                    },
+                    meta,
+                ))
+            }
+            SahteSohbet::Hata(hata) => Err(hata),
+            SahteSohbet::Gecikme(sure) => {
+                tokio::time::sleep(sure).await;
+                let message = ChatMessage::assistant(Some(String::new()), Vec::new());
+                Ok((
+                    ChatResponse {
+                        id: format!("sahte-sohbet-{sira}"),
+                        model,
+                        choices: vec![Choice {
+                            index: 0,
+                            message,
+                            finish_reason: Some("stop".to_string()),
+                        }],
+                        usage: None,
+                    },
+                    meta,
+                ))
+            }
         }
     }
 
@@ -506,6 +602,7 @@ impl Arac for SahteArac {
                     kaynak: format!("sahte:{}", self.ad),
                     guvenlik_uyarilari: self.guvenlik_uyarilari.clone(),
                     degisiklikler: self.kabuk_degisiklikleri(),
+                    kalfa_uretimi: self.yazar,
                 }),
             },
             _ = iptal.cancelled() => Err(AracHatasi::Iptal),
@@ -721,6 +818,10 @@ pub fn test_baglami(
 ) -> OturumBaglami {
     OturumBaglami {
         sart_kapisi: Arc::new(SartKapisi::yeni(saglayici.clone())),
+        denetci: Arc::new(crate::denetci::YapilandirilmisSiniflandirici::yeni(
+            saglayici.clone(),
+        )),
+        denetci_kipi: None,
         saglayici,
         araclar: Arc::new(AracKayitDefteri::yeni(araclar).expect("araç kaydı")),
         siniflandirici,
