@@ -52,8 +52,11 @@ impl Yalitici for SenaryoYaliticisi {
         }
     }
 
-    fn profil_ozeti(&self, ag: bool) -> Option<String> {
-        self.hazir.then(|| format!("senaryo-{ag}"))
+    fn profil_ozeti(&self, ag: bool, liste_ozeti: Option<&str>) -> Option<String> {
+        self.hazir.then(|| match liste_ozeti {
+            Some(lo) => format!("senaryo-{ag}-{lo}"),
+            None => format!("senaryo-{ag}"),
+        })
     }
 
     fn baslat(&self, _istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi> {

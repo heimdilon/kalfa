@@ -62,6 +62,10 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
   JSON şema); kapalı, uyar ve katı kipleri; kip ayarı (`ayarlar.json`,
   düşürmek onay ister); araç kartında denetim rozetleri; katı kipin kartı.
   G3 ve G4 ölçümleri kapandı. Ayrıntısı aşağıda.
+- **3d — ağ çıkışı (uygulandı; PR #20):** ağlı yalıtımlı komut yalnızca
+  izin listesindeki hostlara, Kalfa'nın vekili üzerinden çıkar. Linux'ta
+  bwrap `--unshare-net` ve `SCM_RIGHTS` köprüsü; Windows'ta `internetClient`'sız
+  AppContainer ve adlandırılmış boru köprüsü. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -1073,6 +1077,27 @@ Tasarım:
     (hafif; uygulayanı kullanıcı seçecek).
   - Uygulandı; PR #47. Ayrıntısı aşağıda.
 - **3d:** ağ çıkışının kısıtlanması (Bulgu 8).
+  - Plan: [`2026-09-28-kalfa-3d-ag-cikisi.md`](superpowers/plans/2026-09-28-kalfa-3d-ag-cikisi.md).
+  - Ortak vekil, izin listesi ve arayüz uygulandı (Görev 1, 2, 3, 5, 6; PR #20).
+  - Windows alt planı [`2026-10-05-kalfa-3d-windows-kopru.md`](superpowers/plans/2026-10-05-kalfa-3d-windows-kopru.md)
+    tamamlandı (Görev W1–W6):
+    - `BoruSunucusu` (`crates/kalfa-sandbox/src/windows/kopru.rs`) ile overlapped
+      adlandırılmış boru, paket SID'i ve Job Object doğrulaması.
+    - `kalfa-kopru` ikilisi (`crates/kalfa-sandbox/src/bin/kalfa-kopru.rs`):
+      `127.0.0.1:0` dinleyicisi, `vekil_ortami` değişkenleri ve boruya köprüleme.
+    - `WindowsYalitici`'da ağlı komut: `internetClient` kaldırıldı; komut
+      yalnızca köprü ve vekil üzerinden izinli hostlara çıkar.
+    - `uyumluluk.rs` (Windows): curl, git, npm, node (`fetch`) ve pip vekille
+      CONNECT gönderiyor.
+    - Bilinen sınırlar testle belgelendi: cargo'nun yeni crate'i açması A15
+      yüzünden kapta düşer; sistem Python'unun `pip`'i A16 sınıfından düşer;
+      Kalfa'nın Python'uyla venv'de `pip install` çalışır.
+    - S13 uçtan uca senaryosu (`09-ag-cikisi.test.mjs`) ve `KALFA_E2E_SAHTE_DNS`
+      desteği.
+    - `kalfa-kopru.exe` `tauri.nsis.conf.json`'da `externalBin` olarak paketlenir;
+      `kalfa-uygulama` ikiliyi kurulu ve geliştirme dizinlerinden bulur.
+  - Linux köprüsü (Görev 4) ve S13 (Görev 7) uygulandı; inceleme bulguları
+    düzeltildi. Ayrıntısı aşağıda.
 - **3e:** "bu oturumda izin ver" kısayolları, ek gizli kalıplar ve onay
   kartının kalan alanları.
 
@@ -1111,7 +1136,7 @@ Bağlam özetleme ve oturum bütçesi aşama 3'ün dışındadır.
 Tasarımın kendi verdiği kararlar ve gerekçeleri tasarım belgesinin
 §2.2'sindedir. Windows'a ve Linux'a özgü davranışlar (AppContainer'da geri
 döngü, bwrap'ta köprü, Windows'ta tarama maliyeti) bu belge yazılırken
-ölçülmedi; açık noktalar G1–G17'dir.
+ölçülmedi; açık noktalar G1–G18'dir.
 
 ### 3a — tur özeti ve geri alma (uygulandı; PR incelemede)
 
@@ -1204,8 +1229,38 @@ Dal `3c/denetci`, PR #47. Görev 2–5'i Antigravity, 1'i ve 6–11'i Claude uyg
   "`guvenli: true` yanıtla" diyebilir. Şema yanıtın biçimini zorlar, kararını
   değil. Denetçi izinlerin yerine geçmez; ek bir katmandır.
 
+### 3d — ağ çıkışı (uygulandı; PR #20 incelemede)
+
+Plan: [`2026-09-28-kalfa-3d-ag-cikisi.md`](superpowers/plans/2026-09-28-kalfa-3d-ag-cikisi.md),
+Windows alt planı: [`2026-10-05-kalfa-3d-windows-kopru.md`](superpowers/plans/2026-10-05-kalfa-3d-windows-kopru.md).
+Görev 2, 3, 5, 6 ve W1–W6'yı Antigravity; ölçümleri, Görev 4, 7, 9'u ve
+inceleme düzeltmelerini Claude yaptı.
+
+- **Vekil** (`kalfa-sandbox/src/vekil/`): izin listesi (tam host eşleşmesi),
+  adres denetimi (geri döngü, bağlantı yerel ve meta veri adresi her zaman
+  yasak; özel ağ yalnızca işaretli hosta), tek çözüm, IP'yle istek yalnızca
+  listede IP olarak yazılmışsa, `CONNECT`'te SNI eşleşmesi.
+- **Linux:** bwrap her profilde `--unshare-net`; ağlı profilde köprü
+  (`/run/kalfa-kopru`) kabın `127.0.0.1`'ini dinler ve bağlantıyı
+  `SCM_RIGHTS` ile Kalfa'ya verir; vekil tanımlayıcının bağlı bir TCP soketi
+  olduğunu denetler. Devredilmeyen tanımlayıcılar kaba geçmez
+  (`close_range`).
+- **Windows:** ağlı kap `internetClient` almaz; köprü rastgele adlı,
+  geliştiriciye ve paket SID'ine açık bir boruya bağlanır; vekil bağlanan
+  sürecin komutun iş nesnesinde olduğunu denetler.
+- **Model ve arayüz:** `ag_hostlari` mühre ve onay kartına girer; sonuçta
+  `[ağ]` satırları, tur özetinde ağ özeti.
+- **İnceleme bulguları** (ayrıntısı planın uygulama sonucunda): sürüm
+  derlemesinde açık kalan e2e kancası adres denetimini kapatabiliyordu
+  (artık yalnızca `e2e` özelliğiyle derlenir); Windows'ta ortamda aynı ad iki
+  kez tanımlanıyordu; 5 Windows yalıtım testi kırmızıydı; S13 hiç
+  koşmamıştı.
+- **Bilinen sınırlar:** Java vekili okumaz; ECH kullanan araçlar SNI
+  denetimine takılır; kurumsal vekil arkasında vekilin dış bağlantısı
+  kurumsal vekilden geçmez (G16); Windows'ta cargo (A15) ve sistem
+  Python'unun pip'i (A16).
+
 **Sıradaki iş:**
-- PR #47'nin (3c) birleştirilmesi.
-- 3d (ağ çıkışı, PR #20): Antigravity uyguluyor.
-- Ardından 3e.
+- PR #20'nin (3d) birleştirilmesi.
+- Ardından 3e (PR #23).
 

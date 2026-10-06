@@ -436,6 +436,7 @@ struct KayitliYalitici {
     hazirlanmamis: AtomicBool,
     /// `alani_hazirla` çağrılarının `hazirlik_onaylandi` değerleri.
     hazirliklar: std::sync::Mutex<Vec<bool>>,
+    sahte_ag: std::sync::Mutex<Option<kalfa_sandbox::vekil::AgOzeti>>,
 }
 
 impl Yalitici for KayitliYalitici {
@@ -453,8 +454,11 @@ impl Yalitici for KayitliYalitici {
         }
     }
 
-    fn profil_ozeti(&self, ag: bool) -> Option<String> {
-        Some(format!("ozet-{ag}"))
+    fn profil_ozeti(&self, ag: bool, liste_ozeti: Option<&str>) -> Option<String> {
+        match liste_ozeti {
+            Some(lo) => Some(format!("ozet-{ag}-{lo}")),
+            None => Some(format!("ozet-{ag}")),
+        }
     }
 
     fn baslat(&self, istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi> {
@@ -464,11 +468,15 @@ impl Yalitici for KayitliYalitici {
         if self.basarisiz.load(Ordering::SeqCst) {
             return Err(BaslatmaHatasi::Yalitim("deneme".into()));
         }
-        Yalitimsiz.baslat(&CalistirmaIstegi {
+        let mut surec = Yalitimsiz.baslat(&CalistirmaIstegi {
             dizin: std::env::temp_dir(),
             alan: None,
             ..istek.clone()
-        })
+        })?;
+        if let Some(ozet) = self.sahte_ag.lock().unwrap().clone() {
+            surec.ag_kapat_ekle(Box::new(|| Box::pin(async move { ozet })));
+        }
+        Ok(surec)
     }
 
     fn yeniden_algila(&self) -> YalitimDurumu {
@@ -683,7 +691,9 @@ async fn yalitim_hazirsa_tarif_profil_ozetini_tasir_ve_alan_bilgisi_verilir() {
         .unwrap()
         .kabuk
         .unwrap();
-    assert!(matches!(t.yalitim, YalitimOzeti::Yalitimli { profil, .. } if profil == "ozet-true"));
+    assert!(
+        matches!(t.yalitim, YalitimOzeti::Yalitimli { profil, .. } if profil.starts_with("ozet-true"))
+    );
 
     let yazdir = if cfg!(windows) {
         "Write-Output tamam"
@@ -914,4 +924,268 @@ async fn sinir_matrisi() {
             assert_eq!(guven.kayit.load(Ordering::SeqCst), 0, "{hucre}");
         }
     }
+}
+
+#[tokio::test]
+async fn ag_hostlari_ag_olmadan_gecersiz() {
+    let (_d, arac, _guven) = kur();
+    let a = json!({
+        "program": "cargo",
+        "argumanlar": ["check"],
+        "ag": false,
+        "ag_hostlari": ["github.com"]
+    });
+    match arac.hazirla(&a).await {
+        Err(AracHatasi::Gecersiz(m)) => {
+            assert!(m.contains("ag: true") || m.contains("ağ"), "{m}");
+        }
+        diger => panic!("ag olmadan ag_hostlari hata vermeliydi: {diger:?}"),
+    }
+}
+
+#[tokio::test]
+async fn on_altidan_fazla_host_gecersiz() {
+    let (_d, arac, _guven) = kur();
+    let hostlar: Vec<String> = (0..17).map(|i| format!("host{i}.com")).collect();
+    let a = json!({
+        "program": "cargo",
+        "argumanlar": ["check"],
+        "ag": true,
+        "ag_hostlari": hostlar
+    });
+    match arac.hazirla(&a).await {
+        Err(AracHatasi::Gecersiz(m)) => {
+            assert!(m.contains("16"), "{m}");
+        }
+        diger => panic!("16'dan fazla host hata vermeliydi: {diger:?}"),
+    }
+}
+
+#[tokio::test]
+async fn joker_host_gecersiz() {
+    let (_d, arac, _guven) = kur();
+    let a = json!({
+        "program": "cargo",
+        "argumanlar": ["check"],
+        "ag": true,
+        "ag_hostlari": ["*.github.com"]
+    });
+    match arac.hazirla(&a).await {
+        Err(AracHatasi::Gecersiz(m)) => {
+            assert!(m.contains("joker") || m.contains('*'), "{m}");
+        }
+        diger => panic!("joker host hata vermeliydi: {diger:?}"),
+    }
+}
+
+#[tokio::test]
+async fn tekrarlanan_host_bir_kez() {
+    let (_d, arac, _guven) = kur();
+    let a = json!({
+        "program": "cargo",
+        "argumanlar": ["check"],
+        "ag": true,
+        "ag_hostlari": ["github.com", "GITHUB.COM", "github.com:443"]
+    });
+    let h = arac.hazirla(&a).await.expect("hazırlık başarılı olmalı");
+    let t = h.kabuk.expect("kabuk tarifi olmalı");
+    assert_eq!(t.ag_hostlari, vec!["github.com:443"]);
+}
+
+#[tokio::test]
+async fn reddedilen_baglanti_sonuca_satir_ekler() {
+    let (_d, arac, yalitici) = kur_yalitimli();
+    yalitici
+        .sahte_ag
+        .lock()
+        .unwrap()
+        .replace(kalfa_sandbox::vekil::AgOzeti {
+            baglantilar: vec![
+                kalfa_sandbox::vekil::AgBaglantisi {
+                    host: "index.crates.io".into(),
+                    port: 443,
+                    karar: kalfa_sandbox::vekil::AgKarari::Izinli,
+                    giden: 100,
+                    gelen: 200,
+                },
+                kalfa_sandbox::vekil::AgBaglantisi {
+                    host: "evil.com".into(),
+                    port: 443,
+                    karar: kalfa_sandbox::vekil::AgKarari::ListedeYok,
+                    giden: 0,
+                    gelen: 0,
+                },
+                kalfa_sandbox::vekil::AgBaglantisi {
+                    host: "yerel.test".into(),
+                    port: 80,
+                    karar: kalfa_sandbox::vekil::AgKarari::YasakAdres(
+                        kalfa_sandbox::vekil::AdresReddi::Yerel,
+                    ),
+                    giden: 0,
+                    gelen: 0,
+                },
+                kalfa_sandbox::vekil::AgBaglantisi {
+                    host: "sni.test".into(),
+                    port: 443,
+                    karar: kalfa_sandbox::vekil::AgKarari::SniUyusmuyor {
+                        sni: Some("baska.test".into()),
+                    },
+                    giden: 0,
+                    gelen: 0,
+                },
+            ],
+        });
+    let mut a = yazdir();
+    a["ag"] = json!(true);
+    let c = calistir_tam(&arac, &a).await.unwrap();
+    assert!(
+        c.icerik
+            .contains("[ağ] `evil.com:443` engellendi (izin listesinde yok)"),
+        "{}",
+        c.icerik
+    );
+    assert!(
+        c.icerik
+            .contains("[ağ] `yerel.test:80` engellendi: özel ya da yerel bir adrese çözüldü"),
+        "{}",
+        c.icerik
+    );
+    assert!(
+        c.icerik
+            .contains("[ağ] `sni.test:443` engellendi: SNI farklı"),
+        "{}",
+        c.icerik
+    );
+    assert!(
+        !c.icerik.contains("index.crates.io"),
+        "izinli host ret satırı almaz"
+    );
+    let ag = c.ag.expect("ağ komut özeti");
+    assert_eq!(ag.reddedilen_sayisi, 3);
+    assert_eq!(ag.toplam_giden, 100);
+    assert_eq!(ag.toplam_gelen, 200);
+}
+
+#[tokio::test]
+async fn ayni_ret_tek_satir() {
+    let (_d, arac, yalitici) = kur_yalitimli();
+    yalitici
+        .sahte_ag
+        .lock()
+        .unwrap()
+        .replace(kalfa_sandbox::vekil::AgOzeti {
+            baglantilar: vec![
+                kalfa_sandbox::vekil::AgBaglantisi {
+                    host: "evil.com".into(),
+                    port: 443,
+                    karar: kalfa_sandbox::vekil::AgKarari::ListedeYok,
+                    giden: 0,
+                    gelen: 0,
+                },
+                kalfa_sandbox::vekil::AgBaglantisi {
+                    host: "evil.com".into(),
+                    port: 443,
+                    karar: kalfa_sandbox::vekil::AgKarari::ListedeYok,
+                    giden: 0,
+                    gelen: 0,
+                },
+                kalfa_sandbox::vekil::AgBaglantisi {
+                    host: "evil.com".into(),
+                    port: 443,
+                    karar: kalfa_sandbox::vekil::AgKarari::ListedeYok,
+                    giden: 0,
+                    gelen: 0,
+                },
+            ],
+        });
+    let mut a = yazdir();
+    a["ag"] = json!(true);
+    let c = calistir_tam(&arac, &a).await.unwrap();
+    assert!(
+        c.icerik
+            .contains("[ağ] `evil.com:443` engellendi (izin listesinde yok) (3)"),
+        "{}",
+        c.icerik
+    );
+    assert_eq!(
+        c.icerik.matches("evil.com").count(),
+        1,
+        "aynı ret tek satırdır"
+    );
+}
+
+#[tokio::test]
+async fn kurumsal_vekil_notu() {
+    let (_d, arac, yalitici) = kur_yalitimli();
+    yalitici
+        .sahte_ag
+        .lock()
+        .unwrap()
+        .replace(kalfa_sandbox::vekil::AgOzeti {
+            baglantilar: vec![
+                kalfa_sandbox::vekil::AgBaglantisi {
+                    host: "cozulemeyen.com".into(),
+                    port: 443,
+                    karar: kalfa_sandbox::vekil::AgKarari::Cozulemedi("ad bulunamadı".into()),
+                    giden: 0,
+                    gelen: 0,
+                },
+                kalfa_sandbox::vekil::AgBaglantisi {
+                    host: "baglanilamayan.com".into(),
+                    port: 443,
+                    karar: kalfa_sandbox::vekil::AgKarari::Baglanamadi(
+                        "bağlantı reddedildi".into(),
+                    ),
+                    giden: 0,
+                    gelen: 0,
+                },
+            ],
+        });
+    let mut a = yazdir();
+    a["ag"] = json!(true);
+
+    unsafe {
+        std::env::remove_var("HTTPS_PROXY");
+        std::env::remove_var("https_proxy");
+    }
+    let c1 = calistir_tam(&arac, &a).await.unwrap();
+    assert!(
+        c1.icerik.contains("[ağ] `cozulemeyen.com:443` çözülemedi"),
+        "{}",
+        c1.icerik
+    );
+    assert!(
+        c1.icerik
+            .contains("[ağ] `baglanilamayan.com:443` bağlanılamadı"),
+        "{}",
+        c1.icerik
+    );
+    assert!(
+        !c1.icerik
+            .contains("kurumsal vekil bu sürümde desteklenmiyor"),
+        "{}",
+        c1.icerik
+    );
+
+    unsafe {
+        std::env::set_var("HTTPS_PROXY", "http://127.0.0.1:8080");
+    }
+    let c2 = calistir_tam(&arac, &a).await.unwrap();
+    unsafe {
+        std::env::remove_var("HTTPS_PROXY");
+    }
+    assert!(
+        c2.icerik.contains(
+            "[ağ] `cozulemeyen.com:443` çözülemedi (kurumsal vekil bu sürümde desteklenmiyor)"
+        ),
+        "{}",
+        c2.icerik
+    );
+    assert!(
+        c2.icerik.contains(
+            "[ağ] `baglanilamayan.com:443` bağlanılamadı (kurumsal vekil bu sürümde desteklenmiyor)"
+        ),
+        "{}",
+        c2.icerik
+    );
 }

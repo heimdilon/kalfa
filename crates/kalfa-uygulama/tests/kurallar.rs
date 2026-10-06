@@ -10,8 +10,8 @@ use kalfa_core::test_destek::SahteSaglayici;
 use kalfa_evren::EvrenError;
 use kalfa_uygulama::anahtar::{AnahtarDeposu, AnahtarKasasi, BellekDeposu, DepoHatasi};
 use kalfa_uygulama::dizin::{
-    geri_alma_dizini, kalfa_araclari, kayit_yolu, oturum_dizini, oturum_geri_alma_dizini,
-    veri_dizini, yalitim_dizini,
+    geri_alma_dizini, kalfa_araclari, kayit_yolu, kopru_ikilisi, oturum_dizini,
+    oturum_geri_alma_dizini, veri_dizini, yalitim_dizini,
 };
 use kalfa_uygulama::evren::DegisirSaglayici;
 use kalfa_uygulama::guvenlik::{acilabilir_adres, gezinme_izinli, yukseltme_mi};
@@ -124,6 +124,42 @@ fn kalfa_araclari_kurulum_ya_da_e2e_degiskeninden_gelir() {
     } else {
         assert!(degisken.is_empty(), "{degisken:?}");
     }
+}
+
+#[test]
+fn kopru_ikilisi_kurulum_ve_gelistirme_dizininden_gelir() {
+    let d = tempfile::tempdir().unwrap();
+    let exe = d.path().join("kalfa.exe");
+    std::fs::write(&exe, b"").unwrap();
+
+    let ad = if cfg!(windows) {
+        "kalfa-kopru.exe"
+    } else {
+        "kalfa-kopru"
+    };
+
+    // Henüz kalfa-kopru yokken None döner
+    assert_eq!(kopru_ikilisi(&exe, None), None);
+
+    // Ortam değişkeni geçerli dosya ise önceliklidir
+    let ozel_kopru = d.path().join("ozel-kopru");
+    std::fs::write(&ozel_kopru, b"").unwrap();
+    assert_eq!(
+        kopru_ikilisi(&exe, Some(ozel_kopru.clone().into_os_string())),
+        Some(ozel_kopru)
+    );
+
+    // Kurulu sürümde (exe ile aynı dizinde kalfa-kopru)
+    let ayni_dizin_kopru = d.path().join(ad);
+    std::fs::write(&ayni_dizin_kopru, b"").unwrap();
+    assert_eq!(kopru_ikilisi(&exe, None), Some(ayni_dizin_kopru.clone()));
+
+    // Geliştirme derlemesinde (target/debug/deps/... altından üstteki kalfa-kopru)
+    let alt_dizin = d.path().join("deps");
+    std::fs::create_dir_all(&alt_dizin).unwrap();
+    let alt_exe = alt_dizin.join("test.exe");
+    std::fs::write(&alt_exe, b"").unwrap();
+    assert_eq!(kopru_ikilisi(&alt_exe, None), Some(ayni_dizin_kopru));
 }
 
 #[test]

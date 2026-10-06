@@ -30,12 +30,30 @@ function calistir(program, argumanlar, dizin) {
   }
 }
 
-calistir('cargo', ['build', '-p', 'kalfa-yalitim', '--release', '--locked'], kok);
+calistir(
+  'cargo',
+  [
+    'build',
+    '-p',
+    'kalfa-yalitim',
+    '-p',
+    'kalfa-sandbox',
+    '--bin',
+    'kalfa-kopru',
+    '--release',
+    '--locked',
+  ],
+  kok,
+);
 const ikililer = join(kalfa, 'binaries');
 mkdirSync(ikililer, { recursive: true });
 copyFileSync(
   join(kok, 'target', 'release', 'kalfa-yalitim.exe'),
   join(ikililer, `kalfa-yalitim-${hedef}.exe`),
+);
+copyFileSync(
+  join(kok, 'target', 'release', 'kalfa-kopru.exe'),
+  join(ikililer, `kalfa-kopru-${hedef}.exe`),
 );
 // Python ve Node sabit sürüm ve SHA-256 ile `araclar/`'a açılır; kurucu onları
 // `$INSTDIR\araclar\`'a koyar. Python'un yalıtımda çalışması Kalfa'nın

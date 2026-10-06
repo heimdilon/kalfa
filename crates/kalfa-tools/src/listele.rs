@@ -102,6 +102,7 @@ impl Arac for DosyaListele {
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
             kalfa_uretimi: false,
+            ag: None,
         })
     }
 }

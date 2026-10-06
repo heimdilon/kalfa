@@ -101,6 +101,9 @@ pub struct AracCiktisi {
     /// Kalfa'nın kendisi tarafından üretilen sonuç (aşama 3c, tasarım §7.3);
     /// örn. `dosya_yaz`'ın "yazıldı" iletisi. Güvenlik denetçisine gönderilmez.
     pub kalfa_uretimi: bool,
+    /// Komutun vekilden geçen ağ özeti (aşama 3d, tasarım §8.2); yalnızca kabuk
+    /// doldurur. Tur özetine girer.
+    pub ag: Option<Box<crate::tur_ozeti::AgKomutOzeti>>,
 }
 
 /// Bir araç çıktısının denetim durumunu belirtir (tasarım §7.3).

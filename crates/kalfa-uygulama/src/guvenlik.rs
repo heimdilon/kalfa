@@ -174,6 +174,7 @@ mod tests {
                 bicim: KabukBicimi::Program,
                 dizin: ".".into(),
                 ag: false,
+                ag_hostlari: Vec::new(),
                 yalitim,
                 ilk_cagri: true,
                 alan_hazirligi,

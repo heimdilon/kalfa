@@ -92,6 +92,7 @@ struct Istek {
     /// Çalışma alanına göre dizin; kök için `None`.
     dizin: Option<CalismaYolu>,
     ag: bool,
+    ag_hostlari: Vec<String>,
     sure: Duration,
     /// Sonucun kaynak etiketi: `kabuk:<program>`.
     kaynak: String,
@@ -120,6 +121,34 @@ impl KabukAraci {
             }
         };
         let ag = a.get("ag").and_then(Value::as_bool).unwrap_or(false);
+        let ag_hostlari = match a.get("ag_hostlari") {
+            None => Vec::new(),
+            Some(Value::Array(l)) => {
+                if !ag {
+                    return Err(gecersiz(
+                        "`ag_hostlari` yalnızca `ag: true` ile verilebilir.",
+                    ));
+                }
+                if l.len() > 16 {
+                    return Err(gecersiz("`ag_hostlari` en çok 16 öğe içerebilir."));
+                }
+                let mut cozulmus = Vec::new();
+                let mut gorulen = std::collections::HashSet::new();
+                for v in l {
+                    let s = v
+                        .as_str()
+                        .ok_or_else(|| gecersiz("`ag_hostlari` yalnızca metin içerebilir."))?;
+                    let (host, port) = kalfa_sandbox::vekil::ag_hostu_coz(s)
+                        .map_err(|e| gecersiz(format!("Geçersiz ağ hostu `{s}`: {e}")))?;
+                    let normal = format!("{host}:{port}");
+                    if gorulen.insert(normal.clone()) {
+                        cozulmus.push(normal);
+                    }
+                }
+                cozulmus
+            }
+            Some(_) => return Err(gecersiz("`ag_hostlari` bir metin listesi olmalı.")),
+        };
         let sure_sn = a
             .get("zaman_asimi_sn")
             .and_then(Value::as_u64)
@@ -182,6 +211,7 @@ impl KabukAraci {
             gosterim,
             dizin,
             ag,
+            ag_hostlari,
             sure: Duration::from_secs(sure_sn),
             kaynak,
         })
@@ -225,11 +255,11 @@ fn alintila(a: &str) -> String {
 impl KabukAraci {
     /// Tarifteki yalıtım: arka uç ve profil özeti (§7.1). Özet mühre girer;
     /// kullanıcı bir dizin eklerse bekleyen onay geçersizleşir.
-    fn yalitim_ozeti(&self, ag: bool) -> YalitimOzeti {
+    fn yalitim_ozeti(&self, ag: bool, liste_ozeti: Option<&str>) -> YalitimOzeti {
         match self.yalitici.durum() {
             YalitimDurumu::Hazir { arka_uc, surum } => YalitimOzeti::Yalitimli {
                 arka_uc,
-                profil: self.yalitici.profil_ozeti(ag).unwrap_or(surum),
+                profil: self.yalitici.profil_ozeti(ag, liste_ozeti).unwrap_or(surum),
             },
             YalitimDurumu::Yok { talimat, .. } => YalitimOzeti::Yalitimsiz { talimat },
         }
@@ -450,7 +480,10 @@ impl Arac for KabukAraci {
         "Çalışma alanında bir komut çalıştırır. Mümkünse `program` ve `argumanlar` ver; boru, \
          yönlendirme ya da birden çok komut gerekiyorsa `betik` ver (Linux'ta sh, Windows'ta \
          PowerShell). Ağ varsayılan olarak kapalıdır; ağ gerekiyorsa `ag: true` iste, bu her \
-         kipte onay gerektirir. Standart girdi kapalıdır; etkileşim bekleyen komut çalıştırma. \
+         kipte onay gerektirir. Ağ açıkken yalnızca izin listesindeki paket kayıtlarına ve \
+         GitHub indirme uçlarına erişilebilir; `github.com` varsayılan listede yoktur, Git \
+         ve GitHub indirmeleri için `ag_hostlari` ile istenmelidir. `ag_hostlari` en çok 16 \
+         öğe alabilir. Standart girdi kapalıdır; etkileşim bekleyen komut çalıştırma. \
          Çıktı uzunsa baştan ve sondan kırpılır."
     }
 
@@ -463,6 +496,11 @@ impl Arac for KabukAraci {
                 "betik": {"type": "string", "description": "Kabukta çalışacak metin"},
                 "dizin": {"type": "string", "description": "Çalışma alanına göre çalışma dizini; varsayılan kök"},
                 "ag": {"type": "boolean", "default": false},
+                "ag_hostlari": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Ağ açıkken bağlanılacak ek hostlar (host veya host:port; en çok 16 adet; github.com varsayılan listede yoktur)"
+                },
                 "zaman_asimi_sn": {"type": "integer", "minimum": 1, "maximum": AZAMI_SURE_SN, "default": VARSAYILAN_SURE_SN}
             },
             "oneOf": [{"required": ["program"]}, {"required": ["betik"]}],
@@ -487,7 +525,19 @@ impl Arac for KabukAraci {
                 yorumlayici: program::yorumlayici_adi().to_string(),
             },
         };
-        let yalitim = self.yalitim_ozeti(istek.ag);
+        let (_, liste_ozeti) = if istek.ag {
+            let cagri: Vec<(String, u16)> = istek
+                .ag_hostlari
+                .iter()
+                .filter_map(|s| kalfa_sandbox::vekil::ag_hostu_coz(s).ok())
+                .collect();
+            let l = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &cagri);
+            let ozet = l.ozet();
+            (Some(l), Some(ozet))
+        } else {
+            (None, None)
+        };
+        let yalitim = self.yalitim_ozeti(istek.ag, liste_ozeti.as_deref());
         if !yalitim.yalitimli_mi() && !self.izin.izinli_mi() {
             return Err(gecersiz(YALITIMSIZ_KAPALI));
         }
@@ -506,6 +556,7 @@ impl Arac for KabukAraci {
                     .as_ref()
                     .map_or_else(|| ".".to_string(), |d| d.as_str().to_string()),
                 ag: istek.ag,
+                ag_hostlari: istek.ag_hostlari,
                 yalitim,
                 ilk_cagri: !self.guven.guvenildi_mi(),
                 alan_hazirligi,
@@ -578,11 +629,22 @@ impl Arac for KabukAraci {
         {
             *program = b.kok.join(goreli).display().to_string();
         }
+        let ag_listesi = if istek.ag {
+            let cagri: Vec<(String, u16)> = istek
+                .ag_hostlari
+                .iter()
+                .filter_map(|s| kalfa_sandbox::vekil::ag_hostu_coz(s).ok())
+                .collect();
+            Some(kalfa_sandbox::vekil::IzinListesi::yeni(&[], &cagri))
+        } else {
+            None
+        };
         let calistirma = CalistirmaIstegi {
             komut,
             dizin,
             ortam: ortam::uret(std::env::vars()),
             ag: istek.ag,
+            ag_listesi,
             alan,
         };
         let surec = self.yalitici.baslat(&calistirma).map_err(|e| {
@@ -633,12 +695,20 @@ impl Arac for KabukAraci {
         if let Some(talimat) = cargo_talimati(cfg!(windows), yalitimli, cargo, basarili, &metin) {
             govde.push_str(&format!("\n--- Kalfa ---\n{talimat}"));
         }
+        let ag_satirlari = ag_satirlari_uret(sonuc.ag.as_ref());
+        let ag_metni = if ag_satirlari.is_empty() {
+            String::new()
+        } else {
+            format!("\n{}", ag_satirlari.join("\n"))
+        };
+        let ag_ozeti = ag_komut_ozeti(sonuc.ag.as_ref());
         let cikti = AracCiktisi {
-            icerik: format!("{durum}\nSüre: {sure} sn\n{govde}"),
+            icerik: format!("{durum}\nSüre: {sure} sn\n{govde}{ag_metni}"),
             kaynak: istek.kaynak,
             guvenlik_uyarilari,
             degisiklikler: degisiklikler.map(Box::new),
             kalfa_uretimi: false,
+            ag: ag_ozeti.map(Box::new),
         };
         if sonuc.bitis == Bitis::Cikti(Some(0)) && !karantina_basarisiz {
             Ok(cikti)
@@ -753,6 +823,126 @@ fn cargo_talimati(
     .iter()
     .any(|iz| metin.contains(iz));
     (windows && yalitimli && cargo && !basarili && eksik).then_some(CARGO_EKSIK_CRATE)
+}
+
+/// Ağ özetinden reddedilen bağlantılar için modelin göreceği `[ağ]` satırlarını üretir.
+fn ag_satirlari_uret(ag: Option<&kalfa_sandbox::vekil::AgOzeti>) -> Vec<String> {
+    use kalfa_sandbox::vekil::AgKarari;
+    let Some(ag) = ag else {
+        return Vec::new();
+    };
+    let kurumsal =
+        std::env::var_os("HTTPS_PROXY").is_some() || std::env::var_os("https_proxy").is_some();
+    let mut sirali: Vec<(String, u32)> = Vec::new();
+    for b in &ag.baglantilar {
+        let satir = match &b.karar {
+            AgKarari::Izinli => continue,
+            AgKarari::ListedeYok | AgKarari::IpIleIstek => {
+                format!(
+                    "[ağ] `{}:{}` engellendi (izin listesinde yok)",
+                    b.host, b.port
+                )
+            }
+            AgKarari::YasakAdres(_) => {
+                format!(
+                    "[ağ] `{}:{}` engellendi: özel ya da yerel bir adrese çözüldü",
+                    b.host, b.port
+                )
+            }
+            AgKarari::SniUyusmuyor { .. } => {
+                format!("[ağ] `{}:{}` engellendi: SNI farklı", b.host, b.port)
+            }
+            AgKarari::Cozulemedi(_) => {
+                if kurumsal {
+                    format!(
+                        "[ağ] `{}:{}` çözülemedi (kurumsal vekil bu sürümde desteklenmiyor)",
+                        b.host, b.port
+                    )
+                } else {
+                    format!("[ağ] `{}:{}` çözülemedi", b.host, b.port)
+                }
+            }
+            AgKarari::Baglanamadi(_) => {
+                if kurumsal {
+                    format!(
+                        "[ağ] `{}:{}` bağlanılamadı (kurumsal vekil bu sürümde desteklenmiyor)",
+                        b.host, b.port
+                    )
+                } else {
+                    format!("[ağ] `{}:{}` bağlanılamadı", b.host, b.port)
+                }
+            }
+            AgKarari::Gecersiz(_) => {
+                format!("[ağ] `{}:{}` engellendi (geçersiz istek)", b.host, b.port)
+            }
+        };
+        if let Some((_, sayi)) = sirali.iter_mut().find(|(s, _)| s == &satir) {
+            *sayi += 1;
+        } else {
+            sirali.push((satir, 1));
+        }
+    }
+    sirali
+        .into_iter()
+        .map(|(satir, sayi)| {
+            if sayi > 1 {
+                format!("{satir} ({sayi})")
+            } else {
+                satir
+            }
+        })
+        .collect()
+}
+
+/// Ağ özetinden tur özetine gidecek `AgKomutOzeti`'ni üretir.
+fn ag_komut_ozeti(
+    ag: Option<&kalfa_sandbox::vekil::AgOzeti>,
+) -> Option<kalfa_core::tur_ozeti::AgKomutOzeti> {
+    let ag = ag?;
+    if ag.baglantilar.is_empty() {
+        return None;
+    }
+    use kalfa_core::tur_ozeti::{AgHostOzeti, AgKomutOzeti};
+    let mut hostlar: Vec<AgHostOzeti> = Vec::new();
+    let mut toplam_giden = 0u64;
+    let mut toplam_gelen = 0u64;
+    let mut reddedilen_sayisi = 0u32;
+
+    for b in &ag.baglantilar {
+        toplam_giden = toplam_giden.saturating_add(b.giden);
+        toplam_gelen = toplam_gelen.saturating_add(b.gelen);
+        let ret = b.karar != kalfa_sandbox::vekil::AgKarari::Izinli;
+        if ret {
+            reddedilen_sayisi = reddedilen_sayisi.saturating_add(1);
+        }
+        if let Some(h) = hostlar
+            .iter_mut()
+            .find(|h| h.host == b.host && h.port == b.port)
+        {
+            h.baglanti_sayisi = h.baglanti_sayisi.saturating_add(1);
+            h.giden_bayt = h.giden_bayt.saturating_add(b.giden);
+            h.gelen_bayt = h.gelen_bayt.saturating_add(b.gelen);
+            if ret {
+                h.reddedilenler = h.reddedilenler.saturating_add(1);
+            }
+        } else {
+            hostlar.push(AgHostOzeti {
+                host: b.host.clone(),
+                port: b.port,
+                baglanti_sayisi: 1,
+                giden_bayt: b.giden,
+                gelen_bayt: b.gelen,
+                reddedilenler: if ret { 1 } else { 0 },
+            });
+        }
+    }
+
+    Some(AgKomutOzeti {
+        hostlar,
+        toplam_giden,
+        toplam_gelen,
+        reddedilen_sayisi,
+    })
 }
 
 #[cfg(test)]

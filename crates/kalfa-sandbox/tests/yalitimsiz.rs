@@ -25,6 +25,7 @@ fn istek(komut: KomutBicimi) -> CalistirmaIstegi {
         dizin: std::env::temp_dir(),
         ortam: ortam::uret(std::env::vars()),
         ag: false,
+        ag_listesi: None,
         alan: None,
     }
 }

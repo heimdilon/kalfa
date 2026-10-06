@@ -8,7 +8,14 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { GECERLI_ANAHTAR, Kalfa, kalfaProfilSayisi, sureyleBekle } from '../yardimci/kalfa.mjs';
+import {
+  GECERLI_ANAHTAR,
+  Kalfa,
+  kalfaProfilSayisi,
+  sayfaMetni,
+  sureyleBekle,
+  terminalMetni,
+} from '../yardimci/kalfa.mjs';
 
 /** İptal testindeki süreçleri bulmak için komut satırına eklenen işaret. */
 const ISARET = `kalfa-e2e-kabuk-${process.pid}`;
@@ -105,18 +112,6 @@ function isaretliSurecler() {
       return false;
     }
   });
-}
-
-/** Konuşmadaki son kabuk çağrısının terminali. */
-async function terminalMetni(k) {
-  return k.b.execute(
-    () => [...document.querySelectorAll('[aria-label="Komut çıktısı"]')].at(-1)?.textContent ?? '',
-  );
-}
-
-/** Seçiciye uyan ilk öğenin metni. */
-async function sayfaMetni(k, secici) {
-  return k.b.execute((s) => document.querySelector(s)?.textContent ?? '', secici);
 }
 
 async function onayla(k) {

@@ -1,0 +1,14 @@
+# Aşama 3d: Linux ağ köprüsü prototipi (aşama 3 tasarımı §8.5, G5). Ürün kodu
+# değildir; Kalfa'nın workspace'ine girmez. Ölçüm sonuçları bulgu raporuna ve
+# tasarım belgesine işlenir.
+[package]
+name = "kalfa-kopru-prototip"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Kalfa'nın workspace'inden bağımsız.
+[workspace]
+
+[dependencies]
+libc = "0.2.189"

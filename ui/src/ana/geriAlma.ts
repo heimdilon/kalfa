@@ -42,6 +42,39 @@ export function turOzetiGorunumu(ozet: TurOzeti, geriAlindi: boolean): TurOzetiG
     } else {
       satirlar.push(m('tur_ozeti.komut_degismedi', { komut }));
     }
+    if (k.ag) {
+      for (const h of k.ag.hostlar) {
+        const bayt = boyutMetni(h.giden_bayt + h.gelen_bayt);
+        if (h.reddedilenler === h.baglanti_sayisi) {
+          satirlar.push(
+            m('tur_ozeti.ag_host_ret', {
+              host: h.host,
+              port: h.port,
+              sayi: h.baglanti_sayisi,
+            }),
+          );
+        } else if (h.reddedilenler > 0) {
+          satirlar.push(
+            m('tur_ozeti.ag_host_kismi_ret', {
+              host: h.host,
+              port: h.port,
+              sayi: h.baglanti_sayisi,
+              ret: h.reddedilenler,
+              bayt,
+            }),
+          );
+        } else {
+          satirlar.push(
+            m('tur_ozeti.ag_host', {
+              host: h.host,
+              port: h.port,
+              sayi: h.baglanti_sayisi,
+              bayt,
+            }),
+          );
+        }
+      }
+    }
   }
   const token = ozet.istekler.istem + ozet.istekler.tamamlama;
   if (ozet.istekler.sayi > 0) {

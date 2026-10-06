@@ -8,7 +8,7 @@ use std::io;
 use tokio::process::{Child, Command};
 
 #[cfg(windows)]
-pub(crate) use windows::Is;
+pub use windows::{Is, surdur};
 
 pub(crate) struct Agac {
     #[cfg(unix)]
@@ -119,7 +119,7 @@ mod windows {
     use crate::AZAMI_SUREC;
 
     /// Kapanınca içindeki bütün süreçleri öldüren Job Object.
-    pub(crate) struct Is(HANDLE);
+    pub struct Is(pub(crate) HANDLE);
 
     // Tutamaç yalnızca çekirdek nesnesine bir başvurudur; iş parçacıkları
     // arasında taşınabilir.
@@ -130,9 +130,23 @@ mod windows {
     // tutamaçlar ve sıfırla başlatılıp boyutu doğru verilmiş yapılar geçer.
     // `Is`'in tutamacı değer yaşadıkça açıktır; `Drop`'ta bir kez kapanır.
     impl Is {
+        /// İş nesnesinin Win32 tutamacını döndürür.
+        pub fn tutamac(&self) -> HANDLE {
+            self.0
+        }
+
+        /// Kapanışta süreç öldürmeyen, kısıtsız boş iş nesnesi (testler için).
+        pub fn yeni_ayarsiz() -> io::Result<Self> {
+            let is = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+            if is.is_null() {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(Self(is))
+        }
+
         /// `ui_kisiti`: yalıtılmış komutlarda pano, genel atomlar, masaüstü ve
         /// başka süreçlerin kullanıcı arayüzü tutamaçları kapatılır (§9.3).
-        pub(crate) fn yeni(ui_kisiti: bool) -> io::Result<Self> {
+        pub fn yeni(ui_kisiti: bool) -> io::Result<Self> {
             let is = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
             if is.is_null() {
                 return Err(io::Error::last_os_error());
@@ -179,14 +193,14 @@ mod windows {
             Ok(is)
         }
 
-        pub(crate) fn ata(&self, surec: RawHandle) -> io::Result<()> {
+        pub fn ata(&self, surec: RawHandle) -> io::Result<()> {
             if unsafe { AssignProcessToJobObject(self.0, surec as HANDLE) } == 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())
         }
 
-        pub(crate) fn sonlandir(&self) {
+        pub fn sonlandir(&self) {
             unsafe {
                 TerminateJobObject(self.0, 1);
             }
@@ -202,7 +216,7 @@ mod windows {
     }
 
     /// Askıda başlatılan sürecin iş parçacıklarını sürdürür.
-    pub(super) fn surdur(surec: u32) -> io::Result<()> {
+    pub fn surdur(surec: u32) -> io::Result<()> {
         let anlik = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
         if anlik == INVALID_HANDLE_VALUE {
             return Err(io::Error::last_os_error());

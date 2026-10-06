@@ -250,7 +250,7 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
     const sayfa = await screen.findByRole('dialog');
     expect(within(sayfa).getByText('cargo test --features e2e')).toBeTruthy();
     expect(within(sayfa).getByText('crates/kalfa')).toBeTruthy();
-    expect(within(sayfa).getByText('Açık: komut internete erişebilecek')).toBeTruthy();
+    expect(within(sayfa).getByText('Sınırsız (yalıtımsız)')).toBeTruthy();
     expect(within(sayfa).getByText('Yalıtımsız')).toBeTruthy();
     expect(within(sayfa).getByText(/yerel bir pencerede bir kez daha sorulur/)).toBeTruthy();
     expect(within(sayfa).queryByText('Bu değişiklik için önizleme yok.')).toBeNull();
@@ -261,6 +261,43 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
     await fireEvent.click(within(sayfa).getByRole('checkbox', { name: 'cargo' }));
     await fireEvent.click(within(sayfa).getByRole('button', { name: 'Seçilenleri onayla' }));
     await waitFor(() => expect(arka.komutlar('arac_onayi')).toHaveLength(1));
+  });
+
+  it('kabuk kartı ağ satırını ve ek hostları gösterir (aşama 3d Görev 5)', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      {
+        tip: 'OnayGerekiyor',
+        islem: 'i_ag',
+        ogeler: [
+          onayOgesi({
+            cagri: 'k_ag',
+            arac: 'kabuk',
+            aciklama: '`curl` komutunu çalıştırmak istiyor.',
+            kabuk: {
+              komut: 'curl https://github.com',
+              bicim: { tip: 'Program' },
+              dizin: '.',
+              ag: true,
+              ag_hostlari: ['github.com:443', 'api.custom.org:8080'],
+              yalitim: { tip: 'Yalitimli', arka_uc: 'bwrap', profil: 'p1' },
+              ilk_cagri: false,
+              alan_hazirligi: false,
+            },
+          }),
+        ],
+      },
+    ]);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    const sayfa = await screen.findByRole('dialog');
+    expect(
+      within(sayfa).getByText(
+        'Açık; paket kayıtları (crates.io, npm, PyPI), GitHub indirmeleri ve şu adresler:'
+      )
+    ).toBeTruthy();
+    expect(within(sayfa).getByText('github.com:443')).toBeTruthy();
+    expect(within(sayfa).getByText('api.custom.org:8080')).toBeTruthy();
   });
 
   it('bilgi vermeyen araç için onay kartı "araç sonucu" yazar, veri çıkışı olan için türünü yazar', async () => {

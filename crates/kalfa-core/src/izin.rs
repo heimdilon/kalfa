@@ -269,6 +269,59 @@ pub fn kabuk_karari(kip: Kip, tarif: &KabukTarifi) -> Karar {
     }
 }
 
+/// Onay kartında gösterilen ağ satırları (aşama 3 tasarımı §8.4, §8.7).
+///
+/// Yalıtımsızda "Ağ: sınırsız (yalıtımsız)".
+/// Yalıtımlıda varsayılan indirme uçları ve her ek host ayrı bir satırdır;
+/// özel ağ işaretli kullanıcı hostunun yanında "(özel ağ)" yazar.
+pub fn kart_ag_satirlari(tarif: &KabukTarifi, kullanici_hostlari: &[(&str, bool)]) -> Vec<String> {
+    if !tarif.ag {
+        return vec!["Ağ: kapalı".to_string()];
+    }
+    if !tarif.yalitim.yalitimli_mi() {
+        return vec!["Ağ: sınırsız (yalıtımsız)".to_string()];
+    }
+
+    let mut ek_satirlar = Vec::new();
+    let mut gorulen = std::collections::HashSet::new();
+
+    // Önce kullanıcı listesi (özel ağ işaretli olabilir)
+    for (host, ozel) in kullanici_hostlari {
+        let h = host.strip_suffix(":443").unwrap_or(host);
+        if gorulen.insert(h.to_string()) {
+            if *ozel {
+                ek_satirlar.push(format!("{h} (özel ağ)"));
+            } else {
+                ek_satirlar.push(h.to_string());
+            }
+        }
+    }
+
+    // Sonra çağrıya özel hostlar (tarif.ag_hostlari)
+    for host in &tarif.ag_hostlari {
+        let h = host.strip_suffix(":443").unwrap_or(host);
+        if gorulen.insert(h.to_string()) {
+            ek_satirlar.push(h.to_string());
+        }
+    }
+
+    if ek_satirlar.is_empty() {
+        vec!["Ağ: açık; paket kayıtları (crates.io, npm, PyPI), GitHub indirmeleri".to_string()]
+    } else {
+        let mut satirlar = Vec::with_capacity(1 + ek_satirlar.len());
+        satirlar.push(
+            "Ağ: açık; paket kayıtları (crates.io, npm, PyPI), GitHub indirmeleri ve şu adresler:"
+                .to_string(),
+        );
+        satirlar.extend(ek_satirlar);
+        satirlar
+    }
+}
+
+pub fn ag_satirlari(tarif: &KabukTarifi) -> Vec<String> {
+    kart_ag_satirlari(tarif, &[])
+}
+
 pub fn karar_ver(kip: Kip, islem: Islem, sinif: YolSinifi, coklu_baglanti: bool) -> Karar {
     match islem {
         Islem::Okuma => {

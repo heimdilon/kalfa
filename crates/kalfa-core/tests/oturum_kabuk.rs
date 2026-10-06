@@ -74,6 +74,7 @@ impl Arac for SahteKabuk {
                 bicim: KabukBicimi::Program,
                 dizin: ".".into(),
                 ag: false,
+                ag_hostlari: Vec::new(),
                 yalitim,
                 ilk_cagri: false,
                 alan_hazirligi: false,
@@ -114,6 +115,7 @@ impl Arac for SahteKabuk {
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
             kalfa_uretimi: false,
+            ag: None,
         };
         if self.basarisiz {
             Err(AracHatasi::Basarisiz(c))
@@ -444,6 +446,7 @@ impl Arac for HazirlikliKabuk {
                 bicim: KabukBicimi::Program,
                 dizin: ".".into(),
                 ag: false,
+                ag_hostlari: Vec::new(),
                 yalitim: YalitimOzeti::Yalitimli {
                     arka_uc: "sahte".into(),
                     profil: "p".into(),
@@ -488,6 +491,7 @@ impl Arac for HazirlikliKabuk {
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
             kalfa_uretimi: false,
+            ag: None,
         })
     }
 }

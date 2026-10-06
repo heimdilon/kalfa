@@ -39,9 +39,8 @@ pub(crate) struct Kurulum<'a> {
     pub dizin: &'a Path,
     pub ortam: &'a [(String, String)],
     pub ag: bool,
-    /// Ağlı profilde `/etc/resolv.conf`'un gösterdiği dosya; `/etc` dışında
-    /// olabilir (`/run/...`, WSL'de `/mnt/wsl/...`).
-    pub resolv: Option<&'a Path>,
+    /// Ağlı profilde kaba aktarılacak köprü ikilisi (`/run/kalfa-kopru`'ya bağlanır).
+    pub kopru: Option<&'a Path>,
     pub seccomp: &'a [i32],
 }
 
@@ -68,13 +67,11 @@ pub(crate) fn secenekler(k: &Kurulum) -> Vec<OsString> {
     s.ekle(&[
         "--unshare-user",
         "--unshare-pid",
+        "--unshare-net",
         "--unshare-ipc",
         "--unshare-uts",
         "--unshare-cgroup-try",
     ]);
-    if !k.ag {
-        s.ekle(&["--unshare-net"]);
-    }
     s.ekle(&[
         "--disable-userns",
         "--die-with-parent",
@@ -91,9 +88,9 @@ pub(crate) fn secenekler(k: &Kurulum) -> Vec<OsString> {
     }
     s.ekle(&["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/run"]);
     if k.ag
-        && let Some(resolv) = k.resolv
+        && let Some(kopru) = k.kopru
     {
-        s.ayni("--ro-bind", resolv);
+        s.yolla("--ro-bind", &[kopru, Path::new("/run/kalfa-kopru")]);
     }
     s.yolla("--bind", &[&k.ozel.gecici, Path::new("/tmp")]);
     for yol in k.okunur {
@@ -200,17 +197,29 @@ mod tests {
             dizin: Path::new("/tmp/alan/alt"),
             ortam: &ortam,
             ag,
-            resolv: Some(Path::new("/run/resolv.conf")),
+            kopru: if ag {
+                Some(Path::new("/usr/bin/kalfa-kopru"))
+            } else {
+                None
+            },
             seccomp: &[5, 6],
         };
         is(&k)
     }
 
     #[test]
-    fn agsiz_profilde_ag_ayrilir_ve_siralama_dogrudur() {
+    fn her_profilde_unshare_net() {
+        let s_agsiz = kurulum_ile(false, |k| metin(&secenekler(k)));
+        assert!(s_agsiz.contains(&"--unshare-net".to_string()));
+
+        let s_agli = kurulum_ile(true, |k| metin(&secenekler(k)));
+        assert!(s_agli.contains(&"--unshare-net".to_string()));
+    }
+
+    #[test]
+    fn siralama_dogrudur() {
         let s = kurulum_ile(false, |k| metin(&secenekler(k)));
         assert!(s.contains(&"--unshare-net".to_string()));
-        assert!(!s.contains(&"/run/resolv.conf".to_string()));
         for bayrak in [
             "--disable-userns",
             "--die-with-parent",
@@ -273,13 +282,17 @@ mod tests {
                 "6",
             ],
         );
+        assert!(!s.contains(&"/run/kalfa-kopru".to_string()));
     }
 
     #[test]
-    fn agli_profilde_ag_ayrilmaz_resolv_baglanir() {
+    fn agli_profilde_resolv_baglanmaz_kopru_baglanir() {
         let s = kurulum_ile(true, |k| metin(&secenekler(k)));
-        assert!(!s.contains(&"--unshare-net".to_string()));
-        konum(&s, &["--ro-bind", "/run/resolv.conf", "/run/resolv.conf"]);
+        assert!(!s.contains(&"resolv.conf".to_string()));
+        konum(
+            &s,
+            &["--ro-bind", "/usr/bin/kalfa-kopru", "/run/kalfa-kopru"],
+        );
     }
 
     #[test]

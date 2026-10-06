@@ -230,6 +230,24 @@ pub fn arac_zinciri_sidi() -> io::Result<Sid> {
     yetenek_sidi(ARAC_ZINCIRI_YETENEGI)
 }
 
+/// 128 bitlik rastgele onaltılık dize (CoCreateGuid ile).
+pub fn rastgele_onaltilik_128() -> io::Result<String> {
+    let mut guid = std::mem::MaybeUninit::uninit();
+    // SAFETY: CoCreateGuid geçerli bir GUID işaretçisi alır.
+    let hr = unsafe { windows_sys::Win32::System::Com::CoCreateGuid(guid.as_mut_ptr()) };
+    if hr != 0 {
+        return Err(hresult_hatasi("CoCreateGuid", hr));
+    }
+    // SAFETY: hr == 0 olduğundan guid başarıyla doldurulmuştur.
+    let guid = unsafe { guid.assume_init() };
+    let mut baytlar = [0u8; 16];
+    baytlar[0..4].copy_from_slice(&guid.data1.to_ne_bytes());
+    baytlar[4..6].copy_from_slice(&guid.data2.to_ne_bytes());
+    baytlar[6..8].copy_from_slice(&guid.data3.to_ne_bytes());
+    baytlar[8..16].copy_from_slice(&guid.data4);
+    Ok(hex::encode(baytlar))
+}
+
 /// AppContainer profilini oluşturur; varsa SID'ini addan türetir.
 pub fn profil_olustur(ad: &str, aciklama: &str) -> io::Result<Sid> {
     let mut p: PSID = null_mut();

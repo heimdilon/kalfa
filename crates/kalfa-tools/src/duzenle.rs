@@ -200,6 +200,7 @@ impl Arac for DosyaDuzenle {
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
             kalfa_uretimi: true,
+            ag: None,
         })
     }
 }

@@ -648,6 +648,7 @@ fn kabuk(yalitimli: bool, ag: bool, ilk_cagri: bool) -> kalfa_core::kabuk::Kabuk
         bicim: KabukBicimi::Program,
         dizin: ".".into(),
         ag,
+        ag_hostlari: Vec::new(),
         yalitim: if yalitimli {
             YalitimOzeti::Yalitimli {
                 arka_uc: "bwrap".into(),
@@ -748,4 +749,66 @@ fn yerel_onay_birlesmede_onayliyi_ezer() {
     assert_eq!(Karar::Serbest.birlestir(yerel(&["a"])), yerel(&["a"]));
     let yasak = Karar::Yasak { neden: "x".into() };
     assert_eq!(yerel(&["a"]).birlestir(yasak.clone()), yasak);
+}
+
+#[test]
+fn eski_kayittaki_tarif_ag_hostlari_olmadan_acilir() {
+    let json_str = r#"{
+        "komut": "cargo test",
+        "bicim": {"tip": "Program"},
+        "dizin": ".",
+        "ag": true,
+        "yalitim": {"tip": "Yalitimli", "arka_uc": "bwrap", "profil": "p"},
+        "ilk_cagri": false,
+        "alan_hazirligi": false
+    }"#;
+    let tarif: kalfa_core::kabuk::KabukTarifi = serde_json::from_str(json_str).unwrap();
+    assert!(tarif.ag_hostlari.is_empty());
+}
+
+#[test]
+fn kartta_her_ek_host_ayri_satir() {
+    let tarif = kalfa_core::kabuk::KabukTarifi {
+        komut: "curl https://github.com".into(),
+        bicim: kalfa_core::kabuk::KabukBicimi::Program,
+        dizin: ".".into(),
+        ag: true,
+        ag_hostlari: vec![
+            "github.com:443".into(),
+            "raw.githubusercontent.com:443".into(),
+        ],
+        yalitim: kalfa_core::kabuk::YalitimOzeti::Yalitimli {
+            arka_uc: "bwrap".into(),
+            profil: "p1".into(),
+        },
+        ilk_cagri: false,
+        alan_hazirligi: false,
+    };
+    let kullanici_hostlari = [("internal.registry.corp:443", true)];
+    let satirlar = kart_ag_satirlari(&tarif, &kullanici_hostlari);
+
+    assert_eq!(
+        satirlar[0],
+        "Ağ: açık; paket kayıtları (crates.io, npm, PyPI), GitHub indirmeleri ve şu adresler:"
+    );
+    assert_eq!(satirlar[1], "internal.registry.corp (özel ağ)");
+    assert_eq!(satirlar[2], "github.com");
+    assert_eq!(satirlar[3], "raw.githubusercontent.com");
+    assert_eq!(satirlar.len(), 4, "her ek host ayrı bir satırdır");
+
+    // Yalıtımsızda "Ağ: sınırsız (yalıtımsız)"
+    let yalitimsiz_tarif = kalfa_core::kabuk::KabukTarifi {
+        yalitim: kalfa_core::kabuk::YalitimOzeti::Yalitimsiz {
+            talimat: "talimat".into(),
+        },
+        ..tarif.clone()
+    };
+    assert_eq!(
+        kart_ag_satirlari(&yalitimsiz_tarif, &kullanici_hostlari),
+        vec!["Ağ: sınırsız (yalıtımsız)"]
+    );
+
+    // Ağ kapalıysa "Ağ: kapalı"
+    let kapali_tarif = kalfa_core::kabuk::KabukTarifi { ag: false, ..tarif };
+    assert_eq!(kart_ag_satirlari(&kapali_tarif, &[]), vec!["Ağ: kapalı"]);
 }

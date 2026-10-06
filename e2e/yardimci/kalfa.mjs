@@ -405,6 +405,21 @@ export class Kalfa {
   }
 }
 
+/** Konuşmadaki son kabuk çağrısının terminali. */
+export async function terminalMetni(k) {
+  return k.b.execute(
+    () => [...document.querySelectorAll('[aria-label="Komut çıktısı"]')].at(-1)?.textContent ?? '',
+  );
+}
+
+/** Seçiciye uyan son öğenin metni (örneğin son tur özeti). */
+export async function sayfaMetni(k, secici) {
+  return k.b.execute(
+    (s) => [...document.querySelectorAll(s)].at(-1)?.textContent ?? '',
+    secici,
+  );
+}
+
 export function yuzdelik(degerler, p) {
   const sirali = [...degerler].sort((a, b) => a - b);
   const i = Math.min(sirali.length - 1, Math.ceil((p / 100) * sirali.length) - 1);

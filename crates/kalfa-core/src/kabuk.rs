@@ -15,6 +15,9 @@ pub struct KabukTarifi {
     /// Model ağ erişimi istedi. Yalıtımsız çalıştırmada ağ kapatılamaz; bu
     /// yalnızca modelin niyetidir.
     pub ag: bool,
+    /// Modelin bağlanmak istediği ek hostlar (host:port biçiminde).
+    #[serde(default)]
+    pub ag_hostlari: Vec<String>,
     pub yalitim: YalitimOzeti,
     /// Bu çalışma alanındaki ilk kabuk çağrısı (aşama 2 tasarımı §4.2).
     /// Tek seferliktir; bkz. [`KabukTarifi::onayla_kapsanan`].

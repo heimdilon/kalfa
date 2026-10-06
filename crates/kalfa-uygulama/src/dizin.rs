@@ -50,6 +50,41 @@ pub fn oturum_geri_alma_dizini(kok: &Path, oturum: OturumId) -> PathBuf {
 /// verir. Üretim derlemesi bu değişkeni okumaz.
 pub const ARAC_ZINCIRI_DEGISKENI: &str = "KALFA_ARAC_ZINCIRI";
 
+/// Ağ köprüsü ikilisinin ortam değişkeni.
+pub const KOPRU_YOLU_DEGISKENI: &str = "KALFA_KOPRU_YOLU";
+
+/// Ağ köprüsü ikilisinin yolu (`kalfa-kopru.exe`).
+/// Windows'ta kurulu sürümde `exe`'nin yanındaki dizinde, geliştirme
+/// derlemesinde (`target\debug\...`) aynı `target` dizininde aranır.
+/// `KALFA_KOPRU_YOLU` ortam değişkeni varsa ve geçerliyse önceliklidir.
+pub fn kopru_ikilisi(exe: &Path, ortam: Option<OsString>) -> Option<PathBuf> {
+    if let Some(yol) = ortam
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .filter(|p| p.is_file())
+    {
+        return Some(yol);
+    }
+    let ad = if cfg!(windows) {
+        "kalfa-kopru.exe"
+    } else {
+        "kalfa-kopru"
+    };
+    if let Some(parent) = exe.parent() {
+        let dogrudan = parent.join(ad);
+        if dogrudan.is_file() {
+            return Some(dogrudan);
+        }
+        if let Some(ust) = parent.parent() {
+            let ustte = ust.join(ad);
+            if ustte.is_file() {
+                return Some(ustte);
+            }
+        }
+    }
+    None
+}
+
 /// Kurulu Kalfa'nın getirdiği Python ve Node dizinleri (2d-3): yalnızca
 /// Windows'ta ve `exe` Program Files'taki kurulumdaysa. `ortam`:
 /// `KALFA_ARAC_ZINCIRI`'nin değeri; yalnızca `e2e` özellikli derlemede

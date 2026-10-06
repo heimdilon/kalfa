@@ -46,6 +46,24 @@ pub struct DosyaOzeti {
     pub geri_alinabilir: GeriAlinabilirlik,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct AgHostOzeti {
+    pub host: String,
+    pub port: u16,
+    pub baglanti_sayisi: u32,
+    pub giden_bayt: u64,
+    pub gelen_bayt: u64,
+    pub reddedilenler: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct AgKomutOzeti {
+    pub hostlar: Vec<AgHostOzeti>,
+    pub toplam_giden: u64,
+    pub toplam_gelen: u64,
+    pub reddedilen_sayisi: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KomutOzeti {
     pub cagri: CagriId,
@@ -54,6 +72,9 @@ pub struct KomutOzeti {
     /// Komut çalışırken değişen dosyalar; geri alınamaz (K2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub degisiklikler: Option<DosyaDegisiklikleri>,
+    /// Komutun vekilden geçen ağ özeti (§8.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ag: Option<AgKomutOzeti>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,6 +128,7 @@ impl TurBiriktirici {
             komut,
             durum: AracDurumu::SonucuBilinmiyor,
             degisiklikler: None,
+            ag: None,
         });
     }
 
@@ -114,6 +136,13 @@ impl TurBiriktirici {
     pub fn komut_degisiklikleri(&mut self, cagri: CagriId, d: &DosyaDegisiklikleri) {
         for k in self.komutlar.iter_mut().filter(|k| k.cagri == cagri) {
             k.degisiklikler = Some(d.clone());
+        }
+    }
+
+    /// Kabuk çağrısının vekilden geçen ağ özeti.
+    pub fn komut_ag_ozeti(&mut self, cagri: CagriId, ag: &AgKomutOzeti) {
+        for k in self.komutlar.iter_mut().filter(|k| k.cagri == cagri) {
+            k.ag = Some(ag.clone());
         }
     }
 

@@ -182,6 +182,7 @@ impl Arac for DosyaYaz {
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
             kalfa_uretimi: true,
+            ag: None,
         })
     }
 }

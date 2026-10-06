@@ -216,11 +216,12 @@ pub(crate) fn guvenli_yaz(dizin: &Path, ad: &str, icerik: &[u8]) -> io::Result<(
     std::fs::rename(&gecici, &hedef)
 }
 
-/// Profil özeti (§7.1): yalıtımın arka ucu, okunur yolların sıralı listesi ve
-/// ağ bayrağının SHA-256'sı. Mühre girer: kullanıcı bir dizin eklerse bekleyen
+/// Profil özeti (§7.1): yalıtımın arka ucu, okunur yolların sıralı listesi,
+/// ağ bayrağı ve ağ açıkken izin listesi özetinin SHA-256'sı. Mühre girer:
+/// kullanıcı bir dizin eklerse veya izin listesi değişirse bekleyen
 /// onaylar geçersizleşir. Gizli ve korumalı yollar her çalıştırmadan hemen önce
 /// tarandığı için özete girmez; onları belirleyen kurallar sabittir.
-pub fn ozet(arka_uc: &str, okunur: &[PathBuf], ag: bool) -> String {
+pub fn ozet(arka_uc: &str, okunur: &[PathBuf], ag: bool, liste_ozeti: Option<&str>) -> String {
     let mut yollar: Vec<String> = okunur.iter().map(|y| y.display().to_string()).collect();
     yollar.sort();
     let mut h = Sha256::new();
@@ -231,6 +232,10 @@ pub fn ozet(arka_uc: &str, okunur: &[PathBuf], ag: bool) -> String {
         h.update([0]);
     }
     h.update(if ag { "ag:acik" } else { "ag:kapali" }.as_bytes());
+    if let (true, Some(lo)) = (ag, liste_ozeti) {
+        h.update([0]);
+        h.update(lo.as_bytes());
+    }
     hex::encode(h.finalize())[..16].to_string()
 }
 
@@ -360,8 +365,25 @@ mod tests {
     fn ozet_sirasiz_listede_ayni_dizin_ve_agda_farkli() {
         let a = [PathBuf::from("/usr"), PathBuf::from("/opt/node")];
         let b = [PathBuf::from("/opt/node"), PathBuf::from("/usr")];
-        assert_eq!(ozet("bwrap", &a, false), ozet("bwrap", &b, false));
-        assert_ne!(ozet("bwrap", &a, false), ozet("bwrap", &a, true));
-        assert_ne!(ozet("bwrap", &a, false), ozet("bwrap", &a[..1], false));
+        assert_eq!(
+            ozet("bwrap", &a, false, None),
+            ozet("bwrap", &b, false, None)
+        );
+        assert_ne!(
+            ozet("bwrap", &a, false, None),
+            ozet("bwrap", &a, true, None)
+        );
+        assert_ne!(
+            ozet("bwrap", &a, false, None),
+            ozet("bwrap", &a[..1], false, None)
+        );
+        assert_ne!(
+            ozet("bwrap", &a, true, Some("ozet1")),
+            ozet("bwrap", &a, true, Some("ozet2"))
+        );
+        assert_eq!(
+            ozet("bwrap", &a, false, Some("ozet1")),
+            ozet("bwrap", &a, false, Some("ozet2"))
+        );
     }
 }

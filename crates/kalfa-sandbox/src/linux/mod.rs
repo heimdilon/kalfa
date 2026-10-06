@@ -70,7 +70,7 @@ pub fn sistem_surumu() -> String {
 }
 
 /// Linux arka ucunun ayarları.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub struct LinuxAyari {
     /// Kullanıcının ev dizini; araç zinciri dizinleri buna göre bulunur.
     pub ev: PathBuf,
@@ -78,8 +78,38 @@ pub struct LinuxAyari {
     pub yalitim_dizini: PathBuf,
     /// Kullanıcının Ayarlar'dan eklediği araç zinciri dizinleri (§7.1).
     pub ek_okunur: Vec<PathBuf>,
+    /// Ağ köprüsü ikilisinin yolu (`kalfa-kopru`).
+    pub kopru: Option<PathBuf>,
     pub git: GitKimligi,
+    pub vekil_cozucu: Option<std::sync::Arc<dyn crate::vekil::Cozucu>>,
+    pub vekil_yerel_izin: bool,
 }
+
+impl std::fmt::Debug for LinuxAyari {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LinuxAyari")
+            .field("ev", &self.ev)
+            .field("yalitim_dizini", &self.yalitim_dizini)
+            .field("ek_okunur", &self.ek_okunur)
+            .field("kopru", &self.kopru)
+            .field("git", &self.git)
+            .field("vekil_yerel_izin", &self.vekil_yerel_izin)
+            .finish()
+    }
+}
+
+impl PartialEq for LinuxAyari {
+    fn eq(&self, other: &Self) -> bool {
+        self.ev == other.ev
+            && self.yalitim_dizini == other.yalitim_dizini
+            && self.ek_okunur == other.ek_okunur
+            && self.kopru == other.kopru
+            && self.git == other.git
+            && self.vekil_yerel_izin == other.vekil_yerel_izin
+    }
+}
+
+impl Eq for LinuxAyari {}
 
 impl LinuxAyari {
     /// Yalıtıma salt okunur açılan araç zinciri dizinleri: varsayılanlar ve
@@ -213,6 +243,7 @@ fn deneme(bwrap: &Path, ayar: &LinuxAyari) -> Result<(), String> {
         dizin: kok.clone(),
         ortam: vec![("PATH".into(), "/usr/bin:/bin".into())],
         ag: false,
+        ag_listesi: None,
         alan: Some(AlanBilgisi {
             kok,
             gizli: Default::default(),
@@ -220,7 +251,8 @@ fn deneme(bwrap: &Path, ayar: &LinuxAyari) -> Result<(), String> {
             git_dizinleri: Vec::new(),
         }),
     };
-    let (mut komut, _fdler) = komut_kur(bwrap, &ayar, &istek).map_err(|e| e.to_string())?;
+    let (mut komut, _fdler, _vekil_kanali) =
+        komut_kur(bwrap, &ayar, &istek).map_err(|e| e.to_string())?;
     let cikti = komut.output().map_err(|e| e.to_string())?;
     if cikti.status.success() {
         Ok(())
@@ -260,11 +292,75 @@ impl LinuxYalitici {
     fn yalitimli(&self, istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi> {
         let bwrap = bwrap_yolu()
             .ok_or_else(|| BaslatmaHatasi::Yalitim("bwrap artık sistem yollarında yok".into()))?;
-        let (komut, fdler) = komut_kur(bwrap, &self.ayar(), istek)?;
-        let surec = Surec::komutla(komut.into());
-        // Bellek dosyaları çocuğa geçti; buradaki kopyalar kapanabilir.
+        let ayar = self.ayar();
+        let (komut, fdler, vekil_kanali) = komut_kur(bwrap, &ayar, istek)?;
+        let mut surec = Surec::komutla(komut.into())?;
+        // Bellek dosyaları ve çocuğun kanalı çocuğa geçti; buradaki kopyalar kapanabilir.
         drop(fdler);
-        surec
+
+        if istek.ag {
+            let vekil_kanali = vekil_kanali.ok_or_else(|| {
+                BaslatmaHatasi::Yalitim("Ağlı çalıştırmada vekil kanalı oluşturulamadı".into())
+            })?;
+            let ayar_vekil = crate::vekil::VekilAyari {
+                liste: istek
+                    .ag_listesi
+                    .clone()
+                    .unwrap_or_else(|| crate::vekil::IzinListesi::yeni(&[], &[])),
+                cozucu: ayar
+                    .vekil_cozucu
+                    .clone()
+                    .unwrap_or_else(|| std::sync::Arc::new(crate::vekil::SistemCozucu)),
+                yerel_izin: ayar.vekil_yerel_izin,
+                ..Default::default()
+            };
+            let vekil = std::sync::Arc::new(crate::vekil::Vekil::baslat(ayar_vekil));
+            let vekil_icin = vekil.clone();
+            // Okuyucu ve kapatıcı aynı tanımlayıcıyı paylaşır; son sahibi
+            // bırakınca kapanır. Ham numarayla paylaşılsaydı kapatıcının
+            // kapattığı numara yeniden kullanılıp okuyucuya başka bir dosya
+            // olarak görünebilirdi.
+            let vekil_kanali = std::sync::Arc::new(vekil_kanali);
+            let okuyucu_kanali = vekil_kanali.clone();
+
+            tokio::task::spawn_blocking(move || {
+                loop {
+                    let fd = match crate::vekil::kanal::al(okuyucu_kanali.as_raw_fd()) {
+                        Ok(Some(fd)) => fd,
+                        Ok(None) => break,
+                        // Tek tanımlayıcılı olmayan ya da kesik ileti reddedilir;
+                        // kanal açık kaldıkça sonraki iletiler okunur (§8.5).
+                        Err(e) if e.kind() == io::ErrorKind::InvalidData => continue,
+                        Err(_) => break,
+                    };
+                    // Bağlı bir TCP soketi olmayan tanımlayıcı burada kapanır.
+                    if crate::vekil::kanal::dogrula(&fd).is_err() {
+                        continue;
+                    }
+                    let std_stream = std::net::TcpStream::from(fd);
+                    if std_stream.set_nonblocking(true).is_ok()
+                        && let Ok(tokio_stream) = tokio::net::TcpStream::from_std(std_stream)
+                    {
+                        vekil_icin.baglanti_ver(tokio_stream);
+                    }
+                }
+            });
+
+            let ag_kapatici: crate::surec::AgKapatici = Box::new(move || {
+                Box::pin(async move {
+                    // SAFETY: tanımlayıcı `vekil_kanali` yaşadıkça açıktır;
+                    // `shutdown` okuyucunun `recvmsg`'ini 0 ile döndürür.
+                    unsafe {
+                        libc::shutdown(vekil_kanali.as_raw_fd(), libc::SHUT_RDWR);
+                    }
+                    drop(vekil_kanali);
+                    vekil.bitir().await
+                })
+            });
+            surec.ag_kapat_ekle(ag_kapatici);
+        }
+
+        Ok(surec)
     }
 }
 
@@ -273,7 +369,7 @@ impl Yalitici for LinuxYalitici {
         self.durum.read().unwrap_or_else(|z| z.into_inner()).clone()
     }
 
-    fn profil_ozeti(&self, ag: bool) -> Option<String> {
+    fn profil_ozeti(&self, ag: bool, liste_ozeti: Option<&str>) -> Option<String> {
         if !self.durum().hazir_mi() {
             return None;
         }
@@ -283,7 +379,7 @@ impl Yalitici for LinuxYalitici {
             .map(|s| s.yol().to_path_buf())
             .collect();
         okunur.extend(ayar.okunur());
-        Some(profil::ozet(ARKA_UC, &okunur, ag))
+        Some(profil::ozet(ARKA_UC, &okunur, ag, liste_ozeti))
     }
 
     fn baslat(&self, istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi> {
@@ -457,7 +553,7 @@ fn komut_kur(
     bwrap: &Path,
     ayar: &LinuxAyari,
     istek: &CalistirmaIstegi,
-) -> Result<(std::process::Command, Vec<OwnedFd>), BaslatmaHatasi> {
+) -> Result<(std::process::Command, Vec<OwnedFd>, Option<OwnedFd>), BaslatmaHatasi> {
     let alan = istek
         .alan
         .as_ref()
@@ -469,6 +565,32 @@ fn komut_kur(
     let okunur = ayar.okunur();
     let registry = registry_secimi(istek.ag, &ozel, ayar);
     let ortam = yalitim_ortami(&istek.ortam, &ozel, ayar);
+
+    let (vekil_kanali, cocuk_kanali) = if istek.ag {
+        let (v, c) = crate::vekil::kanal::kanal_cifti()
+            .map_err(|e| BaslatmaHatasi::Yalitim(format!("Vekil kanalı açılamadı: {e}")))?;
+        (Some(v), Some(c))
+    } else {
+        (None, None)
+    };
+
+    let kopru = if istek.ag {
+        let k = ayar.kopru.as_deref().ok_or_else(|| {
+            BaslatmaHatasi::Yalitim(
+                "Ağ köprüsü ikilisi (kalfa-kopru) ayarlanmamış; ağlı yalıtımlı komut başlatılamaz"
+                    .into(),
+            )
+        })?;
+        if !program::calistirilabilir(k) {
+            return Err(BaslatmaHatasi::Yalitim(format!(
+                "Ağ köprüsü ikilisi bulunamadı ya da çalıştırılabilir değil: {}",
+                k.display()
+            )));
+        }
+        Some(k)
+    } else {
+        None
+    };
 
     let mut kokler: Vec<PathBuf> = sistem.iter().map(|s| s.yol().to_path_buf()).collect();
     kokler.extend(okunur.iter().cloned());
@@ -493,7 +615,6 @@ fn komut_kur(
     let enosys = bellek_dosyasi(&seccomp::baytlar(
         &seccomp::enosys_filtresi().map_err(hata)?,
     ))?;
-    let resolv = std::fs::canonicalize("/etc/resolv.conf").ok();
     let secenekler = bwrap::secenekler(&Kurulum {
         sistem: &sistem,
         okunur: &okunur,
@@ -503,7 +624,7 @@ fn komut_kur(
         dizin: &istek.dizin,
         ortam: &ortam,
         ag: istek.ag,
-        resolv: resolv.as_deref(),
+        kopru,
         seccomp: &[engel.as_raw_fd(), enosys.as_raw_fd()],
     });
     let args = bellek_dosyasi(&bwrap::nul_ile(&secenekler))?;
@@ -513,6 +634,13 @@ fn komut_kur(
         .arg("--args")
         .arg(args.as_raw_fd().to_string())
         .arg("--");
+    if let Some(cocuk) = &cocuk_kanali {
+        komut
+            .arg("/run/kalfa-kopru")
+            .arg("--kanal")
+            .arg(cocuk.as_raw_fd().to_string())
+            .arg("--");
+    }
     if program::calistirilabilir(Path::new(PRLIMIT)) {
         komut
             .arg(PRLIMIT)
@@ -524,21 +652,59 @@ fn komut_kur(
         .args(argumanlar.iter().map(OsString::from))
         .env_clear()
         .current_dir("/");
-    let devredilen = [args.as_raw_fd(), engel.as_raw_fd(), enosys.as_raw_fd()];
+
+    let mut fdler = vec![args, engel, enosys];
+    let mut devredilen = vec![
+        fdler[0].as_raw_fd(),
+        fdler[1].as_raw_fd(),
+        fdler[2].as_raw_fd(),
+    ];
+    if let Some(ck) = cocuk_kanali {
+        devredilen.push(ck.as_raw_fd());
+        fdler.push(ck);
+    }
+
     // SAFETY: Kapanış `fork` ile `exec` arasında çocukta çalışır ve yalnızca
-    // `fcntl`'ı çağırır (async-signal-safe). Tanımlayıcılar komut başlayana
-    // kadar açık kalır: sahipleri çağırana döner.
+    // async-signal-safe sistem çağrılarını kullanır (`close_range`, `getrlimit`, `fcntl`).
     unsafe {
         komut.pre_exec(move || {
-            for fd in devredilen {
-                if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
+            // Önce 3'ten yukarıdaki tüm tanımlayıcılara CLOEXEC bayrağı koy.
+            let ret = libc::syscall(
+                libc::SYS_close_range,
+                3u32,
+                !0u32,
+                libc::CLOSE_RANGE_CLOEXEC,
+            );
+            if ret != 0 {
+                let err = io::Error::last_os_error();
+                if err.raw_os_error() == Some(libc::ENOSYS) {
+                    let mut rlim: libc::rlimit = std::mem::zeroed();
+                    let azami = if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) == 0 {
+                        rlim.rlim_cur as i32
+                    } else {
+                        1024
+                    };
+                    for fd in 3..azami {
+                        let bayrak = libc::fcntl(fd, libc::F_GETFD);
+                        if bayrak >= 0 {
+                            let _ = libc::fcntl(fd, libc::F_SETFD, bayrak | libc::FD_CLOEXEC);
+                        }
+                    }
+                } else {
+                    return Err(err);
+                }
+            }
+
+            // Yalnızca devredilen tanımlayıcıların CLOEXEC'ini kaldır.
+            for fd in &devredilen {
+                if libc::fcntl(*fd, libc::F_SETFD, 0) == -1 {
                     return Err(io::Error::last_os_error());
                 }
             }
             Ok(())
         });
     }
-    Ok((komut, vec![args, engel, enosys]))
+    Ok((komut, fdler, vekil_kanali))
 }
 
 #[cfg(test)]
@@ -615,7 +781,7 @@ mod tests {
             }),
         );
         assert!(!y.durum().hazir_mi());
-        assert_eq!(y.profil_ozeti(false), None);
+        assert_eq!(y.profil_ozeti(false, None), None);
         let alanli = CalistirmaIstegi {
             komut: KomutBicimi::Betik {
                 metin: "true".into(),
@@ -623,6 +789,7 @@ mod tests {
             dizin: std::env::temp_dir(),
             ortam: Vec::new(),
             ag: false,
+            ag_listesi: None,
             alan: Some(AlanBilgisi {
                 kok: std::env::temp_dir(),
                 gizli: Default::default(),
@@ -639,8 +806,8 @@ mod tests {
         *sahte.0.write().unwrap() = hazir();
         assert_eq!(y.yeniden_algila(), hazir());
         assert_eq!(bildirim.load(Ordering::SeqCst), 1);
-        assert!(y.profil_ozeti(false).is_some());
-        assert_ne!(y.profil_ozeti(false), y.profil_ozeti(true));
+        assert!(y.profil_ozeti(false, None).is_some());
+        assert_ne!(y.profil_ozeti(false, None), y.profil_ozeti(true, None));
 
         // Yalıtımsız onaylanan komut, yalıtım gelince başlamaz.
         let alansiz = CalistirmaIstegi {
@@ -665,12 +832,12 @@ mod tests {
             Box::new(Arc::new(Sahte(RwLock::new(hazir())))),
             Box::new(|_| {}),
         );
-        let once = y.profil_ozeti(false);
+        let once = y.profil_ozeti(false, None);
         y.okunur_dizinleri_ayarla(vec![ek.path().into()]);
-        assert_ne!(y.profil_ozeti(false), once);
+        assert_ne!(y.profil_ozeti(false, None), once);
         // Olmayan dizin özete girmez.
         y.okunur_dizinleri_ayarla(vec![ek.path().join("yok")]);
-        assert_eq!(y.profil_ozeti(false), once);
+        assert_eq!(y.profil_ozeti(false, None), once);
     }
 
     #[test]

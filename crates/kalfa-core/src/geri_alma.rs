@@ -290,6 +290,7 @@ impl GeriAlmaDizini {
                             .copied()
                             .unwrap_or(AracDurumu::SonucuBilinmiyor),
                         degisiklikler: Some(degisiklikler.clone()),
+                        ag: None,
                     },
                 ),
                 (KayitOgesi::GeriAlmaVerisiSilindi { turlar }, _) => dizin.veri_silindi(turlar),

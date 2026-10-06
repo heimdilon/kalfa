@@ -52,6 +52,7 @@ export interface KabukTarifi {
   bicim: KabukBicimi;
   dizin: string;
   ag: boolean;
+  ag_hostlari?: string[];
   yalitim: YalitimOzeti;
   ilk_cagri: boolean;
   /** Çalışma alanı yalıtım için hazırlanacak (Windows, aşama 2 tasarımı §9.4). */
@@ -137,11 +138,28 @@ export interface DosyaDegisiklikleri {
   eksik: boolean;
 }
 
+export interface AgHostOzeti {
+  host: string;
+  port: number;
+  baglanti_sayisi: number;
+  giden_bayt: number;
+  gelen_bayt: number;
+  reddedilenler: number;
+}
+
+export interface AgKomutOzeti {
+  hostlar: AgHostOzeti[];
+  toplam_giden: number;
+  toplam_gelen: number;
+  reddedilen_sayisi: number;
+}
+
 export interface KomutOzeti {
   cagri: CagriId;
   komut: string;
   durum: AracDurumu;
   degisiklikler?: DosyaDegisiklikleri;
+  ag?: AgKomutOzeti;
 }
 
 export interface IstekOzeti {

@@ -184,6 +184,11 @@ export const tr = {
   'onay.kabuk.ag': 'Ağ',
   'onay.kabuk.ag_kapali': 'Kapalı',
   'onay.kabuk.ag_acik': 'Açık: komut internete erişebilecek',
+  'onay.kabuk.ag_yalitimsiz': 'Sınırsız (yalıtımsız)',
+  'onay.kabuk.ag_varsayilan':
+    'Açık; paket kayıtları (crates.io, npm, PyPI), GitHub indirmeleri',
+  'onay.kabuk.ag_ek_adresler':
+    'Açık; paket kayıtları (crates.io, npm, PyPI), GitHub indirmeleri ve şu adresler:',
   'onay.kabuk.yalitim': 'Yalıtım',
   'onay.kabuk.yalitimli': 'Yalıtımlı ({arka_uc})',
   'onay.kabuk.yalitimsiz': 'Yalıtımsız',
@@ -245,6 +250,9 @@ export const tr = {
   'tur_ozeti.not_kabuk': 'Kabukla yapılan değişiklikler geri alınamaz.',
   'tur_ozeti.not_eksik': 'Liste eksik olabilir.',
   'tur_ozeti.not_geri_alindi': 'Bu tur geri alındı.',
+  'tur_ozeti.ag_host': 'Ağ ({host}:{port}): {sayi} bağlantı, {bayt}',
+  'tur_ozeti.ag_host_ret': 'Ağ ({host}:{port}): {sayi} bağlantı reddedildi',
+  'tur_ozeti.ag_host_kismi_ret': 'Ağ ({host}:{port}): {sayi} bağlantı ({ret} reddedildi), {bayt}',
   'aktarim.baslik': 'Aktarım durdu',
 
   'onizleme.kart.baslik': 'Gönderim önizlemesi ({sayi} öğe)',

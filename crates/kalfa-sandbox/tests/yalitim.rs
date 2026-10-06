@@ -52,6 +52,7 @@ struct Sonuc {
     bitis: Bitis,
     standart: String,
     hata: String,
+    ag: Option<kalfa_sandbox::vekil::AgOzeti>,
 }
 
 fn yaz(yol: &Path, icerik: &str) {
@@ -84,7 +85,49 @@ fn kurgu() -> Kurgu {
             ev: ev.clone(),
             yalitim_dizini: taban.join("veri/yalitim"),
             ek_okunur: Vec::new(),
+            kopru: None,
             git: Default::default(),
+            vekil_cozucu: None,
+            vekil_yerel_izin: false,
+        },
+        Box::new(BwrapAlgilayici),
+        Box::new(|_| {}),
+    );
+    match y.durum() {
+        YalitimDurumu::Hazir { .. } => {}
+        d => panic!("yalıtım hazır değil: {d:?}"),
+    }
+    Kurgu {
+        _gecici: gecici,
+        taban,
+        ev,
+        kok,
+        y,
+    }
+}
+
+fn kurgu_agli(
+    cozucu: Option<std::sync::Arc<dyn kalfa_sandbox::vekil::Cozucu>>,
+    yerel_izin: bool,
+) -> Kurgu {
+    let gecici = tempfile::tempdir().unwrap();
+    let taban = gecici.path().canonicalize().unwrap();
+    let ev = taban.join("ev");
+    let kok = taban.join("alan");
+    std::fs::create_dir_all(&kok).unwrap();
+    calistirilabilir_yaz(
+        &ev.join(".cargo/bin/arac"),
+        "#!/bin/sh\necho arac-calisti\n",
+    );
+    let y = LinuxYalitici::yeni(
+        LinuxAyari {
+            ev: ev.clone(),
+            yalitim_dizini: taban.join("veri/yalitim"),
+            ek_okunur: Vec::new(),
+            kopru: Some(PathBuf::from(env!("CARGO_BIN_EXE_kalfa-kopru"))),
+            git: Default::default(),
+            vekil_cozucu: cozucu,
+            vekil_yerel_izin: yerel_izin,
         },
         Box::new(BwrapAlgilayici),
         Box::new(|_| {}),
@@ -144,6 +187,7 @@ impl Kurgu {
                 ("LANG".into(), "C.UTF-8".into()),
             ],
             ag,
+            ag_listesi: None,
             alan: Some(AlanBilgisi {
                 kok: kok.to_path_buf(),
                 gizli: tarama::tara(kok, &gizli_mi),
@@ -167,7 +211,20 @@ impl Kurgu {
             bitis: sonuc.bitis,
             standart: String::from_utf8_lossy(&standart).into_owned(),
             hata: String::from_utf8_lossy(&hata).into_owned(),
+            ag: sonuc.ag,
         }
+    }
+
+    fn istek_listeli(
+        &self,
+        kok: &Path,
+        komut: KomutBicimi,
+        ag: bool,
+        liste: Option<kalfa_sandbox::vekil::IzinListesi>,
+    ) -> CalistirmaIstegi {
+        let mut req = self.istek(kok, komut, ag);
+        req.ag_listesi = liste;
+        req
     }
 
     async fn betik(&self, kok: &Path, metin: &str, ag: bool) -> Sonuc {
@@ -177,6 +234,24 @@ impl Kurgu {
                 metin: metin.to_string(),
             },
             ag,
+        );
+        self.calistir_istek(istek, CancellationToken::new()).await
+    }
+
+    async fn betik_listeli(
+        &self,
+        kok: &Path,
+        metin: &str,
+        ag: bool,
+        liste: Option<kalfa_sandbox::vekil::IzinListesi>,
+    ) -> Sonuc {
+        let istek = self.istek_listeli(
+            kok,
+            KomutBicimi::Betik {
+                metin: metin.to_string(),
+            },
+            ag,
+            liste,
         );
         self.calistir_istek(istek, CancellationToken::new()).await
     }
@@ -420,18 +495,25 @@ async fn agsiz_profilde_tcp_ve_unix_soketi_acilamaz() {
 
 #[tokio::test]
 async fn agli_profilde_tcp_acilir_unix_soketi_acilamaz() {
-    let k = kurgu();
-    let dinleyici = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = dinleyici.local_addr().unwrap().port();
-    let kabul = std::thread::spawn(move || dinleyici.accept().is_ok());
+    let k = kurgu_agli(None, true);
     let s = k
         .betik(
             &k.kok,
             &format!(
-                r#"{SOKETLER}; perl -MSocket -e '
-socket(my $s, PF_INET, SOCK_STREAM, 0) or die "soket=$!\n";
-connect($s, pack_sockaddr_in({port}, inet_aton("127.0.0.1"))) or die "baglanti=$!\n";
-print "tcp=baglandi\n"'"#
+                r#"{SOKETLER}; perl -MIO::Socket::INET -e '
+my $l = IO::Socket::INET->new(LocalAddr => "127.0.0.1", LocalPort => 0, Listen => 1, Reuse => 1) or die "dinleyici=$!\n";
+my $p = $l->sockport();
+my $pid = fork();
+if ($pid == 0) {{
+    my $c = $l->accept();
+    close($c);
+    exit(0);
+}}
+use IO::Socket::INET;
+my $s = IO::Socket::INET->new(PeerAddr => "127.0.0.1", PeerPort => $p, Proto => "tcp") or die "baglanti=$!\n";
+print "tcp=baglandi\n";
+waitpid($pid, 0);
+'"#
             ),
             true,
         )
@@ -446,7 +528,6 @@ print "tcp=baglandi\n"'"#
     assert_eq!(deger(&s.standart, "unix"), "Operation not permitted");
     assert_eq!(deger(&s.standart, "vsock"), "Operation not permitted");
     assert_eq!(deger(&s.standart, "tcp"), "baglandi", "{}", s.hata);
-    assert!(kabul.join().unwrap());
 }
 
 #[tokio::test]
@@ -677,5 +758,293 @@ fn tarama_yuz_bin_dosyada_olculur() {
     let sure = bas.elapsed();
     println!("tarama: 100 000 dosya, {} ms", sure.as_millis());
     assert_eq!(t.dosyalar, vec![d.path().join("d7/.env")]);
+}
+
+struct TestCozucu {
+    eslemeler: std::collections::HashMap<(String, u16), Vec<std::net::SocketAddr>>,
+}
+
+impl kalfa_sandbox::vekil::Cozucu for TestCozucu {
+    fn coz<'a>(
+        &'a self,
+        host: &'a str,
+        port: u16,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = std::io::Result<Vec<std::net::SocketAddr>>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let key = (host.to_lowercase(), port);
+        let res = self.eslemeler.get(&key).cloned().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("{host}:{port} bulunamadı"),
+            )
+        });
+        Box::pin(async move { res })
+    }
+}
+
+#[tokio::test]
+async fn agli_komut_izinli_hosta_vekilden_ulasir() {
+    let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = dinleyici.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut soket, _)) = dinleyici.accept().await {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut buf = [0u8; 1024];
+            let n = soket.read(&mut buf).await.unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]);
+            if req.starts_with("CONNECT") {
+                let _ = soket
+                    .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                    .await;
+            } else {
+                let yanit =
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nSELAM";
+                let _ = soket.write_all(yanit).await;
+            }
+        }
+    });
+
+    let mut eslemeler = std::collections::HashMap::new();
+    eslemeler.insert(
+        ("fake.crates.io".to_string(), port),
+        vec![std::net::SocketAddr::from(([127, 0, 0, 1], port))],
+    );
+    let cozucu = std::sync::Arc::new(TestCozucu { eslemeler });
+    let k = kurgu_agli(Some(cozucu), true);
+
+    let liste =
+        kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[("fake.crates.io".to_string(), port)]);
+
+    let betik = format!("curl -p -s -S http://fake.crates.io:{port}/");
+    let sonuc = k.betik_listeli(&k.kok, &betik, true, Some(liste)).await;
+    assert_eq!(
+        sonuc.bitis,
+        Bitis::Cikti(Some(0)),
+        "curl başarılı çıkmalı: {}",
+        sonuc.hata
+    );
+    assert!(
+        sonuc.standart.contains("SELAM"),
+        "çıktı SELAM içermeli: {}",
+        sonuc.standart
+    );
+    let ag = sonuc.ag.expect("ağ özeti dönmeli");
+    assert!(
+        ag.baglantilar.iter().any(
+            |b| b.host == "fake.crates.io" && b.karar == kalfa_sandbox::vekil::AgKarari::Izinli
+        ),
+        "ağ özetinde fake.crates.io izinli olmalı: {:?}",
+        ag.baglantilar
+    );
+}
+
+#[tokio::test]
+async fn izinsiz_host_403_alir_dogrudan_baglanti_ve_ad_cozumu_yok() {
+    let k = kurgu_agli(None, true);
+    let liste = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[]);
+
+    // 1. Vekil üzerinden izinsiz host 403 alır
+    let betik = "curl -s -i http://evil.com/";
+    let sonuc = k.betik_listeli(&k.kok, betik, true, Some(liste.clone())).await;
+    assert!(
+        sonuc.standart.contains("403 Forbidden"),
+        "vekil 403 Forbidden dönmeli: {}",
+        sonuc.standart
+    );
+    let ag = sonuc.ag.expect("ağ özeti dönmeli");
+    assert!(
+        ag.baglantilar
+            .iter()
+            .any(|b| b.host == "evil.com" && b.karar == kalfa_sandbox::vekil::AgKarari::ListedeYok),
+        "ağ özetinde evil.com ListedeYok olmalı: {:?}",
+        ag.baglantilar
+    );
+
+    // 2. Doğrudan bağlantı yok (bwrap --unshare-net yüzünden dış ağ erişimi yok)
+    let betik_dogrudan =
+        "curl --noproxy '*' --connect-timeout 2 http://1.1.1.1/ || echo 'BAGLANTI_YOK'";
+    let sonuc_dogrudan = k
+        .betik_listeli(&k.kok, betik_dogrudan, true, Some(liste.clone()))
+        .await;
+    assert!(
+        sonuc_dogrudan.standart.contains("BAGLANTI_YOK"),
+        "doğrudan bağlantı kurulamamalı: {}",
+        sonuc_dogrudan.standart
+    );
+
+    // 3. Ad çözümü yok (resolv.conf bağlanmaz)
+    let betik_dns = "getent hosts evil.com || echo 'COZULEMEDI'";
+    let sonuc_dns = k.betik_listeli(&k.kok, betik_dns, true, Some(liste)).await;
+    assert!(
+        sonuc_dns.standart.contains("COZULEMEDI"),
+        "kap içinde doğrudan ad çözümü olmamalı: {}",
+        sonuc_dns.standart
+    );
+}
+
+#[tokio::test]
+async fn vekil_ozel_ag_adresine_baglanmaz() {
+    let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = dinleyici.local_addr().unwrap().port();
+
+    let mut eslemeler = std::collections::HashMap::new();
+    eslemeler.insert(
+        ("yerel.test".to_string(), port),
+        vec![std::net::SocketAddr::from(([127, 0, 0, 1], port))],
+    );
+    let cozucu = std::sync::Arc::new(TestCozucu { eslemeler });
+
+    // yerel_izin = false olduğunda özel ağ adresine çözülen istek reddedilmeli
+    let k = kurgu_agli(Some(cozucu), false);
+    let liste = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[("yerel.test".to_string(), port)]);
+
+    let betik = format!("curl -p -s -i http://yerel.test:{port}/");
+    let sonuc = k.betik_listeli(&k.kok, &betik, true, Some(liste)).await;
+    assert!(
+        sonuc.standart.contains("403 Forbidden"),
+        "özel ağa çözülen host 403 almalı: {}",
+        sonuc.standart
+    );
+    let ag = sonuc.ag.expect("ağ özeti dönmeli");
+    assert!(
+        ag.baglantilar.iter().any(|b| {
+            b.host == "yerel.test"
+                && matches!(b.karar, kalfa_sandbox::vekil::AgKarari::YasakAdres(_))
+        }),
+        "ağ özetinde YasakAdres kararı olmalı: {:?}",
+        ag.baglantilar
+    );
+}
+
+#[tokio::test]
+async fn kanal_ve_dinleyici_komuta_gecmez() {
+    let k = kurgu_agli(None, true);
+    let liste = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[]);
+
+    let betik = "ls /proc/self/fd";
+    let sonuc = k.betik_listeli(&k.kok, betik, true, Some(liste)).await;
+    assert_eq!(sonuc.bitis, Bitis::Cikti(Some(0)));
+    let fds: Vec<&str> = sonuc.standart.split_whitespace().collect();
+    for fd in &fds {
+        let n: i32 = fd.parse().unwrap_or(-1);
+        assert!(n <= 3, "beklenmeyen açık fd komuta geçmiş: {fd}, tümü: {fds:?}");
+    }
+}
+
+#[tokio::test]
+async fn kopru_oldurulunce_komut_aga_cikamaz() {
+    let k = kurgu_agli(None, true);
+    let liste = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[]);
+
+    let betik = "pkill -9 -f kalfa-kopru 2>/dev/null; sleep 0.1; curl -s -S --connect-timeout 2 http://fake.crates.io/";
+    let sonuc = k.betik_listeli(&k.kok, betik, true, Some(liste)).await;
+    assert_ne!(
+        sonuc.bitis,
+        Bitis::Cikti(Some(0)),
+        "köprü öldürülünce komut ağa çıkamamalı: {}",
+        sonuc.standart
+    );
+}
+
+#[tokio::test]
+async fn kabin_icindeki_sunucu_vekilsiz_calisir() {
+    let k = kurgu_agli(None, true);
+    let liste = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[]);
+
+    let betik = r#"perl -MIO::Socket::INET -e '
+    my $server = IO::Socket::INET->new(LocalAddr => "127.0.0.1", LocalPort => 0, Listen => 1, Reuse => 1) or die;
+    my $port = $server->sockport();
+    my $pid = fork();
+    if ($pid == 0) {
+        my $client = $server->accept();
+        print $client "YEREL_CEVAP\n";
+        close($client);
+        exit(0);
+    }
+    my $sock = IO::Socket::INET->new(PeerAddr => "127.0.0.1", PeerPort => $port, Proto => "tcp") or die;
+    my $line = <$sock>;
+    print $line;
+    waitpid($pid, 0);
+'"#;
+    let sonuc = k.betik_listeli(&k.kok, betik, true, Some(liste)).await;
+    assert_eq!(
+        sonuc.bitis,
+        Bitis::Cikti(Some(0)),
+        "kabin içindeki sunucuya bağlanabilmeli: {}",
+        sonuc.hata
+    );
+    assert!(
+        sonuc.standart.contains("YEREL_CEVAP"),
+        "çıktıda YEREL_CEVAP olmalı: {}",
+        sonuc.standart
+    );
+    let ag = sonuc.ag.expect("ağ özeti dönmeli");
+    assert!(
+        ag.baglantilar.is_empty(),
+        "kabin içindeki yerel bağlantı vekile gitmemeli: {:?}",
+        ag.baglantilar
+    );
+}
+
+#[test]
+fn profil_ozeti_liste_degisince_degisir() {
+    let k = kurgu();
+    let ozet_agsiz = k.y.profil_ozeti(false, None).expect("profil özeti olmalı");
+    let ozet1 = k.y.profil_ozeti(true, Some("ozet-1")).expect("profil özeti olmalı");
+    let ozet2 = k.y.profil_ozeti(true, Some("ozet-2")).expect("profil özeti olmalı");
+
+    assert_ne!(ozet_agsiz, ozet1, "ağ açıkken özet değişmeli");
+    assert_ne!(ozet1, ozet2, "liste değişince özet değişmeli");
+}
+
+#[tokio::test]
+async fn devredilmeyen_tanimlayici_kaba_gecmez() {
+    let k = kurgu();
+    let fd = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_RDONLY) };
+    assert!(fd >= 3, "açılan fd 3'ten büyük olmalı: {fd}");
+
+    let sonuc = k.betik(&k.kok, "ls /proc/self/fd", false).await;
+    unsafe {
+        libc::close(fd);
+    }
+    assert_eq!(sonuc.bitis, Bitis::Cikti(Some(0)));
+    let fds: Vec<&str> = sonuc.standart.split_whitespace().collect();
+    let fd_str = fd.to_string();
+    assert!(
+        !fds.contains(&fd_str.as_str()),
+        "CLOEXEC'siz açılan fd={fd} kaba geçmiş olmamalı! Mevcut: {fds:?}"
+    );
+}
+
+#[tokio::test]
+async fn kopru_yoksa_agli_komut_baslamaz() {
+    let k = kurgu();
+    let istek = k.istek(
+        &k.kok,
+        KomutBicimi::Program {
+            program: "true".into(),
+            argumanlar: Vec::new(),
+        },
+        true,
+    );
+    let hata = k
+        .y
+        .baslat(&istek)
+        .err()
+        .expect("köprü yokken ağlı komut başlamamalı");
+    match hata {
+        kalfa_sandbox::BaslatmaHatasi::Yalitim(msg) => {
+            assert!(
+                msg.contains("Ağ köprüsü ikilisi (kalfa-kopru) ayarlanmamış"),
+                "hata iletisi bekleneni söylemeli: {msg}"
+            );
+        }
+        diger => panic!("beklenmeyen hata türü: {diger:?}"),
+    }
 }
 }

@@ -36,15 +36,20 @@ pub enum Bitis {
     Iptal,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub type AgKapatici =
+    Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = crate::vekil::AgOzeti> + Send>> + Send>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalismaSonucu {
     pub bitis: Bitis,
     pub sure: Duration,
+    pub ag: Option<crate::vekil::AgOzeti>,
 }
 
 pub struct Surec {
     cocuk: Cocuk,
     agac: Agac,
+    ag_kapat: Option<AgKapatici>,
 }
 
 enum Cocuk {
@@ -116,6 +121,7 @@ impl Surec {
         Ok(Self {
             cocuk: Cocuk::Tokio(Box::new(cocuk)),
             agac,
+            ag_kapat: None,
         })
     }
 
@@ -125,7 +131,13 @@ impl Surec {
         Self {
             cocuk: Cocuk::Kap(kap),
             agac: Agac::isten(is),
+            ag_kapat: None,
         }
+    }
+
+    /// Komut bittiğinde vekili ve köprüyü kapatıp ağ özetini döndürecek işlevi ekler.
+    pub fn ag_kapat_ekle(&mut self, kapat: AgKapatici) {
+        self.ag_kapat = Some(kapat);
     }
 
     /// Komut bitene, süre dolana ya da iptal gelene kadar bekler; çıktı
@@ -199,9 +211,14 @@ impl Surec {
         for okuyucu in okuyucular {
             okuyucu.abort();
         }
+        let ag = match self.ag_kapat {
+            Some(k) => Some(k().await),
+            None => None,
+        };
         CalismaSonucu {
             bitis: bitis.unwrap_or(Bitis::Cikti(None)),
             sure: baslangic.elapsed(),
+            ag,
         }
     }
 }

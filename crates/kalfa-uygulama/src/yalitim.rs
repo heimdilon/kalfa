@@ -190,13 +190,23 @@ pub(crate) fn yalitici_kur(
         }
     });
     match kaynak {
-        YalitimKaynagi::Platform => kalfa_sandbox::platform_yaliticisi(PlatformAyari {
-            ev: ev.to_path_buf(),
-            yalitim_dizini: yalitim_dizini.to_path_buf(),
-            ek_okunur: kayit.dizinler(),
-            kalfa_araclari,
-            degisince,
-        }),
+        YalitimKaynagi::Platform => {
+            let kopru = std::env::current_exe().ok().and_then(|exe| {
+                crate::dizin::kopru_ikilisi(
+                    &exe,
+                    std::env::var_os(crate::dizin::KOPRU_YOLU_DEGISKENI),
+                )
+            });
+
+            kalfa_sandbox::platform_yaliticisi(PlatformAyari {
+                ev: ev.to_path_buf(),
+                yalitim_dizini: yalitim_dizini.to_path_buf(),
+                ek_okunur: kayit.dizinler(),
+                kalfa_araclari,
+                kopru,
+                degisince,
+            })
+        }
         YalitimKaynagi::Kurucu(kur) => kur(degisince),
     }
 }

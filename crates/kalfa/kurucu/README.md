@@ -2,11 +2,11 @@
 
 `ui/` dizininde `npm ci` çalıştırıldıktan sonra Windows'ta
 `node ../crates/kalfa/kurucu/derle.mjs` çalıştırın. Bu komut
-`kalfa-yalitim.exe` yardımcısını kilitli Rust bağımlılıklarıyla
-sürüm kipinde derler, Tauri'nin beklediği hedef üçlüsü adıyla yerel `binaries/`
-dizinine kopyalar, arayüzü derler ve NSIS kurucusunu üretir. Sonuç
-`target/release/bundle/nsis/` altındadır. `binaries/` derleme çıktısıdır;
-depoya eklenmez.
+`kalfa-yalitim.exe` yardımcısını ve `kalfa-kopru.exe` köprüsünü kilitli Rust
+bağımlılıklarıyla sürüm kipinde derler, Tauri'nin beklediği hedef üçlüsü
+adıyla yerel `binaries/` dizinine kopyalar, arayüzü derler ve NSIS kurucusunu
+üretir. Sonuç `target/release/bundle/nsis/` altındadır. `binaries/` derleme
+çıktısıdır; depoya eklenmez.
 
 Derleme, `araclar.json`'daki Python ve Node paketlerini resmi kaynaklarından
 indirir (önbellek `target/kurucu-onbellek/`), SHA-256'larını denetler ve

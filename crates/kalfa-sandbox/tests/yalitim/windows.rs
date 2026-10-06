@@ -32,6 +32,7 @@ struct Sonuc {
     bitis: Bitis,
     standart: String,
     hata: String,
+    ag: Option<kalfa_sandbox::vekil::AgOzeti>,
 }
 
 fn windows_koku() -> PathBuf {
@@ -48,6 +49,46 @@ fn kurgu() -> Kurgu {
     let gecici = tempfile::tempdir().unwrap();
     let taban = gecici.path().to_path_buf();
     kurgu_olustur(Some(gecici), taban)
+}
+
+fn kurgu_agli(
+    cozucu: Option<std::sync::Arc<dyn kalfa_sandbox::vekil::Cozucu>>,
+    yerel_izin: bool,
+) -> Kurgu {
+    let gecici = tempfile::tempdir().unwrap();
+    let taban = gecici.path().to_path_buf();
+    let ev = taban.join("ev");
+    let kok = taban.join("calisma-alani-a");
+    let baska_kok = taban.join("calisma-alani-b");
+    let yalitim_dizini = taban.join("yalitim");
+    std::fs::create_dir_all(ev.join(r".cargo\bin")).unwrap();
+    std::fs::create_dir_all(ev.join(".ssh")).unwrap();
+    std::fs::create_dir_all(&kok).unwrap();
+    std::fs::create_dir_all(&baska_kok).unwrap();
+    let y = WindowsYalitici::yeni(
+        WindowsAyari {
+            ev: ev.clone(),
+            yalitim_dizini: yalitim_dizini.clone(),
+            kopru: Some(PathBuf::from(env!("CARGO_BIN_EXE_kalfa-kopru"))),
+            vekil_cozucu: cozucu,
+            vekil_yerel_izin: yerel_izin,
+            ..WindowsAyari::default()
+        },
+        Box::new(|_| {}),
+    );
+    match y.durum() {
+        YalitimDurumu::Hazir { .. } => {}
+        durum => panic!("Windows yalıtımı hazır değil: {durum:?}"),
+    }
+    Kurgu {
+        gecici: Some(gecici),
+        taban,
+        ev,
+        yalitim_dizini,
+        kok,
+        baska_kok,
+        y,
+    }
 }
 
 fn kurgu_paylasimli(taban: PathBuf) -> Kurgu {
@@ -114,7 +155,21 @@ impl Kurgu {
         alan
     }
 
+    fn alan(&self, kok: &Path) -> AlanBilgisi {
+        self.hazirla(kok, Vec::new())
+    }
+
     fn istek(&self, alan: &AlanBilgisi, ag: bool, metin: &str) -> CalistirmaIstegi {
+        self.istek_listeli(alan, ag, None, metin)
+    }
+
+    fn istek_listeli(
+        &self,
+        alan: &AlanBilgisi,
+        ag: bool,
+        liste: Option<kalfa_sandbox::vekil::IzinListesi>,
+        metin: &str,
+    ) -> CalistirmaIstegi {
         CalistirmaIstegi {
             komut: KomutBicimi::Program {
                 program: powershell_yolu().display().to_string(),
@@ -127,17 +182,34 @@ impl Kurgu {
                 ],
             },
             dizin: alan.kok.clone(),
-            ortam: vec![(
-                "PATH".into(),
-                windows_koku().join("System32").display().to_string(),
-            )],
+            ortam: vec![
+                (
+                    "PATH".into(),
+                    windows_koku().join("System32").display().to_string(),
+                ),
+                // `PATHEXT` yoksa PowerShell `curl.exe`'yi belge sayar ve
+                // sessizce çalıştırmaz.
+                ("PATHEXT".into(), ".COM;.EXE;.BAT;.CMD".into()),
+            ],
             ag,
+            ag_listesi: liste,
             alan: Some(alan.clone()),
         }
     }
 
     async fn calistir(&self, alan: &AlanBilgisi, ag: bool, metin: &str) -> Sonuc {
         self.istegi_calistir(&self.istek(alan, ag, metin)).await
+    }
+
+    async fn calistir_listeli(
+        &self,
+        alan: &AlanBilgisi,
+        ag: bool,
+        liste: Option<kalfa_sandbox::vekil::IzinListesi>,
+        metin: &str,
+    ) -> Sonuc {
+        self.istegi_calistir(&self.istek_listeli(alan, ag, liste, metin))
+            .await
     }
 
     async fn istegi_calistir(&self, istek: &CalistirmaIstegi) -> Sonuc {
@@ -157,6 +229,7 @@ impl Kurgu {
             bitis: sonuc.bitis,
             standart: String::from_utf8_lossy(&standart).into_owned(),
             hata: String::from_utf8_lossy(&hata).into_owned(),
+            ag: sonuc.ag,
         }
     }
 
@@ -522,7 +595,8 @@ async fn evdeki_ssh_ve_cargo_kimlik_bilgileri_okunamaz() {
 /// komutta özel, boş registry sürer.
 #[tokio::test]
 async fn cargo_kimlik_bilgileri_kapta_okunamaz() {
-    let k = kurgu();
+    // Ağlı komut köprüyle başlar (3d).
+    let k = kurgu_agli(None, false);
     let cargo = k.ev.join(".cargo");
     std::fs::create_dir_all(cargo.join(r"registry\cache")).unwrap();
     std::fs::create_dir_all(cargo.join(r"git\db")).unwrap();
@@ -1328,14 +1402,16 @@ async fn agsiz_profilde_tcp_baglantisi_kurulamaz() {
     );
 }
 
+/// 3d: ağlı profilde de kap internete doğrudan çıkamaz (`internetClient`
+/// yok); çıkış yalnızca köprü ve vekilden.
 #[tokio::test]
-async fn agli_profilde_tcp_baglantisi_kurulur() {
-    let k = kurgu();
+async fn agli_profilde_dogrudan_tcp_baglantisi_kurulamaz() {
+    let k = kurgu_agli(None, false);
     let alan = k.hazirla(&k.kok, Vec::new());
     let sonuc = k.calistir(&alan, true, &tcp_betik("1.1.1.1", 443)).await;
     assert_eq!(sonuc.bitis, Bitis::Cikti(Some(0)), "{}", sonuc.hata);
     assert!(
-        sonuc.standart.contains("TCP=BAGLANDI"),
+        !sonuc.standart.contains("TCP=BAGLANDI"),
         "{}{}",
         sonuc.standart,
         sonuc.hata
@@ -1344,7 +1420,7 @@ async fn agli_profilde_tcp_baglantisi_kurulur() {
 
 #[tokio::test]
 async fn loopback_agli_ve_agssiz_profillerde_kapali() {
-    let k = kurgu();
+    let k = kurgu_agli(None, false);
     let dinleyici = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = dinleyici.local_addr().unwrap().port();
     let alan = k.hazirla(&k.kok, Vec::new());
@@ -1696,4 +1772,412 @@ fn bozuk_ace_kaydi_yalnizca_kanitlanan_acl_leri_geri_alir() {
     // Bozuk kayıtta kaldırma profili bilerek bırakır; testin profili
     // makinede kalmasın.
     guvenlik::profil_sil(&profil).unwrap();
+}
+
+#[tokio::test]
+async fn ayni_adla_ikinci_sunucu_acilamaz() {
+    let paket = Sid::metinden("S-1-15-2-1-2-3-4").unwrap();
+    let gelistirici = guvenlik::kullanici_sidi().unwrap();
+    let is = kalfa_sandbox::windows::Is::yeni(false).unwrap();
+    let vekil = std::sync::Arc::new(kalfa_sandbox::vekil::Vekil::baslat(
+        kalfa_sandbox::vekil::VekilAyari::default(),
+    ));
+    let sunucu =
+        kalfa_sandbox::windows::kopru::BoruSunucusu::ac(&paket, &gelistirici, &is, vekil, 64)
+            .unwrap();
+
+    let ikinci = tokio::net::windows::named_pipe::ServerOptions::new()
+        .first_pipe_instance(true)
+        .create(sunucu.ad());
+    assert!(
+        ikinci.is_err(),
+        "aynı adla ilk örnek olarak ikinci sunucu açılamamalı"
+    );
+}
+
+#[tokio::test]
+async fn isin_disindaki_istemci_reddedilir() {
+    use tokio::io::AsyncReadExt;
+    let paket = Sid::metinden("S-1-15-2-1-2-3-4").unwrap();
+    let gelistirici = guvenlik::kullanici_sidi().unwrap();
+    let is = kalfa_sandbox::windows::Is::yeni(false).unwrap();
+    let vekil = std::sync::Arc::new(kalfa_sandbox::vekil::Vekil::baslat(
+        kalfa_sandbox::vekil::VekilAyari::default(),
+    ));
+    let sunucu = kalfa_sandbox::windows::kopru::BoruSunucusu::ac(
+        &paket,
+        &gelistirici,
+        &is,
+        vekil.clone(),
+        64,
+    )
+    .unwrap();
+
+    let mut istemci = tokio::net::windows::named_pipe::ClientOptions::new()
+        .open(sunucu.ad())
+        .unwrap();
+
+    let mut tampon = [0u8; 16];
+    let okunan = istemci.read(&mut tampon).await;
+    assert!(matches!(okunan, Ok(0) | Err(_)));
+
+    let ozet = vekil.bitir().await;
+    assert!(
+        ozet.baglantilar
+            .iter()
+            .any(|b| matches!(b.karar, kalfa_sandbox::vekil::AgKarari::Gecersiz(_))),
+        "iş dışındaki istemci için karar Gecersiz olmalı"
+    );
+}
+
+#[tokio::test]
+async fn baska_paketin_kabi_baglanamaz() {
+    let k = kurgu();
+    let alan_a = k.alan(&k.kok);
+    let alan_b = k.alan(&k.baska_kok);
+    let _ = k.calistir(&alan_a, false, "exit 0").await;
+    let _ = k.calistir(&alan_b, false, "exit 0").await;
+
+    let kimlik_a = alan_kimligi(&alan_a.kok);
+    let paket_a = guvenlik::profil_sidi(&format!("Kalfa.Alan.{kimlik_a}")).unwrap();
+    let gelistirici = guvenlik::kullanici_sidi().unwrap();
+    let is = kalfa_sandbox::windows::Is::yeni(false).unwrap();
+    let vekil = std::sync::Arc::new(kalfa_sandbox::vekil::Vekil::baslat(
+        kalfa_sandbox::vekil::VekilAyari::default(),
+    ));
+    let sunucu =
+        kalfa_sandbox::windows::kopru::BoruSunucusu::ac(&paket_a, &gelistirici, &is, vekil, 64)
+            .unwrap();
+
+    let betik = format!(
+        "try {{ $f = [System.IO.File]::Open('{}', [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite); $f.Close(); exit 0 }} catch {{ exit 1 }}",
+        sunucu.ad()
+    );
+    let sonuc = k.calistir(&alan_b, false, &betik).await;
+    assert_ne!(
+        sonuc.bitis,
+        Bitis::Cikti(Some(0)),
+        "farklı paketin kabı boruyu açamamalı"
+    );
+
+    k.temizle(&[alan_a, alan_b]);
+}
+
+#[tokio::test]
+async fn azami_ornek_asilinca_yeni_baglanti_reddedilir() {
+    let paket = Sid::metinden("S-1-15-2-1-2-3-4").unwrap();
+    let gelistirici = guvenlik::kullanici_sidi().unwrap();
+    let is = kalfa_sandbox::windows::Is::yeni_ayarsiz().unwrap();
+    let atandi = unsafe {
+        windows_sys::Win32::System::JobObjects::AssignProcessToJobObject(
+            is.tutamac(),
+            windows_sys::Win32::System::Threading::GetCurrentProcess(),
+        )
+    };
+    assert_ne!(atandi, 0, "test süreci iş nesnesine atanabilmeli");
+
+    let vekil = std::sync::Arc::new(kalfa_sandbox::vekil::Vekil::baslat(
+        kalfa_sandbox::vekil::VekilAyari::default(),
+    ));
+    let sunucu =
+        kalfa_sandbox::windows::kopru::BoruSunucusu::ac(&paket, &gelistirici, &is, vekil, 2)
+            .unwrap();
+
+    async fn boru_baglan(
+        ad: &str,
+    ) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeClient> {
+        let baslangic = std::time::Instant::now();
+        loop {
+            match tokio::net::windows::named_pipe::ClientOptions::new().open(ad) {
+                Ok(c) => return Ok(c),
+                Err(e) if e.raw_os_error() == Some(231) => {
+                    if baslangic.elapsed() > std::time::Duration::from_millis(500) {
+                        return Err(e);
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    let baglanti1 = boru_baglan(sunucu.ad()).await.unwrap();
+    let baglanti2 = boru_baglan(sunucu.ad()).await.unwrap();
+
+    let baglanti3 = boru_baglan(sunucu.ad()).await;
+    assert!(
+        baglanti3.is_err(),
+        "azami sınır aşıldığında yeni bağlantı reddedilmeli"
+    );
+
+    drop(baglanti1);
+    drop(baglanti2);
+}
+
+struct TestCozucu {
+    eslemeler: std::collections::HashMap<(String, u16), Vec<std::net::SocketAddr>>,
+}
+
+impl kalfa_sandbox::vekil::Cozucu for TestCozucu {
+    fn coz<'a>(
+        &'a self,
+        host: &'a str,
+        port: u16,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = std::io::Result<Vec<std::net::SocketAddr>>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let key = (host.to_lowercase(), port);
+        let res = self.eslemeler.get(&key).cloned().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("{host}:{port} bulunamadı"),
+            )
+        });
+        Box::pin(async move { res })
+    }
+}
+
+#[tokio::test]
+async fn agli_komut_izinli_hosta_vekilden_ulasir() {
+    let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = dinleyici.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut soket, _)) = dinleyici.accept().await {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut buf = [0u8; 1024];
+            let n = soket.read(&mut buf).await.unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]);
+            if req.starts_with("CONNECT") {
+                let _ = soket
+                    .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                    .await;
+            } else {
+                let yanit =
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nSELAM";
+                let _ = soket.write_all(yanit).await;
+            }
+        }
+    });
+
+    let mut eslemeler = std::collections::HashMap::new();
+    eslemeler.insert(
+        ("fake.crates.io".to_string(), port),
+        vec![std::net::SocketAddr::from(([127, 0, 0, 1], port))],
+    );
+    let cozucu = std::sync::Arc::new(TestCozucu { eslemeler });
+    let k = kurgu_agli(Some(cozucu), true);
+    let alan = k.alan(&k.kok);
+
+    let liste =
+        kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[("fake.crates.io".to_string(), port)]);
+
+    // `-p`: tünel (CONNECT); vekil düz HTTP isteğini yalnızca 80. portta geçirir.
+    let betik = format!("curl.exe -p -s -S http://fake.crates.io:{port}/");
+    let sonuc = k.calistir_listeli(&alan, true, Some(liste), &betik).await;
+    assert_eq!(
+        sonuc.bitis,
+        Bitis::Cikti(Some(0)),
+        "curl başarılı çıkmalı: {}",
+        sonuc.hata
+    );
+    assert!(
+        sonuc.standart.contains("SELAM"),
+        "çıktı SELAM içermeli: {}",
+        sonuc.standart
+    );
+    let ag = sonuc.ag.expect("ağ özeti dönmeli");
+    assert!(
+        ag.baglantilar.iter().any(
+            |b| b.host == "fake.crates.io" && b.karar == kalfa_sandbox::vekil::AgKarari::Izinli
+        ),
+        "ağ özetinde fake.crates.io izinli olmalı: {:?}",
+        ag.baglantilar
+    );
+
+    k.temizle(&[alan]);
+}
+
+#[tokio::test]
+async fn izinsiz_host_403_alir() {
+    let k = kurgu_agli(None, true);
+    let alan = k.alan(&k.kok);
+
+    let liste = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[]);
+    let betik = "curl.exe -s -i http://evil.com/";
+    let sonuc = k.calistir_listeli(&alan, true, Some(liste), betik).await;
+    assert!(
+        sonuc.standart.contains("403 Forbidden"),
+        "vekil 403 Forbidden dönmeli: {}",
+        sonuc.standart
+    );
+    let ag = sonuc.ag.expect("ağ özeti dönmeli");
+    assert!(
+        ag.baglantilar
+            .iter()
+            .any(|b| b.host == "evil.com" && b.karar == kalfa_sandbox::vekil::AgKarari::ListedeYok),
+        "ağ özetinde evil.com ListedeYok olmalı: {:?}",
+        ag.baglantilar
+    );
+
+    k.temizle(&[alan]);
+}
+
+#[tokio::test]
+async fn kap_dogrudan_aga_cikamaz() {
+    let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = dinleyici.local_addr().unwrap().port();
+
+    let k = kurgu();
+    let alan = k.alan(&k.kok);
+
+    let betik = format!(
+        "try {{ $c = New-Object System.Net.Sockets.TcpClient('127.0.0.1', {port}); exit 0 }} catch {{ exit 1 }}"
+    );
+    let sonuc = k.calistir(&alan, false, &betik).await;
+    assert_ne!(
+        sonuc.bitis,
+        Bitis::Cikti(Some(0)),
+        "kap ana makinenin geri döngüsüne doğrudan bağlanamamalı"
+    );
+
+    k.temizle(&[alan]);
+}
+
+#[tokio::test]
+async fn kopru_oldurulunce_komut_aga_cikamaz() {
+    let k = kurgu_agli(None, true);
+    let alan = k.alan(&k.kok);
+
+    let liste = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[]);
+    let betik = "Stop-Process -Name kalfa-kopru -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 100; curl.exe -s -S --connect-timeout 2 http://index.crates.io/";
+    let sonuc = k.calistir_listeli(&alan, true, Some(liste), betik).await;
+    assert_ne!(
+        sonuc.bitis,
+        Bitis::Cikti(Some(0)),
+        "köprü öldürülünce komut ağa çıkamamalı"
+    );
+
+    k.temizle(&[alan]);
+}
+
+#[tokio::test]
+async fn kopru_yoksa_agli_komut_baslamaz() {
+    let k = kurgu(); // kopru is None
+    let alan = k.alan(&k.kok);
+
+    let istek = k.istek(&alan, true, "exit 0");
+    let hata =
+        k.y.baslat(&istek)
+            .err()
+            .expect("köprü yokken ağlı komut başlamamalı");
+    match hata {
+        BaslatmaHatasi::Yalitim(msg) => {
+            assert!(
+                msg.contains("Ağlı yalıtımlı komut başlatılamadı: köprü bulunamadı"),
+                "hata iletisi bekleneni söylemeli: {msg}"
+            );
+        }
+        diger => panic!("beklenmeyen hata türü: {diger:?}"),
+    }
+
+    k.temizle(&[alan]);
+}
+
+#[tokio::test]
+async fn kopru_kopyasi_kapta_yazilamaz() {
+    let k = kurgu_agli(None, true);
+    let alan = k.alan(&k.kok);
+
+    let liste = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[]);
+    let _ = k
+        .calistir_listeli(&alan, true, Some(liste.clone()), "exit 0")
+        .await;
+
+    let betik = r#"
+        $kopru = (Get-Item $env:LOCALAPPDATA).Parent.FullName + '\kopru\kalfa-kopru.exe'
+        try {
+            [System.IO.File]::WriteAllText($kopru, 'bozuk')
+            exit 0
+        } catch {
+            exit 1
+        }
+    "#;
+    let sonuc = k.calistir_listeli(&alan, true, Some(liste), betik).await;
+    assert_ne!(
+        sonuc.bitis,
+        Bitis::Cikti(Some(0)),
+        "kap kalfa-kopru.exe üzerine yazamamalı"
+    );
+
+    k.temizle(&[alan]);
+}
+
+#[tokio::test]
+async fn kabin_icindeki_sunucu_vekilsiz_calisir() {
+    let k = kurgu_agli(None, true);
+    let alan = k.alan(&k.kok);
+
+    let liste = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &[]);
+    let betik = r#"
+        $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        $l.Start()
+        $p = $l.LocalEndpoint.Port
+        $c = [System.Net.Sockets.TcpClient]::new()
+        $c.Connect('127.0.0.1', $p)
+        if ($c.Connected) { Write-Output "BAGLANDI" }
+        $c.Close()
+        $l.Stop()
+    "#;
+    let sonuc = k.calistir_listeli(&alan, true, Some(liste), betik).await;
+    assert_eq!(
+        sonuc.bitis,
+        Bitis::Cikti(Some(0)),
+        "kabin içindeki yerel dinleyiciye bağlanabilmeli: {}",
+        sonuc.hata
+    );
+    assert!(
+        sonuc.standart.contains("BAGLANDI"),
+        "çıktıda BAGLANDI olmalı: {}",
+        sonuc.standart
+    );
+    let ag = sonuc.ag.expect("ağ özeti dönmeli");
+    assert!(
+        ag.baglantilar.is_empty(),
+        "kabin içindeki bağlantı vekile gitmemeli: {:?}",
+        ag.baglantilar
+    );
+
+    k.temizle(&[alan]);
+}
+
+#[test]
+fn profil_ozeti_liste_degisince_degisir() {
+    let k = kurgu();
+    let ozet_agsiz = k.y.profil_ozeti(false, None).expect("profil özeti olmalı");
+    let ozet1 =
+        k.y.profil_ozeti(true, Some("ozet-1"))
+            .expect("profil özeti olmalı");
+    let ozet2 =
+        k.y.profil_ozeti(true, Some("ozet-2"))
+            .expect("profil özeti olmalı");
+
+    assert_ne!(ozet_agsiz, ozet1, "ağ açıkken özet değişmeli");
+    assert_ne!(ozet1, ozet2, "liste değişince özet değişmeli");
+}
+
+#[tokio::test]
+async fn agsiz_komut_degismedi() {
+    let k = kurgu();
+    let alan = k.alan(&k.kok);
+
+    let sonuc = k.calistir(&alan, false, "Write-Output 'AGSIZ'").await;
+    assert_eq!(sonuc.bitis, Bitis::Cikti(Some(0)));
+    assert!(sonuc.standart.contains("AGSIZ"));
+    assert!(sonuc.ag.is_none(), "ağsız komutta ağ özeti olmamalı");
+
+    k.temizle(&[alan]);
 }

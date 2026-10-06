@@ -12,7 +12,9 @@ use kalfa_core::kimlik::{OturumId, TurId};
 use kalfa_core::oturum::OturumAyarlari;
 use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf};
 use kalfa_core::test_destek::*;
-use kalfa_core::tur_ozeti::{DosyaIslemi, DosyaOzeti, GeriAlinabilirlik, IstekOzeti, TurOzeti};
+use kalfa_core::tur_ozeti::{
+    AgHostOzeti, AgKomutOzeti, DosyaIslemi, DosyaOzeti, GeriAlinabilirlik, IstekOzeti, TurOzeti,
+};
 use kalfa_core::yol::CalismaYolu;
 use kalfa_evren::AkisOlayi;
 use kalfa_evren::tipler::Usage;
@@ -59,6 +61,16 @@ impl Ortam {
             a.kayit_yolu = Some(self.kayit());
             a.geri_alma_dizini = Some(self.d.path().join("geri-alma"));
         }
+        test_oturumu(baglam, a)
+    }
+
+    fn surucu_kabuk(&self, s: Arc<SahteSaglayici>, kabuk: Arc<SahteArac>) -> Surucu {
+        let mut baglam = test_baglami(s, vec![kabuk as Arc<dyn Arac>], sanal_siniflandirici());
+        baglam.geri_yukleyici = Some(self.dosyalar.clone());
+        let mut a = OturumAyarlari::yeni("glm-5.3", Path::new("calisma"));
+        a.kip = Kip::Serbest;
+        a.kayit_yolu = Some(self.kayit());
+        a.geri_alma_dizini = Some(self.d.path().join("geri-alma"));
         test_oturumu(baglam, a)
     }
 }
@@ -324,4 +336,45 @@ fn eski_kayit_ozetsiz_acilir() {
             .iter()
             .any(|g| matches!(g, GorunumOgesi::TurOzeti { .. }))
     );
+}
+
+#[tokio::test]
+async fn tur_ozetinde_komutun_ag_ozeti() {
+    let o = Ortam::yeni();
+    let ag = AgKomutOzeti {
+        hostlar: vec![
+            AgHostOzeti {
+                host: "index.crates.io".into(),
+                port: 443,
+                baglanti_sayisi: 2,
+                giden_bayt: 120,
+                gelen_bayt: 4500,
+                reddedilenler: 0,
+            },
+            AgHostOzeti {
+                host: "evil.com".into(),
+                port: 443,
+                baglanti_sayisi: 1,
+                giden_bayt: 0,
+                gelen_bayt: 0,
+                reddedilenler: 1,
+            },
+        ],
+        toplam_giden: 120,
+        toplam_gelen: 4500,
+        reddedilen_sayisi: 1,
+    };
+    let kabuk = Arc::new(SahteArac::kabuk("kabuk").ag_ozeti(ag.clone()));
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac("kabuk", json!({"yol": "."})),
+        kullanimli_metin("bitti", 100, 20),
+    ]);
+    let mut d = o.surucu_kabuk(s, kabuk);
+
+    d.gonder(mesaj("derle")).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    let ozet = ozet_bekle(&mut d).await;
+    assert_eq!(ozet.komutlar.len(), 1);
+    assert_eq!(ozet.komutlar[0].ag, Some(ag));
+    d.kapat().await;
 }

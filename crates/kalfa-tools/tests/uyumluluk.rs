@@ -27,6 +27,7 @@ use kalfa_core::izin::Siniflandirici;
 use kalfa_sandbox::GitKimligi;
 #[cfg(target_os = "linux")]
 use kalfa_sandbox::linux::{BwrapAlgilayici, LinuxAyari, LinuxYalitici};
+use kalfa_sandbox::vekil::Cozucu;
 #[cfg(windows)]
 use kalfa_sandbox::windows::ace_kaydi::{AceKaydi, Girdi, ORTAK};
 #[cfg(windows)]
@@ -130,6 +131,7 @@ impl Drop for WindowsTemizlik {
                     ek_okunur: Vec::new(),
                     kalfa_araclari: Vec::new(),
                     git: GitKimligi::default(),
+                    ..WindowsAyari::default()
                 },
                 Box::new(|_| {}),
             ));
@@ -150,13 +152,21 @@ impl Drop for WindowsTemizlik {
 
 #[cfg(target_os = "linux")]
 fn kurgu(kok: &Path) -> Kurgu {
+    kurgu_agli(kok, None)
+}
+
+#[cfg(target_os = "linux")]
+fn kurgu_agli(kok: &Path, cozucu: Option<Arc<dyn Cozucu>>) -> Kurgu {
     let veri = TempDir::new().unwrap();
     let yalitici = LinuxYalitici::yeni(
         LinuxAyari {
             ev: std::env::var_os("HOME").map(PathBuf::from).expect("HOME"),
             yalitim_dizini: veri.path().join("yalitim"),
             ek_okunur: node_koku().into_iter().collect(),
+            kopru: kopru_ikilisi(),
             git: Default::default(),
+            vekil_cozucu: cozucu,
+            vekil_yerel_izin: true,
         },
         Box::new(BwrapAlgilayici),
         Box::new(|_| {}),
@@ -209,10 +219,65 @@ fn kurgu(kok: &Path) -> Kurgu {
     kurgu_ile(kok, windows_arac_dizinleri(), Vec::new())
 }
 
+fn kopru_ikilisi() -> Option<PathBuf> {
+    if let Ok(yol) = std::env::var("KALFA_KOPRU_YOLU") {
+        let p = PathBuf::from(yol);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let ad = format!("kalfa-kopru{}", std::env::consts::EXE_SUFFIX);
+    if let Some(parent) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(Path::to_path_buf))
+    {
+        let p = parent.join(&ad);
+        if p.is_file() {
+            return Some(p);
+        }
+        if let Some(grandparent) = parent.parent() {
+            let p2 = grandparent.join(&ad);
+            if p2.is_file() {
+                return Some(p2);
+            }
+        }
+    }
+    if let Ok(hedef_dizin) = std::env::var("CARGO_TARGET_DIR") {
+        let p = PathBuf::from(hedef_dizin).join("debug").join(&ad);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let hedef = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("target").join("debug").join(&ad));
+    if let Some(p) = hedef.filter(|p| p.is_file()) {
+        return Some(p);
+    }
+    None
+}
+
 /// `ek_okunur`: kullanıcının Ayarlar'dan açtığı dizinler; `kalfa_araclari`:
 /// kurulu Kalfa'nın getirdiği Python ve Node (2d-3).
 #[cfg(windows)]
 fn kurgu_ile(kok: &Path, ek_okunur: Vec<PathBuf>, kalfa_araclari: Vec<PathBuf>) -> Kurgu {
+    kurgu_ile_ayarla(kok, ek_okunur, kalfa_araclari, None, false)
+}
+
+#[cfg(windows)]
+fn kurgu_agli(kok: &Path, cozucu: Option<Arc<dyn Cozucu>>) -> Kurgu {
+    kurgu_ile_ayarla(kok, windows_arac_dizinleri(), Vec::new(), cozucu, true)
+}
+
+#[cfg(windows)]
+fn kurgu_ile_ayarla(
+    kok: &Path,
+    ek_okunur: Vec<PathBuf>,
+    kalfa_araclari: Vec<PathBuf>,
+    cozucu: Option<Arc<dyn kalfa_sandbox::vekil::Cozucu>>,
+    yerel_izin: bool,
+) -> Kurgu {
     let kilit = WINDOWS_KURGU_KILIDI
         .lock()
         .unwrap_or_else(|zehir| zehir.into_inner());
@@ -234,6 +299,9 @@ fn kurgu_ile(kok: &Path, ek_okunur: Vec<PathBuf>, kalfa_araclari: Vec<PathBuf>) 
             ek_okunur,
             kalfa_araclari,
             git: GitKimligi::default(),
+            kopru: kopru_ikilisi(),
+            vekil_cozucu: cozucu,
+            vekil_yerel_izin: yerel_izin,
         },
         Box::new(|_| {}),
     ));
@@ -296,6 +364,40 @@ impl Kurgu {
         {
             Ok(c) => Ok(c.icerik),
             Err(AracHatasi::Basarisiz(c)) => Err(c.icerik),
+            Err(e) => panic!("{a}\n{e:?}"),
+        }
+    }
+
+    /// Ağlı komutu çalıştırır; başarılı ya da başarısız çıktı ile ağ özetini döner.
+    async fn calistir_agli(
+        &self,
+        komut: &str,
+        ag_hostlari: &[&str],
+    ) -> (
+        Result<String, String>,
+        Option<Box<kalfa_core::tur_ozeti::AgKomutOzeti>>,
+    ) {
+        let a = json!({
+            "betik": komut,
+            "ag": true,
+            "ag_hostlari": ag_hostlari,
+            "zaman_asimi_sn": 60,
+        });
+        let h = self.arac.hazirla(&a).await.expect("hazırlık");
+        #[cfg(windows)]
+        if self.ilk_cagri.swap(false, Ordering::SeqCst) {
+            assert!(
+                h.kabuk.as_ref().is_some_and(|t| t.alan_hazirligi),
+                "ilk Windows çağrısında çalışma alanı hazırlığı yerel onay tarifine eklenmeli"
+            );
+        }
+        match self
+            .arac
+            .calistir_akisli(&a, &h, CancellationToken::new(), CiktiGonderici::bos())
+            .await
+        {
+            Ok(c) => (Ok(c.icerik), c.ag),
+            Err(AracHatasi::Basarisiz(c)) => (Err(c.icerik), c.ag),
             Err(e) => panic!("{a}\n{e:?}"),
         }
     }
@@ -1058,4 +1160,244 @@ async fn geri_alma_deposu_yalitimda_gorunmez() {
     assert!(!cikti.contains(&"a".repeat(64)), "{cikti}");
     assert!(cikti.contains("okunamadi"), "{cikti}");
     assert!(cikti.contains("listelenemedi"), "{cikti}");
+}
+
+struct SahteCozucu {
+    eslemeler: std::collections::HashMap<(String, u16), Vec<std::net::SocketAddr>>,
+}
+
+impl kalfa_sandbox::vekil::Cozucu for SahteCozucu {
+    fn coz<'a>(
+        &'a self,
+        host: &'a str,
+        port: u16,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = std::io::Result<Vec<std::net::SocketAddr>>>
+                + Send
+                + 'a,
+        >,
+    > {
+        let key = (host.to_lowercase(), port);
+        let res = self.eslemeler.get(&key).cloned().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("{host}:{port} bulunamadı"),
+            )
+        });
+        Box::pin(async move { res })
+    }
+}
+
+/// curl, git, npm, Node (fetch) ve pip yerel sahte vekile CONNECT gönderiyor;
+/// Linux'ta cargo da. İndirme yapılmaz (3d planı Görev 4, Windows alt planı
+/// Görev W4). WSL'de pip kurulu olmadığı için Linux'ta Python'un kendi
+/// istemcisi sınanır; pip vekili aynı ortam değişkenlerinden okur.
+#[tokio::test]
+async fn agli_curl_git_npm_node_pip_vekillle_connect_gonderir() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = dinleyici.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        while let Ok((mut soket, _)) = dinleyici.accept().await {
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1024];
+                let _ = soket.read(&mut buf).await;
+                let _ = soket
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+                    .await;
+            });
+        }
+    });
+
+    let mut eslemeler = std::collections::HashMap::new();
+    eslemeler.insert(
+        ("registry.npmjs.org".to_string(), 443),
+        vec![std::net::SocketAddr::from(([127, 0, 0, 1], port))],
+    );
+    eslemeler.insert(
+        ("github.com".to_string(), 443),
+        vec![std::net::SocketAddr::from(([127, 0, 0, 1], port))],
+    );
+    eslemeler.insert(
+        ("pypi.org".to_string(), 443),
+        vec![std::net::SocketAddr::from(([127, 0, 0, 1], port))],
+    );
+    eslemeler.insert(
+        ("index.crates.io".to_string(), 443),
+        vec![std::net::SocketAddr::from(([127, 0, 0, 1], port))],
+    );
+    let cozucu = Arc::new(SahteCozucu { eslemeler });
+
+    let d = TempDir::new().unwrap();
+    let k = kurgu_agli(d.path(), Some(cozucu));
+
+    // 1. curl CONNECT gönderir
+    let curl_komut = if cfg!(windows) {
+        "curl.exe -s -S --connect-timeout 5 https://registry.npmjs.org/"
+    } else {
+        "curl -s -S --connect-timeout 5 https://registry.npmjs.org/"
+    };
+    let (_, ag) = k
+        .calistir_agli(curl_komut, &["registry.npmjs.org:443"])
+        .await;
+    let ag = ag.expect("curl ağ özeti üretmeli");
+    assert!(
+        ag.hostlar
+            .iter()
+            .any(|h| h.host == "registry.npmjs.org" && h.baglanti_sayisi > 0),
+        "curl registry.npmjs.org'a CONNECT göndermeli: {:?}",
+        ag.hostlar
+    );
+
+    // 2. git CONNECT gönderir
+    let (_, ag) = k
+        .calistir_agli(
+            "git -c http.sslVerify=false ls-remote https://github.com/octocat/Hello-World HEAD",
+            &["github.com:443"],
+        )
+        .await;
+    let ag = ag.expect("git ağ özeti üretmeli");
+    assert!(
+        ag.hostlar
+            .iter()
+            .any(|h| h.host == "github.com" && h.baglanti_sayisi > 0),
+        "git github.com'a CONNECT göndermeli: {:?}",
+        ag.hostlar
+    );
+
+    // 3. npm CONNECT gönderir
+    let npm_komut = if cfg!(windows) {
+        "cmd /c npm view left-pad version"
+    } else {
+        "npm view left-pad version"
+    };
+    let (_, ag) = k
+        .calistir_agli(npm_komut, &["registry.npmjs.org:443"])
+        .await;
+    let ag = ag.expect("npm ağ özeti üretmeli");
+    assert!(
+        ag.hostlar
+            .iter()
+            .any(|h| h.host == "registry.npmjs.org" && h.baglanti_sayisi > 0),
+        "npm registry.npmjs.org'a CONNECT göndermeli: {:?}",
+        ag.hostlar
+    );
+
+    // 4. node fetch CONNECT gönderir
+    let (_, ag) = k
+        .calistir_agli(
+            "node -e \"fetch('https://registry.npmjs.org/left-pad').catch(() => {})\"",
+            &["registry.npmjs.org:443"],
+        )
+        .await;
+    let ag = ag.expect("node fetch ağ özeti üretmeli");
+    assert!(
+        ag.hostlar
+            .iter()
+            .any(|h| h.host == "registry.npmjs.org" && h.baglanti_sayisi > 0),
+        "node fetch registry.npmjs.org'a CONNECT göndermeli: {:?}",
+        ag.hostlar
+    );
+
+    // 5. pip/python CONNECT gönderir
+    let py_komut = if cfg!(windows) {
+        "python -m pip download six --no-deps --no-cache-dir --timeout 5"
+    } else {
+        "python3 -c \"import urllib.request; urllib.request.urlopen('https://pypi.org/').read()\""
+    };
+    let (_, ag) = k.calistir_agli(py_komut, &["pypi.org:443"]).await;
+    let ag = ag.expect("python ağ özeti üretmeli");
+    assert!(
+        ag.hostlar
+            .iter()
+            .any(|h| h.host == "pypi.org" && h.baglanti_sayisi > 0),
+        "pip pypi.org'a CONNECT göndermeli: {:?}",
+        ag.hostlar
+    );
+
+    // 6. cargo CONNECT gönderir. Windows'ta A15 yüzünden ayrı testte
+    // (`cargo_fetch_a15_siniri_beklenir`).
+    #[cfg(target_os = "linux")]
+    {
+        let (_, ag) = k
+            .calistir_agli(
+                "cargo search serde --limit 1 --config net.retry=0",
+                &["index.crates.io:443"],
+            )
+            .await;
+        let ag = ag.expect("cargo ağ özeti üretmeli");
+        assert!(
+            ag.hostlar.iter().any(|h| h.host == "index.crates.io"
+                && h.baglanti_sayisi > 0
+                && h.reddedilenler == 0),
+            "cargo index.crates.io'ya vekilden CONNECT göndermeli: {:?}",
+            ag.hostlar
+        );
+    }
+}
+
+/// Bilinen sınır: cargo'nun yeni crate'i açması A15 yüzünden kapta düşer
+/// (aşama 3d Windows alt planı Görev W4, G6 raporu).
+#[cfg(windows)]
+#[tokio::test]
+async fn cargo_fetch_a15_siniri_beklenir() {
+    let d = TempDir::new().unwrap();
+    let k = kurgu_agli(d.path(), None);
+    std::fs::create_dir_all(d.path().join("src")).unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[package]\nname = \"deneme\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[dependencies]\nitoa = \"1\"\n",
+    )
+    .unwrap();
+    std::fs::write(d.path().join("src/lib.rs"), "").unwrap();
+
+    let (sonuc, _) = k
+        .calistir_agli(
+            "cargo fetch",
+            &["index.crates.io:443", "static.crates.io:443"],
+        )
+        .await;
+    // Beklenen sınır: A15 AppContainer dosya kanonikleştirme sınırı. Sınır kalkarsa kırmızıya döner.
+    let cikti = match sonuc {
+        Ok(c) => c,
+        Err(e) => e,
+    };
+    assert!(
+        cikti.contains("Access is denied")
+            || cikti.contains("canonicalizing")
+            || cikti.contains("erişim engellendi")
+            || cikti.contains("error: failed"),
+        "A15 sınırı bekleniyordu, çıktı:\n{cikti}"
+    );
+}
+
+/// Bilinen sınır: Sistem Python'unun `pip`'i A16 sınıfından düşer. Kalfa'nın
+/// Python'uyla venv'de `pip install` çalışır (aşama 2 §12.3, aşama 3d Windows alt planı Görev W4).
+#[cfg(windows)]
+#[tokio::test]
+async fn sistem_pip_a16_siniri_beklenir() {
+    let d = TempDir::new().unwrap();
+    let k = kurgu_agli(d.path(), None);
+
+    let (sonuc, _) = k
+        .calistir_agli(
+            "python -m pip download six --no-deps --no-cache-dir",
+            &["pypi.org:443", "files.pythonhosted.org:443"],
+        )
+        .await;
+    // Beklenen sınır: A16 sistem pip AppContainer AC\\Temp erişim sınırı. Sınır kalkarsa kırmızıya döner.
+    let cikti = match sonuc {
+        Ok(c) => c,
+        Err(e) => e,
+    };
+    assert!(
+        cikti.contains("PermissionError")
+            || cikti.contains("Access is denied")
+            || cikti.contains("erişim engellendi")
+            || cikti.contains("ERROR:"),
+        "A16 sınırı bekleniyordu, çıktı:\n{cikti}"
+    );
 }

@@ -322,6 +322,7 @@ pub struct SahteArac {
     yanit: String,
     hata: Option<String>,
     guvenlik_uyarilari: Vec<String>,
+    ag_ozeti: Option<crate::tur_ozeti::AgKomutOzeti>,
     /// Kabuk gibi değiştirdiği dosyalar (aşama 3a Task 6): çalışınca bunlar
     /// sonucun `degisiklikler`'ine girer; `dosyalar` verildiyse oraya da
     /// `kabuk-<ad>` yazılır. `None`: değişiklikler bilinmiyor.
@@ -348,6 +349,7 @@ impl SahteArac {
             yanit: format!("{ad} tamam"),
             hata: None,
             guvenlik_uyarilari: Vec::new(),
+            ag_ozeti: None,
             degistirdigi: None,
             gecikme: Duration::ZERO,
             on_hal: AtomicU64::new(0),
@@ -389,6 +391,11 @@ impl SahteArac {
 
     pub fn guvenlik_uyarisi(mut self, mesaj: &str) -> Self {
         self.guvenlik_uyarilari.push(mesaj.into());
+        self
+    }
+
+    pub fn ag_ozeti(mut self, ag: crate::tur_ozeti::AgKomutOzeti) -> Self {
+        self.ag_ozeti = Some(ag);
         self
     }
 
@@ -507,6 +514,7 @@ impl Arac for SahteArac {
                     bicim: KabukBicimi::Program,
                     dizin: argumanlar["yol"].as_str().unwrap_or(".").to_string(),
                     ag: argumanlar["ag"].as_bool().unwrap_or(false),
+                    ag_hostlari: Vec::new(),
                     yalitim: YalitimOzeti::Yalitimli {
                         arka_uc: "sahte".into(),
                         profil: "p".into(),
@@ -603,6 +611,7 @@ impl Arac for SahteArac {
                     guvenlik_uyarilari: self.guvenlik_uyarilari.clone(),
                     degisiklikler: self.kabuk_degisiklikleri(),
                     kalfa_uretimi: self.yazar,
+                    ag: self.ag_ozeti.clone().map(Box::new),
                 }),
             },
             _ = iptal.cancelled() => Err(AracHatasi::Iptal),

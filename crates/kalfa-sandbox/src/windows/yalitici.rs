@@ -39,8 +39,7 @@ const DENEME_PROFILI_KILIDI: &str = r"Local\Kalfa.Deneme";
 const UST_DIZIN_KILIDI: &str = r"Local\Kalfa.UstDizinler";
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
 
-/// Windows arka ucunun ayarları.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub struct WindowsAyari {
     /// Kullanıcının ev dizini; araç zincirleri buradan bulunur.
     pub ev: PathBuf,
@@ -56,7 +55,43 @@ pub struct WindowsAyari {
     pub kalfa_araclari: Vec<PathBuf>,
     /// Yalıtım içindeki git yapılandırmasında kullanılacak kimlik.
     pub git: GitKimligi,
+    /// Ağ köprüsü ikilisinin yolu (`kalfa-kopru.exe`).
+    pub kopru: Option<PathBuf>,
+    /// Testlerde sahte çözümleyici kullanmak için.
+    pub vekil_cozucu: Option<std::sync::Arc<dyn crate::vekil::Cozucu>>,
+    /// Testlerde 127.0.0.1'e erişime izin vermek için.
+    pub vekil_yerel_izin: bool,
 }
+
+impl std::fmt::Debug for WindowsAyari {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WindowsAyari")
+            .field("ev", &self.ev)
+            .field("yalitim_dizini", &self.yalitim_dizini)
+            .field("ek_okunur", &self.ek_okunur)
+            .field("kalfa_araclari", &self.kalfa_araclari)
+            .field("git", &self.git)
+            .field("kopru", &self.kopru)
+            .field("vekil_yerel_izin", &self.vekil_yerel_izin)
+            .finish()
+    }
+}
+
+impl PartialEq for WindowsAyari {
+    fn eq(&self, other: &Self) -> bool {
+        self.ev == other.ev
+            && self.yalitim_dizini == other.yalitim_dizini
+            && self.ek_okunur == other.ek_okunur
+            && self.kalfa_araclari == other.kalfa_araclari
+            && self.git == other.git
+            && self.kopru == other.kopru
+            && self.vekil_yerel_izin == other.vekil_yerel_izin
+    }
+}
+
+impl Eq for WindowsAyari {}
+
+pub use crate::vekil::e2e_cozucu_ve_yerel_izin;
 
 impl WindowsAyari {
     /// Var olan araç zinciri dizinleri; Windows'ta izin yeteneğiyle okunur.
@@ -435,7 +470,7 @@ impl Yalitici for WindowsYalitici {
             .map_err(|hata| hata.to_string())
     }
 
-    fn profil_ozeti(&self, ag: bool) -> Option<String> {
+    fn profil_ozeti(&self, ag: bool, liste_ozeti: Option<&str>) -> Option<String> {
         if !self.durum().hazir_mi() {
             return None;
         }
@@ -447,7 +482,7 @@ impl Yalitici for WindowsYalitici {
         }
         let mut okunur = sistem_yollari();
         okunur.extend(araclar);
-        Some(profil::ozet(ARKA_UC, &okunur, ag))
+        Some(profil::ozet(ARKA_UC, &okunur, ag, liste_ozeti))
     }
 
     fn baslat(&self, istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi> {
@@ -630,10 +665,7 @@ impl WindowsYalitici {
         let paket = guvenlik::profil_olustur(&ad, "Kalfa çalışma alanı yalıtımı")
             .map_err(yalitim_hatasi)?;
         let yetenek = guvenlik::arac_zinciri_sidi().map_err(yalitim_hatasi)?;
-        let mut yetenekler = vec![yetenek];
-        if istek.ag {
-            yetenekler.push(Sid::metinden(guvenlik::INTERNET_ISTEMCISI).map_err(yalitim_hatasi)?);
-        }
+        let yetenekler = vec![yetenek];
         let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, &kimlik);
         std::fs::create_dir_all(&ayar.yalitim_dizini).map_err(yalitim_hatasi)?;
         profil::guvenli_dizin(&ayar.yalitim_dizini, Path::new(&kimlik)).map_err(yalitim_hatasi)?;
@@ -677,17 +709,149 @@ impl WindowsYalitici {
                 "çalışma dizini çalışma alanının dışında".into(),
             ));
         }
-        let is = crate::agac::Is::yeni(true).map_err(yalitim_hatasi)?;
-        let kap_istegi = KapIstegi {
-            komut: &komut,
-            dizin: &calisma_dizini,
-            ortam: &ortam,
-            paket: &paket,
-            yetenekler: &yetenekler,
-        };
-        let kap = kap::baslat(&kap_istegi, &is).map_err(yalitim_hatasi)?;
-        Ok(Surec::kaptan(kap, is))
+
+        if istek.ag {
+            let kaynak_kopru = match ayar.kopru.as_ref() {
+                Some(k) if k.is_file() => k,
+                _ => {
+                    return Err(BaslatmaHatasi::Yalitim(
+                        "Ağlı yalıtımlı komut başlatılamadı: köprü bulunamadı".into(),
+                    ));
+                }
+            };
+            let kopru_dizini = ozel.kok.join("kopru");
+            std::fs::create_dir_all(&kopru_dizini).map_err(|e| {
+                BaslatmaHatasi::Yalitim(format!(
+                    "Ağlı yalıtımlı komut başlatılamadı: köprü kopyalanamadı ({e})"
+                ))
+            })?;
+            let kopru_izni_var = guvenlik::aceler_oku(&kopru_dizini)
+                .map(|aceler| {
+                    aceler.iter().any(|a| {
+                        a.tur == 0
+                            && a.maske & MASKE_OKU == MASKE_OKU
+                            && a.sid.as_ref() == Some(&paket)
+                    })
+                })
+                .unwrap_or(false);
+            if !kopru_izni_var {
+                let izin = Izin {
+                    sid: paket.clone(),
+                    maske: MASKE_OKU,
+                    miras: MIRAS,
+                };
+                guvenlik::izin_ekle(&kopru_dizini, &izin).map_err(|e| {
+                    BaslatmaHatasi::Yalitim(format!(
+                        "Ağlı yalıtımlı komut başlatılamadı: köprü dizini izni verilemedi ({e})"
+                    ))
+                })?;
+            }
+            let hedef_kopru = kopru_dizini.join("kalfa-kopru.exe");
+            let ayni_mi = if hedef_kopru.is_file() {
+                match (dosya_sha256(kaynak_kopru), dosya_sha256(&hedef_kopru)) {
+                    (Ok(h1), Ok(h2)) => h1 == h2,
+                    _ => false,
+                }
+            } else {
+                false
+            };
+            if !ayni_mi {
+                std::fs::copy(kaynak_kopru, &hedef_kopru).map_err(|e| {
+                    BaslatmaHatasi::Yalitim(format!(
+                        "Ağlı yalıtımlı komut başlatılamadı: köprü kopyalanamadı ({e})"
+                    ))
+                })?;
+            }
+
+            let ayar_vekil = crate::vekil::VekilAyari {
+                liste: istek
+                    .ag_listesi
+                    .clone()
+                    .unwrap_or_else(|| crate::vekil::IzinListesi::yeni(&[], &[])),
+                cozucu: ayar
+                    .vekil_cozucu
+                    .clone()
+                    .unwrap_or_else(|| std::sync::Arc::new(crate::vekil::SistemCozucu)),
+                yerel_izin: ayar.vekil_yerel_izin,
+                ..Default::default()
+            };
+            let vekil = std::sync::Arc::new(crate::vekil::Vekil::baslat(ayar_vekil));
+
+            let is = crate::agac::Is::yeni(true).map_err(yalitim_hatasi)?;
+            let gelistirici = guvenlik::kullanici_sidi().map_err(yalitim_hatasi)?;
+            let boru = match super::kopru::BoruSunucusu::ac(
+                &paket,
+                &gelistirici,
+                &is,
+                vekil.clone(),
+                64,
+            ) {
+                Ok(b) => b,
+                Err(e) => {
+                    return Err(BaslatmaHatasi::Yalitim(format!(
+                        "Ağlı yalıtımlı komut başlatılamadı: boru açılamadı ({e})"
+                    )));
+                }
+            };
+
+            let mut kap_ortami = ortam;
+            kap_ortami.push((
+                "KALFA_KOPRU_UYGULAMA".into(),
+                komut.uygulama.display().to_string(),
+            ));
+            kap_ortami.push((
+                "KALFA_KOPRU_SATIR".into(),
+                String::from_utf16_lossy(&komut.satir),
+            ));
+            kap_ortami.push(("KALFA_KOPRU_BORU".into(), boru.ad().to_string()));
+
+            let kopru_komut =
+                komut_satiri::uret(&hedef_kopru, &[], &cmd).map_err(yalitim_hatasi)?;
+            let kap_istegi = KapIstegi {
+                komut: &kopru_komut,
+                dizin: &calisma_dizini,
+                ortam: &kap_ortami,
+                paket: &paket,
+                yetenekler: &yetenekler,
+            };
+            let kap = kap::baslat(&kap_istegi, &is).map_err(yalitim_hatasi)?;
+            let mut surec = Surec::kaptan(kap, is);
+            let ag_kapatici: crate::surec::AgKapatici = Box::new(move || {
+                Box::pin(async move {
+                    boru.kapat();
+                    vekil.bitir().await
+                })
+            });
+            surec.ag_kapat_ekle(ag_kapatici);
+            Ok(surec)
+        } else {
+            let is = crate::agac::Is::yeni(true).map_err(yalitim_hatasi)?;
+            let kap_istegi = KapIstegi {
+                komut: &komut,
+                dizin: &calisma_dizini,
+                ortam: &ortam,
+                paket: &paket,
+                yetenekler: &yetenekler,
+            };
+            let kap = kap::baslat(&kap_istegi, &is).map_err(yalitim_hatasi)?;
+            Ok(Surec::kaptan(kap, is))
+        }
     }
+}
+
+fn dosya_sha256(yol: &Path) -> io::Result<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let mut dosya = std::fs::File::open(yol)?;
+    let mut hasher = Sha256::new();
+    let mut tampon = [0u8; 8192];
+    loop {
+        let n = std::io::Read::read(&mut dosya, &mut tampon)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&tampon[..n]);
+    }
+    Ok(hasher.finalize().into())
 }
 
 fn hazirla(
@@ -814,6 +978,14 @@ fn hazirla(
         };
         izin_kaydet_ve_ver(ace, kimlik, yol, &izin)?;
     }
+    let kopru_dizini = ozel.kok.join("kopru");
+    std::fs::create_dir_all(&kopru_dizini)?;
+    let kopru_izin = Izin {
+        sid: paket.clone(),
+        maske: MASKE_OKU,
+        miras: MIRAS,
+    };
+    izin_kaydet_ve_ver(ace, kimlik, &kopru_dizini, &kopru_izin)?;
     profil::guvenli_dizin(
         &ozel.kok,
         Path::new("ev/Packages").join(ad).join("AC").as_path(),
@@ -1867,6 +2039,7 @@ mod tests {
             ek_okunur: vec![kullanici_node.clone()],
             kalfa_araclari: vec![kalfa_python.clone(), kalfa_node.clone()],
             git: GitKimligi::default(),
+            ..WindowsAyari::default()
         };
         let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, "deneme");
         let kaynak = vec![(
@@ -1939,6 +2112,7 @@ mod tests {
             ek_okunur: Vec::new(),
             kalfa_araclari: Vec::new(),
             git: GitKimligi::default(),
+            ..WindowsAyari::default()
         };
         let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, "deneme");
         let ortam = yalitim_ortami(&[], &ozel, &ayar, &[], false);
@@ -1958,6 +2132,7 @@ mod tests {
             ek_okunur: Vec::new(),
             kalfa_araclari: Vec::new(),
             git: GitKimligi::default(),
+            ..WindowsAyari::default()
         };
         let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, "deneme");
         let kaynak = vec![(

@@ -29,6 +29,7 @@ const ENGELLI: &[i64] = &[
     libc::SYS_perf_event_open,
     libc::SYS_userfaultfd,
     libc::SYS_ptrace,
+    libc::SYS_pidfd_getfd,
 ];
 
 /// Ad alanı bayrakları. `CLONE_NEWTIME` `clone`'da çıkış sinyali baytıyla
@@ -195,5 +196,14 @@ mod tests {
             enosys[enosys.len() - 1].k,
             libc::SECCOMP_RET_ERRNO | libc::ENOSYS as u32
         );
+    }
+
+    #[test]
+    fn pidfd_getfd_engelli() {
+        assert!(ENGELLI.contains(&libc::SYS_pidfd_getfd));
+        let agsiz = engel_filtresi(false).unwrap();
+        let agli = engel_filtresi(true).unwrap();
+        assert!(!agsiz.is_empty());
+        assert!(!agli.is_empty());
     }
 }

@@ -119,6 +119,7 @@ async fn okuma_ve_kabuk_dis_kaynakli() {
         guvenlik_uyarilari: vec![],
         degisiklikler: None,
         kalfa_uretimi: false,
+        ag: None,
     };
     assert!(!c_kabuk.kalfa_uretimi);
     assert!(matches!(
@@ -135,6 +136,7 @@ async fn onaylanan_gizli_okuma_denetciye_gitmez() {
         guvenlik_uyarilari: vec![],
         degisiklikler: None,
         kalfa_uretimi: false,
+        ag: None,
     };
 
     let uyarilar = vec![GIZLI_UYARISI.to_string()];
@@ -151,6 +153,7 @@ async fn denetlenen_metin_kirpilmis_hal() {
         guvenlik_uyarilari: vec![],
         degisiklikler: None,
         kalfa_uretimi: false,
+        ag: None,
     };
 
     let durum = denetim_durumu(&cikti, &[], 1000);

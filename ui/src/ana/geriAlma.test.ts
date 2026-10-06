@@ -70,6 +70,49 @@ describe('tur özeti görünümü (aşama 3 tasarımı §5.11)', () => {
     expect(g.bos).toBe(false);
   });
 
+  it('ağ özeti komutların altında görünür', () => {
+    const g = turOzetiGorunumu(
+      ozet({
+        komutlar: [
+          {
+            cagri: 'c1',
+            komut: 'cargo build',
+            durum: 'Basarili',
+            ag: {
+              hostlar: [
+                {
+                  host: 'index.crates.io',
+                  port: 443,
+                  baglanti_sayisi: 2,
+                  giden_bayt: 120,
+                  gelen_bayt: 4500,
+                  reddedilenler: 0,
+                },
+                {
+                  host: 'evil.com',
+                  port: 443,
+                  baglanti_sayisi: 1,
+                  giden_bayt: 0,
+                  gelen_bayt: 0,
+                  reddedilenler: 1,
+                },
+              ],
+              toplam_giden: 120,
+              toplam_gelen: 4500,
+              reddedilen_sayisi: 1,
+            },
+          },
+        ],
+      }),
+      false,
+    );
+    expect(g.satirlar).toEqual([
+      'cargo build: dosya değişmedi',
+      'Ağ (index.crates.io:443): 2 bağlantı, 4,5 KiB',
+      'Ağ (evil.com:443): 1 bağlantı reddedildi',
+    ]);
+  });
+
   it('geri alınabilir dosyası olmayan turda düğme yok; araçsız tur boş', () => {
     const g = turOzetiGorunumu(
       ozet({

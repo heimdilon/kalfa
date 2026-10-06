@@ -79,6 +79,7 @@ struct CagriSonucu {
     degisiklikler: Option<DosyaDegisiklikleri>,
     kalfa_uretimi: bool,
     denetlenecek: Option<DenetimGirdisi>,
+    ag: Option<crate::tur_ozeti::AgKomutOzeti>,
 }
 
 impl CagriSonucu {
@@ -97,6 +98,7 @@ impl CagriSonucu {
             degisiklikler: None,
             kalfa_uretimi: true,
             denetlenecek: None,
+            ag: None,
         }
     }
 }
@@ -178,6 +180,7 @@ impl Oturum {
                         degisiklikler: None,
                         kalfa_uretimi: true,
                         denetlenecek: None,
+                        ag: None,
                     };
                     self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
                         .await;
@@ -1045,6 +1048,9 @@ impl Oturum {
         if let Some(d) = &s.degisiklikler {
             self.kabuk_degisiklikleri_isle(&s, d).await;
         }
+        if let Some(ag) = &s.ag {
+            self.tur_ozeti.komut_ag_ozeti(s.cagri, ag);
+        }
         self.yay(Olay::AracSonucu {
             cagri: s.cagri,
             arac: s.arac,
@@ -1250,6 +1256,7 @@ impl Oturum {
                     komut: komut.clone(),
                     durum: s.durum,
                     degisiklikler: Some(d.clone()),
+                    ag: s.ag.clone(),
                 },
             );
         }
@@ -1399,6 +1406,7 @@ fn sonuc_olustur(
                 degisiklikler: c.degisiklikler.clone().map(|d| *d),
                 kalfa_uretimi: c.kalfa_uretimi,
                 denetlenecek,
+                ag: c.ag.clone().map(|a| *a),
                 ..CagriSonucu::plandan(p, AracDurumu::Basarili, model_icerigi(&c, azami))
             }
         }
@@ -1414,6 +1422,7 @@ fn sonuc_olustur(
                 degisiklikler: c.degisiklikler.clone().map(|d| *d),
                 kalfa_uretimi: c.kalfa_uretimi,
                 denetlenecek,
+                ag: c.ag.clone().map(|a| *a),
                 ..CagriSonucu::plandan(p, AracDurumu::Basarisiz, model_icerigi(&c, azami))
             }
         }
@@ -1471,6 +1480,7 @@ mod sarmal_testleri {
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
             kalfa_uretimi: false,
+            ag: None,
         }
     }
 

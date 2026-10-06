@@ -180,6 +180,7 @@ fn kabuk_ogesi(cagri: CagriId) -> OnayOgesi {
             bicim: KabukBicimi::Program,
             dizin: ".".into(),
             ag: false,
+            ag_hostlari: Vec::new(),
             yalitim: YalitimOzeti::Yalitimsiz {
                 talimat: "yok".into(),
             },
@@ -206,6 +207,7 @@ fn kabuk_json_bicimi() {
             "bicim": {"tip": "Program"},
             "dizin": ".",
             "ag": false,
+            "ag_hostlari": [],
             "yalitim": {"tip": "Yalitimsiz", "talimat": "yok"},
             "ilk_cagri": true,
             "alan_hazirligi": false

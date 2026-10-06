@@ -355,6 +355,7 @@ fn komut(yollar: &[&str]) -> KomutOzeti {
                 .map(|y| ((*y).to_string(), DegisiklikTuru::Degisti)),
             false,
         )),
+        ag: None,
     }
 }
 

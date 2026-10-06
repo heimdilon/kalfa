@@ -203,7 +203,20 @@
             <dd class="mono"><GorunurMetin metin={k.dizin} /></dd>
             <dt>{m('onay.kabuk.ag')}</dt>
             <dd class={{ uyari: k.ag }}>
-              {k.ag ? m('onay.kabuk.ag_acik') : m('onay.kabuk.ag_kapali')}
+              {#if !k.ag}
+                {m('onay.kabuk.ag_kapali')}
+              {:else if k.yalitim.tip === 'Yalitimsiz'}
+                {m('onay.kabuk.ag_yalitimsiz')}
+              {:else if !k.ag_hostlari || k.ag_hostlari.length === 0}
+                {m('onay.kabuk.ag_varsayilan')}
+              {:else}
+                <div>{m('onay.kabuk.ag_ek_adresler')}</div>
+                <div class="ek-hostlar">
+                  {#each k.ag_hostlari as host (host)}
+                    <span class="mono ek-host"><GorunurMetin metin={host} /></span>
+                  {/each}
+                </div>
+              {/if}
             </dd>
             <dt>{m('onay.kabuk.yalitim')}</dt>
             <dd class={{ uyari: k.yalitim.tip === 'Yalitimsiz' }}>

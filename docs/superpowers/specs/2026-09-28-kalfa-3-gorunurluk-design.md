@@ -1205,7 +1205,8 @@ DenetimKipi   ::= Kapali | Uyar | Kati
 - **Nerede çalışır:** Kalfa sürecinde (`kalfa-sandbox/src/vekil/`, tokio).
   tokio'nun `net` özelliği açılır; yeni crate eklenmez.
 - **HTTPS:**
-  - Komut `CONNECT host:port` gönderir.
+  - Komut `CONNECT host:port` gönderir. `HTTP/1.0` de kabul edilir: pip ve
+    python onu gönderiyor (G5 ölçümü).
   - Host ve port izin listesindeyse vekil adresi çözer, bağlanır ve baytları
     iki yönde taşır. TLS açılmaz.
 - **SNI denetimi:**
@@ -1292,13 +1293,15 @@ DenetimKipi   ::= Kapali | Uyar | Kati
   - Vekil `403` döner.
   - Komutun sonucuna "[ağ] `evil.com:443` engellendi (izin listesinde yok)"
     satırı eklenir; bu satır modele de gider.
+  - Satır zorunludur: pip, uv, Node'un `fetch`'i ve go, `403`'ü çıktılarında
+    söylemiyor (G5 ölçümü, o10).
   - Model gerekirse hostu `ag_hostlari` ile yeniden ister; kullanıcı yeni onay
     kartında görür.
 - **Kısayol yoktur** (üst belge §7.6: ağlı kabuk için kısayol sunulmaz).
 - Aracın açıklaması (`KabukAraci`'nın `aciklama`'sı) `ag_hostlari`'yı anlatır
   ve `github.com`'un varsayılan listede olmadığını söyler.
 
-### 8.5 Linux arka ucu (doğrulanmadı, planda ölçülecek)
+### 8.5 Linux arka ucu (uygulandı)
 
 - **Ağlı profil de ağ ad alanını ayırır** (`--unshare-net`).
   - İçeride yalnızca kabın kendi geri döngüsü vardır.
@@ -1314,10 +1317,25 @@ DenetimKipi   ::= Kapali | Uyar | Kati
   ```
 
   - **Dinleme:** köprü kabın `127.0.0.1`'inde rastgele bir portu dinler.
-  - **Ortam:** çocuğun ortamına şunları yazar: `HTTPS_PROXY`, `HTTP_PROXY`,
-    `https_proxy`, `http_proxy`, `ALL_PROXY` ve
-    `NO_PROXY=localhost,127.0.0.1,::1`. `NO_PROXY` sayesinde kabın içindeki
-    yerel sunucular vekilsiz çalışır.
+  - **Ortam:** çocuğun ortamına şunları yazar:
+    - `HTTPS_PROXY`, `HTTP_PROXY`, `https_proxy`, `http_proxy`, `ALL_PROXY`.
+    - `NO_PROXY` ve `no_proxy`: `localhost,127.0.0.1,::1`. Kabın içindeki
+      yerel sunucular böylece vekilsiz çalışır. wget yalnızca küçük harfliyi
+      okuyor.
+    - Windows'ta küçük harfli yazımlar verilmez: ad büyük/küçük harf
+      ayırmaz, iki yazım aynı adı iki kez tanımlar (§8.6, 3d'nin incelemesi).
+    - `NODE_USE_ENV_PROXY=1`: Node'un `fetch`'i ve `https`'i yalnızca
+      bununla vekile uyuyor.
+    - Aracın kendi vekil değişkenleri: `npm_config_https_proxy`,
+      `npm_config_proxy`, `CARGO_HTTP_PROXY`, `PIP_PROXY`. Git'e
+      `http.proxy`, `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_0` ve
+      `GIT_CONFIG_VALUE_0` ile verilir.
+      - Gerekçe: yapılandırma dosyasındaki vekil ayarı ortamı eziyor.
+        `/etc/gitconfig`'teki ya da çalışma alanındaki `.npmrc`'deki bir
+        vekil, kapta ulaşılamaz bir adrese yönlendirirdi.
+      - Bu değişkenler ortam izin listesinde yoktur; köprü kullanıcının bir
+        değerini ezmez.
+    - Ölçüm: [G5 bulguları](../bulgular/2026-09-28-kalfa-3d-g5-linux-kopru.md).
   - **Çalıştırma:** komutu başlatır ve onun çıkış koduyla çıkar.
   - **Bağlantılar:**
     - Köprü kabul ettiği her bağlantının tanımlayıcısını, devraldığı Unix
@@ -1330,26 +1348,41 @@ DenetimKipi   ::= Kapali | Uyar | Kati
   - **İkili ve kanal:**
     - Köprünün ikilisi salt okunur bağlanır
       (`--ro-bind <kalfa-kopru> /run/kalfa-kopru`).
-    - Kanal tanımlayıcısı bwrap'a bugünkü `--args FD` ve seccomp
-      tanımlayıcıları gibi geçer; çocuğa geçmez (`CLOEXEC`).
+    - Kanal bir `SOCK_SEQPACKET` çiftidir. Her ileti bir bayt ve bir
+      tanımlayıcı taşır; birden çok tanımlayıcılı ya da kesik ileti reddedilir.
+    - Kanalın ucu bwrap'a bugünkü `--args FD` ve seccomp tanımlayıcıları gibi
+      `CLOEXEC`'siz geçer. bwrap onları kendisi tüketir; kanal kaptaki
+      köprüye kadar geçer (bwrap'la ölçüldü, G5 bulgularının eki).
+    - Devredilmeyen tanımlayıcılar da kaba geçiyordu (ölçümün b9'u).
+      `pre_exec` önce `close_range(3, ~0, CLOSE_RANGE_CLOEXEC)` çağırır, sonra
+      yalnızca devredilenleri açar; ağsız profilde de.
+    - Köprü kanalı `CLOEXEC` yapar; kanal ve dinleyici komuta geçmez (G5'te
+      ölçüldü).
 - **Köprü güvenilir kod sayılmaz.**
   - Komut aynı kullanıcıyla çalışır; köprüyü öldürebilir ya da kanalı ele
     geçirebilir.
   - Sınır Kalfa'daki vekildir. Kanaldan gelen tanımlayıcının bağlı bir TCP
-    soketi olduğu denetlenir (`fstat`, `SO_DOMAIN`, `SO_TYPE`); değilse
-    kapatılır.
+    soketi olduğu denetlenir, değilse kapatılır:
+    - `fstat` bir soket göstermeli.
+    - `SO_DOMAIN`, `SO_TYPE` ve `SO_PROTOCOL` sırasıyla `AF_INET` ya da
+      `AF_INET6`, `SOCK_STREAM` ve TCP olmalı.
+    - Soket dinlemiyor (`SO_ACCEPTCONN`) ve bağlı (`getpeername`) olmalı.
   - Kanalı ele geçiren komut da yalnızca izinli hostlara ulaşır.
   - Derinlemesine savunma olarak seccomp engel listesine `pidfd_getfd` eklenir.
-- **Araçların uyumu:**
-  - cargo, git (libcurl), pip ve npm `HTTPS_PROXY`'ye uyar.
-  - Node'un yerleşik `fetch`'i uymayabilir (Node 24'te bunun için
-    `NODE_USE_ENV_PROXY` var).
+- **Araçların uyumu (G5'te ölçüldü):**
+  - curl, wget, git, cargo, pip, uv, npm, python (`urllib`) ve go
+    `HTTPS_PROXY`'ye uyuyor.
+  - Node 22.22.2'nin `fetch`'i ve `https`'i yalnızca `NODE_USE_ENV_PROXY=1`
+    ile uyuyor; köprü onu verir.
+  - Java ortamdaki vekili okumuyor. `JAVA_TOOL_OPTIONS` ile uyuyor, ama JVM
+    her açılışta bunu çıktıya yazdığı için köprü vermez. Java araçları ağlı
+    yalıtımda ağa çıkamaz; bilinen sınırdır.
   - Vekile uymayan araç ağa hiç çıkamaz; güvenli taraf budur.
-  - Uyumluluk matrisi (aşama 2 §12.3) ağlı senaryolarla genişler (G5).
+  - Uyumluluk matrisi (aşama 2 §12.3) ağlı senaryolarla genişler.
 - **SSH:** git'in SSH yolu çalışmaz; yalıtımda SSH anahtarı da yoktur. HTTPS
   kullanılır.
 
-### 8.6 Windows arka ucu (doğrulanmadı, planda ölçülecek)
+### 8.6 Windows arka ucu (uygulandı)
 
 - **Ağlı çalıştırmada kaba `internetClient` verilmez.** Kap, ağsız
   çalıştırmadaki gibi hiçbir ağ yeteneği taşımaz. Kaptan dışarıya geri döngü de
@@ -1360,23 +1393,31 @@ DenetimKipi   ::= Kapali | Uyar | Kati
   - `127.0.0.1`'de dinler. Kabul ettiği bağlantıyı Kalfa'nın açtığı
     adlandırılmış boruya taşır; baytları kendisi aktarır.
   - Borunun DACL'i yalnızca geliştiriciye ve o çalışma alanının paket SID'ine
-    izin verir.
-- **Ölçülmesi gerekenler (G6):**
-  - Aynı AppContainer'daki iki süreç `127.0.0.1` üzerinden konuşabiliyor mu?
-    Kaptan dışarıya geri döngü kapalıdır (A9); kabın içinde ölçülmedi.
-  - Kap, paket SID'ine açılmış bir boruya bağlanabiliyor mu?
-  - `internetClient`'sız kapta cargo, npm, pip ve git vekille çalışıyor mu?
-    Schannel (A8) vekille de çalışmalı.
-  - Köprünün ikilisi kapta okunabiliyor mu? Program Files'taki kurulumda evet
-    (ALL APPLICATION PACKAGES). Geliştirme derlemesinde `target\` kaba açık
-    değildir.
-- **Yedek yol (K6):**
-  - Ölçüm olumsuz çıkarsa Windows'ta ağlı komut bugünkü gibi `internetClient`
-    ile çalışır. Kapatmak, ağ gereken işi yalıtımsız çalıştırmaya iterdi; o da
-    dosya yalıtımını kaybettirir.
-  - Onay kartı "Ağ: sınırsız (Windows'ta vekil yok)" der; durum bilinen sınır
-    olarak yazılır.
-  - Linux'taki vekil bundan etkilenmez.
+    izin verir. Bağlanan sürecin komutun Job Object'inde olduğu
+    `IsProcessInJob` ile doğrulanır.
+- **Uygulama sonucu (2026-10-06):** köprü yolu uygulandı
+  ([alt plan](../plans/2026-10-05-kalfa-3d-windows-kopru.md),
+  [G6 bulguları](../bulgular/2026-10-05-kalfa-3d-g6-windows-kopru.md)); yedek yol
+  (K6) devreden çıkmıştır.
+  - Aynı kaptaki iki süreç `127.0.0.1` üzerinden konuşuyor.
+  - Kap, paket SID'ine (`GRGW`) açık boruya bağlanıyor; bütünlük etiketi
+    gerekmiyor.
+  - `internetClient`'sız kapta curl (Schannel, iptal denetimiyle), git, npm,
+    Node `fetch` ve pip vekille ağa çıkıyor. cargo'nun ve sistem Python'unun
+    pip'inin paketi açması A15 ve A16 yüzünden düşüyor; beklenen sınır olarak
+    testle belgelendi.
+  - **Boru iki uçta da overlapped açılır.** Eşzamanlı tutamaçta Windows aynı
+    dosya nesnesindeki G/Ç'yi sıraya koyar; iki yönlü aktarım kilitlenir.
+    Kalfa'nın ucu tokio'nun `named_pipe::ServerOptions`'ıdır.
+  - Köprünün ikilisi Program Files'ta kaba okunur (`externalBin`). Geliştirme
+    derlemesinde çalışma alanının özel kökünün altındaki `kopru\` dizinine
+    kopyalanır ve paket SID'ine okuma/çalıştırma izni verilir.
+- **Güvenlik garantileri:**
+  - Kap doğrudan ağa çıkamaz (ağ yeteneği yok, yerel güvenlik duvarı kuralları).
+  - Boruya iş nesnesi dışından ya da başka bir AppContainer'dan gelen bağlantılar
+    reddedilir.
+  - Köprü ikilisi bulunamazsa veya boru açılamazsa komut başlatılmaz; daha
+    gevşek bir yola düşülmez.
 
 ### 8.7 Yalıtımsız çalıştırma
 
@@ -1681,9 +1722,9 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 | G2 | Art arda iki kullanıcı mesajını (Kalfa notu ve kullanıcı) `glm-5.3`, `qwen3.8-flash-next` ve `deepseek-v4-flash` kabul ediyor mu? | **Kapandı (3a, 2026-09-29):** üç model de art arda iki kullanıcı mesajını kabul edip yanıt verdi; canlı test `kalfa-evren/tests/canli.rs`, `canli_art_arda_iki_kullanici_mesaji_kabul_edilir` |
 | G3 | Denetçinin gecikmesi ve token maliyeti; reasoning kapatılabilir mi (`chat_template_kwargs`); EVREN'de `max_tokens`'ın davranışı | **Kapandı (3c, 2026-10-06):** küçük içerikte 1,9–2,4 sn; tamamlamanın dörtte üçü reasoning. `max_tokens`'a uyuluyor; bütçe reasoning'de biterse içerik gelmiyor ve sonuç `Bilinmiyor` oluyor; 2 048 yeterli. `chat_template_kwargs` denenmedi, gerekmedi. [ölçüm](../bulgular/2026-10-06-kalfa-3c-denetci-olcumu.md) |
 | G4 | Denetçinin `kategori` değerlerinden yalnızca `talimat_enjeksiyonu` gözlendi | **Kapandı (3c, 2026-10-06):** veri sızdırma içeren örnekte de `talimat_enjeksiyonu` geldi. Kategori yalnızca rozetin metni olduğu için kod değişmedi; dağılım kullanımla izlenir. [ölçüm](../bulgular/2026-10-06-kalfa-3c-denetci-olcumu.md) |
-| G5 | Linux: bwrap'ın `--unshare-net`'inde köprünün `SCM_RIGHTS` ile bağlantı taşıması; cargo, npm, pip ve git'in `HTTPS_PROXY`'ye uyması | 3d, WSL'de `kalfatest` ile |
-| G6 | Windows: aynı AppContainer'daki iki sürecin `127.0.0.1` üzerinden konuşabilmesi; paket SID'ine açık boru; `internetClient`'sız kapta vekille Schannel; geliştirme derlemesinde köprünün ikilisi | 3d, kurulu makinede; olumsuzsa yedek yol (§8.6) |
-| G7 | SNI denetimi ECH kullanan istemcileri bozar; kullanılan araçlarda ECH var mı? | 3d |
+| G5 | Linux: bwrap'ın `--unshare-net`'inde köprünün `SCM_RIGHTS` ile bağlantı taşıması; cargo, npm, pip ve git'in `HTTPS_PROXY`'ye uyması | **Kapandı (3d, 2026-10-06):** `unshare` ve bwrap'la ölçüldü, uygulandı; yalıtım testleri gerçek bwrap'la, uyumluluk matrisinde curl, git, npm, Node, Python ve cargo vekilden çıkıyor ([bulgular](../bulgular/2026-09-28-kalfa-3d-g5-linux-kopru.md)) |
+| G6 | Windows: aynı AppContainer'daki iki sürecin `127.0.0.1` üzerinden konuşabilmesi; paket SID'ine açık boru; `internetClient`'sız kapta vekille Schannel; geliştirme derlemesinde köprünün ikilisi | **Ölçüldü (2026-10-05):** köprü yolu çalışıyor, yedek yol gerekmez. Boru iki uçta overlapped açılmalı ([bulgular](../bulgular/2026-10-05-kalfa-3d-g6-windows-kopru.md)) |
+| G7 | SNI denetimi ECH kullanan istemcileri bozar; kullanılan araçlarda ECH var mı? | Ölçüldü: ölçülen araçların hiçbiri ECH göndermedi; SNI her bağlantıda CONNECT hostuyla aynıydı ([bulgular](../bulgular/2026-09-28-kalfa-3d-g5-linux-kopru.md)) |
 | G8 | Önizleme kartında büyük içerik: 50 × 64 KiB olay bütçesine ve arayüze sığar mı? | **Kapandı (3b):** Kart gövdesinde içerik taşınmaz; yalnızca meta veriler (`kaynak`, `bayt`, `cagri`, `denetim`) yer alır. 50 öğelik zarf serileştirildiğinde ~7.5 KiB tutar, 256 KiB olay bütçesine ve 32 KiB test eşiğine rahatça sığar (`g8_onizleme_karti_olay_butcesine_sigar`). Bekleyen sonucun içeriği karardan önce kayda yazılmaz; kullanıcı onu konuşmada araç sonucu olarak görür. `gonderim_ogesi` yalnızca kayda girmiş öğeleri açar. |
 | G9 | Ek gizli kalıpların ve istisnaların paylaşılan kaydının her sınıflandırmada okunmasının maliyeti | 3e |
 | G10 | Windows'ta geri alma deposunun kaptan görünmemesi: A11'in listeleme izniyle `Kalfa\` altındaki adlar görünüyor | **Kapandı (3a):** yalıtımın özel kökünün kardeşi olan depo kaptan okunamıyor ve listelenemiyor; uyumluluk testi `geri_alma_deposu_yalitimda_gorunmez`, Windows'ta gerçek AppContainer'la ve WSL'de bwrap'la. `%LOCALAPPDATA%`'da "ALL APPLICATION PACKAGES" izni yok |
@@ -1694,6 +1735,7 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 | G15 | `icerik_ara` sonucunda dosya başına kaynak etiketi | 3b ya da sonrası |
 | G16 | Kurumsal vekil arkasındaki makine: vekilin dış bağlantısının kurumsal vekilden geçmesi. EVREN istemcisi `reqwest`'in `system-proxy` özelliğiyle bunu yapıyor; çıkış vekili bu ilk sürümde yapmıyor | 3d; desteklenmezse o makinede ağlı komut çalışmaz ve ileti bunu söyler |
 | G17 | `github.com` listede olmadığında GitHub'dan indiren kurulum betikleri (npm `postinstall`, cargo `build.rs`) ne sıklıkla bozuluyor; modelin `403`'ten sonra hostu istemesi yetiyor mu? | 3d, uyumluluk matrisi |
+| G18 | Varsayılan liste Go'nun modül uçlarını (`proxy.golang.org`, `sum.golang.org`) içermeli mi? go vekile uyuyor ama liste dışında `403` alıyor | Karar (2026-10-05): hayır. `proxy.golang.org` ve `sum.golang.org` olmayan modülü kendi alan adından çeker, yani isteği keyfi bir sunucuya aktarır. Model bu uçları çağrıda `ag_hostlari` ile ister |
 
 ---
 
@@ -1729,7 +1771,9 @@ sonraki planların uygulayıcısı her planda ayrıca kararlaştırılır.
    - Sonra denetçi: `Saglayici::sohbet`, `max_tokens`,
      `YapilandirilmisSiniflandirici`.
    - Kiplerin kuralları, ayar ve rozetler; S9–S12.
-4. **3d — Ağ çıkışı.**
+4. **3d — Ağ çıkışı.** Plan:
+   [`2026-09-28-kalfa-3d-ag-cikisi.md`](../plans/2026-09-28-kalfa-3d-ag-cikisi.md).
+   G5'in prototipi ve ölçümü plandan önce yapıldı.
    - Vekil ve izin listesi.
    - Linux'ta köprü ve `--unshare-net`.
    - `ag_hostlari`, profil özeti ve kart.

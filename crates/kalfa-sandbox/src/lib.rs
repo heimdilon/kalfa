@@ -14,6 +14,7 @@ pub mod profil;
 pub mod program;
 mod surec;
 pub mod tarama;
+pub mod vekil;
 #[cfg(windows)]
 pub mod windows;
 mod yalitimsiz;
@@ -121,6 +122,8 @@ pub struct CalistirmaIstegi {
     pub ortam: Vec<(String, String)>,
     /// Komut ağa erişmek istiyor. Yalıtımsız arka uç ağı kapatamaz.
     pub ag: bool,
+    /// Ağ çıkışında izin verilen hostların listesi (§8.3).
+    pub ag_listesi: Option<crate::vekil::IzinListesi>,
     /// Yalıtımlı çalıştırmanın çalışma alanı bilgisi. Verilmişse komut
     /// yalnızca yalıtımda çalışır, verilmemişse yalnızca yalıtımsız: istek
     /// böylece onaylandığı kipte çalışır.
@@ -166,7 +169,7 @@ pub trait Yalitici: Send + Sync {
     fn durum(&self) -> YalitimDurumu;
 
     /// Yalıtım profilinin özeti (§7.1); mühre girer. Yalıtım yoksa `None`.
-    fn profil_ozeti(&self, _ag: bool) -> Option<String> {
+    fn profil_ozeti(&self, _ag: bool, _liste_ozeti: Option<&str>) -> Option<String> {
         None
     }
 
@@ -236,6 +239,8 @@ pub struct PlatformAyari {
     /// Kurulu Kalfa'nın getirdiği araç zinciri; yalnızca Windows'ta vardır
     /// (`windows::sistem::kurulu_arac_zinciri`), Linux'ta kullanılmaz.
     pub kalfa_araclari: Vec<PathBuf>,
+    /// Ağ köprüsü ikilisinin yolu (`kalfa-kopru.exe`).
+    pub kopru: Option<PathBuf>,
     /// Durum sonradan değişince çağrılır.
     pub degisince: Box<dyn Fn(&YalitimDurumu) + Send + Sync>,
 }
@@ -245,12 +250,16 @@ pub struct PlatformAyari {
 pub fn platform_yaliticisi(ayar: PlatformAyari) -> Arc<dyn Yalitici> {
     #[cfg(target_os = "linux")]
     {
+        let (vekil_cozucu, vekil_yerel_izin) = crate::vekil::e2e_cozucu_ve_yerel_izin();
         Arc::new(linux::LinuxYalitici::yeni(
             linux::LinuxAyari {
                 ev: ayar.ev,
                 yalitim_dizini: ayar.yalitim_dizini,
                 ek_okunur: ayar.ek_okunur,
+                kopru: ayar.kopru,
                 git: GitKimligi::oku(),
+                vekil_cozucu,
+                vekil_yerel_izin,
             },
             Box::new(linux::BwrapAlgilayici),
             ayar.degisince,
@@ -258,13 +267,17 @@ pub fn platform_yaliticisi(ayar: PlatformAyari) -> Arc<dyn Yalitici> {
     }
     #[cfg(windows)]
     {
+        let (vekil_cozucu, vekil_yerel_izin) = windows::yalitici::e2e_cozucu_ve_yerel_izin();
         Arc::new(windows::yalitici::WindowsYalitici::yeni(
             windows::yalitici::WindowsAyari {
                 ev: ayar.ev,
                 yalitim_dizini: ayar.yalitim_dizini,
                 ek_okunur: ayar.ek_okunur,
                 kalfa_araclari: ayar.kalfa_araclari,
+                kopru: ayar.kopru,
                 git: GitKimligi::oku(),
+                vekil_cozucu,
+                vekil_yerel_izin,
             },
             ayar.degisince,
         ))

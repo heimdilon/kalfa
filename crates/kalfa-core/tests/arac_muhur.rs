@@ -176,6 +176,7 @@ impl Arac for Deneme {
             guvenlik_uyarilari: Vec::new(),
             degisiklikler: None,
             kalfa_uretimi: false,
+            ag: None,
         })
     }
 }
@@ -313,6 +314,7 @@ fn kabuk_muhru_tarifin_her_alanina_baglidir() {
         bicim: KabukBicimi::Program,
         dizin: ".".into(),
         ag: false,
+        ag_hostlari: vec![],
         yalitim: YalitimOzeti::Yalitimli {
             arka_uc: "bwrap".into(),
             profil: "p1".into(),
@@ -334,6 +336,10 @@ fn kabuk_muhru_tarifin_her_alanina_baglidir() {
         },
         KabukTarifi {
             ag: true,
+            ..tarif.clone()
+        },
+        KabukTarifi {
+            ag_hostlari: vec!["github.com:443".into()],
             ..tarif.clone()
         },
         KabukTarifi {
@@ -374,6 +380,7 @@ fn kabukta_tukenen_tek_seferlik_kosul_onayla_kapsanir() {
         bicim: KabukBicimi::Program,
         dizin: ".".into(),
         ag: false,
+        ag_hostlari: vec![],
         yalitim: YalitimOzeti::Yalitimli {
             arka_uc: "appcontainer".into(),
             profil: "p1".into(),
@@ -475,5 +482,39 @@ fn muhur_yeni_alanlardan_etkilenmez() {
     assert_eq!(
         muhur_hesapla(c, "yaz", &a, &yalin),
         muhur_hesapla(c, "yaz", &a, &buyuk)
+    );
+}
+
+#[test]
+fn ag_hostlari_muhre_girer() {
+    use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
+    let c = CagriId::yeni();
+    let a = json!({"program": "cargo", "argumanlar": ["test"]});
+    let tarif1 = KabukTarifi {
+        komut: "cargo test".into(),
+        bicim: KabukBicimi::Program,
+        dizin: ".".into(),
+        ag: true,
+        ag_hostlari: vec![],
+        yalitim: YalitimOzeti::Yalitimli {
+            arka_uc: "bwrap".into(),
+            profil: "p1".into(),
+        },
+        ilk_cagri: false,
+        alan_hazirligi: false,
+    };
+    let mut tarif2 = tarif1.clone();
+    tarif2.ag_hostlari = vec!["github.com:443".into()];
+
+    let h = |t: KabukTarifi| Hazirlik {
+        tum_calisma_alani: true,
+        kabuk: Some(t),
+        ..Default::default()
+    };
+
+    assert_ne!(
+        muhur_hesapla(c, "kabuk", &a, &h(tarif1)),
+        muhur_hesapla(c, "kabuk", &a, &h(tarif2)),
+        "tek host eklemek mührü değiştirir"
     );
 }

@@ -40,7 +40,22 @@ if (derleme) {
   calistir('npm', ['run', 'build:e2e'], { cwd: join(kok, 'ui') });
   calistir(
     'cargo',
-    ['build', '--release', '--locked', '-p', 'kalfa', '--features', 'e2e,tauri/custom-protocol'],
+    [
+      'build',
+      '--release',
+      '--locked',
+      '-p',
+      'kalfa',
+      '-p',
+      'kalfa-sandbox',
+      // Uygulama ve ağ köprüsü (3d); `--bin` yalnızca adı geçenleri derler.
+      '--bin',
+      'kalfa',
+      '--bin',
+      'kalfa-kopru',
+      '--features',
+      'e2e,tauri/custom-protocol',
+    ],
     {
       cwd: kok,
       env: {

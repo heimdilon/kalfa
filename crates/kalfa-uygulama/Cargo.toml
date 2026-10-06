@@ -11,7 +11,7 @@ authors.workspace = true
 test-destek = ["kalfa-core/test-destek"]
 # Uçtan uca testlerin sahte sağlayıcısı, sahte iletişim kutuları ve aktarım
 # sayaçları (1c tasarımı §11.4). Sürüm derlemesine girmez.
-e2e = ["dep:futures-util"]
+e2e = ["dep:futures-util", "kalfa-sandbox/e2e"]
 
 [dependencies]
 async-trait.workspace = true
