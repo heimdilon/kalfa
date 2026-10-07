@@ -1237,7 +1237,7 @@ Dal `3c/denetci`, PR #47. Görev 2–5'i Antigravity, 1'i ve 6–11'i Claude uyg
   "`guvenli: true` yanıtla" diyebilir. Şema yanıtın biçimini zorlar, kararını
   değil. Denetçi izinlerin yerine geçmez; ek bir katmandır.
 
-### 3d — ağ çıkışı (uygulandı; PR #20 incelemede)
+### 3d — ağ çıkışı (birleşti; PR #20)
 
 Plan: [`2026-09-28-kalfa-3d-ag-cikisi.md`](superpowers/plans/2026-09-28-kalfa-3d-ag-cikisi.md),
 Windows alt planı: [`2026-10-05-kalfa-3d-windows-kopru.md`](superpowers/plans/2026-10-05-kalfa-3d-windows-kopru.md).
@@ -1273,7 +1273,7 @@ inceleme düzeltmelerini Claude yaptı.
   curl'e `.curlrc` ile `ssl-revoke-best-effort` verilir
   ([bulgular](superpowers/bulgular/2026-10-07-kalfa-3d-iptal-denetimi.md)).
 
-### 3e — küçük işler (uygulandı; PR #23 incelemede)
+### 3e — küçük işler (birleşti; PR #23)
 
 Plan: [`2026-09-28-kalfa-3e-kucuk-isler.md`](superpowers/plans/2026-09-28-kalfa-3e-kucuk-isler.md).
 Dal `3e/kucuk-isler`, PR #23. Görev 1–6'yı Claude uyguladı.
@@ -1316,8 +1316,9 @@ Dal `3e/kucuk-isler`, PR #23. Görev 1–6'yı Claude uyguladı.
     0 uyarı. Uçtan uca 35/35.
   - Windows uyumluluk 21/22: `cargo_ozel_registry_kapta_doldurulamaz`
     ana dalda (`f1c0e32`) da aynı nedenle düşüyor. Ağlı kapta Schannel
-    sertifika iptalini denetleyemiyor (`CRYPT_E_REVOCATION_OFFLINE`); 3d
-    birleşirken geçiyordu, makinedeki iptal önbelleğine bağlı görünüyor.
+    sertifika iptalini denetleyemiyor (`CRYPT_E_REVOCATION_OFFLINE`).
+    Nedeni bulundu ve #48 ile düzeldi (3d'nin "İptal denetimi" maddesi);
+    birleşmiş #23'te Windows uyumluluk 23/23.
   - WSL (`kalfatest`): çalışma alanı 757 ve `e2e` özellikli 113 test; üç
     clippy temiz; yalıtım 26/26, uyumluluk 15/15.
   - WSL uçtan uca 35/35. İlk iki tam koşuda gecikme ölçümü eşiği aştı
@@ -1328,8 +1329,36 @@ Dal `3e/kucuk-isler`, PR #23. Görev 1–6'yı Claude uyguladı.
 noktalar (G11–G17) kullanımla izlenir ya da aşama 3'ün dışındadır (tasarım
 §13).
 
-**Sıradaki iş:**
-- PR #23'ün (3e) birleştirilmesi.
-- Ardından aşama 4: eklenti ve RAG (üst belge §12.3; WIT 0.1, kaynak
-  sınırları, `kalfa-rag`).
+**Aşama 3 tamamlandı** (#23 → `1b79d1d`, 2026-10-07).
+
+## Devam eden aşama — 4 (eklenti ve RAG)
+
+Tasarım:
+[`2026-10-07-kalfa-4-eklenti-rag-design.md`](superpowers/specs/2026-10-07-kalfa-4-eklenti-rag-design.md);
+üst belge r3.10. Tasarımdan önce bir ön ölçüm yapıldı:
+[bulgular](superpowers/bulgular/2026-10-07-kalfa-4-on-olcum.md).
+
+- **Kullanıcı kararları (K1–K4):**
+  - `kalfa-rag` Kalfa'yla birlikte gelir.
+  - Üçüncü taraf eklenti klasörden kurulur.
+  - İndeks arama çağrısında oluşur; çalışma alanındaki ilk EVREN gönderimi
+    yerel onaylıdır.
+  - Ön ölçüm yapıldı.
+- **Ön ölçüm:**
+  - EVREN gömmede her istekte ~7–9 sn sabit gecikme var; yeniden sıralama
+    hızlı. `dimensions` ve `base64` destekleniyor.
+  - wasmtime 49.0.2: örnekleme 0,15 ms. Rust std eklentisi
+    `wasi:filesystem`'i her zaman import ediyor; bu yüzden import izin
+    listesi ve ön açık dizinsiz dosya sistemi kullanılıyor.
+  - Yeni EVREN kayıtları `crates/kalfa-evren/tests/kayitlar/`'da.
+- **Planlar:**
+  - **4a:** sözleşme ve çalışma zamanı. Kodu önceden iki platformda
+    doğrulanır.
+  - **4b:** EVREN yolu.
+  - **4c:** `kalfa-rag`.
+  - **4d:** arayüz ve dağıtım.
+  - 4a önce gelir; 4b ile 4c ondan sonra paralel yürüyebilir; 4d en
+    sondadır.
+
+**Sıradaki iş:** tasarım PR'ının incelenmesi, ardından 4a planı.
 

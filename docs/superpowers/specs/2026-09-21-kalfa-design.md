@@ -1,8 +1,8 @@
 # Kalfa — Tasarım Belgesi
 
 **Tarih:** 2026-09-21
-**Revizyon:** r3.9 — aşama 3 (görünürlük) tasarımı [ayrı belgede](2026-09-28-kalfa-3-gorunurluk-design.md) (§4.1, §6.6, §6.7, §7.2–§7.7, §9, §11.4, §11.10, §12.3, §13.3–§15); r3.8 — güvenlik sertleştirmesi (§7.3–§7.6, §9); r3.7 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
-**Durum:** 1a, 1b, 1c ve aşama 2 (2a–2d) uygulandı; güvenlik sertleştirmesi uygulandı; aşama 3'ün tasarımı yazıldı, 3a'nın planı hazır
+**Revizyon:** r3.10 — aşama 4 (eklenti ve RAG) tasarımı [ayrı belgede](2026-10-07-kalfa-4-eklenti-rag-design.md) (§3.2–§3.5, §6.1, §7.2, §8, §11.10, §12.3, §13.3–§15); r3.9 — aşama 3 (görünürlük) tasarımı [ayrı belgede](2026-09-28-kalfa-3-gorunurluk-design.md) (§4.1, §6.6, §6.7, §7.2–§7.7, §9, §11.4, §11.10, §12.3, §13.3–§15); r3.8 — güvenlik sertleştirmesi (§7.3–§7.6, §9); r3.7 — tasarım ve uygulama planı incelemeleri işlendi ([1. tur](2026-09-21-kalfa-design-review.md), [2. tur](2026-09-21-kalfa-design-review-2.md), [plan incelemesi](2026-09-21-kalfa-plan-review.md)); 1c tasarımı [ayrı belgede](2026-09-22-kalfa-1c-design.md); aşama 2 tasarımı [ayrı belgede](2026-09-24-kalfa-2-kabuk-yalitim-design.md); değişiklik özeti §17'de
+**Durum:** aşama 1, 2 ve 3 uygulandı; aşama 4'ün tasarımı yazıldı
 **Lisans:** Apache-2.0 (`kalfa-plugin-sdk` ve WIT dosyaları: Apache-2.0 WITH LLVM-exception, §8.7)
 
 ---
@@ -90,6 +90,22 @@ Kanıtlar: `glm-5.3` → `chat_tool_calls_blocking.json`,
 Arkaplan **vLLM** (`system_fingerprint: vllm-0.28.1rc1...-tp8`). `json_schema`
 desteği buradan geliyor.
 
+**Gömme ve yeniden sıralama** (r3.10; 2026-10-07'de doğrulandı,
+[ön ölçüm](../bulgular/2026-10-07-kalfa-4-on-olcum.md)):
+
+- `POST /v1/embeddings` OpenAI biçimindedir. `dimensions` (Matryoshka; ör.
+  1024) ve `encoding_format: "base64"` destekleniyor. Varsayılan boyut 4096.
+  Tek girdi en çok 40 960 token; aşılınca `400 bad_request`.
+- `POST /v1/rerank` Cohere/Jina biçimindedir (vLLM): `query`, `documents`,
+  `top_n` → `results[] {index, relevance_score, document}`. `/v1/score` yok.
+- İkisinde de `usage.evren` ve `X-Evren-*` başlıkları geliyor.
+- **Gecikme:** gömmede her istekte boyuttan bağımsız ~7–9 sn sabit bekleme;
+  paralel istekler sırada beklemiyor. Yeniden sıralama hızlı (64 belge 2,7 sn).
+
+Kanıtlar (`crates/kalfa-evren/tests/kayitlar/`): `embeddings_qwen3_1024.json`,
+`embeddings_qwen3_base64.json`, `rerank_qwen3.json`,
+`error_embedding_context_length.json`.
+
 ### 3.3 OpenAI sözleşmesinden farklar — `kalfa-evren`'in varlık sebebi
 
 Hazır, tipli bir OpenAI istemci crate'i EVREN'e bağlanabilir; ama bilinmeyen
@@ -143,6 +159,10 @@ başlığı ayrıca `X-Evren-Routing-Reason` · `X-Evren-Media-Id` · `Retry-Aft
 başlıklarını ilan ediyor. Hız sınırı başlıklarının varlığı `429` yanıtının olası
 olduğunu gösteriyor; istemci buna hazır olmalı (§5.4).
 
+r3.10: gömme ve yeniden sıralama isteklerinde `X-Ratelimit-Limit-Tokens`
+(`2500000`), `X-Ratelimit-Remaining-Tokens` ve `X-Ratelimit-Reset` (Unix
+saniyesi) gözlendi. `-Requests` başlıkları ve `Retry-After` hâlâ gözlenmedi.
+
 ### 3.5 Model filosu
 
 Hesaba tanımlı 11 kayıt (`auto` dahil). Probe sırasında tüm fiyatlar `0.0 CR`.
@@ -160,6 +180,9 @@ Hesaba tanımlı 11 kayıt (`auto` dahil). Probe sırasında tüm fiyatlar `0.0 
 | `deepseek-ocr-2` | ocr | image, text |
 | `qwen3-asr-1.7b` | audio_transcription | audio, text |
 | `auto` | chat | text |
+
+r3.10: `qwen3-reranker-8b` isteği `qwen/qwen3-vl-reranker-8b`'ye yönleniyor
+(yanıt gövdesinde ve `X-Evren-Routed-Model`'de). VL sürümü katalogda yok.
 
 **`qwen3-guard-4b` erişilemez.** Hesabın `/v1/models` kataloğunda listelenmiyor
 (`models.json`: 11 kayıt), ama sunucu onu tanıyor: bilinmeyen `guard` adı
@@ -351,7 +374,10 @@ yürütülmeden önce okuyacağı ve yazacağı kanonik yolları bildirir.
   **özel kilit** alır.
 - Bir eklenti örneği aynı anda tek çağrı işler (wasmtime `Store`'u tek iş
   parçacıklıdır); eklentinin dosya okumaları host üzerinden geçtiği için aynı
-  kilitlere tabidir.
+  kilitlere tabidir. r3.10: her çağrı yeni bir örnekle yapılır; eklenti ×
+  çalışma alanı başına aynı anda tek çağrı çalışır. Eklenti aracı çağrı
+  boyunca kilit tutmaz; her dosya okuması o yolun kilidini kısa süre alır.
+  Böylece uzun bir indeksleme kabuğu bekletmez (aşama 4 tasarımı §7.1, §8.3).
 - Kısmi başarısızlıkta her çağrının sonucu ayrı döner. Reddedilen çağrı modele
   "kullanıcı reddetti: <gerekçe>" olarak gider; başarılı gibi kaydedilmez.
 
@@ -581,7 +607,7 @@ denetlenebilir kılmaktır.
 | `kabuk:çalıştır` | Yalıtım profiliyle (§7.7) |
 | `kabuk:ağ` | Kabuk çalıştırmasına ağ erişimi — her kipte onaylı; yalnızca izin listeli çıkış vekilinden (§7.7, r3.9) |
 | `ağ:istek` | Host allowlist'i (v1'de bu yeteneği kullanan araç yok) |
-| `evren:<uç>` | `chat`, `embeddings`, `rerank` (v1); `ocr`, `asr` sonra |
+| `evren:<uç>` | `chat`, `embeddings`, `rerank` (v1). Eklentilere v1'de yalnızca `embeddings` ve `rerank` açıktır; `chat` sözleşme 0.2'de (r3.10). `ocr`, `asr` sonra |
 
 **Etkin yetki = uygulamanın sunduğu ∩ eklenti manifestinin talebi ∩ kullanıcının
 verdiği izin.** Manifest yetki talebidir; tek başına yetki vermez.
@@ -999,11 +1025,16 @@ denetlenemez; host bunları kullanmadan önce doğrular.
 
 ### 8.2 Sözleşme
 
+r3.10: aşağıdaki WIT, aşama 4 tasarımının (§6) son hâlidir. r3.9'dan farkları:
+`evren-ucu`'dan `chat` çıktı (sözleşme 0.2'de); `dosya-listele` yol yerine
+`dosya-bilgisi` (yol, boyut, değişme zamanı) döndürür; `sonuc`'tan `ek-veri`
+çıktı.
+
 ```wit
 package kalfa:plugin@0.1.0;
 
 interface tipler {
-  enum evren-ucu { chat, embeddings, rerank }
+  enum evren-ucu { embeddings, rerank }
   enum seviye { hata, uyari, bilgi, ayrinti }
 
   variant hata {
@@ -1016,12 +1047,14 @@ interface tipler {
   }
 
   record ilerleme { tamamlanan: u64, toplam: option<u64>, mesaj: option<string> }
+
+  record dosya-bilgisi { yol: string, boyut: u64, degisme: u64 }
 }
 
 interface host {                       // plugin → host
-  use tipler.{evren-ucu, seviye, hata, ilerleme};
+  use tipler.{evren-ucu, seviye, hata, ilerleme, dosya-bilgisi};
 
-  dosya-listele:   func(desen: string) -> result<list<string>, hata>;
+  dosya-listele:   func(desen: string) -> result<list<dosya-bilgisi>, hata>;
   dosya-oku:       func(yol: string) -> result<string, hata>;
   evren-cagir:     func(uc: evren-ucu, govde: string) -> result<string, hata>;
   depo-oku:        func(anahtar: string) -> result<option<list<u8>>, hata>;
@@ -1036,7 +1069,7 @@ interface arac {                       // host → plugin
   use tipler.{hata};
 
   record arac-tanimi { ad: string, aciklama: string, parametre-semasi: string }
-  record sonuc { icerik: string, ek-veri: option<string> }
+  record sonuc { icerik: string }
 
   araclari-listele: func() -> list<arac-tanimi>;
   calistir:         func(ad: string, argumanlar: string) -> result<sonuc, hata>;
@@ -1050,7 +1083,9 @@ world eklenti {
 
 - **`dosya-listele` / `dosya-oku`:** yalnızca manifest'teki `dosya-oku`
   globlarıyla çalışma alanının kesişimi. Gizli dosyalar listelenmez (§7.4).
-  Erişim `cap-std` üzerinden (§7.3).
+  Erişim `cap-std` üzerinden (§7.3). r3.10: yerleşik okumanın yolunu
+  kullanırlar. Gizli dosya eklentiye onayla da açılmaz; `.git`, korumalı yollar
+  ve bağlantılar listelenmez ve okunamaz.
 - **`evren-cagir`:** `uc` serbest bir URL değil, sabit bir listedir; hedef adresi
   ve yöntemi host üretir, kimlik doğrulamayı host ekler. Eklenti anahtarı hiç
   görmez. Şart kabulü, hesap ve anahtar işlemleri eklentiye açık değildir. TLS
@@ -1076,8 +1111,18 @@ sözleşmenin olgunlaşmasını bekliyoruz. Genişletme 0.2 sözleşmesinin konu
 **WASI'nin dosya ve soket yetenekleri tamamen kapatılır.** Plugin doğrudan ağa
 çıkamaz, doğrudan dosya açamaz. Her şey `host` arayüzünden geçer; host da her
 çağrıyı manifest'teki yeteneklerle karşılaştırır. Yetenek modeli böylece kâğıt
-üzerinde değil, çalışma zamanında zorlanır. İzin verilmeyen bir import (örneğin
-WASI dosya sistemi) taşıyan bileşen bağlanamaz ve yüklenmez.
+üzerinde değil, çalışma zamanında zorlanır.
+
+r3.10 (ön ölçüm): Rust std kullanan her eklenti, hiç dosya açmasa da
+`wasi:filesystem`'i import ediyor. "Dosya sistemi import'u taşıyan bileşen
+yüklenmez" kuralı bu yüzden iki katmana dönüştü (aşama 4 tasarımı §7.3):
+
+1. **Yükleme anında import izin listesi:** `kalfa:plugin`, `wasi:io`,
+   `wasi:clocks`, `wasi:random`, `wasi:cli`, `wasi:filesystem`. `wasi:sockets`,
+   `wasi:http` ve listede olmayan her import'u taşıyan bileşen yüklenmez.
+2. **Yeteneksiz bağlama:** dosya sistemi ön açık dizin olmadan bağlanır; dizin
+   tutamacı olmadan hiçbir dosya açılamaz. `WasiCtx` ağsızdır; birinci katman
+   atlansa bile soket açılamaz.
 
 Dosya ve soketi kapatmak CPU, bellek ya da kredi tüketimini sınırlamaz. Bu
 yüzden ayrıca:
@@ -1089,22 +1134,28 @@ yüzden ayrıca:
   maliyetini kapsamaz. Host çağrılarına ayrı zaman aşımı, yanıt boyutu, günlük
   boyutu, eşzamanlılık sınırı ve EVREN çağrı bütçesi (§6.8) uygulanır.
 - Eklentinin çökmesi ya da bir sınırı aşması yalnızca o çağrıyı başarısız kılar;
-  uygulama ve diğer oturumlar etkilenmez, örnek yeniden oluşturulur.
+  uygulama ve diğer oturumlar etkilenmez, örnek yeniden oluşturulur. r3.10: her
+  çağrı zaten yeni bir örnekle yapılır (örnekleme 0,15 ms). Sınırların
+  değerleri aşama 4 tasarımının §7.4'ündedir.
 
 ### 8.4 Manifest
 
 ```toml
-[plugin]
+[eklenti]
 ad = "turkce-rag"
 surum = "0.1.0"
 sozlesme = "0.1"
+aciklama = "Türkçe anlamsal arama"
 
 [yetenekler]
 dosya-oku = ["**/*.md", "**/*.txt"]
 evren = ["embeddings", "rerank"]
-depo = "200MB"
-ag = []
+depo-mb = 200
 ```
+
+r3.10: tablo `[eklenti]`, kota tamsayı `depo-mb`. Bilinmeyen alan reddedilir;
+`ag` ya da `kabuk` yazan manifest, yetki aldığını sanan bir eklenti üretmez,
+yüklenmez (aşama 4 tasarımı §6.4).
 
 Kurulumda kullanıcı bunu Türkçe cümle olarak görür:
 
@@ -1120,6 +1171,14 @@ dosyasından oluşan bir dizindir; arşiv açma yoktur. Kurulumda paket özeti
 (SHA-256), sürüm, kaynak yolu ve yetenekler gösterilir. Güncelleme yeni bir
 yetenek istiyorsa yeniden onay alınır. İmza v1 dışıdır; imza yayıncıyı
 doğrular, eklentinin davranışının güvenli olduğunu değil.
+
+r3.10 (aşama 4 tasarımı §8.4, §13):
+
+- Kurulum yerel pencerede onaylanır. Eklenti bir çalışma alanında ancak
+  kullanıcı onu orada açınca sunulur.
+- `evren` yeteneği olan bir eklentinin bir çalışma alanındaki ilk çalışması
+  her kipte onay ister. Kart, eklentinin okuyabileceği dosyaların sayısını ve
+  boyutunu söyler. Onay yerel penceredir ve o çalışma alanı için hatırlanır.
 
 ### 8.5 Sürüm politikası
 
@@ -1142,6 +1201,13 @@ faydalı, yani her gün test ediliyor.
 - **İndeks türetilmiş hassas veridir:** eklentinin deposunda, çalışma alanına
   özel tutulur. Kaynak dosya değişince ya da silinince ilgili kayıt geçersiz
   olur. Gizli dosyalar hiç indekslenmez (§7.4).
+- r3.10 (aşama 4 tasarımı §11):
+  - `kalfa-rag` Kalfa'yla birlikte gelir.
+  - İndeks arama çağrısında artımlı güncellenir; arka planda indeksleme
+    yoktur.
+  - Vektörler 1024 boyutludur. İndekste metin saklanmaz; sonucun metni
+    dosyadan yeniden okunur.
+  - Arama: kosinüs benzerliğiyle ilk 50 parça, ardından yeniden sıralama.
 
 ### 8.7 SDK lisansı
 
@@ -1535,6 +1601,15 @@ r3.9'da ([aşama 3 tasarımı](2026-09-28-kalfa-3-gorunurluk-design.md) §6) ekl
   - Karar beklenirken araç sonucunun `tool` mesajı kayda yazılmaz. Çıkarılan
     içerik kayda da girmez.
 
+r3.10'da ([aşama 4 tasarımı](2026-10-07-kalfa-4-eklenti-rag-design.md) §9)
+eklenenler:
+
+- **Eklenti istekleri** günlüğe `eklenti:<ad>` amacıyla girer. Metinleri kayda
+  yazılmaz. Kayda metin sayısı, bayt, özet ve o çağrıda okunan dosyalar girer.
+  Aksi hâlde ilk indeksleme deponun tamamını oturum kaydına kopyalardı.
+- **Önizleme kartının eklenti biçimi** (`neden: Eklenti`): okunan dosyalar,
+  "Metni göster", üç karar: Gönder, Gönderme, bu araç çağrısında hep gönder.
+
 ---
 
 ## 12. Kapsam
@@ -1595,7 +1670,11 @@ teslim edilir:
    önizleme · **3c** senaryo testleri ve denetçi · **3d** ağ çıkışı · **3e**
    kısayollar, ek gizli kalıplar ve kartın kalanı. Bağlam özetleme (§6.5) ve
    oturum bütçesi (§6.8) aşama 3'ün dışındadır.
-4. **Eklenti ve RAG:** WIT 0.1, kaynak sınırları, `kalfa-rag`.
+4. **Eklenti ve RAG:** WIT 0.1, kaynak sınırları, `kalfa-rag`. Tasarımı
+   [ayrı belgededir](2026-10-07-kalfa-4-eklenti-rag-design.md). Dört plana
+   bölünür: **4a** sözleşme ve çalışma zamanı · **4b** EVREN yolu (gömme,
+   yeniden sıralama, ilk gönderim onayı, günlük, önizleme) · **4c**
+   `kalfa-rag` · **4d** arayüz ve dağıtım.
 
 MCP (v1.1) bunlardan sonra gelir.
 
@@ -1677,6 +1756,10 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | EVREN isteği `429` ya da `5xx` ile bitiyor | İstek, gövdesi gittiği için gönderim günlüğünde görünür (r3.9) |
 | Ağlı komut izin listesinde olmayan bir hosta bağlanmaya çalışıyor | Vekil reddeder; ret sonuçta ve tur özetinde görünür (r3.9) |
 | İzinli görünen bir host özel ağ ya da geri döngü adresine çözülüyor | Vekil bağlanmaz (r3.9) |
+| Eklenti soket import ediyor ya da `std::fs` ile dosya açmaya çalışıyor | Soketli bileşen yüklenmez; ön açık dizin olmadığı için dosya açılamaz (r3.10) |
+| Eklenti gizli bir dosyayı okuyup gömme isteğine koymaya çalışıyor | Okuma reddedilir; EVREN'e giden isteklerde gizli içerik yok (r3.10) |
+| Eklenti bir çalışma alanında EVREN'e ilk kez gönderecek | Yerel onay gelmeden araç çalışmaz (r3.10) |
+| RAG sonucundaki bir parça talimat içeriyor | Dış kaynaklı içerik olarak denetlenir; katı kipte modele gitmez (r3.10) |
 
 ---
 
@@ -1701,6 +1784,10 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | 15 | Windows'ta vekilin çalışması ölçülmedi: aynı kaptaki geri döngü | Windows'ta ağlı komutun çıkışı sınırsız kalabilir | Aşama 3d'de ölçüm; olumsuzsa `internetClient` yedek yol, kart ağın sınırsız olduğunu açıkça söyler |
 | 16 | Denetçi her dış kaynaklı sonuç için bir istek ekler | Gecikme ve kredi | Varsayılan kapalı; en çok 4 eşzamanlı denetim; gecikme ve token ölçümü (aşama 3 tasarımı G3) |
 | 17 | Geri alma verisi diskte kalır; gizli dosyaların önceki hâlleri de | Diskte büyüme ve gizli içeriğin izinin büyümesi | Kullanıcıya özel izinler; 8 MiB ve 512 MiB sınırları; oturum silme; depo hiçbir istekte EVREN'e gitmez (§6.7) |
+| 18 | wasmtime'da (JIT, çalışma zamanı) bir hata | Eklenti Kalfa'nın sürecini düşürebilir ya da bellek yalıtımını aşabilir | Kararlı sürüm, tam sürümle sabit; güvenlik duyurularında yükseltme; `cargo-audit`. İşletim sistemi yalıtımı v1 dışı (aşama 4 G9) |
+| 19 | Gömmede ~7–9 sn sabit gecikme | Her RAG araması ≥ ~10 sn; ilk indeksleme dakikalar | Büyük toplu istek; ilerleme ve iptal; ölçüm (aşama 4 G4) |
+| 20 | Yeniden sıralama katalogda olmayan bir modele yönleniyor (`qwen3-vl-reranker-8b`) | Kalite ve fiyat katalogdan farklı olabilir | Günlükte yönlendirilen model görünür; değerlendirme kümesi (aşama 4 G5) |
+| 21 | wasmtime derleme süresini ve ikili boyutunu artırıyor | Temiz sürüm derlemesi +~3 dk, ikili +~14 MB (Windows) | En az özellik; Linux'ta ve CI'da ölçüm (aşama 4 G1) |
 
 ---
 
@@ -1752,6 +1839,13 @@ Bu tablo testlerin geçtiğini değil, geçmesi gereken koşulları söyler.
 | Gizli dosyanın önceki hâli | Geri alma deposunda saklanır; oturumla silinir | Model `.env`'i Proje kipinde onaysız ezebilir; kullanıcı kararı (K8) |
 | Geri alınamayan yazma | Her kipte onay; kayıtsız oturum hariç | Onaysız yazmanın güvenlik ağı geri almadır; kullanıcı kararı (K9) |
 | Gönderim günlüğü | Kayıttan türetilir; başarısız istekler dahil | İçerik iki kez yazılmaz; gövdesi çıkmış bir istek gizlenmez |
+| `kalfa-rag`'ın dağıtımı | Kalfa'yla birlikte; çalışma alanında kullanıcı açar | Kullanıcı kararı (aşama 4 K1) |
+| Üçüncü taraf eklenti | Klasörden kurulum; yerel onay; yeni yetenekte yeniden onay | Kullanıcı kararı (K2); kötü niyetli eklenti tehdit modelinde |
+| İndeksleme | Arama çağrısında; çalışma alanındaki ilk gönderim yerel onaylı | Kullanıcı kararı (K3); indekslemek depoyu EVREN'e göndermektir |
+| Eklenti örneği | Süreç içi; her çağrıya yeni örnek | Örnekleme 0,15 ms; tuzaktan sonra temiz başlangıç; çağrılar arası durum yok |
+| WASI | Import izin listesi + ön açık dizinsiz dosya sistemi, ağsız bağlam | Rust std her eklentide `wasi:filesystem` import ediyor (ön ölçüm) |
+| Eklentinin EVREN uçları | `embeddings`, `rerank`; `chat` 0.2'de | Sohbet ucunun doğrulaması ayrı iş; isteyen eklenti yok |
+| Eklenti isteğinin metni | Kayda yazılmaz; okunan dosyalar ve özet yazılır | İlk indeksleme deponun tamamını kayda kopyalardı |
 
 ---
 
@@ -1922,3 +2016,23 @@ Kullanıcının on kararı o belgenin §2.1'inde (K1–K10). Bu belgede değişe
 - §12.1, §12.3: ağ çıkışı v1 kapsamında; aşama 3 beş plana bölündü; İnceleme
   kipi 1b'de gelmişti.
 - §13.3, §14, §15: yeni senaryolar, riskler 14–17, kararlar.
+
+**r3.10 (2026-10-07):** Aşama 4'ün (eklenti ve RAG) tasarımı ayrı belgede:
+[2026-10-07-kalfa-4-eklenti-rag-design.md](2026-10-07-kalfa-4-eklenti-rag-design.md).
+Kullanıcının dört kararı o belgenin §2.1'inde (K1–K4). Tasarımdan önce bir ön
+ölçüm yapıldı ([bulgular](../bulgular/2026-10-07-kalfa-4-on-olcum.md)). Bu
+belgede değişenler:
+- Başlık: durum güncellendi (aşama 3 bitti).
+- §3.2, §3.4, §3.5: gömme ve yeniden sıralama uçlarının doğrulanmış biçimi,
+  sınırları ve gecikmesi; hız sınırı başlıkları; `qwen3-vl-reranker-8b`'ye
+  yönlenme; yeni kayıtlar.
+- §6.1: her çağrıya yeni örnek; eklenti aracı araç düzeyinde kilit tutmaz.
+- §7.2: eklentilere v1'de `embeddings` ve `rerank`.
+- §8.2: WIT 0.1'in son hâli (`chat` yok, `dosya-bilgisi`, `ek-veri` yok).
+- §8.3: import kuralı iki katmanlı: izin listesi ve yeteneksiz bağlama.
+- §8.4: manifest `[eklenti]`, `depo-mb`, bilinmeyen alanın reddi; kurulum
+  ve ilk gönderim yerel onaylı.
+- §8.6: `kalfa-rag`'ın dağıtımı, indeksi ve araması.
+- §11.10: eklenti isteklerinin kaydı ve önizleme kartı.
+- §12.3: aşama 4 dört plana bölündü.
+- §13.3, §14, §15: yeni senaryolar, riskler 18–21, kararlar.
