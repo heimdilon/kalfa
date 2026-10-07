@@ -35,6 +35,13 @@ pub fn vekil_ortami(port: u16) -> Vec<(String, String)> {
         ("GIT_CONFIG_KEY_0".into(), "http.proxy".into()),
         ("GIT_CONFIG_VALUE_0".into(), vekil),
     ]);
+    // Schannel'ın iptal denetimi (CryptNet) vekile uymaz; `internetClient`'sız
+    // kapta CRL ve OCSP uçlarına ulaşamaz, stapling yapmayan hostlarda
+    // (index.crates.io) bağlantı `CRYPT_E_REVOCATION_OFFLINE` ile düşer.
+    // cargo Windows dışında zaten denetlemez (3d iptal bulguları).
+    if cfg!(windows) {
+        ortam.push(("CARGO_HTTP_CHECK_REVOKE".into(), "false".into()));
+    }
     ortam
 }
 
@@ -77,6 +84,11 @@ mod tests {
         assert_eq!(bul("npm_config_proxy"), Some(vekil));
         assert_eq!(bul("CARGO_HTTP_PROXY"), Some(vekil));
         assert_eq!(bul("PIP_PROXY"), Some(vekil));
+        if cfg!(windows) {
+            assert_eq!(bul("CARGO_HTTP_CHECK_REVOKE"), Some("false"));
+        } else {
+            assert_eq!(bul("CARGO_HTTP_CHECK_REVOKE"), None);
+        }
 
         // Git değişkenleri
         assert_eq!(bul("GIT_CONFIG_COUNT"), Some("1"));

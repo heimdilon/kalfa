@@ -1360,18 +1360,35 @@ async fn cargo_fetch_a15_siniri_beklenir() {
             &["index.crates.io:443", "static.crates.io:443"],
         )
         .await;
-    // Beklenen sınır: A15 AppContainer dosya kanonikleştirme sınırı. Sınır kalkarsa kırmızıya döner.
+    // Beklenen sınır: A15 AppContainer dosya kanonikleştirme sınırı. Sınır
+    // kalkarsa kırmızıya döner. Ağ kısmının (iptal denetimi dahil) geçtiğini
+    // indirmenin kendisi gösterir.
     let cikti = match sonuc {
         Ok(c) => c,
         Err(e) => e,
     };
     assert!(
-        cikti.contains("Access is denied")
-            || cikti.contains("canonicalizing")
-            || cikti.contains("erişim engellendi")
-            || cikti.contains("error: failed"),
+        cikti.contains("Downloaded itoa") && cikti.contains("canonicalizing"),
         "A15 sınırı bekleniyordu, çıktı:\n{cikti}"
     );
+}
+
+/// Schannel'lı curl, stapling yapmayan bir hosta (index.crates.io) kapta
+/// gerçek TLS ile bağlanır: iptal bilgisi alınamaz, `.curlrc`'deki
+/// `ssl-revoke-best-effort` bağlantıyı düşürmez (3d iptal bulguları).
+#[cfg(windows)]
+#[tokio::test]
+async fn curl_kapta_iptal_bilgisi_olmadan_baglanir() {
+    let d = TempDir::new().unwrap();
+    let k = kurgu_agli(d.path(), None);
+    let (sonuc, _) = k
+        .calistir_agli(
+            "curl.exe -sS -o NUL -w \"kod=%{http_code}\" https://index.crates.io/config.json",
+            &["index.crates.io:443"],
+        )
+        .await;
+    let cikti = sonuc.unwrap_or_else(|e| panic!("curl düştü:\n{e}"));
+    assert!(cikti.contains("kod=200"), "{cikti}");
 }
 
 /// Bilinen sınır: Sistem Python'unun `pip`'i A16 sınıfından düşer. Kalfa'nın

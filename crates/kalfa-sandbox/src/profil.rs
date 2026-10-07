@@ -104,6 +104,9 @@ fn git_degeri(d: &str) -> String {
     format!("\"{temiz}\"")
 }
 
+/// Windows'ta kabın `ev`'indeki `.curlrc`.
+const CURLRC: &str = "ssl-revoke-best-effort\n";
+
 impl OzelDizinler {
     /// `yalitim_dizini/<kimlik>/` altındaki dizinler; oluşturmaz.
     pub fn yol(yalitim_dizini: &Path, kimlik: &str) -> Self {
@@ -139,6 +142,7 @@ impl OzelDizinler {
     /// Dizinleri oluşturur ve en küçük araç yapılandırmasını yazar (§7.4).
     /// Her çalıştırmadan önce çağrılır; kullanıcının git kimliği değiştiyse
     /// yeni hâli yazılır. `.npmrc` boştur: kullanıcınınki token taşıyabilir.
+    /// Windows'ta `.curlrc` de yazılır.
     ///
     /// Bu dizinlere yalıtımdaki komut yazabilir. Kalfa'nın yazması bu yüzden
     /// bağlantı izlemez: komut `ev/.gitconfig`'i ya da `ev`'i dışarıya bir
@@ -158,6 +162,12 @@ impl OzelDizinler {
         }
         guvenli_yaz(&self.ev, ".gitconfig", git.gitconfig().as_bytes())?;
         guvenli_yaz(&self.ev, ".npmrc", b"")?;
+        // Windows'ta curl Schannel'dır; iptal bilgisi kapta alınamadığında
+        // bağlanır, bilgi varsa (stapling) iptal edilmiş sertifikayı yine
+        // reddeder (3d iptal bulguları).
+        if cfg!(windows) {
+            guvenli_yaz(&self.ev, ".curlrc", CURLRC.as_bytes())?;
+        }
         Ok(())
     }
 }
@@ -276,6 +286,12 @@ mod tests {
             "[user]\n\tname = \"Ada \\\"Kalfa\\\"\"\n\temail = \"ada@example.com[core]\"\n"
         );
         assert_eq!(std::fs::read_to_string(o.npmrc()).unwrap(), "");
+        let curlrc = std::fs::read_to_string(o.ev.join(".curlrc"));
+        if cfg!(windows) {
+            assert_eq!(curlrc.unwrap(), "ssl-revoke-best-effort\n");
+        } else {
+            assert!(curlrc.is_err());
+        }
     }
 
     /// `baglanti`'yı `hedef` dizinine bağlar: Unix'te sembolik bağlantı,

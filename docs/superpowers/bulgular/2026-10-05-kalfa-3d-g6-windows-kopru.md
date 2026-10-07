@@ -38,7 +38,7 @@ değişkenler verildi.
 | Araç | Sonuç |
 |---|---|
 | curl, vekilsiz (denetim) | ✖ `Could not resolve host`: kap ağsız. |
-| curl (Schannel, iptal denetimi açık) | ✔ 200, 0,4 sn. Schannel'ın iptal denetimi vekil üzerinden geçti (A8'in endişesi tutmadı). |
+| curl (Schannel, iptal denetimi açık) | ✔ 200, 0,4 sn. **Düzeltme (2026-10-07):** iptal denetimi vekilden geçmedi; CryptNet kapta ağa çıkamıyor. Bu deneme büyük olasılıkla OCSP stapling yapan bir hosta gitti ([iptal bulguları](2026-10-07-kalfa-3d-iptal-denetimi.md)). |
 | `git ls-remote` (github.com) | ✔ 1,1 sn |
 | `npm view` | ✔ 7,1 sn |
 | Node `fetch`, `NODE_USE_ENV_PROXY=1` | ✔ 200 |

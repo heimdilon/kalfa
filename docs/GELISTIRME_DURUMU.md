@@ -1259,6 +1259,11 @@ inceleme düzeltmelerini Claude yaptı.
   denetimine takılır; kurumsal vekil arkasında vekilin dış bağlantısı
   kurumsal vekilden geçmez (G16); Windows'ta cargo (A15) ve sistem
   Python'unun pip'i (A16).
+- **İptal denetimi (2026-10-07):** Windows'ta Schannel'ın iptal denetimi
+  kaptan CRL/OCSP'ye ulaşamıyor. Bu yüzden stapling yapmayan hostlarda cargo
+  ve curl düşüyordu. Ağlı komutta cargo'ya `CARGO_HTTP_CHECK_REVOKE=false`,
+  curl'e `.curlrc` ile `ssl-revoke-best-effort` verilir
+  ([bulgular](superpowers/bulgular/2026-10-07-kalfa-3d-iptal-denetimi.md)).
 
 **Sıradaki iş:**
 - PR #20'nin (3d) birleştirilmesi.

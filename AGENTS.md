@@ -65,8 +65,13 @@ Değişikliğin dokunduğu yere göre ayrıca:
   ```sh
   cargo clippy -p kalfa-sandbox -p kalfa-tools --features "kalfa-sandbox/yalitim-testleri kalfa-tools/yalitim-testleri" --all-targets --locked -- -D warnings
   cargo test -p kalfa-sandbox --features yalitim-testleri --test yalitim
+  cargo build -p kalfa-sandbox --bin kalfa-kopru --locked
   cargo test -p kalfa-tools --features yalitim-testleri --test uyumluluk
   ```
+
+  Ağlı testler kabın içindeki köprüyü `target/debug/kalfa-kopru`'dan alır.
+  Köprü derlenmemişse ya da eskiyse testler `köprü bulunamadı` ile ya da eski
+  ortamla koşar. Windows'ta uyumluluk testleri de koşturulur.
 
 - **Arayüz** (`ui/` içinde):
 

@@ -1335,6 +1335,10 @@ DenetimKipi   ::= Kapali | Uyar | Kati
         vekil, kapta ulaşılamaz bir adrese yönlendirirdi.
       - Bu değişkenler ortam izin listesinde yoktur; köprü kullanıcının bir
         değerini ezmez.
+    - Windows'ta `CARGO_HTTP_CHECK_REVOKE=false`. Ayrıca kabın `ev`'inde
+      `.curlrc` (`ssl-revoke-best-effort`) bulunur. Schannel'ın iptal
+      denetimi vekile uymaz ve kaptan CRL/OCSP'ye ulaşamaz
+      ([iptal bulguları](../bulgular/2026-10-07-kalfa-3d-iptal-denetimi.md)).
     - Ölçüm: [G5 bulguları](../bulgular/2026-09-28-kalfa-3d-g5-linux-kopru.md).
   - **Çalıştırma:** komutu başlatır ve onun çıkış koduyla çıkar.
   - **Bağlantılar:**
@@ -1402,7 +1406,8 @@ DenetimKipi   ::= Kapali | Uyar | Kati
   - Aynı kaptaki iki süreç `127.0.0.1` üzerinden konuşuyor.
   - Kap, paket SID'ine (`GRGW`) açık boruya bağlanıyor; bütünlük etiketi
     gerekmiyor.
-  - `internetClient`'sız kapta curl (Schannel, iptal denetimiyle), git, npm,
+  - `internetClient`'sız kapta curl (Schannel; iptal denetimi için bkz.
+    [iptal bulguları](../bulgular/2026-10-07-kalfa-3d-iptal-denetimi.md)), git, npm,
     Node `fetch` ve pip vekille ağa çıkıyor. cargo'nun ve sistem Python'unun
     pip'inin paketi açması A15 ve A16 yüzünden düşüyor; beklenen sınır olarak
     testle belgelendi.
