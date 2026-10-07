@@ -369,6 +369,7 @@ async fn ret_ve_hata_kalfa_sonucu() {
                 gerekce: Some("gerek yok".into()),
             },
             muhur,
+            kisayol: false,
         })
         .await;
 

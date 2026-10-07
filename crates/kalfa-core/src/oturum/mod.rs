@@ -30,6 +30,7 @@ use crate::kayit::{KayitOgesi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
 use crate::kimlik::CagriId;
 use crate::kimlik::{OturumId, TurId};
+use crate::kisayol::Kisayol;
 use crate::kurtarma::{BILINMEYEN_SONUC, KurtarilmisDurum, KurtarmaHatasi, kurtar};
 use crate::protokol::{
     AktarimDurmaNedeni, AracDurumu, BitisNedeni, Komut, Olay, OnayOgesi, SEMA_SURUMU, Zarf,
@@ -904,6 +905,11 @@ struct Oturum {
     /// Son kabuk onayından beri onaysız bir komut çalıştı. Kurtarılan
     /// oturumda güvenli taraf olarak `true` başlar.
     onaysiz_komut: bool,
+    /// "Bu oturumda izin ver" kısayolları (aşama 3 tasarımı §9.1). Kip
+    /// değişince silinir; kayda yazılmaz. Yürütme, planın kısayolunun hâlâ
+    /// listede olduğunu buradan denetler.
+    kisayollar: Arc<Mutex<Vec<Kisayol>>>,
+    kisayol_sayaci: u64,
     /// Önceki hâllerin deposu; kayıtsız oturumda yoktur (aşama 3 tasarımı
     /// §5.2).
     depo: Option<OncekiHalDeposu>,
@@ -971,6 +977,8 @@ impl Oturum {
             kapandi: false,
             onaysiz_yazilanlar: BTreeSet::new(),
             onaysiz_komut: false,
+            kisayollar: Arc::default(),
+            kisayol_sayaci: 0,
             depo: geri_alma.depo,
             geri_alma: geri_alma.dizin,
             tur_ozeti: TurBiriktirici::default(),
@@ -1070,6 +1078,23 @@ impl Oturum {
                 self.ayarlar.kip = kip;
                 self.politika.fetch_add(1, Ordering::SeqCst);
                 self.kaydet(KayitOgesi::KipDegisti { kip }).await;
+                // Kısayol kipin içinde verilir; kip değişince hepsi silinir.
+                let silindi = {
+                    let mut l = self.kisayollar.lock().unwrap_or_else(|z| z.into_inner());
+                    let bos_degildi = !l.is_empty();
+                    l.clear();
+                    bos_degildi
+                };
+                if silindi {
+                    self.kisayollari_yay().await;
+                }
+            }
+            Komut::KisayoluKaldir { kimlik } => {
+                self.kisayollar
+                    .lock()
+                    .unwrap_or_else(|z| z.into_inner())
+                    .retain(|k| k.kimlik != kimlik);
+                self.kisayollari_yay().await;
             }
             Komut::ModelDegistir { model } => {
                 self.ayarlar.model = model.clone();
@@ -1201,6 +1226,35 @@ impl Oturum {
                 Some("kalfa:sonuç".to_string()),
             )
             .await;
+        }
+    }
+
+    async fn kisayollari_yay(&mut self) {
+        let liste = self
+            .kisayollar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .clone();
+        self.yay(Olay::Kisayollar { liste }).await;
+    }
+
+    /// Önerilen kısayolu listeye ekler; aynısı varsa yenisini eklemez.
+    async fn kisayol_ekle(&mut self, teklif: crate::kisayol::KisayolTeklifi) {
+        let eklendi = {
+            let mut l = self.kisayollar.lock().unwrap_or_else(|z| z.into_inner());
+            if l.iter().any(|k| k.teklif == teklif) {
+                false
+            } else {
+                self.kisayol_sayaci += 1;
+                l.push(Kisayol {
+                    kimlik: self.kisayol_sayaci,
+                    teklif,
+                });
+                true
+            }
+        };
+        if eklendi {
+            self.kisayollari_yay().await;
         }
     }
 

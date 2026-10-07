@@ -5,6 +5,8 @@ import type { Channel } from '@tauri-apps/api/core';
 import { mockIPC } from '@tauri-apps/api/mocks';
 import { KIPLER } from '../ipc/tipler';
 import type {
+  AgHostu,
+  GizliAyarGorunumu,
   DenetciDurumu,
   DenetimKipi,
   CagriId,
@@ -118,6 +120,15 @@ export class SahteArka {
   /** Şart penceresinin durumu ve gösterilecek metin. */
   sart: SartPenceresiDurumu = { tip: 'Tamam' };
   denetci: DenetciDurumu = { kip: 'Kapali' };
+  /** Ayarlar > "Gizli dosyalar" (3e). */
+  gizli: GizliAyarGorunumu = {
+    varsayilanlar: ['.env', '.env.*', '*.pem', 'credentials*'],
+    ek_kaliplar: [],
+    gizli_sayilmayanlar: [],
+  };
+  agListesi: AgHostu[] = [];
+  /** Gizliliği azaltan ayarların yerel penceresinin yanıtı (3e). */
+  gizliOnayi = true;
   sartMetni: SartMetni = {
     surum: 1,
     esasli: true,
@@ -249,6 +260,48 @@ export class SahteArka {
       case 'denetci_kipini_ayarla':
         this.denetci = { kip: a.kip as DenetimKipi };
         return this.denetci;
+      case 'gizli_ayarlari':
+        return this.gizli;
+      case 'ek_gizli_kalip_ekle': {
+        const k = String(a.kalip);
+        if (!this.gizli.ek_kaliplar.includes(k)) this.gizli.ek_kaliplar = [...this.gizli.ek_kaliplar, k];
+        return this.gizli;
+      }
+      case 'ek_gizli_kalip_kaldir':
+        if (this.gizliOnayi) {
+          this.gizli.ek_kaliplar = this.gizli.ek_kaliplar.filter((k) => k !== a.kalip);
+        }
+        return this.gizli;
+      case 'gizli_sayilmayan_ekle': {
+        const k = String(a.kalip);
+        if (this.gizliOnayi && !this.gizli.gizli_sayilmayanlar.includes(k)) {
+          this.gizli.gizli_sayilmayanlar = [...this.gizli.gizli_sayilmayanlar, k];
+        }
+        return this.gizli;
+      }
+      case 'gizli_sayilmayan_kaldir':
+        this.gizli.gizli_sayilmayanlar = this.gizli.gizli_sayilmayanlar.filter(
+          (k) => k !== a.kalip,
+        );
+        return this.gizli;
+      case 'ag_izin_listesi':
+        return this.agListesi;
+      case 'ag_hostu_ekle': {
+        if (this.gizliOnayi) {
+          const [host, port] = String(a.host).split(':');
+          this.agListesi = [
+            ...this.agListesi,
+            { host, port: port ? Number(port) : 443, ozel_ag: Boolean(a.ozel_ag) },
+          ];
+        }
+        return this.agListesi;
+      }
+      case 'ag_hostu_kaldir': {
+        const [host, port] = String(a.host).split(':');
+        const p = port ? Number(port) : 443;
+        this.agListesi = this.agListesi.filter((h) => !(h.host === host && h.port === p));
+        return this.agListesi;
+      }
       case 'oturumlari_listele':
         return [...this.#oturumlar.values()]
           .map((o) => o.satir)

@@ -1549,6 +1549,34 @@ Kuralları üst belge §7.6 ve aşama 2 §5.3 koyar; bu bölüm uygulamayı sabi
 komut çıktısı der. Çekirdek bunu araç adından tahmin etmez; bilgi vermeyen
 araçta kart "araç sonucu" yazar.
 
+### 9.4 Uygulamada netleşenler (3e)
+
+3e'nin uygulaması sırasında tasarımdan ayrılan ya da netleşen noktalar:
+
+- **Kısayolun cümlesi (§9.1):** Cümleyi çekirdek değil arayüz kurar
+  (`tr.ts`); teklif yalnızca araç, program ve dizini taşır. Arayüz Markdown
+  işlemediği için cümlede ters tırnak yoktur. Kabuk tarifine program adı
+  eklendi (`KabukTarifi.program`, yalnızca program biçiminde).
+- **Kaldırılan kısayol (§9.1):** Yürütme, kısayolun hâlâ listede olduğunu ve
+  taze hazırlığı kapsadığını denetler. Kaldırılan kısayol bekleyen işi
+  durdurur (`PolitikaDegisti`).
+- **Ağ listesi (§8.3):** Kullanıcının ağ listesi de `ayarlar.json`'dadır.
+  - Host eklemek erişimi genişlettiği için yerel pencerede onaylanır; pencere
+    "özel ağ" işaretini söyler. Kaldırmak onaysızdır.
+  - Kabuk aracı listeyi her hazırlıkta ve çalıştırmada okur. Liste değişince
+    profil özeti ve mühür değişir; bekleyen onay geçersizleşir.
+- **Elle bozulmuş ayar (§9.2):** Bozuk bir girdi bütün dosyayı düşürmez.
+  - Geçersiz gizli kalıplar tek tek ayıklanır; geçerli ek kalıplar gizli
+    saymaya devam eder. Neden Ayarlar'da görünür.
+  - Ağ listesinde geçersiz bir host varsa liste bütünüyle kullanılmaz; bu
+    erişimi daraltır.
+- **Yalıtım testleri (§9.2):** İstisnanın ve hard link kuralının gerçek
+  yalıtımla testleri `kalfa-sandbox`'ta değil `kalfa-tools`'un uyumluluk
+  testlerindedir. `kalfa-sandbox` çekirdeğe bağımlı değildir; gerçek
+  sınıflandırıcı ancak kabuk aracı üzerinden sınanabilir.
+- **G9 (§13):** Okuma kilidi ölçülebilir bir maliyet getirmedi; önbellek
+  gerekmedi.
+
 ---
 
 ## 10. Hata durumları
@@ -1731,7 +1759,7 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 | G6 | Windows: aynı AppContainer'daki iki sürecin `127.0.0.1` üzerinden konuşabilmesi; paket SID'ine açık boru; `internetClient`'sız kapta vekille Schannel; geliştirme derlemesinde köprünün ikilisi | **Ölçüldü (2026-10-05):** köprü yolu çalışıyor, yedek yol gerekmez. Boru iki uçta overlapped açılmalı ([bulgular](../bulgular/2026-10-05-kalfa-3d-g6-windows-kopru.md)) |
 | G7 | SNI denetimi ECH kullanan istemcileri bozar; kullanılan araçlarda ECH var mı? | Ölçüldü: ölçülen araçların hiçbiri ECH göndermedi; SNI her bağlantıda CONNECT hostuyla aynıydı ([bulgular](../bulgular/2026-09-28-kalfa-3d-g5-linux-kopru.md)) |
 | G8 | Önizleme kartında büyük içerik: 50 × 64 KiB olay bütçesine ve arayüze sığar mı? | **Kapandı (3b):** Kart gövdesinde içerik taşınmaz; yalnızca meta veriler (`kaynak`, `bayt`, `cagri`, `denetim`) yer alır. 50 öğelik zarf serileştirildiğinde ~7.5 KiB tutar, 256 KiB olay bütçesine ve 32 KiB test eşiğine rahatça sığar (`g8_onizleme_karti_olay_butcesine_sigar`). Bekleyen sonucun içeriği karardan önce kayda yazılmaz; kullanıcı onu konuşmada araç sonucu olarak görür. `gonderim_ogesi` yalnızca kayda girmiş öğeleri açar. |
-| G9 | Ek gizli kalıpların ve istisnaların paylaşılan kaydının her sınıflandırmada okunmasının maliyeti | 3e |
+| G9 | Ek gizli kalıpların ve istisnaların paylaşılan kaydının her sınıflandırmada okunmasının maliyeti | **Kapandı (3e, 2026-10-07):** 100 000 yolda sınıflandırma ayarsız Windows'ta 68–75 ms, WSL'de 46 ms; 50 ek kalıp ve 50 istisnayla Windows'ta 79–98 ms, WSL'de 59 ms (sürüm derlemesi). Yol başına ~1 µs; önbellek gerekmedi. Ölçüm `kalfa-core/tests/izin.rs`, `g9` (`--ignored`) |
 | G10 | Windows'ta geri alma deposunun kaptan görünmemesi: A11'in listeleme izniyle `Kalfa\` altındaki adlar görünüyor | **Kapandı (3a):** yalıtımın özel kökünün kardeşi olan depo kaptan okunamıyor ve listelenemiyor; uyumluluk testi `geri_alma_deposu_yalitimda_gorunmez`, Windows'ta gerçek AppContainer'la ve WSL'de bwrap'la. `%LOCALAPPDATA%`'da "ALL APPLICATION PACKAGES" izni yok |
 | G11 | Yazma yarım kalmışsa (çökme) "yine de önceki hâli yaz" seçeneği gerekiyor mu? | Kullanımla; şimdilik sayfada görülüp kopyalanıyor |
 | G12 | 8 MiB ve 512 MiB sınırları | 3a'da değişmedi; kullanımla ayarlanır. Ayarlar toplam boyutu gösterir |
@@ -1784,7 +1812,8 @@ sonraki planların uygulayıcısı her planda ayrıca kararlaştırılır.
    - `ag_hostlari`, profil özeti ve kart.
    - Windows'ta önce G6'nın ölçümü; sonra ya köprü ya yedek yol.
    - S13.
-5. **3e — Küçük işler.**
+5. **3e — Küçük işler.** Plan:
+   [`2026-09-28-kalfa-3e-kucuk-isler.md`](../plans/2026-09-28-kalfa-3e-kucuk-isler.md).
    - Kısayollar.
    - `ayarlar.json`, ek gizli kalıplar ve gizli sayılmayanlar; ağ izin
      listesinin ve denetçi kipinin arayüzü, 3c ve 3d'nin ayarlarıyla

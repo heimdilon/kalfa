@@ -646,6 +646,7 @@ fn kabuk(yalitimli: bool, ag: bool, ilk_cagri: bool) -> kalfa_core::kabuk::Kabuk
     KabukTarifi {
         komut: "cargo test".into(),
         bicim: KabukBicimi::Program,
+        program: None,
         dizin: ".".into(),
         ag,
         ag_hostlari: Vec::new(),
@@ -771,6 +772,7 @@ fn kartta_her_ek_host_ayri_satir() {
     let tarif = kalfa_core::kabuk::KabukTarifi {
         komut: "curl https://github.com".into(),
         bicim: kalfa_core::kabuk::KabukBicimi::Program,
+        program: None,
         dizin: ".".into(),
         ag: true,
         ag_hostlari: vec![
@@ -811,4 +813,194 @@ fn kartta_her_ek_host_ayri_satir() {
     // Ağ kapalıysa "Ağ: kapalı"
     let kapali_tarif = kalfa_core::kabuk::KabukTarifi { ag: false, ..tarif };
     assert_eq!(kart_ag_satirlari(&kapali_tarif, &[]), vec!["Ağ: kapalı"]);
+}
+
+// --- 3e Görev 2: ek gizli kalıplar ve gizli sayılmayanlar (tasarım §9.2) ---
+
+mod gizli_ayarlari {
+    use std::sync::Arc;
+
+    use kalfa_core::izin::{
+        AZAMI_KALIP, GIZLI_UYARISI, GizliAyarlari, Islem, KalipHatasi, Karar, Kip, Siniflandirici,
+        YolSinifi, kalip_dogrula, karar_ver,
+    };
+    use kalfa_core::yol::CalismaYolu;
+
+    fn y(s: &str) -> CalismaYolu {
+        CalismaYolu::coz(s).unwrap()
+    }
+
+    fn l(k: &[&str]) -> Vec<String> {
+        k.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn sinif(ek: &[&str], istisna: &[&str]) -> (Siniflandirici, Arc<GizliAyarlari>) {
+        let a = Arc::new(GizliAyarlari::yeni(&l(ek), &l(istisna)).unwrap());
+        let s = Siniflandirici::yeni_ayarla("/kok", a.clone()).unwrap();
+        (s, a)
+    }
+
+    #[test]
+    fn ek_kalip_gizli_yapar() {
+        let (s, _) = sinif(&["*.sifre"], &[]);
+        assert!(s.gizli_mi(&y("a/b.sifre")));
+        assert!(!s.gizli_mi(&y("a/b.txt")));
+    }
+
+    #[test]
+    fn istisna_varsayilan_kalibi_kaldirir() {
+        let (s, _) = sinif(&[], &["src/credentials.rs", ".env.example"]);
+        assert!(!s.gizli_mi(&y("src/credentials.rs")));
+        assert!(!s.gizli_mi(&y(".env.example")));
+        assert!(
+            !s.gizli_mi(&y("alt/.env.example")),
+            "kalıp her derinlikte eşleşir"
+        );
+        // İstisna yalnızca adı geçeni açar.
+        assert!(s.gizli_mi(&y("credentials.json")));
+        assert!(s.gizli_mi(&y(".env")));
+        assert!(s.gizli_mi(&y(".env.local")));
+    }
+
+    #[test]
+    fn istisna_ek_kalibi_kaldirir() {
+        let (s, _) = sinif(&["*.sifre"], &["ornek.sifre"]);
+        assert!(!s.gizli_mi(&y("ornek.sifre")));
+        assert!(s.gizli_mi(&y("gercek.sifre")));
+    }
+
+    #[test]
+    fn bagimlilik_dizini_kurali_surer() {
+        let (s, _) = sinif(&["*.sifre"], &[]);
+        assert!(!s.gizli_mi(&y("node_modules/paket/.env")));
+        assert!(!s.gizli_mi(&y("node_modules/paket/a.sifre")));
+    }
+
+    #[test]
+    fn gizli_dizindeki_dosyaya_istisna_dizini_acmaz() {
+        // `.ssh/` varsayılan gizli değil; ek kalıpla gizli bir dizin kurulur.
+        let (s, _) = sinif(&["gizli"], &["gizli/ornek.txt"]);
+        assert!(s.gizli_mi(&y("gizli/ornek.txt")), "üst dizin gizli kalır");
+        assert!(s.gizli_mi(&y("gizli/baska.txt")));
+    }
+
+    #[test]
+    fn dizine_istisna_altindakileri_acar_ek_kalip_kapatir() {
+        let (s, _) = sinif(&["gizli", "gizli/anahtar.txt"], &["gizli"]);
+        assert!(
+            !s.gizli_mi(&y("gizli/notlar.txt")),
+            "dizin istisnayla açılır"
+        );
+        assert!(
+            s.gizli_mi(&y("gizli/anahtar.txt")),
+            "dosyanın kendi kalıbı kapatır"
+        );
+        assert!(s.gizli_mi(&y("gizli/.env")), "varsayılan kalıp da kapatır");
+    }
+
+    #[test]
+    fn istisna_cok_baglantili_okumanin_onayini_kaldirmaz() {
+        // İstisna yalnızca adın eşleşmesini kaldırır: hard link'i olan dosya
+        // yine onaya çıkar (güvenlik serisi #41).
+        let (s, _) = sinif(&[], &["src/credentials.rs"]);
+        let yol = y("src/credentials.rs");
+        let sinif = if s.gizli_mi(&yol) {
+            YolSinifi::Gizli
+        } else {
+            YolSinifi::Normal
+        };
+        assert_eq!(sinif, YolSinifi::Normal);
+        assert_eq!(
+            karar_ver(Kip::Serbest, Islem::Okuma, sinif, true),
+            Karar::Onayli {
+                uyarilar: vec![GIZLI_UYARISI.into()]
+            }
+        );
+    }
+
+    #[test]
+    fn yalniz_joker_istisna_reddedilir() {
+        for k in ["*", "**", "*.*", "**/*", "?"] {
+            assert_eq!(
+                kalip_dogrula(k, true),
+                Err(KalipHatasi::YalnizJoker(k.into())),
+                "{k}"
+            );
+        }
+        // Ek kalıpta joker serbesttir: gizliliği artırır.
+        assert_eq!(kalip_dogrula("*", false), Ok(()));
+    }
+
+    #[test]
+    fn gecersiz_kaliplar_reddedilir_eski_hal_kalir() {
+        assert_eq!(kalip_dogrula("  ", false), Err(KalipHatasi::Bos));
+        assert!(matches!(
+            kalip_dogrula("/etc/x", false),
+            Err(KalipHatasi::Mutlak(_))
+        ));
+        assert!(matches!(
+            kalip_dogrula("C:\\x", false),
+            Err(KalipHatasi::Mutlak(_))
+        ));
+        assert!(matches!(
+            kalip_dogrula("a/../b", false),
+            Err(KalipHatasi::UstDizin(_))
+        ));
+        assert!(matches!(
+            kalip_dogrula(&"a".repeat(257), false),
+            Err(KalipHatasi::Uzun(_))
+        ));
+        assert!(matches!(
+            kalip_dogrula("a[", false),
+            Err(KalipHatasi::Gecersiz(..))
+        ));
+
+        let (s, a) = sinif(&["*.sifre"], &["ornek.sifre"]);
+        assert!(a.degistir(&l(&["*.sifre", "/mutlak"]), &[]).is_err());
+        assert_eq!(a.ek_kaliplar(), l(&["*.sifre"]));
+        assert_eq!(a.istisnalar(), l(&["ornek.sifre"]));
+        assert!(!s.gizli_mi(&y("ornek.sifre")), "eski istisna geçerli");
+    }
+
+    #[test]
+    fn iki_yuzden_fazla_kalip() {
+        let cok: Vec<String> = (0..=AZAMI_KALIP).map(|i| format!("k{i}.txt")).collect();
+        assert_eq!(
+            GizliAyarlari::yeni(&cok, &[]).err(),
+            Some(KalipHatasi::CokKalip)
+        );
+        assert!(GizliAyarlari::yeni(&cok[..AZAMI_KALIP], &[]).is_ok());
+    }
+
+    #[test]
+    fn degisiklik_acik_siniflandiricida_hemen_gecerli() {
+        let (s, a) = sinif(&[], &[]);
+        assert!(s.gizli_mi(&y("src/credentials.rs")));
+        a.degistir(&l(&["*.sifre"]), &l(&["src/credentials.rs"]))
+            .unwrap();
+        assert!(!s.gizli_mi(&y("src/credentials.rs")));
+        assert!(s.gizli_mi(&y("a.sifre")));
+    }
+
+    /// G9: paylaşılan ayarın her sınıflandırmada okunmasının maliyeti.
+    /// `cargo test -p kalfa-core --test izin g9 -- --ignored --nocapture`
+    #[test]
+    #[ignore = "ölçüm"]
+    fn g9_gizli_mi_olcumu() {
+        let yollar: Vec<CalismaYolu> = (0..100_000)
+            .map(|i| y(&format!("src/modul{}/alt{}/dosya{i}.rs", i % 97, i % 13)))
+            .collect();
+        let ek: Vec<String> = (0..50).map(|i| format!("*.ozel{i}")).collect();
+        let istisna: Vec<String> = (0..50).map(|i| format!("ornek{i}.env")).collect();
+        let duz = Siniflandirici::yeni("/kok", &[]).unwrap();
+        let (ayarli, _) = {
+            let a = Arc::new(GizliAyarlari::yeni(&ek, &istisna).unwrap());
+            (Siniflandirici::yeni_ayarla("/kok", a.clone()).unwrap(), a)
+        };
+        for (ad, s) in [("ayarsız", &duz), ("50 ek + 50 istisna", &ayarli)] {
+            let bas = std::time::Instant::now();
+            let n = yollar.iter().filter(|p| s.gizli_mi(p)).count();
+            println!("[G9] {ad}: 100 000 yol {:?} ({n} gizli)", bas.elapsed());
+        }
+    }
 }

@@ -6,6 +6,7 @@ import type {
   AracDurumu,
   DenetimKipi,
   Kip,
+  KisayolTeklifi,
   ModelProfili,
   YalitimYoklukNedeni,
 } from '../ipc/tipler';
@@ -412,6 +413,41 @@ export const tr = {
 
   'sartlar.tamam': 'Tamamlandı. Kalfa açılıyor.',
   'sartlar.alt_not': 'Kalfa dikkatli çalışır. Kontrol her zaman sizdedir.',
+
+  // "Bu oturumda izin ver" kısayolları (aşama 3 tasarımı §9.1).
+  'onay.sayfa.kapsam': 'Kapsam',
+  'onay.sayfa.kapsam_tek': 'Yalnızca bu çağrı',
+  'kisayol.dosya': 'Bu oturumda {dizin}/ altındaki dosyaları {arac} ile onaysız düzenleyebilir.',
+  'kisayol.dosya_kok': 'Bu oturumda çalışma alanındaki dosyaları {arac} ile onaysız düzenleyebilir.',
+  'kisayol.kabuk': "Bu oturumda {program} programını {dizin} dizininde yalıtımlı ve ağsız çalıştırabilir.",
+  'kisayol.liste': 'Bu oturumdaki izinler ({sayi})',
+  'kisayol.kaldir': 'Bu izni kaldır',
+  'kisayol.aciklama': 'İzin kipi değişince bu izinler silinir; oturum kapanınca da kalmaz.',
+
+  // Ayarlar: gizli dosyalar, ağ ve denetçi (3e).
+  'ayarlar.gizli': 'Gizli dosyalar',
+  'ayarlar.gizli.aciklama': 'Yalnızca adı eşleşen dosyalar gizli sayılır; içerik taranmaz.',
+  'ayarlar.gizli.varsayilanlar': 'Varsayılan kalıplar ({sayi}); kapatılamaz',
+  'ayarlar.gizli.ek': 'Ek gizli kalıplar',
+  'ayarlar.gizli.ek_bos': 'Ek kalıp yok.',
+  'ayarlar.gizli.istisna': 'Gizli sayılmayanlar',
+  'ayarlar.gizli.istisna_aciklama':
+    'Varsayılan kalıpların yanlış yakaladığı dosyalar için; örneğin src/credentials.rs ya da .env.example. Eklemeyi Kalfa ayrı bir pencerede sorar.',
+  'ayarlar.gizli.istisna_bos': 'Gizli sayılmayan kalıp yok.',
+  'ayarlar.gizli.kalip_yer': 'Kalıp, örneğin *.sifre',
+  'ayarlar.ekle': 'Ekle',
+  'ayarlar.kaldir': '{ad} öğesini kaldır',
+  'ayarlar.ag': 'Ağ',
+  'ayarlar.ag.aciklama':
+    'Ağlı yalıtımlı komutlar paket kayıtlarına ve GitHub indirmelerine ek olarak bu adreslere bağlanabilir. Eklemeyi Kalfa ayrı bir pencerede sorar.',
+  'ayarlar.ag.bos': 'Eklenmiş adres yok.',
+  'ayarlar.ag.host_yer': 'Adres, örneğin pkg.sirketim.com ya da pkg.sirketim.com:8443',
+  'ayarlar.ag.ozel_ag': 'Özel ağ adreslerine de bağlanabilir',
+  'ayarlar.ag.ozel_ag_etiket': '(özel ağ)',
+  'ayarlar.denetci': 'Güvenlik denetçisi',
+  'ayarlar.denetci.aciklama':
+    'Dış kaynaklı araç sonuçlarını modele gitmeden önce talimat içeriyor mu diye denetler. Düşürmeyi Kalfa ayrı bir pencerede sorar.',
+  'ayarlar.denetci.kip': 'Denetçi kipi',
 } as const;
 
 export type MetinAnahtari = keyof typeof tr;
@@ -491,3 +527,11 @@ export const YALITIM_SADE: Record<YalitimYoklukNedeni, MetinAnahtari> = {
   KurulumBozuk: 'ayarlar.yalitim.sade.KurulumBozuk',
   Desteklenmiyor: 'ayarlar.yalitim.sade.Desteklenmiyor',
 };
+
+/** Kısayolun cümlesi (aşama 3 tasarımı §9.1). */
+export function kisayolCumlesi(t: KisayolTeklifi): string {
+  if (t.tip === 'Kabuk') return m('kisayol.kabuk', { program: t.program, dizin: t.dizin });
+  return t.dizin === '.'
+    ? m('kisayol.dosya_kok', { arac: t.arac })
+    : m('kisayol.dosya', { dizin: t.dizin, arac: t.arac });
+}

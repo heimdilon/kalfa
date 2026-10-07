@@ -10,6 +10,10 @@ pub struct KabukTarifi {
     /// betiğin bütün metni.
     pub komut: String,
     pub bicim: KabukBicimi,
+    /// Program biçiminde programın adı; betikte yok. Kabuk kısayolu bununla
+    /// eşleşir (aşama 3 tasarımı §9.1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
     /// Çalışma alanına göre çalışma dizini; kök için `.`.
     pub dizin: String,
     /// Model ağ erişimi istedi. Yalıtımsız çalıştırmada ağ kapatılamaz; bu

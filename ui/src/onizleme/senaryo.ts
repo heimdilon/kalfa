@@ -1,6 +1,6 @@
 // Önizlemenin sahte verisi ve senaryolu turu. Yalnızca `onizleme.html`
 // kullanır; uygulama paketine girmez. Metinler örnektir, EVREN'den gelmez.
-import type { Olay, OturumId } from '../ipc/tipler';
+import type { Kisayol, Olay, OturumId } from '../ipc/tipler';
 import { bosOzet, onayOgesi, SahteArka } from '../sahte/arka';
 
 const SAAT = 3600_000;
@@ -207,6 +207,7 @@ export function anaSenaryosu(windows = false): SahteArka {
                   aciklama: 'Erişim token’ının süresini 7 günden 24 saate indirir.',
                   hedefler: ['C:\\projeler\\kalfa-api\\src\\auth.rs'],
                   diff: DIFF_AUTH,
+                  kisayol: { tip: 'Dosya', arac: 'dosya_duzenle', dizin: 'src' },
                 }),
                 onayOgesi({
                   cagri: `c${tur}-2`,
@@ -224,11 +225,25 @@ export function anaSenaryosu(windows = false): SahteArka {
     return null;
   });
 
+  // "Bu oturumda izin ver" kısayolları (3e): kabul edilen teklif listeye girer.
+  let kisayollar: Kisayol[] = [];
+  arka.ozel.set('kisayolu_kaldir', (a) => {
+    kisayollar = kisayollar.filter((k) => k.kimlik !== a.kimlik);
+    arka.olaylar(a.oturum as OturumId, [{ tip: 'Kisayollar', liste: kisayollar }]);
+    return null;
+  });
+
   arka.ozel.set('arac_onayi', (a) => {
     const oturum = a.oturum as OturumId;
-    const kararlar = a.kararlar as { cagri: string; karar: { tip: string } }[];
+    const kararlar = a.kararlar as { cagri: string; karar: { tip: string }; kisayol?: boolean }[];
     const t = `t${tur}`;
     const gonder = (olaylar: Olay[]) => arka.olaylar(oturum, olaylar, t);
+    if (kararlar.some((k) => k.kisayol)) {
+      kisayollar = [
+        { kimlik: 1, teklif: { tip: 'Dosya', arac: 'dosya_duzenle', dizin: 'src' } },
+      ];
+      gonder([{ tip: 'Kisayollar', liste: kisayollar }]);
+    }
     const kabuk = kararlar.find((k) => k.cagri.startsWith('k'));
     if (kabuk) {
       const cagri = kabuk.cagri;

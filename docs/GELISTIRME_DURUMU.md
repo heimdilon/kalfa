@@ -1,6 +1,6 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-09-28. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-10-07. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
 ## Mevcut uygulama
@@ -66,6 +66,10 @@ belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
   izin listesindeki hostlara, Kalfa'nın vekili üzerinden çıkar. Linux'ta
   bwrap `--unshare-net` ve `SCM_RIGHTS` köprüsü; Windows'ta `internetClient`'sız
   AppContainer ve adlandırılmış boru köprüsü. Ayrıntısı aşağıda.
+- **3e — küçük işler (uygulandı; PR #23):** "bu oturumda izin ver"
+  kısayolları, ek gizli kalıplar ve gizli sayılmayanlar (K7), `ayarlar.json`'da
+  gizli kalıplar ve ağ listesi, onay kartının "Kapsam" satırı ve Ayarlar
+  sayfası. G9 kapandı. Aşama 3'ün son planıdır. Ayrıntısı aşağıda.
 - **Uçtan uca:** gerçek dosya araçlarıyla, arayüz olmadan, okuma → onay →
   düzenleme → model yanıtı → kayıttan kurtarma akışı test edilir; aynı akış
   gerçek EVREN'e karşı `#[ignore]` testte de var (spec §4.2).
@@ -1100,6 +1104,10 @@ Tasarım:
     düzeltildi. Ayrıntısı aşağıda.
 - **3e:** "bu oturumda izin ver" kısayolları, ek gizli kalıplar ve onay
   kartının kalan alanları.
+  - Plan: [`2026-09-28-kalfa-3e-kucuk-isler.md`](superpowers/plans/2026-09-28-kalfa-3e-kucuk-isler.md).
+    Gizli sayılmayanlar (K7) ve `ayarlar.json` bu plandadır; aşama 3'ün son
+    planıdır.
+  - Uygulandı; PR #23. Ayrıntısı aşağıda.
 
 Bağlam özetleme ve oturum bütçesi aşama 3'ün dışındadır.
 
@@ -1265,7 +1273,63 @@ inceleme düzeltmelerini Claude yaptı.
   curl'e `.curlrc` ile `ssl-revoke-best-effort` verilir
   ([bulgular](superpowers/bulgular/2026-10-07-kalfa-3d-iptal-denetimi.md)).
 
+### 3e — küçük işler (uygulandı; PR #23 incelemede)
+
+Plan: [`2026-09-28-kalfa-3e-kucuk-isler.md`](superpowers/plans/2026-09-28-kalfa-3e-kucuk-isler.md).
+Dal `3e/kucuk-isler`, PR #23. Görev 1–6'yı Claude uyguladı.
+
+- **Kısayollar** (`kalfa-core/src/kisayol.rs`): Teklifi çekirdek yapar;
+  webview yalnızca kabul bitini gönderir. Kısayol yalnızca kararı uyarısız
+  onaylı olan öğeye verilir:
+  - Dosya kısayolu araç ve dizindir; alt dizinleri kapsar.
+  - Kabuk kısayolu program ve dizindir; yalnızca program biçiminde,
+    yalıtımlı, ağsız ve ilk olmayan çağrıya verilir.
+  - Kısayolla yürüyen çağrı onaysız değişiklik listesine girer. Kip
+    değişince bütün kısayollar silinir; kayda yazılmaz.
+- **Gizli ayarları** (`GizliAyarlari`, `kalfa-core/src/izin.rs`):
+  - Ek gizli kalıplar ve gizli sayılmayanlar uygulama genelinde
+    paylaşılır; değişiklik açık oturumlarda ve yalıtımda hemen geçerlidir.
+  - Varsayılan kalıplar kapatılamaz. İstisna yalnızca adın eşleşmesini
+    kaldırır; gizli dosyanın hard link'i yalıtımda gizli kalır.
+- **`ayarlar.json`:** ek gizli kalıplar, gizli sayılmayanlar, ağ listesi
+  ve denetçi kipi.
+  - Gizliliği azaltan ya da erişimi genişleten her değişiklik yerel
+    pencerede onaylanır: ek kalıbı kaldırmak, istisna eklemek, ağ hostu
+    eklemek.
+  - Elle bozulmuş bir gizli kalıp yalnızca kendisi düşer; öteki kalıplar
+    geçerli kalır.
+- **Arayüz:** Onay sayfasında "Kapsam" satırı; konuşmanın üstünde "Bu
+  oturumdaki izinler (N)"; Ayarlar'da gizli dosyalar, ağ ve denetçi.
+- **G9:** 100 000 yolda sınıflandırma Windows'ta 68–98 ms, WSL'de
+  46–59 ms (sürüm derlemesi; üst uç 50 ek kalıp ve 50 istisnayla). Önbellek
+  gerekmedi.
+- **Uçtan uca:** `10-kisayol.test.mjs`. Bir kısayol verilir ve sonraki
+  yazma onaysız geçer; kip değişince kısayol kalkar. Gizli sayılmayanlara
+  eklenen dosya onaysız okunur.
+- **İnceleme düzeltmesi:** `ayarlar.json`'daki tek bir geçersiz kalıp bütün
+  gizli listeleri düşürüyordu. Kullanıcının geçerli ek kalıpları böylece
+  sessizce kapanıyor, sonraki ayar yazımında da dosyadan siliniyordu. Artık
+  yalnızca geçersiz kalıp ayıklanır.
+- **Doğrulama:**
+  - Windows: çalışma alanı 815 ve `e2e` özellikli 114 test; iki clippy ve
+    fmt temiz. Yalıtım 43/43. Arayüz: Vitest 303/303, `npm run check` 0 hata
+    0 uyarı. Uçtan uca 35/35.
+  - Windows uyumluluk 21/22: `cargo_ozel_registry_kapta_doldurulamaz`
+    ana dalda (`f1c0e32`) da aynı nedenle düşüyor. Ağlı kapta Schannel
+    sertifika iptalini denetleyemiyor (`CRYPT_E_REVOCATION_OFFLINE`); 3d
+    birleşirken geçiyordu, makinedeki iptal önbelleğine bağlı görünüyor.
+  - WSL (`kalfatest`): çalışma alanı 757 ve `e2e` özellikli 113 test; üç
+    clippy temiz; yalıtım 26/26, uyumluluk 15/15.
+  - WSL uçtan uca 35/35. İlk iki tam koşuda gecikme ölçümü eşiği aştı
+    (p95 52–61 ms, eşik 50). Tek başına beş koşuda 34–43 ms; üçüncü tam koşu
+    geçti.
+
+**Aşama 3** 3e'nin birleşmesiyle tamamlanır: 3a–3e uygulandı. Kalan açık
+noktalar (G11–G17) kullanımla izlenir ya da aşama 3'ün dışındadır (tasarım
+§13).
+
 **Sıradaki iş:**
-- PR #20'nin (3d) birleştirilmesi.
-- Ardından 3e (PR #23).
+- PR #23'ün (3e) birleştirilmesi.
+- Ardından aşama 4: eklenti ve RAG (üst belge §12.3; WIT 0.1, kaynak
+  sınırları, `kalfa-rag`).
 

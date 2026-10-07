@@ -172,6 +172,7 @@ mod tests {
             kabuk: Some(KabukTarifi {
                 komut: "cargo test".into(),
                 bicim: KabukBicimi::Program,
+                program: None,
                 dizin: ".".into(),
                 ag: false,
                 ag_hostlari: Vec::new(),
@@ -183,6 +184,7 @@ mod tests {
             onaysiz_degisiklikler: None,
             geri_alinabilir: None,
             veri_cikisi: None,
+            kisayol: None,
         }
     }
 

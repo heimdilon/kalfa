@@ -21,7 +21,7 @@
   import IconButton from '../bilesenler/IconButton.svelte';
   import IconTile from '../bilesenler/IconTile.svelte';
   import Textarea from '../bilesenler/Textarea.svelte';
-  import { m } from '../dil/tr';
+  import { kisayolCumlesi, m } from '../dil/tr';
   import type { CagriId, OnayGirdisi, OnayOgesi, VeriCikisi } from '../ipc/tipler';
   import { geriAlinabilirlikMetni } from './geriAlma';
   import { kararlariUret, kisaAd, riskliMi, type OnaySecimi } from './onay';
@@ -58,6 +58,8 @@
   const secilenler = new SvelteSet<CagriId>(
     untrack(() => ogeler.filter((o) => !riskliMi(o)).map((o) => o.cagri)),
   );
+  // "Kapsam" satırında kısayolu seçilen çağrılar (aşama 3 tasarımı §9.1).
+  const kisayolSecili = new SvelteSet<CagriId>();
   const riskliVar = $derived(ogeler.some(riskliMi));
   let aktif = $state(0);
   let gerekce = $state('');
@@ -114,7 +116,7 @@
   async function karar(secim: OnaySecimi) {
     gonderiliyor = true;
     try {
-      await onkarar(kararlariUret(ogeler, secim, secilenler, gerekce));
+      await onkarar(kararlariUret(ogeler, secim, secilenler, gerekce, kisayolSecili));
     } finally {
       gonderiliyor = false;
     }
@@ -275,6 +277,21 @@
         <div class={['bilgi', { uyari: aktifOge.geri_alinabilir.tip === 'Hayir' }]}>
           <dt><Icon name="rotate-ccw" size={16} />{m('onay.sayfa.geri_alinabilir')}</dt>
           <dd>{geriAlinabilirlikMetni(aktifOge.geri_alinabilir)}</dd>
+        </div>
+      {/if}
+      {#if aktifOge.kisayol}
+        {@const oge = aktifOge}
+        {@const teklif = aktifOge.kisayol}
+        <div class="bilgi">
+          <dt><Icon name="key-round" size={16} />{m('onay.sayfa.kapsam')}</dt>
+          <dd class="kapsam">
+            {#if !kisayolSecili.has(oge.cagri)}<span>{m('onay.sayfa.kapsam_tek')}</span>{/if}
+            <Checkbox
+              checked={kisayolSecili.has(oge.cagri)}
+              label={kisayolCumlesi(teklif)}
+              onchange={(v) => (v ? kisayolSecili.add(oge.cagri) : kisayolSecili.delete(oge.cagri))}
+            />
+          </dd>
         </div>
       {/if}
       {#if aktifOge.uyarilar.length > 0}

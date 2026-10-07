@@ -50,6 +50,8 @@ export type YalitimOzeti =
 export interface KabukTarifi {
   komut: string;
   bicim: KabukBicimi;
+  /** Program biçiminde programın adı; kabuk kısayolu bununla eşleşir (3e). */
+  program?: string;
   dizin: string;
   ag: boolean;
   ag_hostlari?: string[];
@@ -76,6 +78,18 @@ export interface OnayOgesi {
   geri_alinabilir?: GeriAlinabilirlik;
   /** Onay kartında "Veri çıkışı" satırı (aşama 3b, tasarım §9.3). */
   veri_cikisi?: VeriCikisi;
+  /** "Bu oturumda izin ver" teklifi (aşama 3 tasarımı §9.1); yalnızca uygun öğede. */
+  kisayol?: KisayolTeklifi;
+}
+
+export type KisayolTeklifi =
+  | { tip: 'Dosya'; arac: string; dizin: string }
+  | { tip: 'Kabuk'; program: string; dizin: string };
+
+/** Oturumdaki bir kısayol (§9.1). */
+export interface Kisayol {
+  kimlik: number;
+  teklif: KisayolTeklifi;
 }
 
 export type VeriCikisi =
@@ -245,7 +259,8 @@ export type Olay =
   | { tip: 'DenetimBasladi'; cagri: CagriId }
   /** Denetçi sonucu (aşama 3c). */
   | { tip: 'DenetimSonucu'; cagri: CagriId; sonuc: DenetimSonucu }
-  | { tip: 'DenetimAtlandi'; cagri: CagriId };
+  | { tip: 'DenetimAtlandi'; cagri: CagriId }
+  | { tip: 'Kisayollar'; liste: Kisayol[] };
 
 export type OnizlemeNedeni = 'Onizleme' | 'Denetim';
 
@@ -254,6 +269,21 @@ export type DenetimKipi = 'Kapali' | 'Uyar' | 'Kati';
 /** Denetçi kipi ve `ayarlar.json`'ın durumu (3c Görev 7). */
 export interface DenetciDurumu {
   kip: DenetimKipi;
+  ayar_hatasi?: string;
+}
+
+/** Kullanıcının ağ izin listesindeki bir host (aşama 3 tasarımı §8.3). */
+export interface AgHostu {
+  host: string;
+  port: number;
+  ozel_ag: boolean;
+}
+
+/** Ayarlar > "Gizli dosyalar" (3e). Varsayılanlar salt okunurdur. */
+export interface GizliAyarGorunumu {
+  varsayilanlar: string[];
+  ek_kaliplar: string[];
+  gizli_sayilmayanlar: string[];
   ayar_hatasi?: string;
 }
 
@@ -434,6 +464,8 @@ export interface OnayGirdisi {
   cagri: CagriId;
   muhur: string;
   karar: OnayKarari;
+  /** Kartın önerdiği kısayolu kabul et (§9.1); yoksa `false`. */
+  kisayol?: boolean;
 }
 
 export type AnahtarNedeni = 'Yok' | 'KayitliGecersiz' | 'Degistir';

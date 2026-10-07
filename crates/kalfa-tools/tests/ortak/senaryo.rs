@@ -244,6 +244,7 @@ pub fn karar(o: &OnayOgesi, onay: bool) -> Komut {
             OnayKarari::Reddet { gerekce: None }
         },
         muhur: o.muhur.clone(),
+        kisayol: false,
     }
 }
 

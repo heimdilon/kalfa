@@ -11,7 +11,7 @@
   import Icon from '../bilesenler/Icon.svelte';
   import IconButton from '../bilesenler/IconButton.svelte';
   import IconTile from '../bilesenler/IconTile.svelte';
-  import { KIP_ADI, MODEL_PROFILI_ADI, m } from '../dil/tr';
+  import { KIP_ADI, MODEL_PROFILI_ADI, kisayolCumlesi, m } from '../dil/tr';
   import { KIPLER, type Kip } from '../ipc/tipler';
   import { AltaYapisma, kaydirmaNiyetiMi } from './altaYapisma';
   import type { AnaDurum } from './anaDurum.svelte';
@@ -148,6 +148,29 @@
       </div>
     {/if}
 
+    {#if ekran.kisayollar.length > 0}
+      <details class="izinler">
+        <summary>
+          <Icon name="key-round" size={14} />
+          {m('kisayol.liste', { sayi: ekran.kisayollar.length })}
+        </summary>
+        <p class="izin-aciklama">{m('kisayol.aciklama')}</p>
+        <ul>
+          {#each ekran.kisayollar as k (k.kimlik)}
+            <li>
+              <span>{kisayolCumlesi(k.teklif)}</span>
+              <IconButton
+                icon="x"
+                size="sm"
+                label={m('kisayol.kaldir')}
+                onclick={() => durum.kisayoluKaldir(ekran.oturum, k.kimlik)}
+              />
+            </li>
+          {/each}
+        </ul>
+      </details>
+    {/if}
+
     <div class="akis" bind:this={akis} onscroll={kaydirildi}>
       <div class="icerik" bind:this={icerik}>
         {#if ekran.daha_eski_var}
@@ -226,6 +249,36 @@
   .bilgi {
     color: var(--text-secondary);
     background: var(--surface-sunken);
+  }
+  .izinler {
+    padding: 8px 22px;
+    font: var(--type-small);
+    color: var(--text-secondary);
+    background: var(--surface-sunken);
+    border-bottom: var(--border-width) solid var(--border-subtle);
+  }
+  .izinler summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+  .izin-aciklama {
+    margin: 6px 0;
+  }
+  .izinler ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .izinler li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .izinler li span {
+    flex: 1;
+    color: var(--text-body);
   }
   .ust {
     display: flex;

@@ -312,6 +312,7 @@ fn kabuk_muhru_tarifin_her_alanina_baglidir() {
     let tarif = KabukTarifi {
         komut: "cargo test".into(),
         bicim: KabukBicimi::Program,
+        program: None,
         dizin: ".".into(),
         ag: false,
         ag_hostlari: vec![],
@@ -378,6 +379,7 @@ fn kabukta_tukenen_tek_seferlik_kosul_onayla_kapsanir() {
     let tarif = |ilk_cagri, alan_hazirligi| KabukTarifi {
         komut: "cargo test".into(),
         bicim: KabukBicimi::Program,
+        program: None,
         dizin: ".".into(),
         ag: false,
         ag_hostlari: vec![],
@@ -493,6 +495,7 @@ fn ag_hostlari_muhre_girer() {
     let tarif1 = KabukTarifi {
         komut: "cargo test".into(),
         bicim: KabukBicimi::Program,
+        program: None,
         dizin: ".".into(),
         ag: true,
         ag_hostlari: vec![],

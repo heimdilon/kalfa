@@ -25,6 +25,7 @@ use crate::izin::{
 };
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, IslemId};
+use crate::kisayol::{Kisayol, KisayolTeklifi, teklif};
 use crate::muhur::{OnayMuhru, muhur_hesapla};
 use crate::protokol::{
     AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OnayOgesi, OnaysizDegisiklikler,
@@ -59,6 +60,9 @@ struct Planlanan {
     /// yazma her kipte onay ister (aşama 3 tasarımı §5.3).
     geri_alma: bool,
     karar: Karar,
+    /// Kararı onaylıdan serbeste çeviren kısayol (aşama 3 tasarımı §9.1).
+    /// Yürütme, kısayolun hâlâ listede olduğunu denetler.
+    kisayol: Option<u64>,
 }
 
 struct CagriSonucu {
@@ -366,6 +370,14 @@ impl Oturum {
             &hazirlik,
             geri_alma,
         );
+        // Kararı yalnızca izin kipi yüzünden onaylı olan çağrıyı eşleşen
+        // kısayol serbest yapar; uyarılı karara kısayol uygulanmaz (§9.1).
+        let kisayol = kisayol_bul(&self.kisayollar, ad, &karar, &hazirlik);
+        let karar = if kisayol.is_some() {
+            Karar::Serbest
+        } else {
+            karar
+        };
         let muhur = muhur_hesapla(cagri, ad, &argumanlar, &hazirlik);
         let plan = Planlanan {
             cagri,
@@ -379,6 +391,7 @@ impl Oturum {
             kip,
             geri_alma,
             karar: karar.clone(),
+            kisayol,
         };
         Ok((plan, karar))
     }
@@ -448,6 +461,16 @@ impl Oturum {
     }
 
     async fn onay_topla(&mut self, bekleyen: Vec<(Planlanan, Vec<String>, bool)>) -> OnayToplama {
+        // Teklif yalnızca kararı uyarısız onaylı öğeye yapılır. Aynı adım
+        // kuralı plana değil buradaki uyarı listesine eklenir; ikisi de boş
+        // olmalı (§9.1).
+        let teklifler: HashMap<CagriId, KisayolTeklifi> = bekleyen
+            .iter()
+            .filter(|(_, uyarilar, yerel)| uyarilar.is_empty() && !yerel)
+            .filter_map(|(p, _, _)| {
+                teklif(p.arac.ad(), &p.hazirlik, &p.karar).map(|t| (p.cagri, t))
+            })
+            .collect();
         let ogeler: Vec<OnayOgesi> = bekleyen
             .iter()
             .map(|(p, uyarilar, yerel)| OnayOgesi {
@@ -467,6 +490,7 @@ impl Oturum {
                     .then(|| self.onaysiz_degisiklikler()),
                 geri_alinabilir: self.onay_geri_alinabilirligi(&p.hazirlik),
                 veri_cikisi: p.hazirlik.veri_cikisi,
+                kisayol: teklifler.get(&p.cagri).cloned(),
             })
             .collect();
         // Yerel iletişim kutusu komutu çekirdekten okur, webview'dan değil
@@ -507,6 +531,7 @@ impl Oturum {
                     cagri,
                     karar,
                     muhur,
+                    kisayol,
                 } => match kalan.get(&cagri).map(|p| p.muhur == muhur) {
                     None => {
                         self.hata("Bu onay artık geçerli değil; bekleyen bir işlem yok.")
@@ -520,10 +545,23 @@ impl Oturum {
                         self.hata("Bu komut yalnızca yerel pencerede onaylanabilir.")
                             .await
                     }
+                    // Çekirdek önermediği kısayolu kabul etmez; onay da geçmez,
+                    // kart açık kalır (§9.1).
+                    Some(true)
+                        if kisayol
+                            && karar == OnayKarari::Onayla
+                            && !teklifler.contains_key(&cagri) =>
+                    {
+                        self.hata("Bu işlem için bir kısayol önerilmedi; onay verilmedi.")
+                            .await
+                    }
                     Some(true) => {
                         if let Some(p) = kalan.remove(&cagri) {
                             match karar {
                                 OnayKarari::Onayla => {
+                                    if kisayol && let Some(oneri) = teklifler.get(&cagri) {
+                                        self.kisayol_ekle(oneri.clone()).await;
+                                    }
                                     self.kabuk_onaylandi(&p);
                                     t.onaylanan.push(p);
                                 }
@@ -819,12 +857,21 @@ impl Oturum {
             let kilitler = self.baglam.kilitler.clone();
             let politika = self.politika.clone();
             let siniflandirici = self.baglam.siniflandirici.clone();
+            let kisayollar = self.kisayollar.clone();
             let iptal = self.iptal.child_token();
             let cikti = CiktiGonderici::yeni(p.cagri, cikti_tx.clone());
             arac_sayaclari.insert(p.cagri, cikti.atlanan_sayaci());
             isler.push(async move {
-                let sonuc =
-                    tek_calistir(&p, &kilitler, &politika, &siniflandirici, iptal, cikti).await;
+                let sonuc = tek_calistir(
+                    &p,
+                    &kilitler,
+                    &politika,
+                    &siniflandirici,
+                    &kisayollar,
+                    iptal,
+                    cikti,
+                )
+                .await;
                 (p, sonuc)
             });
         }
@@ -1314,11 +1361,30 @@ fn onayla_kapsanan(mut taze: Hazirlik, onaylanan: &Hazirlik) -> Hazirlik {
     taze
 }
 
+/// Kararı uyarısız onaylı olan çağrıyı kapsayan kısayolun kimliği (§9.1).
+fn kisayol_bul(
+    kisayollar: &std::sync::Mutex<Vec<Kisayol>>,
+    arac: &str,
+    karar: &Karar,
+    hazirlik: &Hazirlik,
+) -> Option<u64> {
+    if !matches!(karar, Karar::Onayli { uyarilar } if uyarilar.is_empty()) {
+        return None;
+    }
+    kisayollar
+        .lock()
+        .unwrap_or_else(|z| z.into_inner())
+        .iter()
+        .find(|k| k.teklif.kapsar(arac, hazirlik))
+        .map(|k| k.kimlik)
+}
+
 async fn tek_calistir(
     p: &Planlanan,
     kilitler: &crate::kilit::KaynakKilitleri,
     politika: &AtomicU64,
     siniflandirici: &Siniflandirici,
+    kisayollar: &std::sync::Mutex<Vec<Kisayol>>,
     iptal: CancellationToken,
     cikti: CiktiGonderici,
 ) -> Result<AracCiktisi, AracHatasi> {
@@ -1363,14 +1429,28 @@ async fn tek_calistir(
             k = siniflandirici.toplu_engellemeden() => k,
         })
     };
-    if Oturum::karar(
+    let karar = Oturum::karar(
         p.kip,
         siniflandirici,
         korumalar.as_ref(),
         &taze,
         p.geri_alma,
-    ) != p.karar
-    {
+    );
+    // Kısayolla serbest olan çağrı: taze karar hâlâ uyarısız onaylı olmalı ve
+    // aynı kısayol hâlâ listede olup onu kapsamalı. Kaldırılan kısayol
+    // bekleyen çalışmayı durdurur (§9.1).
+    let gecerli = match p.kisayol {
+        Some(kimlik) => {
+            matches!(&karar, Karar::Onayli { uyarilar } if uyarilar.is_empty())
+                && kisayollar
+                    .lock()
+                    .unwrap_or_else(|z| z.into_inner())
+                    .iter()
+                    .any(|k| k.kimlik == kimlik && k.teklif.kapsar(p.arac.ad(), &taze))
+        }
+        None => karar == p.karar,
+    };
+    if !gecerli {
         return Err(AracHatasi::PolitikaDegisti);
     }
     if iptal.is_cancelled() {

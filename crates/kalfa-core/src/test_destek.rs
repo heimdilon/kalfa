@@ -512,6 +512,7 @@ impl Arac for SahteArac {
                 kabuk: Some(KabukTarifi {
                     komut: "test".into(),
                     bicim: KabukBicimi::Program,
+                    program: Some("test".into()),
                     dizin: argumanlar["yol"].as_str().unwrap_or(".").to_string(),
                     ag: argumanlar["ag"].as_bool().unwrap_or(false),
                     ag_hostlari: Vec::new(),

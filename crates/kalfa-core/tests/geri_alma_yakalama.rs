@@ -173,6 +173,7 @@ async fn proje_kipinde_buyuk_dosya_yazmasi_onay_ister() {
         cagri: ogeler[0].cagri,
         karar: OnayKarari::Onayla,
         muhur: ogeler[0].muhur.clone(),
+        kisayol: false,
     })
     .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);

@@ -1189,3 +1189,50 @@ async fn kurumsal_vekil_notu() {
         c2.icerik
     );
 }
+
+/// 3e Görev 4: kullanıcının ağ izin listesi profil özetine ve vekilin
+/// listesine girer. Liste değişince özet de değişir; bekleyen onayın mührü
+/// tutmaz (aşama 3 tasarımı §8.3).
+#[tokio::test]
+async fn kullanici_ag_listesi_profil_ozetine_ve_vekile_girer() {
+    use kalfa_sandbox::vekil::{HostKaynagi, HostKurali};
+    let d = TempDir::new().unwrap();
+    let s = Arc::new(Siniflandirici::yeni(d.path(), &[]).unwrap());
+    let alan = CalismaAlani::ac(s).unwrap();
+    let yalitici = Arc::new(KayitliYalitici::default());
+    let liste = Arc::new(std::sync::RwLock::new(Vec::<HostKurali>::new()));
+    let arac = KabukAraci::yeni(
+        alan,
+        yalitici.clone(),
+        Arc::new(SahteGuven::default()),
+        Arc::new(AtomicBool::new(true)),
+    )
+    .kullanici_ag_listesi(liste.clone());
+    let agli = if cfg!(windows) {
+        json!({"betik": "Write-Output tamam", "ag": true})
+    } else {
+        json!({"betik": "echo tamam", "ag": true})
+    };
+    let profil = |h: Hazirlik| match h.kabuk.unwrap().yalitim {
+        YalitimOzeti::Yalitimli { profil, .. } => profil,
+        diger => panic!("{diger:?}"),
+    };
+    let once = profil(arac.hazirla(&agli).await.unwrap());
+    liste.write().unwrap().push(HostKurali {
+        host: "pkg.sirket.local".into(),
+        port: 443,
+        ozel_ag: true,
+        kaynak: HostKaynagi::Kullanici,
+    });
+    let sonra = profil(arac.hazirla(&agli).await.unwrap());
+    assert_ne!(once, sonra, "liste değişince profil özeti değişir");
+
+    calistir_tam(&arac, &agli).await.unwrap();
+    let istekler = yalitici.istekler.lock().unwrap();
+    let kural = istekler
+        .last()
+        .and_then(|i| i.ag_listesi.as_ref())
+        .and_then(|l| l.bul("pkg.sirket.local", 443).cloned())
+        .expect("kullanıcı hostu vekilin listesinde");
+    assert!(kural.ozel_ag);
+}

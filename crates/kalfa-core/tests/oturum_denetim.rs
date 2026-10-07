@@ -424,6 +424,7 @@ async fn kalfa_uretimi_ve_gizli_sonuc_denetlenmez() {
             cagri: ogeler[0].cagri,
             karar: OnayKarari::Onayla,
             muhur: ogeler[0].muhur.clone(),
+            kisayol: false,
         })
         .await;
     }

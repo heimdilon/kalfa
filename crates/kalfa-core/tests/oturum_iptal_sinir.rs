@@ -151,6 +151,7 @@ async fn onay_beklerken_iptal_muhru_gecersiz_kilar() {
         cagri: ogeler[0].cagri,
         karar: OnayKarari::Onayla,
         muhur: ogeler[0].muhur.clone(),
+        kisayol: false,
     })
     .await;
     d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("artık geçerli değil")))

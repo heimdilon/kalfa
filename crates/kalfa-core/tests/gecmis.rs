@@ -221,6 +221,7 @@ async fn gercek_oturum_kaydindan_gorunum() {
                 gerekce: Some("gerek yok".into()),
             },
             muhur: onay.muhur,
+            kisayol: false,
         })
         .await;
     assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);

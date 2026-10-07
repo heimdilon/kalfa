@@ -95,6 +95,7 @@ async fn gizli_dosyanin_normal_sabit_baglantisi_her_kipte_okuma_onayi_ister() {
                     OnayKarari::Reddet { gerekce: None }
                 },
                 muhur: ogeler[0].muhur.clone(),
+                kisayol: false,
             })
             .await;
             assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -142,6 +143,7 @@ async fn diff_gosterilmeyen_gorunmez_icerik_yine_onay_ister() {
                     cagri: ogeler[0].cagri,
                     karar: OnayKarari::Reddet { gerekce: None },
                     muhur: ogeler[0].muhur.clone(),
+                    kisayol: false,
                 })
                 .await;
                 assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -227,6 +229,7 @@ async fn gizli_duzenlemenin_icerik_hatalari_onaydan_once_modele_gitmez() {
                 cagri: ogeler[0].cagri,
                 karar: OnayKarari::Reddet { gerekce: None },
                 muhur: ogeler[0].muhur.clone(),
+                kisayol: false,
             })
             .await;
             assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -265,6 +268,7 @@ async fn onayli_gizli_duzenleme_calisir_ama_degisen_icerigi_aciklamaz() {
             cagri: ogeler[0].cagri,
             karar: OnayKarari::Onayla,
             muhur: ogeler[0].muhur.clone(),
+            kisayol: false,
         })
         .await;
         assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -310,6 +314,7 @@ async fn gizli_bos_duzenleme_her_kipte_onay_ister() {
                         OnayKarari::Reddet { gerekce: None }
                     },
                     muhur: ogeler[0].muhur.clone(),
+                    kisayol: false,
                 })
                 .await;
                 assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -390,6 +395,7 @@ async fn ui_siz_tam_dongu_gercek_araclarla() {
         cagri: ogeler[0].cagri,
         karar: OnayKarari::Onayla,
         muhur: ogeler[0].muhur.clone(),
+        kisayol: false,
     })
     .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -440,6 +446,7 @@ async fn disari_cikma_ve_gizli_dosya_uctan_uca() {
         cagri: ogeler[0].cagri,
         karar: OnayKarari::Reddet { gerekce: None },
         muhur: ogeler[0].muhur.clone(),
+        kisayol: false,
     })
     .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -485,6 +492,7 @@ async fn gizli_dizin_cocugunun_okumasi_her_kipte_onay_ister() {
             cagri: ogeler[0].cagri,
             karar: OnayKarari::Reddet { gerekce: None },
             muhur: ogeler[0].muhur.clone(),
+            kisayol: false,
         })
         .await;
         assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -783,6 +791,7 @@ async fn ayni_yanittaki_yazmalar_tek_cozumle_de_kanca_dizinini_korur() {
         cagri: ogeler[0].cagri,
         karar: OnayKarari::Onayla,
         muhur: ogeler[0].muhur.clone(),
+        kisayol: false,
     })
     .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -817,6 +826,7 @@ async fn onay_beklerken_kanca_dizini_olan_hedef_eski_onayla_yazilmaz() {
         cagri: ogeler[0].cagri,
         karar: OnayKarari::Onayla,
         muhur: ogeler[0].muhur.clone(),
+        kisayol: false,
     })
     .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);

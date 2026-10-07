@@ -19,6 +19,7 @@
   import * as ipc from '../ipc/ana';
   import type { YalitimCalismaAlani } from '../ipc/tipler';
   import type { AnaDurum } from './anaDurum.svelte';
+  import GuvenlikAyarlari from './GuvenlikAyarlari.svelte';
   import { boyutMetni } from './geriAlma';
 
   let { durum }: { durum: AnaDurum } = $props();
@@ -224,6 +225,8 @@
         {/if}
       </Card>
     {/if}
+
+    <GuvenlikAyarlari {durum} />
 
     <Card title={m('ayarlar.geri_alma')} icon="rotate-ccw">
       <p class="aciklama">{m('ayarlar.geri_alma.aciklama')}</p>

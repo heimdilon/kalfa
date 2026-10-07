@@ -37,6 +37,14 @@ pub enum Komut {
         cagri: CagriId,
         karar: OnayKarari,
         muhur: OnayMuhru,
+        /// Kartın önerdiği kısayolu kabul et (aşama 3 tasarımı §9.1).
+        /// Webview kapsamı gönderemez; çekirdek önermediği kısayolu kabul etmez.
+        #[serde(default)]
+        kisayol: bool,
+    },
+    /// Oturumdaki bir kısayolu kaldırır (§9.1).
+    KisayoluKaldir {
+        kimlik: u64,
     },
     /// Yerel iletişim kutusunda onaylanan işlem (aşama 2 tasarımı §5.2).
     /// Yalnızca `kalfa-uygulama` gönderir; webview gönderemez. Yerel onay
@@ -116,6 +124,10 @@ pub struct OnayOgesi {
     /// Onay kartında "Veri çıkışı" satırı (aşama 3b, tasarım §9.3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub veri_cikisi: Option<VeriCikisi>,
+    /// "Bu oturumda izin ver" teklifi (aşama 3 tasarımı §9.1); yalnızca
+    /// uygun öğede. Mühre girmez.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kisayol: Option<crate::kisayol::KisayolTeklifi>,
 }
 
 /// Onay kartında "Veri çıkışı" satırı (aşama 3b, tasarım §9.3).
@@ -273,6 +285,11 @@ pub enum Olay {
     /// dosyadan geldiği için denetçiye gönderilmedi (aşama 3c, Görev 4 ve 8).
     DenetimAtlandi {
         cagri: CagriId,
+    },
+    /// Oturumdaki kısayolların güncel listesi (aşama 3 tasarımı §9.1).
+    /// Kayda yazılmaz.
+    Kisayollar {
+        liste: Vec<crate::kisayol::Kisayol>,
     },
     /// Güvenlik denetçisinin sonucu (aşama 3c).
     DenetimSonucu {

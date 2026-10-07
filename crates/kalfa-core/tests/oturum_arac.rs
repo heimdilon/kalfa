@@ -258,6 +258,7 @@ async fn ikinci_hazirlik_beklerken_kip_degisirse_calistirilmaz() {
         cagri: kalfa_core::kimlik::CagriId::yeni(),
         karar: OnayKarari::Onayla,
         muhur: OnayMuhru("eski".into()),
+        kisayol: false,
     })
     .await;
     d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("artık geçerli değil")))
@@ -309,6 +310,7 @@ fn onayla(o: &OnayOgesi) -> Komut {
         cagri: o.cagri,
         karar: OnayKarari::Onayla,
         muhur: o.muhur.clone(),
+        kisayol: false,
     }
 }
 
@@ -410,6 +412,7 @@ async fn yanlis_muhur_reddedilir_dogrusu_kabul_edilir() {
         cagri: ogeler[0].cagri,
         karar: OnayKarari::Onayla,
         muhur: OnayMuhru("sahte".into()),
+        kisayol: false,
     })
     .await;
     d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("mührü eşleşmedi")))
@@ -436,6 +439,7 @@ async fn reddetme_gerekcesi_modele_gider() {
             gerekce: Some("gerek yok".into()),
         },
         muhur: ogeler[0].muhur.clone(),
+        kisayol: false,
     })
     .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -482,6 +486,7 @@ async fn proje_kipinde_commondir_yazmasi_onaya_cikar() {
         cagri: ogeler[0].cagri,
         karar: OnayKarari::Reddet { gerekce: None },
         muhur: ogeler[0].muhur.clone(),
+        kisayol: false,
     })
     .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);

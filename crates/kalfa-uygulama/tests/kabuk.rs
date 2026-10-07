@@ -107,6 +107,7 @@ fn onayla(o: &OnayOgesi) -> OnayGirdisi {
         cagri: o.cagri,
         muhur: o.muhur.clone(),
         karar: OnayKarari::Onayla,
+        kisayol: false,
     }
 }
 

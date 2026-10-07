@@ -7,10 +7,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
 use kalfa_core::denetci::DenetimKipi;
+use kalfa_core::izin::{
+    AZAMI_KALIP, GizliAyarlari, KalipHatasi, VARSAYILAN_GIZLI_KALIPLAR, kalip_dogrula,
+};
+use kalfa_sandbox::vekil::{HostKaynagi, HostKurali, ag_hostu_coz};
 use serde::{Deserialize, Serialize};
 
 use crate::hata::KomutHatasi;
-use crate::sozlesme::DenetciDurumu;
+use crate::sozlesme::{AgHostu, DenetciDurumu, GizliAyarGorunumu};
 use crate::uygulama::Uygulama;
 
 const DOSYA_ADI: &str = "ayarlar.json";
@@ -20,10 +24,28 @@ const DUSURME_ONAYI: &str = "Denetçi kipini düşürmek, dış kaynaklı araç 
 Denetçi izinlerin yerine geçmez, ama içeriğe gömülü talimatları yakalayabilir. Devam etmek \
 istiyor musunuz?";
 
+const EK_KALIP_KALDIRMA: &str = "Bu kalıbı kaldırınca ona uyan dosyalar gizli sayılmayabilir: \
+onaysız okunup EVREN'e gidebilir ve yalıtımda okunabilir.";
+
+/// Aşama 3 tasarımı §9.2'deki cümle.
+const ISTISNA_EKLEME: &str = "Bu kalıba uyan dosyalar gizli sayılmayacak: onaysız okunup \
+EVREN'e gidebilir ve yalıtımda okunabilir.";
+
+const OZEL_AG: &str = "Bu host özel ağ adreslerine (yerel ağ, şirket ağı) de bağlanabilecek.";
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct Dosya {
     #[serde(default)]
     denetci_kipi: DenetimKipi,
+    /// Kullanıcının ek gizli kalıpları (3e).
+    #[serde(default)]
+    ek_gizli_kaliplar: Vec<String>,
+    /// Gizli sayılmayanlar (K7).
+    #[serde(default)]
+    gizli_sayilmayanlar: Vec<String>,
+    /// Ağlı komutların kullanıcı listesi (3d, §8.3).
+    #[serde(default)]
+    ag_izin_listesi: Vec<AgHostu>,
 }
 
 pub struct Ayarlar {
@@ -33,6 +55,23 @@ pub struct Ayarlar {
     hata: Mutex<Option<String>>,
     /// Açık oturumlar her turun başında buradan okur (Görev 7).
     denetci_kipi: Arc<RwLock<DenetimKipi>>,
+    /// Sınıflandırıcıların paylaştığı gizli ayarları (3e); değişiklik açık
+    /// oturumlarda ve yalıtımda hemen geçerli.
+    gizli: Arc<GizliAyarlari>,
+    /// Kabuk aracının okuduğu kullanıcı ağ listesi (3e).
+    ag_listesi: Arc<RwLock<Vec<HostKurali>>>,
+}
+
+fn kurallar(liste: &[AgHostu]) -> Vec<HostKurali> {
+    liste
+        .iter()
+        .map(|h| HostKurali {
+            host: h.host.clone(),
+            port: h.port,
+            ozel_ag: h.ozel_ag,
+            kaynak: HostKaynagi::Kullanici,
+        })
+        .collect()
 }
 
 impl Ayarlar {
@@ -58,12 +97,94 @@ impl Ayarlar {
                 ),
             },
         };
+        let (mut dosya, mut hata) = (dosya, hata);
+        // Elle bozulmuş kalıp bütün dosyayı düşürmez; yalnızca geçersiz
+        // kalıplar ayıklanır ve neden Ayarlar'da görünür. Bütün listeyi
+        // atmak kullanıcının geçerli ek kalıplarını da sessizce kapatırdı.
+        let mut gecersiz = Vec::new();
+        for (liste, istisna) in [
+            (&mut dosya.ek_gizli_kaliplar, false),
+            (&mut dosya.gizli_sayilmayanlar, true),
+        ] {
+            liste.retain(|k| match kalip_dogrula(k, istisna) {
+                Ok(()) => true,
+                Err(e) => {
+                    gecersiz.push(e.to_string());
+                    false
+                }
+            });
+            if liste.len() > AZAMI_KALIP {
+                gecersiz.push(KalipHatasi::CokKalip.to_string());
+                liste.truncate(AZAMI_KALIP);
+            }
+        }
+        if !gecersiz.is_empty() {
+            hata = Some(format!(
+                "ayarlar.json'daki bazı gizli kalıplar geçersiz; bunlar kullanılmıyor: {}",
+                gecersiz.join(" ")
+            ));
+        }
+        let gizli = match GizliAyarlari::yeni(&dosya.ek_gizli_kaliplar, &dosya.gizli_sayilmayanlar)
+        {
+            Ok(g) => g,
+            Err(e) => {
+                hata = Some(format!(
+                    "ayarlar.json'daki gizli kalıplar geçersiz ({e}); bu kalıplar kullanılmıyor."
+                ));
+                dosya.ek_gizli_kaliplar.clear();
+                dosya.gizli_sayilmayanlar.clear();
+                GizliAyarlari::default()
+            }
+        };
+        let gecerli = dosya
+            .ag_izin_listesi
+            .iter()
+            .all(|h| ag_hostu_coz(&h.host).is_ok());
+        if !gecerli {
+            hata = Some(
+                "ayarlar.json'daki ağ izin listesi geçersiz; liste kullanılmıyor.".to_string(),
+            );
+            dosya.ag_izin_listesi.clear();
+        }
         Self {
             yol,
             denetci_kipi: Arc::new(RwLock::new(dosya.denetci_kipi)),
+            gizli: Arc::new(gizli),
+            ag_listesi: Arc::new(RwLock::new(kurallar(&dosya.ag_izin_listesi))),
             dosya: Mutex::new(dosya),
             hata: Mutex::new(hata),
         }
+    }
+
+    /// Sınıflandırıcıların paylaştığı gizli ayarları.
+    pub fn gizli_ayarlari(&self) -> Arc<GizliAyarlari> {
+        self.gizli.clone()
+    }
+
+    /// Kabuk aracının okuduğu kullanıcı ağ listesi.
+    pub fn ag_listesi(&self) -> Arc<RwLock<Vec<HostKurali>>> {
+        self.ag_listesi.clone()
+    }
+
+    fn hata_metni(&self) -> Option<String> {
+        self.hata.lock().unwrap_or_else(|z| z.into_inner()).clone()
+    }
+
+    pub fn gizli_gorunumu(&self) -> GizliAyarGorunumu {
+        let d = self.kilit();
+        GizliAyarGorunumu {
+            varsayilanlar: VARSAYILAN_GIZLI_KALIPLAR
+                .iter()
+                .map(|k| k.to_string())
+                .collect(),
+            ek_kaliplar: d.ek_gizli_kaliplar.clone(),
+            gizli_sayilmayanlar: d.gizli_sayilmayanlar.clone(),
+            ayar_hatasi: self.hata_metni(),
+        }
+    }
+
+    pub fn ag_izin_listesi(&self) -> Vec<AgHostu> {
+        self.kilit().ag_izin_listesi.clone()
     }
 
     fn kilit(&self) -> std::sync::MutexGuard<'_, Dosya> {
@@ -78,7 +199,7 @@ impl Ayarlar {
     pub fn denetci_durumu(&self) -> DenetciDurumu {
         DenetciDurumu {
             kip: self.kilit().denetci_kipi,
-            ayar_hatasi: self.hata.lock().unwrap_or_else(|z| z.into_inner()).clone(),
+            ayar_hatasi: self.hata_metni(),
         }
     }
 
@@ -87,6 +208,10 @@ impl Ayarlar {
         let mut dosya = self.kilit();
         let mut yeni = dosya.clone();
         is(&mut yeni);
+        // Gizli listeler yazılmadan önce doğrulanır: geçersizse dosya da
+        // bellek de değişmez.
+        GizliAyarlari::yeni(&yeni.ek_gizli_kaliplar, &yeni.gizli_sayilmayanlar)
+            .map_err(|e| KomutHatasi::gecersiz(e.to_string()))?;
         let metin = serde_json::to_vec_pretty(&yeni).map_err(|e| KomutHatasi::ic(e.to_string()))?;
         if let Some(ust) = self.yol.parent() {
             std::fs::create_dir_all(ust)?;
@@ -95,6 +220,11 @@ impl Ayarlar {
         std::fs::write(&gecici, metin)?;
         std::fs::rename(&gecici, &self.yol)?;
         *self.denetci_kipi.write().unwrap_or_else(|z| z.into_inner()) = yeni.denetci_kipi;
+        self.gizli
+            .degistir(&yeni.ek_gizli_kaliplar, &yeni.gizli_sayilmayanlar)
+            .map_err(|e| KomutHatasi::gecersiz(e.to_string()))?;
+        *self.ag_listesi.write().unwrap_or_else(|z| z.into_inner()) =
+            kurallar(&yeni.ag_izin_listesi);
         *dosya = yeni;
         *self.hata.lock().unwrap_or_else(|z| z.into_inner()) = None;
         Ok(())
@@ -133,4 +263,139 @@ impl Uygulama {
         self.ayarlar.degistir(|d| d.denetci_kipi = kip)?;
         Ok(self.ayarlar.denetci_durumu())
     }
+
+    pub fn gizli_ayarlari(&self) -> GizliAyarGorunumu {
+        self.ayarlar.gizli_gorunumu()
+    }
+
+    /// Ek gizli kalıp eklemek onaysızdır: yalnızca sıkılaştırır (§9.2).
+    pub async fn ek_gizli_kalip_ekle(
+        &self,
+        kalip: String,
+    ) -> Result<GizliAyarGorunumu, KomutHatasi> {
+        let k = kalip_duzelt(&kalip, false)?;
+        self.ayarlar.degistir(|d| {
+            if !d.ek_gizli_kaliplar.contains(&k) {
+                d.ek_gizli_kaliplar.push(k);
+            }
+        })?;
+        Ok(self.ayarlar.gizli_gorunumu())
+    }
+
+    /// Kaldırmak yerel pencerede onaylanır; vazgeçilirse değişmez.
+    pub async fn ek_gizli_kalip_kaldir(
+        &self,
+        kalip: String,
+    ) -> Result<GizliAyarGorunumu, KomutHatasi> {
+        let k = kalip.trim().replace('\\', "/");
+        if !self.ayarlar.kilit().ek_gizli_kaliplar.contains(&k) {
+            return Ok(self.ayarlar.gizli_gorunumu());
+        }
+        let metin = format!("`{k}`\n\n{EK_KALIP_KALDIRMA}");
+        if !self
+            .iletisim
+            .onayla("Ek gizli kalıbı kaldır", &metin, "Kaldır", "Vazgeç")
+            .await
+        {
+            return Ok(self.ayarlar.gizli_gorunumu());
+        }
+        self.ayarlar
+            .degistir(|d| d.ek_gizli_kaliplar.retain(|x| x != &k))?;
+        Ok(self.ayarlar.gizli_gorunumu())
+    }
+
+    /// İstisna eklemek yerel pencerede onaylanır (K7).
+    pub async fn gizli_sayilmayan_ekle(
+        &self,
+        kalip: String,
+    ) -> Result<GizliAyarGorunumu, KomutHatasi> {
+        let k = kalip_duzelt(&kalip, true)?;
+        if self.ayarlar.kilit().gizli_sayilmayanlar.contains(&k) {
+            return Ok(self.ayarlar.gizli_gorunumu());
+        }
+        let metin = format!("`{k}`\n\n{ISTISNA_EKLEME}");
+        if !self
+            .iletisim
+            .onayla("Gizli sayılmayanlara ekle", &metin, "Ekle", "Vazgeç")
+            .await
+        {
+            return Ok(self.ayarlar.gizli_gorunumu());
+        }
+        self.ayarlar.degistir(|d| {
+            if !d.gizli_sayilmayanlar.contains(&k) {
+                d.gizli_sayilmayanlar.push(k);
+            }
+        })?;
+        Ok(self.ayarlar.gizli_gorunumu())
+    }
+
+    /// İstisnayı kaldırmak onaysızdır: yalnızca sıkılaştırır.
+    pub async fn gizli_sayilmayan_kaldir(
+        &self,
+        kalip: String,
+    ) -> Result<GizliAyarGorunumu, KomutHatasi> {
+        let k = kalip.trim().replace('\\', "/");
+        self.ayarlar
+            .degistir(|d| d.gizli_sayilmayanlar.retain(|x| x != &k))?;
+        Ok(self.ayarlar.gizli_gorunumu())
+    }
+
+    pub fn ag_izin_listesi(&self) -> Vec<AgHostu> {
+        self.ayarlar.ag_izin_listesi()
+    }
+
+    /// Host eklemek yerel pencerede onaylanır (§8.3). Liste değişince profil
+    /// özeti değişir; bekleyen onaylar geçersizleşir.
+    pub async fn ag_hostu_ekle(
+        &self,
+        host: String,
+        ozel_ag: bool,
+    ) -> Result<Vec<AgHostu>, KomutHatasi> {
+        let (h, port) = ag_hostu_coz(&host).map_err(|e| KomutHatasi::gecersiz(e.to_string()))?;
+        let yeni = AgHostu {
+            host: h.clone(),
+            port,
+            ozel_ag,
+        };
+        if self.ayarlar.kilit().ag_izin_listesi.contains(&yeni) {
+            return Ok(self.ayarlar.ag_izin_listesi());
+        }
+        let mut metin = format!(
+            "`{h}:{port}` ağlı komutların izin listesine eklenecek: yalıtımlı komutlar bu \
+             adrese vekil üzerinden bağlanabilecek."
+        );
+        if ozel_ag {
+            metin.push_str("\n\n");
+            metin.push_str(OZEL_AG);
+        }
+        if !self
+            .iletisim
+            .onayla("Ağ izin listesine ekle", &metin, "Ekle", "Vazgeç")
+            .await
+        {
+            return Ok(self.ayarlar.ag_izin_listesi());
+        }
+        self.ayarlar.degistir(|d| {
+            d.ag_izin_listesi
+                .retain(|x| !(x.host == yeni.host && x.port == yeni.port));
+            d.ag_izin_listesi.push(yeni);
+        })?;
+        Ok(self.ayarlar.ag_izin_listesi())
+    }
+
+    /// Host kaldırmak onaysızdır: yalnızca sıkılaştırır.
+    pub async fn ag_hostu_kaldir(&self, host: String) -> Result<Vec<AgHostu>, KomutHatasi> {
+        let (h, port) = ag_hostu_coz(&host).map_err(|e| KomutHatasi::gecersiz(e.to_string()))?;
+        self.ayarlar.degistir(|d| {
+            d.ag_izin_listesi
+                .retain(|x| !(x.host == h && x.port == port));
+        })?;
+        Ok(self.ayarlar.ag_izin_listesi())
+    }
+}
+
+/// Kalıbı doğrular ve biçimini düzeltir (ters bölü, boşluklar).
+fn kalip_duzelt(kalip: &str, istisna: bool) -> Result<String, KomutHatasi> {
+    kalip_dogrula(kalip, istisna).map_err(|e| KomutHatasi::gecersiz(e.to_string()))?;
+    Ok(kalip.trim().replace('\\', "/"))
 }

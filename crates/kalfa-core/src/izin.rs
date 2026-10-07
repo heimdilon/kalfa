@@ -1,6 +1,7 @@
 //! İzin motoru (spec §7.2–§7.5). Bütün izin kararları buradan geçer.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
@@ -371,12 +372,136 @@ fn kalip_kumesi(kaliplar: impl Iterator<Item = String>) -> Result<GlobSet, globs
     kurucu.build()
 }
 
+/// Bir kalıp listesinde en çok bu kadar kalıp olur (3e).
+pub const AZAMI_KALIP: usize = 200;
+/// Bir kalıbın en uzun hâli (karakter).
+pub const AZAMI_KALIP_UZUNLUGU: usize = 256;
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum KalipHatasi {
+    #[error("Kalıp boş olamaz.")]
+    Bos,
+    #[error("`{0}`: kalıp çalışma alanına göre yazılır; mutlak yol olamaz.")]
+    Mutlak(String),
+    #[error("`{0}`: kalıp `..` içeremez.")]
+    UstDizin(String),
+    #[error("`{0}`: kalıp en çok {AZAMI_KALIP_UZUNLUGU} karakter olabilir.")]
+    Uzun(String),
+    #[error("`{0}`: yalnızca jokerden oluşan bir istisna bütün dosyaları açardı.")]
+    YalnizJoker(String),
+    #[error("Bir listede en çok {AZAMI_KALIP} kalıp olabilir.")]
+    CokKalip,
+    #[error("`{0}`: geçersiz kalıp ({1}).")]
+    Gecersiz(String, String),
+}
+
+/// Kullanıcının bir kalıbını doğrular (3e planı, Global Constraints).
+/// `istisna`: gizli sayılmayanlar listesi için; yalnızca jokerden oluşan
+/// istisna reddedilir.
+pub fn kalip_dogrula(k: &str, istisna: bool) -> Result<(), KalipHatasi> {
+    let k = k.trim();
+    if k.is_empty() {
+        return Err(KalipHatasi::Bos);
+    }
+    if k.chars().count() > AZAMI_KALIP_UZUNLUGU {
+        return Err(KalipHatasi::Uzun(k.to_string()));
+    }
+    let duz = k.replace('\\', "/");
+    let bayt = duz.as_bytes();
+    if duz.starts_with('/') || (bayt.len() >= 2 && bayt[1] == b':') {
+        return Err(KalipHatasi::Mutlak(k.to_string()));
+    }
+    if duz.split('/').any(|p| p == "..") {
+        return Err(KalipHatasi::UstDizin(k.to_string()));
+    }
+    if istisna && duz.chars().all(|c| matches!(c, '*' | '?' | '.' | '/')) {
+        return Err(KalipHatasi::YalnizJoker(k.to_string()));
+    }
+    kalip_kumesi(std::iter::once(duz))
+        .map(|_| ())
+        .map_err(|e| KalipHatasi::Gecersiz(k.to_string(), e.kind().to_string()))
+}
+
+#[derive(Debug, Default)]
+struct GizliKumeleri {
+    ek_kaliplar: Vec<String>,
+    istisnalar: Vec<String>,
+    ek: GlobSet,
+    istisna: GlobSet,
+}
+
+/// Kullanıcının ek gizli kalıpları ve gizli sayılmayanları (aşama 3
+/// tasarımı §9.2, K7). Uygulama genelinde paylaşılır; değişiklik açık
+/// oturumlarda ve yalıtımda hemen geçerlidir. Varsayılan kalıplar burada
+/// değildir ve kapatılamaz.
+#[derive(Debug, Default)]
+pub struct GizliAyarlari {
+    ic: RwLock<GizliKumeleri>,
+}
+
+impl GizliAyarlari {
+    pub fn yeni(ek: &[String], istisna: &[String]) -> Result<Self, KalipHatasi> {
+        Ok(Self {
+            ic: RwLock::new(kumeler(ek, istisna)?),
+        })
+    }
+
+    /// İki listeyi birden değiştirir. Doğrulama geçmezse eski hâl kalır.
+    pub fn degistir(&self, ek: &[String], istisna: &[String]) -> Result<(), KalipHatasi> {
+        let yeni = kumeler(ek, istisna)?;
+        *self.ic.write().unwrap_or_else(|z| z.into_inner()) = yeni;
+        Ok(())
+    }
+
+    pub fn ek_kaliplar(&self) -> Vec<String> {
+        self.ic
+            .read()
+            .unwrap_or_else(|z| z.into_inner())
+            .ek_kaliplar
+            .clone()
+    }
+
+    pub fn istisnalar(&self) -> Vec<String> {
+        self.ic
+            .read()
+            .unwrap_or_else(|z| z.into_inner())
+            .istisnalar
+            .clone()
+    }
+}
+
+fn kumeler(ek: &[String], istisna: &[String]) -> Result<GizliKumeleri, KalipHatasi> {
+    if ek.len() > AZAMI_KALIP || istisna.len() > AZAMI_KALIP {
+        return Err(KalipHatasi::CokKalip);
+    }
+    let duzelt = |l: &[String], istisna: bool| -> Result<Vec<String>, KalipHatasi> {
+        l.iter()
+            .map(|k| {
+                kalip_dogrula(k, istisna)?;
+                Ok(k.trim().replace('\\', "/"))
+            })
+            .collect()
+    };
+    let ek_kaliplar = duzelt(ek, false)?;
+    let istisnalar = duzelt(istisna, true)?;
+    let hata = |e: globset::Error| KalipHatasi::Gecersiz(String::new(), e.kind().to_string());
+    Ok(GizliKumeleri {
+        ek: kalip_kumesi(ek_kaliplar.iter().cloned()).map_err(hata)?,
+        istisna: kalip_kumesi(istisnalar.iter().cloned()).map_err(hata)?,
+        ek_kaliplar,
+        istisnalar,
+    })
+}
+
 /// Bir yolun sınıfını (gizli / korumalı / yapılandırma) belirler.
 #[derive(Debug)]
 pub struct Siniflandirici {
     kok: PathBuf,
     gizli: GlobSet,
     yapilandirma: GlobSet,
+    /// Kullanıcının ek kalıpları ve istisnaları (3e); her sınıflandırmada
+    /// okunur.
+    ayarlar: Arc<GizliAyarlari>,
 }
 
 impl Siniflandirici {
@@ -396,6 +521,19 @@ impl Siniflandirici {
             kok: kok.into(),
             gizli,
             yapilandirma,
+            ayarlar: Arc::default(),
+        })
+    }
+
+    /// Kullanıcının paylaşılan gizli ayarlarıyla (3e). Ayarlar değişince
+    /// sınıflandırıcı yeniden kurulmaz.
+    pub fn yeni_ayarla(
+        kok: impl Into<PathBuf>,
+        ayarlar: Arc<GizliAyarlari>,
+    ) -> Result<Self, globset::Error> {
+        Ok(Self {
+            ayarlar,
+            ..Self::yeni(kok, &[])?
         })
     }
 
@@ -418,14 +556,20 @@ impl Siniflandirici {
 
     /// Bağımlılık dizinlerinin altındaki yollar gizli sayılmaz; tarama yine de
     /// oralara iner ve gizli dosyaların hard link'lerini bulur.
+    /// Yolun kendisi ya da bir üst dizini gizli mi? Her aday ayrı
+    /// değerlendirilir: bir gizli kalıba (varsayılan ya da ek) uyup hiçbir
+    /// istisnaya uymuyorsa yol gizlidir. Dosyaya verilen istisna gizli üst
+    /// dizini açmaz (3e planı, güvenlik serisinden sonra).
     pub fn gizli_mi(&self, yol: &CalismaYolu) -> bool {
         if bagimlilik_dizininde_mi(yol) {
             return false;
         }
+        let ayar = self.ayarlar.ic.read().unwrap_or_else(|z| z.into_inner());
         // Gizli bir dizinin adı, altındaki normal dosya adıyla kaybolmaz.
         let mut aday = yol.as_str();
         loop {
-            if self.gizli.is_match(aday) {
+            if (self.gizli.is_match(aday) || ayar.ek.is_match(aday)) && !ayar.istisna.is_match(aday)
+            {
                 return true;
             }
             match aday.rsplit_once('/') {

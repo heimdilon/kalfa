@@ -344,6 +344,14 @@ impl Uygulama {
         Ok(())
     }
 
+    /// Oturumdaki bir "bu oturumda izin ver" kısayolunu kaldırır (3e).
+    pub async fn kisayolu_kaldir(&self, oturum: OturumId, kimlik: u64) -> Result<(), KomutHatasi> {
+        self.tutamac(oturum)?
+            .gonder(Komut::KisayoluKaldir { kimlik })
+            .await?;
+        Ok(())
+    }
+
     /// Göndermeden önce göster kararını iletir (aşama 3b).
     pub async fn gonderim_karari(
         &self,
@@ -460,11 +468,13 @@ impl Uygulama {
                         gerekce: Some("Kullanıcı yerel pencerede vazgeçti.".into()),
                     },
                     muhur: o.muhur.clone(),
+                    kisayol: false,
                 },
                 None => Komut::AracOnayi {
                     cagri: k.cagri,
                     karar: k.karar,
                     muhur: k.muhur,
+                    kisayol: k.kisayol,
                 },
             };
             tutamac.gonder(komut).await?;
@@ -714,7 +724,9 @@ impl Uygulama {
 
     /// Çalışma alanının araçları ve ortak kilitleriyle oturum bağlamı.
     pub(crate) fn baglam(&self, kok: &Path) -> Result<OturumBaglami, KomutHatasi> {
-        let siniflandirici = Arc::new(Siniflandirici::yeni(kok, &[]).map_err(ic_hata)?);
+        let siniflandirici = Arc::new(
+            Siniflandirici::yeni_ayarla(kok, self.ayarlar.gizli_ayarlari()).map_err(ic_hata)?,
+        );
         let alan = AracAlani::ac(siniflandirici.clone())?;
         let guven = Arc::new(AlanGuveni {
             kayit: self.alanlar.clone(),
@@ -722,12 +734,15 @@ impl Uygulama {
         });
         let mut araclar = varsayilan_araclar(alan.clone());
         let geri_yukleyici: Arc<dyn GeriYukleyici> = alan.clone();
-        araclar.push(Arc::new(KabukAraci::yeni(
-            alan,
-            self.yalitici.clone(),
-            guven,
-            self.yalitim_ayarlari.clone(),
-        )));
+        araclar.push(Arc::new(
+            KabukAraci::yeni(
+                alan,
+                self.yalitici.clone(),
+                guven,
+                self.yalitim_ayarlari.clone(),
+            )
+            .kullanici_ag_listesi(self.ayarlar.ag_listesi()),
+        ));
         let araclar = Arc::new(AracKayitDefteri::yeni(araclar).map_err(ic_hata)?);
         Ok(OturumBaglami {
             saglayici: self.evren.clone(),

@@ -66,6 +66,7 @@ pub struct KabukAraci {
     yalitici: Arc<dyn Yalitici>,
     guven: Arc<dyn KabukGuveni>,
     izin: Arc<dyn YalitimsizIzni>,
+    kullanici_ag: Arc<std::sync::RwLock<Vec<kalfa_sandbox::vekil::HostKurali>>>,
 }
 
 impl KabukAraci {
@@ -80,7 +81,32 @@ impl KabukAraci {
             yalitici,
             guven,
             izin,
+            kullanici_ag: Arc::default(),
         }
+    }
+
+    /// Kullanıcının ağ izin listesi (aşama 3 tasarımı §8.3; 3e Görev 4).
+    /// Her hazırlıkta ve çalıştırmada okunur: liste değişince profil özeti
+    /// ve mühür değişir, bekleyen onay geçersizleşir.
+    pub fn kullanici_ag_listesi(
+        mut self,
+        liste: Arc<std::sync::RwLock<Vec<kalfa_sandbox::vekil::HostKurali>>>,
+    ) -> Self {
+        self.kullanici_ag = liste;
+        self
+    }
+
+    fn ag_izin_listesi(&self, ag_hostlari: &[String]) -> kalfa_sandbox::vekil::IzinListesi {
+        let cagri: Vec<(String, u16)> = ag_hostlari
+            .iter()
+            .filter_map(|s| kalfa_sandbox::vekil::ag_hostu_coz(s).ok())
+            .collect();
+        let kullanici = self
+            .kullanici_ag
+            .read()
+            .unwrap_or_else(|z| z.into_inner())
+            .clone();
+        kalfa_sandbox::vekil::IzinListesi::yeni(&kullanici, &cagri)
     }
 }
 
@@ -519,24 +545,18 @@ impl Arac for KabukAraci {
 
     async fn hazirla(&self, a: &Value) -> Result<Hazirlik, AracHatasi> {
         let istek = self.coz(a)?;
-        let bicim = match istek.komut {
-            KomutBicimi::Program { .. } => KabukBicimi::Program,
-            KomutBicimi::Betik { .. } => KabukBicimi::Betik {
-                yorumlayici: program::yorumlayici_adi().to_string(),
-            },
+        let (bicim, program_adi) = match &istek.komut {
+            KomutBicimi::Program { program, .. } => (KabukBicimi::Program, Some(program.clone())),
+            KomutBicimi::Betik { .. } => (
+                KabukBicimi::Betik {
+                    yorumlayici: program::yorumlayici_adi().to_string(),
+                },
+                None,
+            ),
         };
-        let (_, liste_ozeti) = if istek.ag {
-            let cagri: Vec<(String, u16)> = istek
-                .ag_hostlari
-                .iter()
-                .filter_map(|s| kalfa_sandbox::vekil::ag_hostu_coz(s).ok())
-                .collect();
-            let l = kalfa_sandbox::vekil::IzinListesi::yeni(&[], &cagri);
-            let ozet = l.ozet();
-            (Some(l), Some(ozet))
-        } else {
-            (None, None)
-        };
+        let liste_ozeti = istek
+            .ag
+            .then(|| self.ag_izin_listesi(&istek.ag_hostlari).ozet());
         let yalitim = self.yalitim_ozeti(istek.ag, liste_ozeti.as_deref());
         if !yalitim.yalitimli_mi() && !self.izin.izinli_mi() {
             return Err(gecersiz(YALITIMSIZ_KAPALI));
@@ -551,6 +571,7 @@ impl Arac for KabukAraci {
             kabuk: Some(KabukTarifi {
                 komut: istek.gosterim,
                 bicim,
+                program: program_adi,
                 dizin: istek
                     .dizin
                     .as_ref()
@@ -629,16 +650,7 @@ impl Arac for KabukAraci {
         {
             *program = b.kok.join(goreli).display().to_string();
         }
-        let ag_listesi = if istek.ag {
-            let cagri: Vec<(String, u16)> = istek
-                .ag_hostlari
-                .iter()
-                .filter_map(|s| kalfa_sandbox::vekil::ag_hostu_coz(s).ok())
-                .collect();
-            Some(kalfa_sandbox::vekil::IzinListesi::yeni(&[], &cagri))
-        } else {
-            None
-        };
+        let ag_listesi = istek.ag.then(|| self.ag_izin_listesi(&istek.ag_hostlari));
         let calistirma = CalistirmaIstegi {
             komut,
             dizin,

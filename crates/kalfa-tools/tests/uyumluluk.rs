@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use kalfa_core::arac::{Arac, AracHatasi, CiktiGonderici};
-use kalfa_core::izin::Siniflandirici;
+use kalfa_core::izin::{GizliAyarlari, Siniflandirici};
 #[cfg(windows)]
 use kalfa_sandbox::GitKimligi;
 #[cfg(target_os = "linux")]
@@ -157,6 +157,17 @@ fn kurgu(kok: &Path) -> Kurgu {
 
 #[cfg(target_os = "linux")]
 fn kurgu_agli(kok: &Path, cozucu: Option<Arc<dyn Cozucu>>) -> Kurgu {
+    kurgu_linux(kok, cozucu, Arc::default())
+}
+
+/// Kullanıcının gizli ayarlarıyla (3e, Görev 3).
+#[cfg(target_os = "linux")]
+fn kurgu_ayarli(kok: &Path, ayarlar: Arc<GizliAyarlari>) -> Kurgu {
+    kurgu_linux(kok, None, ayarlar)
+}
+
+#[cfg(target_os = "linux")]
+fn kurgu_linux(kok: &Path, cozucu: Option<Arc<dyn Cozucu>>, ayarlar: Arc<GizliAyarlari>) -> Kurgu {
     let veri = TempDir::new().unwrap();
     let yalitici = LinuxYalitici::yeni(
         LinuxAyari {
@@ -175,7 +186,7 @@ fn kurgu_agli(kok: &Path, cozucu: Option<Arc<dyn Cozucu>>) -> Kurgu {
         YalitimDurumu::Hazir { .. } => {}
         d => panic!("yalıtım hazır değil: {d:?}"),
     }
-    let s = Arc::new(Siniflandirici::yeni(kok, &[]).unwrap());
+    let s = Arc::new(Siniflandirici::yeni_ayarla(kok, ayarlar).unwrap());
     let alan = CalismaAlani::ac(s).unwrap();
     Kurgu {
         _veri: veri,
@@ -262,12 +273,32 @@ fn kopru_ikilisi() -> Option<PathBuf> {
 /// kurulu Kalfa'nın getirdiği Python ve Node (2d-3).
 #[cfg(windows)]
 fn kurgu_ile(kok: &Path, ek_okunur: Vec<PathBuf>, kalfa_araclari: Vec<PathBuf>) -> Kurgu {
-    kurgu_ile_ayarla(kok, ek_okunur, kalfa_araclari, None, false)
+    kurgu_ile_ayarla(kok, ek_okunur, kalfa_araclari, None, false, Arc::default())
 }
 
 #[cfg(windows)]
 fn kurgu_agli(kok: &Path, cozucu: Option<Arc<dyn Cozucu>>) -> Kurgu {
-    kurgu_ile_ayarla(kok, windows_arac_dizinleri(), Vec::new(), cozucu, true)
+    kurgu_ile_ayarla(
+        kok,
+        windows_arac_dizinleri(),
+        Vec::new(),
+        cozucu,
+        true,
+        Arc::default(),
+    )
+}
+
+/// Kullanıcının gizli ayarlarıyla (3e, Görev 3).
+#[cfg(windows)]
+fn kurgu_ayarli(kok: &Path, ayarlar: Arc<GizliAyarlari>) -> Kurgu {
+    kurgu_ile_ayarla(
+        kok,
+        windows_arac_dizinleri(),
+        Vec::new(),
+        None,
+        false,
+        ayarlar,
+    )
 }
 
 #[cfg(windows)]
@@ -277,6 +308,7 @@ fn kurgu_ile_ayarla(
     kalfa_araclari: Vec<PathBuf>,
     cozucu: Option<Arc<dyn kalfa_sandbox::vekil::Cozucu>>,
     yerel_izin: bool,
+    ayarlar: Arc<GizliAyarlari>,
 ) -> Kurgu {
     let kilit = WINDOWS_KURGU_KILIDI
         .lock()
@@ -310,7 +342,7 @@ fn kurgu_ile_ayarla(
         YalitimDurumu::Hazir { .. } => {}
         d => panic!("Windows yalıtımı hazır değil: {d:?}"),
     }
-    let s = Arc::new(Siniflandirici::yeni(kok, &[]).unwrap());
+    let s = Arc::new(Siniflandirici::yeni_ayarla(kok, ayarlar).unwrap());
     let alan = CalismaAlani::ac(s).unwrap();
     Kurgu {
         arac: KabukAraci::yeni(
@@ -1417,4 +1449,71 @@ async fn sistem_pip_a16_siniri_beklenir() {
             || cikti.contains("ERROR:"),
         "A16 sınırı bekleniyordu, çıktı:\n{cikti}"
     );
+}
+
+/// Yalıtımda dosya okuyan betik satırı; okunamazsa `okunamadi` yazar.
+fn okuma_satiri(yol: &str) -> String {
+    if cfg!(windows) {
+        format!(
+            "try {{ Get-Content -Raw -ErrorAction Stop -LiteralPath '{yol}' }} catch {{ 'okunamadi' }}"
+        )
+    } else {
+        format!("cat '{yol}' 2>/dev/null || echo okunamadi")
+    }
+}
+
+fn gizli_ayarlari(ek: &[&str], istisna: &[&str]) -> Arc<GizliAyarlari> {
+    let l = |k: &[&str]| k.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    Arc::new(GizliAyarlari::yeni(&l(ek), &l(istisna)).unwrap())
+}
+
+/// 3e Görev 3: gizli sayılmayan dosya yalıtımda okunur; istisnaya uymayan
+/// gizli dosya okunamaz (aşama 3 tasarımı §9.2, §11.3).
+#[tokio::test]
+async fn istisna_edilen_dosya_yalitimda_okunur() {
+    let d = TempDir::new().unwrap();
+    std::fs::create_dir_all(d.path().join("src")).unwrap();
+    std::fs::write(d.path().join(".env.example"), "ornek-acik").unwrap();
+    std::fs::write(d.path().join("src/credentials.rs"), "kaynak-acik").unwrap();
+    std::fs::write(d.path().join(".env"), "env-sir").unwrap();
+    let k = kurgu_ayarli(
+        d.path(),
+        gizli_ayarlari(&[], &[".env.example", "src/credentials.rs"]),
+    );
+    let metin = [".env.example", "src/credentials.rs", ".env"]
+        .map(okuma_satiri)
+        .join("\n");
+    let cikti = k.calistir(betik(&metin)).await;
+    assert!(cikti.contains("ornek-acik"), "{cikti}");
+    assert!(cikti.contains("kaynak-acik"), "{cikti}");
+    assert!(!cikti.contains("env-sir"), "{cikti}");
+}
+
+/// İstisna yalnızca adın eşleşmesini kaldırır: gizli dosyanın hard link'i,
+/// adı istisnaya uysa da yalıtımda gizli kalır (Linux'ta aygıt ve inode,
+/// Windows'ta dosya nesnesinin ACL'i).
+#[tokio::test]
+async fn gizli_dosyanin_hard_linki_istisnaya_uysa_da_okunamaz() {
+    let d = TempDir::new().unwrap();
+    std::fs::create_dir_all(d.path().join("src")).unwrap();
+    std::fs::write(d.path().join(".env"), "env-sir").unwrap();
+    std::fs::hard_link(d.path().join(".env"), d.path().join("src/credentials.rs")).unwrap();
+    let k = kurgu_ayarli(d.path(), gizli_ayarlari(&[], &["src/credentials.rs"]));
+    let metin = [okuma_satiri("src/credentials.rs"), "echo bitti".to_string()].join("\n");
+    let cikti = k.calistir(betik(&metin)).await;
+    assert!(cikti.contains("bitti"), "{cikti}");
+    assert!(!cikti.contains("env-sir"), "{cikti}");
+}
+
+/// Gizli dizindeki dosyaya verilen istisna dizini açmaz.
+#[tokio::test]
+async fn gizli_dizindeki_dosyaya_istisna_dizini_acmaz() {
+    let d = TempDir::new().unwrap();
+    std::fs::create_dir_all(d.path().join("gizli")).unwrap();
+    std::fs::write(d.path().join("gizli/ornek.txt"), "dizin-sir").unwrap();
+    let k = kurgu_ayarli(d.path(), gizli_ayarlari(&["gizli"], &["gizli/ornek.txt"]));
+    let metin = [okuma_satiri("gizli/ornek.txt"), "echo bitti".to_string()].join("\n");
+    let cikti = k.calistir(betik(&metin)).await;
+    assert!(cikti.contains("bitti"), "{cikti}");
+    assert!(!cikti.contains("dizin-sir"), "{cikti}");
 }

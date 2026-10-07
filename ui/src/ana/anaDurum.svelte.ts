@@ -230,6 +230,11 @@ export class AnaDurum {
     }
   }
 
+  /** "Bu oturumda izin ver" kısayolunu kaldırır; liste çekirdekten gelir (§9.1). */
+  async kisayoluKaldir(oturum: OturumId, kimlik: number): Promise<void> {
+    await this.#dene(() => ipc.kisayoluKaldir(oturum, kimlik));
+  }
+
   async gonderimKarari(
     oturum: OturumId,
     islem: IslemId,

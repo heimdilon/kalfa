@@ -226,6 +226,7 @@ async fn bosta_gecersiz_komutlar_hata_verir() {
         cagri: CagriId::yeni(),
         karar: OnayKarari::Onayla,
         muhur: OnayMuhru("x".into()),
+        kisayol: false,
     })
     .await;
     let z = d

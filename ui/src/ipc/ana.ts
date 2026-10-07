@@ -2,6 +2,8 @@
 // adlardır: komutlar `rename_all = "snake_case"` ile tanımlıdır.
 import { Channel, invoke } from '@tauri-apps/api/core';
 import type {
+  AgHostu,
+  GizliAyarGorunumu,
   CagriId,
   CalismaAlani,
   DenetciDurumu,
@@ -114,6 +116,39 @@ export const denetciKipi = () => invoke<DenetciDurumu>('denetci_kipi');
 /** Denetçi kipini değiştirir; düşürmek yerel pencerede onaylanır. */
 export const denetciKipiniAyarla = (kip: DenetimKipi) =>
   invoke<DenetciDurumu>('denetci_kipini_ayarla', { kip });
+
+/** Oturumdaki bir "bu oturumda izin ver" kısayolunu kaldırır (3e). */
+export const kisayoluKaldir = (oturum: OturumId, kimlik: number) =>
+  invoke<void>('kisayolu_kaldir', { oturum, kimlik });
+
+/** Ayarlar > "Gizli dosyalar" (3e). */
+export const gizliAyarlari = () => invoke<GizliAyarGorunumu>('gizli_ayarlari');
+
+/** Ek gizli kalıp; eklemek onaysızdır. */
+export const ekGizliKalipEkle = (kalip: string) =>
+  invoke<GizliAyarGorunumu>('ek_gizli_kalip_ekle', { kalip });
+
+/** Ek gizli kalıbı kaldırır; Rust yerel pencerede sorar. */
+export const ekGizliKalipKaldir = (kalip: string) =>
+  invoke<GizliAyarGorunumu>('ek_gizli_kalip_kaldir', { kalip });
+
+/** Gizli sayılmayanlara ekler; Rust yerel pencerede sorar. */
+export const gizliSayilmayanEkle = (kalip: string) =>
+  invoke<GizliAyarGorunumu>('gizli_sayilmayan_ekle', { kalip });
+
+/** Gizli sayılmayanlardan kaldırır; onaysızdır. */
+export const gizliSayilmayanKaldir = (kalip: string) =>
+  invoke<GizliAyarGorunumu>('gizli_sayilmayan_kaldir', { kalip });
+
+/** Kullanıcının ağ izin listesi (3d, §8.3). */
+export const agIzinListesi = () => invoke<AgHostu[]>('ag_izin_listesi');
+
+/** Ağ izin listesine host ekler; Rust yerel pencerede sorar. */
+export const agHostuEkle = (host: string, ozelAg: boolean) =>
+  invoke<AgHostu[]>('ag_hostu_ekle', { host, ozel_ag: ozelAg });
+
+/** Ağ izin listesinden host kaldırır; onaysızdır. */
+export const agHostuKaldir = (host: string) => invoke<AgHostu[]>('ag_hostu_kaldir', { host });
 
 /** BT için teknik rapor (aşama 2 tasarımı §9.8), düz metin. */
 export const yalitimTeknikRaporu = () => invoke<string>('yalitim_teknik_raporu');

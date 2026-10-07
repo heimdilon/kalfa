@@ -30,6 +30,7 @@ fn komut_json_bicimi() {
             gerekce: Some("gerek yok".into()),
         },
         muhur: OnayMuhru("ab".into()),
+        kisayol: false,
     };
     let j = serde_json::to_value(&onay).unwrap();
     assert_eq!(j["karar"], json!({"tip": "Reddet", "gerekce": "gerek yok"}));
@@ -46,6 +47,7 @@ fn butun_komutlar_gidip_gelir() {
             cagri: CagriId::yeni(),
             karar: OnayKarari::Onayla,
             muhur: OnayMuhru("m".into()),
+            kisayol: false,
         },
         Komut::ModelDegistir {
             model: "glm-5.3".into(),
@@ -101,6 +103,7 @@ fn butun_olaylar_gidip_gelir() {
                 onaysiz_degisiklikler: None,
                 geri_alinabilir: None,
                 veri_cikisi: None,
+                kisayol: None,
             }],
         },
         Olay::OnayGerekiyor {
@@ -178,6 +181,7 @@ fn kabuk_ogesi(cagri: CagriId) -> OnayOgesi {
         kabuk: Some(KabukTarifi {
             komut: "cargo test".into(),
             bicim: KabukBicimi::Program,
+            program: None,
             dizin: ".".into(),
             ag: false,
             ag_hostlari: Vec::new(),
@@ -191,6 +195,7 @@ fn kabuk_ogesi(cagri: CagriId) -> OnayOgesi {
         onaysiz_degisiklikler: None,
         geri_alinabilir: None,
         veri_cikisi: None,
+        kisayol: None,
     }
 }
 

@@ -72,6 +72,7 @@ impl Arac for SahteKabuk {
             kabuk: Some(KabukTarifi {
                 komut: "test".into(),
                 bicim: KabukBicimi::Program,
+                program: None,
                 dizin: ".".into(),
                 ag: false,
                 ag_hostlari: Vec::new(),
@@ -202,6 +203,7 @@ async fn yalitimsiz_kabuk_yalnizca_yerel_onayla_calisir() {
         cagri: oge.cagri,
         karar: OnayKarari::Onayla,
         muhur: oge.muhur.clone(),
+        kisayol: false,
     })
     .await;
     d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("yerel pencerede")))
@@ -239,6 +241,7 @@ async fn yerel_oge_reddedilebilir_ve_yerel_olmayan_yerel_onayla_onaylanmaz() {
         cagri: oge.cagri,
         karar: OnayKarari::Reddet { gerekce: None },
         muhur: oge.muhur.clone(),
+        kisayol: false,
     })
     .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -267,6 +270,7 @@ async fn yerel_oge_reddedilebilir_ve_yerel_olmayan_yerel_onayla_onaylanmaz() {
         cagri: oge.cagri,
         karar: OnayKarari::Onayla,
         muhur: oge.muhur.clone(),
+        kisayol: false,
     })
     .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
@@ -444,6 +448,7 @@ impl Arac for HazirlikliKabuk {
             kabuk: Some(KabukTarifi {
                 komut: a.to_string(),
                 bicim: KabukBicimi::Program,
+                program: None,
                 dizin: ".".into(),
                 ag: false,
                 ag_hostlari: Vec::new(),
@@ -586,6 +591,7 @@ async fn onaylanmayan_hazirlik_belirirse_komut_baslamaz() {
         cagri: oge.cagri,
         karar: OnayKarari::Onayla,
         muhur: oge.muhur.clone(),
+        kisayol: false,
     })
     .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);

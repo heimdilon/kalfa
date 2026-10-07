@@ -148,8 +148,13 @@ describe('onay kararları (1c tasarımı §8.2)', () => {
 
   it('seçilenler onaylanır, seçilmeyenler gerekçeyle reddedilir; mühür taşınır', () => {
     expect(kararlariUret(ogeler, 'secilenler', new Set(['c2']), '  a.rs olmasın ')).toEqual([
-      { cagri: 'c1', muhur: 'm1', karar: { tip: 'Reddet', gerekce: 'a.rs olmasın' } },
-      { cagri: 'c2', muhur: 'm2', karar: { tip: 'Onayla' } },
+      {
+        cagri: 'c1',
+        muhur: 'm1',
+        karar: { tip: 'Reddet', gerekce: 'a.rs olmasın' },
+        kisayol: false,
+      },
+      { cagri: 'c2', muhur: 'm2', karar: { tip: 'Onayla' }, kisayol: false },
     ]);
   });
 

@@ -16,9 +16,9 @@ use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::hata::KomutHatasi;
 use kalfa_uygulama::sozlesme::{
-    AnahtarSonucu, CalismaAlani, DenetciDurumu, GunlukSayfasi, KabulYaniti, OnarimSonucu,
-    OnayGirdisi, OturumAcilisi, OturumSatiri, SartPenceresiDurumu, UygulamaDurumu,
-    YalitimCalismaAlani,
+    AgHostu, AnahtarSonucu, CalismaAlani, DenetciDurumu, GizliAyarGorunumu, GunlukSayfasi,
+    KabulYaniti, OnarimSonucu, OnayGirdisi, OturumAcilisi, OturumSatiri, SartPenceresiDurumu,
+    UygulamaDurumu, YalitimCalismaAlani,
 };
 use tauri::ipc::Channel;
 use tauri::{Builder, Runtime, State};
@@ -66,6 +66,15 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         yalitim_calisma_alanini_kaldir,
         denetci_kipi,
         denetci_kipini_ayarla,
+        kisayolu_kaldir,
+        gizli_ayarlari,
+        ek_gizli_kalip_ekle,
+        ek_gizli_kalip_kaldir,
+        gizli_sayilmayan_ekle,
+        gizli_sayilmayan_kaldir,
+        ag_izin_listesi,
+        ag_hostu_ekle,
+        ag_hostu_kaldir,
         gonderim_gunlugu,
         gonderim_ogesi,
         onizleme_ayarla,
@@ -392,4 +401,78 @@ pub async fn denetci_kipini_ayarla(
     kip: DenetimKipi,
 ) -> Sonuc<DenetciDurumu> {
     u.denetci_kipini_ayarla(kip).await
+}
+
+/// Oturumdaki bir kısayolu kaldırır (aşama 3 tasarımı §9.1).
+#[tauri::command(rename_all = "snake_case")]
+pub async fn kisayolu_kaldir(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    kimlik: u64,
+) -> Sonuc<()> {
+    u.kisayolu_kaldir(oturum, kimlik).await
+}
+
+/// Ayarlar > "Gizli dosyalar" (3e Görev 4).
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gizli_ayarlari(u: State<'_, Arc<Uygulama>>) -> Sonuc<GizliAyarGorunumu> {
+    Ok(u.gizli_ayarlari())
+}
+
+/// Ek gizli kalıp ekler; onaysızdır.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn ek_gizli_kalip_ekle(
+    u: State<'_, Arc<Uygulama>>,
+    kalip: String,
+) -> Sonuc<GizliAyarGorunumu> {
+    u.ek_gizli_kalip_ekle(kalip).await
+}
+
+/// Ek gizli kalıbı kaldırır; yerel pencerede onaylanır.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn ek_gizli_kalip_kaldir(
+    u: State<'_, Arc<Uygulama>>,
+    kalip: String,
+) -> Sonuc<GizliAyarGorunumu> {
+    u.ek_gizli_kalip_kaldir(kalip).await
+}
+
+/// Gizli sayılmayanlara ekler; yerel pencerede onaylanır.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gizli_sayilmayan_ekle(
+    u: State<'_, Arc<Uygulama>>,
+    kalip: String,
+) -> Sonuc<GizliAyarGorunumu> {
+    u.gizli_sayilmayan_ekle(kalip).await
+}
+
+/// Gizli sayılmayanlardan kaldırır; onaysızdır.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gizli_sayilmayan_kaldir(
+    u: State<'_, Arc<Uygulama>>,
+    kalip: String,
+) -> Sonuc<GizliAyarGorunumu> {
+    u.gizli_sayilmayan_kaldir(kalip).await
+}
+
+/// Kullanıcının ağ izin listesi (aşama 3 tasarımı §8.3).
+#[tauri::command(rename_all = "snake_case")]
+pub async fn ag_izin_listesi(u: State<'_, Arc<Uygulama>>) -> Sonuc<Vec<AgHostu>> {
+    Ok(u.ag_izin_listesi())
+}
+
+/// Ağ izin listesine host ekler; yerel pencerede onaylanır.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn ag_hostu_ekle(
+    u: State<'_, Arc<Uygulama>>,
+    host: String,
+    ozel_ag: bool,
+) -> Sonuc<Vec<AgHostu>> {
+    u.ag_hostu_ekle(host, ozel_ag).await
+}
+
+/// Ağ izin listesinden host kaldırır; onaysızdır.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn ag_hostu_kaldir(u: State<'_, Arc<Uygulama>>, host: String) -> Sonuc<Vec<AgHostu>> {
+    u.ag_hostu_kaldir(host).await
 }

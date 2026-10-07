@@ -145,6 +145,9 @@ pub struct OnayGirdisi {
     pub cagri: CagriId,
     pub muhur: OnayMuhru,
     pub karar: OnayKarari,
+    /// Kartın önerdiği kısayolu kabul et (aşama 3 tasarımı §9.1).
+    #[serde(default)]
+    pub kisayol: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -196,6 +199,28 @@ pub enum KabulYaniti {
     },
     /// Aynı anda "Kabul etmiyorum" da verildi; ret geçerli.
     Kilitli,
+}
+
+/// Kullanıcının ağ izin listesindeki bir host (aşama 3 tasarımı §8.3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgHostu {
+    pub host: String,
+    pub port: u16,
+    /// Özel ağ adreslerine (yerel ağ, şirket ağı) de bağlanabilir.
+    #[serde(default)]
+    pub ozel_ag: bool,
+}
+
+/// Ayarlar > "Gizli dosyalar" (3e Görev 4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GizliAyarGorunumu {
+    /// Kapatılamayan varsayılan kalıplar; salt okunur.
+    pub varsayilanlar: Vec<String>,
+    pub ek_kaliplar: Vec<String>,
+    pub gizli_sayilmayanlar: Vec<String>,
+    /// `ayarlar.json` okunamadıysa nedeni.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ayar_hatasi: Option<String>,
 }
 
 /// Denetçi kipi ve ayar dosyasının durumu (3c Görev 7).

@@ -211,8 +211,13 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
       {
         oturum: 'o1',
         kararlar: [
-          { cagri: 'c1', muhur: 'm1', karar: { tip: 'Onayla' } },
-          { cagri: 'c2', muhur: 'm2', karar: { tip: 'Reddet', gerekce: 'lib.rs kalsın' } },
+          { cagri: 'c1', muhur: 'm1', karar: { tip: 'Onayla' }, kisayol: false },
+          {
+            cagri: 'c2',
+            muhur: 'm2',
+            karar: { tip: 'Reddet', gerekce: 'lib.rs kalsın' },
+            kisayol: false,
+          },
         ],
       },
     ]);

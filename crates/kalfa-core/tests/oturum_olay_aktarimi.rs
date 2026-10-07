@@ -238,6 +238,7 @@ async fn kabul_edilen_kritik_olaylar_sira_ve_icerikle_korunur() {
                     cagri: onay.cagri,
                     karar: OnayKarari::Onayla,
                     muhur: onay.muhur,
+                    kisayol: false,
                 })
                 .await
                 .expect("onay gönderilmeli");

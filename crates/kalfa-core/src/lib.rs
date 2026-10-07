@@ -16,6 +16,7 @@ pub mod kabuk;
 pub mod kayit;
 pub mod kilit;
 pub mod kimlik;
+pub mod kisayol;
 pub mod kurtarma;
 pub mod muhur;
 pub mod oturum;

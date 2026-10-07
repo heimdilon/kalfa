@@ -16,6 +16,7 @@ import type {
   IslemId,
   KanalMesaji,
   Kip,
+  Kisayol,
   Olay,
   OnayOgesi,
   OnizlemeNedeni,
@@ -118,6 +119,8 @@ export interface OturumEkrani {
   geri_alma: GeriAlmaOnizlemesi | null;
   /** Bu oturumdaki İstekBilgisi olaylarının sayısı (günlük ekranını yenilemek için). */
   istek_sayaci: number;
+  /** "Bu oturumda izin ver" kısayolları (aşama 3 tasarımı §9.1); kayda yazılmaz. */
+  kisayollar: Kisayol[];
 }
 
 /** Araç kartındaki denetim rozetinin durumu (3c Görev 8). */
@@ -210,6 +213,7 @@ export function acilistanEkran(acilis: OturumAcilisi): OturumEkrani {
     yerel_sayac: 0,
     geri_alma: null,
     istek_sayaci: 0,
+    kisayollar: [],
   };
 }
 
@@ -372,6 +376,9 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
       return;
     case 'DenetimAtlandi':
       denetimiIsle(d, yuk.cagri, { tip: 'Atlandi' });
+      return;
+    case 'Kisayollar':
+      d.kisayollar = yuk.liste;
       return;
     case 'AracCiktisiParcasi': {
       const i = d.ogeler.findLastIndex((o) => o.tip === 'AracCagrisi' && o.cagri === yuk.cagri);

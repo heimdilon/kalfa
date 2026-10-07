@@ -5,19 +5,28 @@ import type { CagriId, OnayGirdisi, OnayOgesi } from '../ipc/tipler';
 
 export type OnaySecimi = 'tumu' | 'secilenler' | 'hicbiri';
 
+/**
+ * `kisayollar`: kullanıcının "Kapsam" satırında kısayolunu seçtiği çağrılar
+ * (aşama 3 tasarımı §9.1). Kısayol yalnızca seçilerek onaylanan ve teklifi
+ * olan öğede gider; "Tümünü onayla" kısayol vermez.
+ */
 export function kararlariUret(
   ogeler: OnayOgesi[],
   secim: OnaySecimi,
   secilenler: ReadonlySet<CagriId>,
   gerekce: string,
+  kisayollar: ReadonlySet<CagriId> = new Set(),
 ): OnayGirdisi[] {
   const temizGerekce = gerekce.trim() || null;
   return ogeler.map((o) => {
     const onay = secim === 'tumu' || (secim === 'secilenler' && secilenler.has(o.cagri));
+    const kisayol =
+      onay && secim === 'secilenler' && o.kisayol !== undefined && kisayollar.has(o.cagri);
     return {
       cagri: o.cagri,
       muhur: o.muhur,
       karar: onay ? { tip: 'Onayla' } : { tip: 'Reddet', gerekce: temizGerekce },
+      kisayol,
     };
   });
 }
