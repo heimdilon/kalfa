@@ -1360,5 +1360,37 @@ Tasarım:
   - 4a önce gelir; 4b ile 4c ondan sonra paralel yürüyebilir; 4d en
     sondadır.
 
-**Sıradaki iş:** tasarım PR'ının incelenmesi, ardından 4a planı.
+Tasarım PR #49 ile birleşti (`a091927`). Codex incelemesinin dört bulgusu
+işlendi: kayıtlar `research/`'ten taşındı; indeks yazma sırası her kesilmede
+tutarlı; aynı boyut ve zamanla yeniden yazılan dosya yakalanıyor; eklentinin
+EVREN isteklerine oturum başına sınır.
+
+### 4a — sözleşme ve çalışma zamanı (uygulandı; PR #50 incelemede)
+
+Plan: [`2026-10-07-kalfa-4a-sozlesme-calisma-zamani.md`](superpowers/plans/2026-10-07-kalfa-4a-sozlesme-calisma-zamani.md).
+Kodu önceden yazıldı ve Windows ile WSL'de doğrulandı (yerel dal `deneme/4a`).
+Plan PR #50'nin dalında uygulandı: Görev 1–9, görev başına bir commit. Beş
+Haiku 5.5 alt ajanı dosyaları paralel yazdı; Claude çıktıyı doğrulanmış ağaçla
+karşılaştırdı (fark yok), derledi ve iki platformda doğruladı:
+
+| | Windows | WSL |
+|---|---|---|
+| `cargo test --workspace` | 860 (10 atlandı) | 802 (10 atlandı) |
+| `--features e2e` | 114 | 113 |
+| `kalfa-plugin` | 41 | 41 |
+| Yalıtım / uyumluluk | 43 / 23 | 26 / 15 |
+| Üç clippy, `fmt` | temiz | temiz |
+
+
+- **Yeni crate'ler:** `kalfa-plugin-sdk` (WIT 0.1, SDK), `kalfa-plugin`
+  (manifest, `Motor`, host, depo, `EklentiAraci`), üç test eklentisi.
+- **Çekirdek:** `Hazirlik.eklenti` (mühre girer), `Hazirlik.kilitsiz`,
+  `VeriCikisi::EklentiCiktisi`.
+- **G1, G3, G7 kapandı** (sonuçlar planın "Ölçümler" bölümünde). Test
+  eklentilerini testler kendileri derler; `cargo test --workspace` yeterli.
+- **Tasarımdan farklar** (planda tablo): `EklentiOrtami` trait'i yok, host
+  gerçek okuma yolunu ve depoyu kullanır; depo `kalfa-plugin`'de, yeri 4d'de.
+- `evren-cagir` 4a'da `izin-yok("… aşama 4b")` döndürür.
+
+**Sıradaki iş:** #50'nin CI'sı ve birleşmesi; ardından 4b ve 4c planları.
 

@@ -145,5 +145,18 @@ pub fn muhur_hesapla(
             serde_json::to_string(kabuk).unwrap_or_default().as_bytes(),
         );
     }
+    // Eklenti: sürüm, özet, globlar ve uçlar (aşama 4 tasarımı §8.3).
+    if let Some(eklenti) = &hazirlik.eklenti {
+        alan(&mut h, b"e");
+        alan(
+            &mut h,
+            serde_json::to_string(eklenti)
+                .unwrap_or_default()
+                .as_bytes(),
+        );
+    }
+    if hazirlik.kilitsiz {
+        alan(&mut h, b"kilitsiz");
+    }
     OnayMuhru(hex::encode(h.finalize()))
 }

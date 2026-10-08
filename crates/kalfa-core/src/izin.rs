@@ -649,7 +649,8 @@ impl TopluSiniflandirici<'_> {
 }
 
 /// Her derinlikteki `.git` ya da listedeki bir korumalı yolun altı.
-fn korumali_listede(yol: &CalismaYolu, korumali: &[String]) -> bool {
+/// `korumali`: [`git_koruma::korumali_yollar`]'ın sonucu.
+pub fn korumali_listede(yol: &CalismaYolu, korumali: &[String]) -> bool {
     if git_koruma::git_ic_yolu_mu(yol) {
         return true;
     }

@@ -317,6 +317,14 @@ impl CalismaAlani {
         })
     }
 
+    /// Dosyanın boyutu ve son değişme zamanı; dosya okumanın yolundan açılır
+    /// (bağlantı izlenmez, yalnızca normal dosya). Eklentinin dosya listesi
+    /// için (aşama 4 tasarımı §6.3).
+    pub fn dosya_bilgisi(&self, yol: &CalismaYolu) -> io::Result<(u64, std::time::SystemTime)> {
+        let bilgi = self.dosya_ac(yol)?.metadata()?;
+        Ok((bilgi.len(), bilgi.modified()?.into_std()))
+    }
+
     /// Hard link sayısı; dosya yoksa 1.
     pub fn baglanti_sayisi(&self, yol: &CalismaYolu) -> io::Result<u64> {
         match self.dosya_ac(yol) {

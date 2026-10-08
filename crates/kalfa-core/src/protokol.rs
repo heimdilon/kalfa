@@ -138,6 +138,8 @@ pub enum VeriCikisi {
     AramaSonuclari,
     DosyaAdlari,
     YalnizcaYazildi,
+    /// Eklentinin ürettiği metin (aşama 4 tasarımı §8.1).
+    EklentiCiktisi,
 }
 
 /// Kabuk onayında gösterilen bağlam: komut, modelin onaysız yazdığı kodu

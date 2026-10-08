@@ -1,0 +1,62 @@
+// Kalfa eklenti sözleşmesi 0.1 (aşama 4 tasarımı §6). Sözleşme 0.x boyunca
+// kırılabilir (üst belge §8.5).
+package kalfa:plugin@0.1.0;
+
+interface tipler {
+  enum evren-ucu { embeddings, rerank }
+  enum seviye { hata, uyari, bilgi, ayrinti }
+
+  variant hata {
+    // Manifestte olmayan yetenek, glob dışı yol, gizli dosya, onaysız gönderim.
+    izin-yok(string),
+    bulunamadi(string),
+    iptal-edildi,
+    // Süre, boyut, kota, istek sayısı, hız sınırı.
+    sinir-asildi(string),
+    // Sağlayıcı hatası.
+    evren(string),
+    diger(string),
+  }
+
+  record ilerleme { tamamlanan: u64, toplam: option<u64>, mesaj: option<string> }
+
+  record dosya-bilgisi {
+    // Çalışma alanına göre, `/` ayraçlı.
+    yol: string,
+    // Bayt.
+    boyut: u64,
+    // Son değişme zamanı, Unix epoch'tan beri milisaniye.
+    degisme: u64,
+  }
+}
+
+// Eklenti → host.
+interface host {
+  use tipler.{evren-ucu, seviye, hata, ilerleme, dosya-bilgisi};
+
+  dosya-listele:   func(desen: string) -> result<list<dosya-bilgisi>, hata>;
+  dosya-oku:       func(yol: string) -> result<string, hata>;
+  evren-cagir:     func(uc: evren-ucu, govde: string) -> result<string, hata>;
+  depo-oku:        func(anahtar: string) -> result<option<list<u8>>, hata>;
+  depo-yaz:        func(anahtar: string, deger: list<u8>) -> result<_, hata>;
+  depo-sil:        func(anahtar: string) -> result<_, hata>;
+  ilerleme-bildir: func(durum: ilerleme);
+  iptal-istendi:   func() -> bool;
+  gunluk:          func(duzey: seviye, mesaj: string);
+}
+
+// Host → eklenti.
+interface arac {
+  use tipler.{hata};
+
+  record arac-tanimi { ad: string, aciklama: string, parametre-semasi: string }
+  record sonuc { icerik: string }
+
+  araclari-listele: func() -> list<arac-tanimi>;
+  calistir:         func(ad: string, argumanlar: string) -> result<sonuc, hata>;
+}
+
+world eklenti {
+  import host;
+  export arac;
+}

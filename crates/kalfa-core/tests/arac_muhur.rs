@@ -521,3 +521,68 @@ fn ag_hostlari_muhre_girer() {
         "tek host eklemek mührü değiştirir"
     );
 }
+
+/// Eklenti aracının onayı eklentinin özetine, globlarına ve uçlarına
+/// bağlıdır (aşama 4 tasarımı §8.3): onaydan sonra güncellenen eklentinin
+/// çağrısı çalışmaz.
+#[test]
+fn eklenti_tarifi_muhre_baglanir() {
+    let cagri = CagriId::yeni();
+    let tarif = EklentiTarifi {
+        ad: "kalfa-rag".into(),
+        surum: "0.1.0".into(),
+        ozet: "a".repeat(64),
+        globlar: vec!["**/*.rs".into()],
+        evren_uclari: vec!["embeddings".into()],
+    };
+    let h = Hazirlik {
+        eklenti: Some(tarif.clone()),
+        kilitsiz: true,
+        ..Default::default()
+    };
+    let m = muhur_hesapla(cagri, "kalfa_rag__ara", &json!({}), &h);
+    let degisik = |t: EklentiTarifi| {
+        let h = Hazirlik {
+            eklenti: Some(t),
+            ..h.clone()
+        };
+        muhur_hesapla(cagri, "kalfa_rag__ara", &json!({}), &h)
+    };
+    assert_ne!(
+        degisik(EklentiTarifi {
+            ozet: "b".repeat(64),
+            ..tarif.clone()
+        }),
+        m
+    );
+    assert_ne!(
+        degisik(EklentiTarifi {
+            surum: "0.2.0".into(),
+            ..tarif.clone()
+        }),
+        m
+    );
+    assert_ne!(
+        degisik(EklentiTarifi {
+            globlar: vec!["**/*".into()],
+            ..tarif.clone()
+        }),
+        m
+    );
+    assert_ne!(
+        degisik(EklentiTarifi {
+            evren_uclari: vec![],
+            ..tarif.clone()
+        }),
+        m
+    );
+    assert_eq!(degisik(tarif.clone()), m);
+    let kilitli = Hazirlik {
+        kilitsiz: false,
+        ..h.clone()
+    };
+    assert_ne!(
+        muhur_hesapla(cagri, "kalfa_rag__ara", &json!({}), &kilitli),
+        m
+    );
+}

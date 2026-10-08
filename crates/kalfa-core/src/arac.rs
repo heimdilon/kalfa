@@ -83,6 +83,26 @@ pub struct Hazirlik {
     pub kabuk: Option<KabukTarifi>,
     /// Onay kartında gösterilen veri çıkışı türü (aşama 3b, tasarım §9.3).
     pub veri_cikisi: Option<VeriCikisi>,
+    /// Eklenti aracının tarifi (aşama 4 tasarımı §8.1). Mühre girer: onaydan
+    /// sonra güncellenen eklentinin çağrısı çalışmaz.
+    pub eklenti: Option<EklentiTarifi>,
+    /// Araç çağrı boyunca kilit tutmaz; dosyaya kendisi dokunurken o yolun
+    /// kilidini kısa süre alır (aşama 4 tasarımı §8.3, karar 5). Uzun bir
+    /// eklenti çağrısı aynı çalışma alanındaki komutları bekletmez.
+    pub kilitsiz: bool,
+}
+
+/// Eklenti aracının kimliği ve yetenekleri (aşama 4 tasarımı §8.1, §8.3).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EklentiTarifi {
+    pub ad: String,
+    pub surum: String,
+    /// `.wasm`'ın SHA-256 özeti.
+    pub ozet: String,
+    /// Manifestin `dosya-oku` globları.
+    pub globlar: Vec<String>,
+    /// Manifestin `evren` uçları.
+    pub evren_uclari: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

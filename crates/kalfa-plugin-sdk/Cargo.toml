@@ -1,0 +1,15 @@
+[package]
+name = "kalfa-plugin-sdk"
+description = "Kalfa eklentilerini yazmak için SDK: WIT 0.1 sözleşmesi ve yardımcılar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Eklenti yazarları SDK'yı kendi lisanslarıyla kullanabilsin (üst belge §8.7).
+license = "Apache-2.0 WITH LLVM-exception"
+authors.workspace = true
+include = ["src/**", "wit/**", "Cargo.toml", "README.md", "LICENSE", "LICENSE-LLVM-exception", "NOTICE"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+wit-bindgen.workspace = true

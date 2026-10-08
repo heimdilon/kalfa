@@ -1389,9 +1389,14 @@ async fn tek_calistir(
     cikti: CiktiGonderici,
 ) -> Result<AracCiktisi, AracHatasi> {
     let yazilan: Vec<CalismaYolu> = p.hazirlik.yazilan.iter().map(|h| h.yol.clone()).collect();
-    let _kilit = tokio::select! {
-        k = kilitler.al(&p.hazirlik.okunan, &yazilan, p.hazirlik.tum_calisma_alani) => k,
-        _ = iptal.cancelled() => return Err(AracHatasi::Iptal),
+    // Kilitsiz araç (eklenti) kilidini dokunduğu her yol için kendisi alır.
+    let _kilit = if p.hazirlik.kilitsiz {
+        None
+    } else {
+        Some(tokio::select! {
+            k = kilitler.al(&p.hazirlik.okunan, &yazilan, p.hazirlik.tum_calisma_alani) => k,
+            _ = iptal.cancelled() => return Err(AracHatasi::Iptal),
+        })
     };
     // İzin kipi planlamadan sonra değişti ise yeni kipte yeniden
     // yetkilendirilmeden işlem yapılmaz.

@@ -210,21 +210,23 @@ belgesindedir. Tasarımı belirleyenler:
 | Yol | İçerik | Plan |
 |---|---|---|
 | `crates/kalfa-plugin-sdk/` | Misafir tarafı SDK. `wit/kalfa.wit` buradadır. Lisans `Apache-2.0 WITH LLVM-exception`; `LICENSE`, `LICENSE-LLVM-exception`, `NOTICE` crate dizininde (üst belge §8.7) | 4a |
-| `crates/kalfa-plugin/` | Host: manifest, yükleme, `Calistirici` (wasmtime), host fonksiyonları, `EklentiAraci` | 4a |
+| `crates/kalfa-plugin/` | Host: manifest, yükleme, `Motor` (wasmtime), host fonksiyonları, depo, `EklentiAraci` | 4a |
 | `crates/kalfa-plugin/test-eklentileri/` | Testlerin eklentileri: üç crate, workspace üyesi (§16.1, §17.1) | 4a |
 | `crates/kalfa-evren/src/` | `gomme`, `yeniden_sirala`; tipleri | 4b |
 | `crates/kalfa-core/src/` | `Hazirlik`'e eklenti tarifi ve `kilitsiz`; araç ile oturum arasında kanal (§8.7, §9.4) | 4a, 4b |
 | `crates/kalfa-rag/` | `kalfa-rag` eklentisi ve `kalfa.toml` | 4c |
-| `crates/kalfa-uygulama/src/eklentiler/` | Kayıt (`eklentiler.json`), kurulum, depo, EVREN köprüsü, oturuma bağlama | 4a–4d |
+| `crates/kalfa-uygulama/src/eklentiler/` | Kayıt (`eklentiler.json`), kurulum, depo dizininin yeri, EVREN köprüsü, oturuma bağlama | 4b–4d |
 | `crates/kalfa/src/` | Komutlar ve klasör seçici | 4d |
 | `ui/src/` | Eklentiler ekranı, ilk gönderim kartı, önizleme kartının eklenti biçimi | 4d |
 | `crates/kalfa-evren/tests/kayitlar/` | Gömme ve yeniden sıralama kayıtları (ön ölçümde eklendi; `research/` ağacına dokunulmaz) | — |
 
-`kalfa-plugin`, `kalfa-core`'a bağlıdır (`Arac` trait'i), `kalfa-uygulama`'ya
-bağlı değildir. Host fonksiyonlarının gerçek işini (dosya, EVREN, depo) bir trait
-(`EklentiOrtami`) yapar; `kalfa-uygulama` onu gerçek bileşenlerle, testler
-sahteleriyle uygular. Böylece `kalfa-plugin`'in testleri Tauri'siz ve ağsız
-koşar.
+`kalfa-plugin`, `kalfa-core`'a (`Arac` trait'i) ve `kalfa-tools`'a
+(`CalismaAlani`, tek okuma yolu) bağlıdır; `kalfa-uygulama`'ya bağlı değildir.
+Host fonksiyonları gerçek bileşenlerle çalışır: dosya çağrıları
+`CalismaAlani`'yla, depo `kalfa-plugin::depo`'yla. Depo dizinini çağıran verir.
+Testler geçici dizinlerle Tauri'siz ve ağsız koşar; güvenlik sınırı sahte bir
+ortamla değil gerçek okuma yoluyla sınanır. EVREN köprüsünü 4b ekler (4a
+planı, "Tasarımdan farklar").
 
 ### 5.2 Bağımlılıklar ve araç zinciri
 
@@ -234,6 +236,7 @@ koşar.
 | `wasmtime-wasi = "=49.0.2"` | `kalfa-plugin` | `default-features = false`; `p2` |
 | `wit-bindgen = "0.62"` | `kalfa-plugin-sdk` | Cargo.lock'ta 0.57.1 var (Tauri üzerinden); yeni sürüm eklenir |
 | `toml` | `kalfa-plugin` | Cargo.lock'ta var (0.9, 1.1); doğrudan bağımlılık olur |
+| `semver` | `kalfa-plugin` | Cargo.lock'ta var (1.0.28); manifest sürümü, 4d'de sürüm karşılaştırması |
 | `base64` | `kalfa-plugin-sdk` | Cargo.lock'ta var (0.22); gömme yanıtını çözmek için (G6) |
 
 - wasmtime tam sürümle sabitlenir. Her ay yeni bir ana sürüm çıkıyor ve
@@ -251,10 +254,10 @@ model ── kalfa_rag__anlamsal_ara {sorgu} ──► oturum (kalfa-core)
   hazirla: EklentiAraci → Hazirlik { eklenti: tarif, kilitsiz }
   izin motoru: ilk gönderimse YerelOnayli; değilse Serbest (okuma)
   calistir:
-    Calistirici (kalfa-plugin): yeni Store + sınırlar → arac.calistir(ad, argümanlar)
-      eklenti ── host.dosya-listele / dosya-oku ──► EklentiOrtami
+    Motor (kalfa-plugin): yeni Store + sınırlar → arac.calistir(ad, argümanlar)
+      eklenti ── host.dosya-listele / dosya-oku ──► CalismaAlani (kalfa-tools)
                      glob ∩ çalışma alanı ∩ gizli değil; yol başına okuma kilidi
-      eklenti ── host.evren-cagir(embeddings, gövde) ──► EklentiOrtami
+      eklenti ── host.evren-cagir(embeddings, gövde) ──► EVREN köprüsü (4b)
                      gövde izin listesi → [önizleme kartı] → kalfa-evren → kayıt (Istek)
       eklenti ── host.depo-oku / depo-yaz ──► depo (eklenti × çalışma alanı)
     ◄── sonuc { icerik } → kırp → AracCiktisi { kaynak: "eklenti:kalfa-rag" }
@@ -445,7 +448,8 @@ görünür:
 3. Bileşen derlenir. Bileşen olmayan (çekirdek modül) dosya reddedilir.
 4. **Import denetimi** (§7.3).
 5. `Linker`'la `InstancePre` oluşturulur. Dünyaya uymayan bileşen (yanlış
-   imzalı export, eksik `arac`) burada düşer (üst belge §8.1).
+   imzalı export, eksik `arac`) burada ya da 6. adımın örneklemesinde düşer
+   (üst belge §8.1): wasmtime 49'da export tipleri örneklemede denetleniyor.
 6. `araclari-listele` çağrılır; adlar ve şemalar doğrulanır (§6.5). Araç
    listesi boşsa eklenti yüklenmez.
 
@@ -459,7 +463,7 @@ görünür:
 | `wasi:io/*` | wasmtime-wasi |
 | `wasi:clocks/*` | Gerçek saat |
 | `wasi:random/*` | Gerçek rastgelelik |
-| `wasi:cli/*` | Ortam değişkeni ve argüman yok. `stdin` boş. `stdout` atılır. `stderr` 64 KiB'lık bir belleğe yazılır; çağrı tuzakla biterse son 4 KiB'ı araç kartının canlı çıktısına girer (panik iletileri). Modele gitmez. |
+| `wasi:cli/*` | Ortam değişkeni ve argüman yok. `stdin` boş. `stdout` atılır. `stderr`'in son 4 KiB'ı tutulur (eskiler atılır; wasmtime'ın `MemoryOutputPipe`'ı dolunca tuzak kurduğu için kullanılmaz). Çağrı tuzakla biterse araç kartının canlı çıktısına girer (panik iletileri). Modele gitmez. |
 | `wasi:filesystem/*` | **Ön açık dizin yok.** Dizin tutamacı olmadan hiçbir dosya açılamaz (ön ölçüm §2.2). |
 
 - **Başka her import reddedilir:** `wasi:sockets/*`, `wasi:http/*` ve izin
@@ -1122,7 +1126,7 @@ Menüdeki "Eklentiler" 1c'den beri aşama 4'e bırakılmıştı.
 "Test edilmeyen güvenlik sınırı yoktur" (AGENTS.md). §7.3 ve §8.3'teki her
 sınır en az bir testle gelir.
 
-### 16.1 `kalfa-plugin` (sahte `EklentiOrtami` ile)
+### 16.1 `kalfa-plugin` (geçici çalışma alanı ve depoyla)
 
 Test eklentileri (`crates/kalfa-plugin/test-eklentileri/`, `wasm32-wasip2`).
 Manifest `.wasm`'dan ayrı olduğu için davranışların çoğu tek bir eklentinin
@@ -1217,21 +1221,18 @@ filtresine takılıyor (3c dersi). Bu senaryoları Claude yazar.
   `cargo test --workspace` onların host hedefindeki birim testlerini de koşar.
   wit-bindgen'in ürettiği kod host hedefinde de derlenir; import'lar orada
   çağrılınca `unreachable` olur.
-- `.wasm`'lar ayrı bir komutla derlenir:
-
-  ```sh
-  cargo build --target wasm32-wasip2 --release --locked -p kalfa-rag -p kalfa-test-eklentisi -p kalfa-test-soket -p kalfa-test-yanlis-dunya
-  ```
-
-  `kalfa-plugin`'in testleri `.wasm`'ları `target/wasm32-wasip2/release/`'ten
-  alır. Dosya yoksa test **atlanmaz, düşer**: "Test eklentileri derlenmemiş:
-  `cargo build --target wasm32-wasip2 …` komutunu çalıştırın." Köprünün
-  (`kalfa-kopru`) bugünkü düzeni budur.
-- Bu komut AGENTS.md'nin doğrulama listesine, `cargo test --workspace`'ten
-  önce girer. Bir geliştirme bağımlılığının build betiğiyle `.wasm`'ları
-  kendiliğinden derlemek (wasmtime'ın `test-programs` düzeni) bunun
-  alternatifidir. Plan yazılırken iki platformda denenir; varsayılan
-  `cargo test`'i kendi başına yeterli kılıyorsa o seçilir (G7).
+- **Test eklentilerini testler derler (G7, 4a'da kapandı).** `kalfa-plugin`'in
+  test düzeneği ilk kullanımda `cargo build --target wasm32-wasip2 --locked
+  -p kalfa-test-…` çalıştırır ve `.wasm`'ın yerini cargo'nun JSON çıktısından
+  alır.
+  - Derlenmişse cargo hiçbir şey yapmaz. Test eski bir `.wasm`'la koşmaz.
+  - `cargo test --workspace` tek başına yeterlidir; doğrulama listesine ayrı
+    bir derleme komutu girmez.
+  - Hedef yoksa test, ne yapılacağını söyleyerek düşer.
+  - Build betiği yolu gerekmedi. Test anında `target` kilidi serbesttir;
+    build betiğinde iç içe cargo aynı kilidi beklerdi.
+- `kalfa-rag`'ın `.wasm`'ı sürüm profiliyle derlenir; komutu 4d'de kurucunun
+  derlemesine girer.
 
 ### 17.2 CI
 
@@ -1286,13 +1287,13 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 
 | # | Soru | Nerede |
 |---|---|---|
-| G1 | Linux'ta wasmtime: derleme süresi, ikili boyutu, epoch ve bellek sınırı; CI süresine etkisi | 4a planının ön doğrulaması (WSL) |
+| G1 | Linux'ta wasmtime: derleme süresi, ikili boyutu, epoch ve bellek sınırı; CI süresine etkisi | **Kapandı (4a).** WSL'de `kalfa-plugin`'in temiz sürüm derlemesi 2 dk 7 sn (12 çekirdek). Epoch ve bellek sınırı testleri iki platformda geçiyor. İkili boyutu, `kalfa` ikilisine girdiği 4d'de ölçülür; CI süresi 4a PR'ında görünür. |
 | G2 | §7.4'teki sınır değerleri (512 MiB, 60 sn, 30 dk, 4 eşzamanlı) | 4a ve 4c ölçümüyle; `kalfa-rag`'ın gerçek kullanımı |
-| G3 | Epoch geri çağrısıyla CPU bütçesi: host çağrısı sırasında geçen süre sayaca girmiyor mu; yer verme tokio'yu gerçekten serbest bırakıyor mu | 4a; `dongu` testi |
+| G3 | Epoch geri çağrısıyla CPU bütçesi: host çağrısı sırasında geçen süre sayaca girmiyor mu; yer verme tokio'yu gerçekten serbest bırakıyor mu | **Kapandı (4a).** Tek iş parçacıklı çalışma zamanında, bütçeye kadar dönen eklenti sürerken öteki görev ilerliyor (`YieldCustom` + `tokio::task::yield_now`). Host çağrısında 3 sn bekleyen eklenti 2 sn'lik bütçeye takılmıyor. |
 | G4 | Gömmedeki 7–9 sn sabit bekleme kalıcı mı (gün içi, yük)? Sorgu gömme için daha hızlı bir yol var mı? | 4c; gerekirse EVREN'e sorulur |
 | G5 | Türkçe arama kalitesi; talimatın dili; 1024 ile 4096 boyut farkı; parça boyutu | 4c değerlendirme kümesi |
 | G6 | `base64` ile `float` yanıtın eklentide çözülme maliyeti; `base64` crate'i mi, elle çözücü mü | 4c |
-| G7 | Test eklentilerinin derlenmesi: ayrı komut mu, geliştirme bağımlılığının build betiği mi | 4a planı yazılırken iki platformda |
+| G7 | Test eklentilerinin derlenmesi: ayrı komut mu, geliştirme bağımlılığının build betiği mi | **Kapandı (4a):** ikisi de değil; testler kendileri derler (§17.1). |
 | G8 | Paralel gömme isteği gerekir mi (`evren-cagir-coklu`)? Büyük toplu istek tek başına yeterli mi | 4c ölçümü; gerekirse sözleşme 0.1'e eklenir (henüz dış eklenti yok) |
 | G9 | Eklentiyi ayrıca işletim sistemi yalıtımında (AppContainer, bwrap) çalıştırmak | v1 dışı; wasmtime'da bir JIT hatası riskine karşı (R18) |
 | G10 | `qwen3-reranker-8b` isteğinin `qwen3-vl-reranker-8b`'ye yönlenmesi kalıcı mı | Kullanımla; günlükte görünür |
@@ -1313,9 +1314,8 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 Planlar önceki aşamalardaki gibi PR ile yürür (AGENTS.md). Planı ve PR'ı Claude
 yazar; uygulayıcı her plan için ayrıca seçilir.
 
-1. **4a — Sözleşme ve çalışma zamanı.** WIT ve SDK; manifest; `Calistirici`
-   (yükleme, import denetimi, sınırlar, iptal); `EklentiOrtami` ve sahtesi;
-   dosya çağrılarının yerleşik yola bağlanması; depo; `EklentiAraci`;
+1. **4a — Sözleşme ve çalışma zamanı.** WIT ve SDK; manifest; `Motor`
+   (yükleme, import denetimi, sınırlar, iptal); dosya çağrılarının yerleşik yola bağlanması; depo; `EklentiAraci`;
    `Hazirlik.eklenti` ve `kilitsiz`; test eklentileri; S15. `evren-cagir` bu
    planda `izin-yok("4b'de gelecek")` döndürür. Kodu önceden iki platformda
    doğrulanır (karar 12); G1, G3 ve G7 burada kapanır.

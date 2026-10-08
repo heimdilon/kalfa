@@ -1,0 +1,37 @@
+[package]
+name = "kalfa-plugin"
+description = "Kalfa eklenti çalışma zamanı: manifest, yükleme, wasmtime host'u, sınırlar, eklenti aracı"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+# Testlerin import denetimini atlayan yükleme yolu (aşama 4 tasarımı §7.3,
+# ikinci katman). Sürüm derlemesine girmez.
+test-destek = []
+
+[dependencies]
+async-trait.workspace = true
+globset.workspace = true
+hex.workspace = true
+jsonschema.workspace = true
+kalfa-core = { path = "../kalfa-core" }
+kalfa-tools = { path = "../kalfa-tools" }
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+toml.workspace = true
+wasmtime.workspace = true
+wasmtime-wasi.workspace = true
+
+[dev-dependencies]
+kalfa-core = { path = "../kalfa-core", features = ["test-destek"] }
+kalfa-plugin = { path = ".", features = ["test-destek"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

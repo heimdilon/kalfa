@@ -1,0 +1,15 @@
+[package]
+name = "kalfa-test-soket"
+description = "Test eklentisi: wasi:sockets import eder; yüklenmemeli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+kalfa-plugin-sdk = { path = "../../../kalfa-plugin-sdk" }

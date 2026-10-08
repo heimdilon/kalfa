@@ -30,6 +30,8 @@ dosyaları Apache-2.0 WITH LLVM-exception'dır.
 | `crates/kalfa-core` | Arayüzden bağımsız oturum çekirdeği: izin kipleri, mühürlü onay, JSONL kayıt ve kurtarma, git koruması |
 | `crates/kalfa-tools` | Dosya araçları ve kabuk aracı |
 | `crates/kalfa-sandbox` | Komut çalıştırma, süreç sınırları, Linux yalıtımı (bwrap ve seccomp) |
+| `crates/kalfa-plugin` | Eklenti çalışma zamanı: manifest, wasmtime host'u, sınırlar, depo, eklenti aracı; test eklentileri `test-eklentileri/`'nde |
+| `crates/kalfa-plugin-sdk` | Eklenti yazarının SDK'sı ve WIT sözleşmesi (`wit/kalfa.wit`); lisansı Apache-2.0 WITH LLVM-exception |
 | `crates/kalfa-uygulama` | Uygulamanın Tauri'siz mantığı: oturumlar, köprü, yalıtım durumu, e2e sahteleri |
 | `crates/kalfa` | Tauri kabuğu: komutlar, pencereler, yetkiler |
 | `ui/` | Svelte 5 + TypeScript arayüzü (Vite, Vitest) |
@@ -39,8 +41,13 @@ dosyaları Apache-2.0 WITH LLVM-exception'dır.
 
 ## Kurulum ve doğrulama
 
-Rust sürümü `rust-toolchain.toml` ile sabittir (1.98.1). Node sürümü
+Rust sürümü `rust-toolchain.toml` ile sabittir (1.98.1); eklentiler için
+`wasm32-wasip2` hedefi de oradadır. Rustup hedefi kendiliğinden kurmazsa:
+`rustup target add wasm32-wasip2 --toolchain 1.98.1`. Node sürümü
 `^22.22.2 || >=24.15.0`'tır. Bağımlılıklar `--locked` ve `npm ci` ile kurulur.
+
+`kalfa-plugin`'in testleri test eklentilerini `wasm32-wasip2` için kendileri
+derler; ayrı bir komut gerekmez.
 
 Her değişiklikten sonra:
 
@@ -57,6 +64,12 @@ Değişikliğin dokunduğu yere göre ayrıca:
   ```sh
   cargo test -p kalfa-uygulama -p kalfa --features e2e --locked
   cargo clippy -p kalfa -p kalfa-uygulama --features e2e --all-targets --locked -- -D warnings
+  ```
+
+- **`kalfa-plugin-sdk` ya da test eklentileri:**
+
+  ```sh
+  cargo clippy --target wasm32-wasip2 --locked -p kalfa-plugin-sdk -p kalfa-test-eklentisi -p kalfa-test-soket -p kalfa-test-yanlis-dunya -- -D warnings
   ```
 
 - **`kalfa-sandbox` ya da `kalfa-tools`:** Aşağıdaki komutlar Linux'ta anlamlıdır
@@ -120,8 +133,9 @@ Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni ister.
 `.github/workflows/ci.yml`, `kalfa-asama-1`'e her push'ta ve her PR'da koşar.
 
 - **Kapsam:** Yukarıdaki varsayılan komutlar: `cargo fmt`, arayüz
-  (`check`, `test`, `build`), iki clippy ve iki `cargo test` (düz ve `e2e`
-  özellikli). Rust işi Linux'ta ve Windows'ta koşar.
+  (`check`, `test`, `build`), üç clippy (düz, `e2e` özellikli ve eklentilerin
+  `wasm32-wasip2`'si) ve iki `cargo test` (düz ve `e2e` özellikli). Rust işi
+  Linux'ta ve Windows'ta koşar.
 - **Kapsam dışı:** Yalıtım testleri (bwrap, seccomp, AppContainer) ve uçtan
   uca testler. Bunlar yukarıdaki gibi yerelde koşturulur; yeşil CI onların
   yerini tutmaz.

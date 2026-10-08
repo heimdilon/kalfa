@@ -8,6 +8,11 @@ members = [
     "crates/kalfa-uygulama",
     "crates/kalfa",
     "crates/kalfa-yalitim",
+    "crates/kalfa-plugin-sdk",
+    "crates/kalfa-plugin",
+    "crates/kalfa-plugin/test-eklentileri/kalfa-test-eklentisi",
+    "crates/kalfa-plugin/test-eklentileri/kalfa-test-soket",
+    "crates/kalfa-plugin/test-eklentileri/kalfa-test-yanlis-dunya",
 ]
 
 [workspace.package]
@@ -40,6 +45,7 @@ rust_decimal = { version = "1.43", features = ["serde"] }
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 regex = "1.13"
 same-file = "1.0.6"
+semver = "1.0.28"
 seccompiler = "0.5.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -50,7 +56,13 @@ thiserror = "2.0.20"
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
 tokio-stream = "0.1.19"
 tokio-util = "0.7.19"
+toml = "1.1"
 url = "2.5"
+# Eklenti çalışma zamanı (aşama 4 tasarımı §5.2). Tam sürümle sabit: bileşen
+# API'si sürümler arasında değişiyor; yükseltme ayrı bir iştir.
+wasmtime = { version = "=49.0.2", default-features = false, features = ["runtime", "cranelift", "component-model", "async", "std"] }
+wasmtime-wasi = { version = "=49.0.2", default-features = false, features = ["p2"] }
+wit-bindgen = "0.62"
 uuid = { version = "1.26", features = ["v4", "serde"] }
 wiremock = "0.6.5"
 windows-sys = { version = "0.61", features = [
