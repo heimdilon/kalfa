@@ -7,7 +7,7 @@ use kalfa_plugin_sdk::{AracTanimi, EvrenUcu, Guest, Hata, Ilerleme, Seviye, Sonu
 struct TestEklentisi;
 
 const ARACLAR: &[&str] = &[
-    "yanki", "dongu", "bellek", "sisirme", "dosya", "yetkisiz", "depo", "iptal", "panik",
+    "yanki", "dongu", "bellek", "sisirme", "dosya", "yetkisiz", "depo", "iptal", "panik", "evren",
 ];
 
 fn metin(a: &Value, alan: &str) -> String {
@@ -134,6 +134,44 @@ impl Guest for TestEklentisi {
                         break format!("{x}");
                     }
                 }
+            }
+            // EVREN: `govde` gönderilir. `once_oku` varsa o dosya `dosya-oku` ile
+            // okunur ve gövdedeki `{DOSYA}` yerine (JSON'da kaçışlı) konur; okuma
+            // hatası sonuç olur, istek gönderilmez. Her çağrı bir satırdır; tek
+            // çağrıda yanıt tam, daha çoğunda 40 karakterle kesilir (64 KiB sınırı).
+            "evren" => {
+                let uc = match metin(&a, "uc").as_str() {
+                    "embeddings" => EvrenUcu::Embeddings,
+                    "rerank" => EvrenUcu::Rerank,
+                    diger => return Err(Hata::Diger(format!("bilinmeyen uç: {diger}"))),
+                };
+                let mut govde = metin(&a, "govde");
+                if let Some(yol) = a["once_oku"].as_str() {
+                    match host::dosya_oku(yol) {
+                        Ok(icerik) => {
+                            let kacisli = kalfa_plugin_sdk::serde_json::to_string(&icerik)
+                                .unwrap_or_else(|_| "\"\"".into());
+                            let ic = &kacisli[1..kacisli.len() - 1];
+                            govde = govde.replace("{DOSYA}", ic);
+                        }
+                        Err(h) => {
+                            return Ok(Sonuc {
+                                icerik: hata_metni(&h),
+                            });
+                        }
+                    }
+                }
+                let tekrar = a["tekrar"].as_u64().unwrap_or(1).max(1);
+                let mut satirlar = Vec::new();
+                for i in 1..=tekrar {
+                    let satir = match host::evren_cagir(uc, &govde) {
+                        Ok(yanit) if tekrar == 1 => yanit,
+                        Ok(yanit) => yanit.chars().take(40).collect(),
+                        Err(h) => hata_metni(&h),
+                    };
+                    satirlar.push(format!("{i}: {satir}"));
+                }
+                satirlar.join("\n")
             }
             "panik" => {
                 eprintln!("stderr satırı");

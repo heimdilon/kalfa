@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use crate::arac::DosyaDegisiklikleri;
 use crate::denetci::DenetimSonucu;
 use crate::geri_alma::{DosyaYedegi, GeriAlmaSonucu};
-use crate::gonderim::{GonderilenOge, IstekSonucu};
+use crate::gonderim::{EklentiIstekOzeti, GonderilenOge, IstekSonucu};
 use crate::izin::Kip;
 use crate::kimlik::{CagriId, TurId};
 use crate::muhur::OnayMuhru;
@@ -114,6 +114,19 @@ pub enum KayitOgesi {
         #[serde(default)]
         onceki: u32,
         #[serde(default)]
+        sonuc: IstekSonucu,
+    },
+    /// Eklentinin EVREN isteği (aşama 4 tasarımı §9.3); başarısızı ve
+    /// gönderilmeyeni de yazılır. Günlükte amacı `eklenti:<ad>`'dır. Sohbet
+    /// isteği (`Istek`) olmadığı için kurtarma ve geçmiş onu sohbetin parçası
+    /// saymaz.
+    EklentiIstegi {
+        cagri: CagriId,
+        istek: EklentiIstekOzeti,
+        istek_id: Option<String>,
+        kredi: Option<KrediGozlemi>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        yonlendirilen_model: Option<String>,
         sonuc: IstekSonucu,
     },
     /// Akış açıldıktan sonra kopan istek (aşama 3b).

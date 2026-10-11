@@ -1,5 +1,6 @@
 //! Gönderim günlüğü: gönderilen öğeler, istek sonucu ve günlük türetimi (spec §6).
 
+use kalfa_evren::EkUc;
 use serde::{Deserialize, Serialize};
 
 use crate::kayit::KayitOgesi;
@@ -32,6 +33,67 @@ pub enum IstekSonucu {
         asama: IstekAsamasi,
         mesaj: String,
     },
+    /// İstek ağa çıkmadı: kullanıcı önizlemede göndermedi ya da oturumun
+    /// eklenti sınırı doldu (aşama 4 tasarımı §9.4, §9.5).
+    Gonderilmedi {
+        neden: String,
+    },
+}
+
+/// Bir eklenti isteğinde listelenen okunan dosyaların sınırı; fazlası
+/// `dosya_fazlasi` olarak sayılır (aşama 4 tasarımı §9.3).
+pub const OKUNAN_SINIRI: usize = 1_000;
+
+/// Bir eklentinin bir oturumdaki EVREN istek sayısı üst sınırı (aşama 4
+/// tasarımı §9.5). Sınırı kaldırmanın ya da değiştirmenin bir ayarı yoktur.
+pub const EKLENTI_ISTEK_SINIRI: u64 = 5_000;
+/// Bir eklentinin bir oturumda gönderebileceği gövdelerin toplam bayt sınırı
+/// (aşama 4 tasarımı §9.5).
+pub const EKLENTI_BAYT_SINIRI: u64 = 256 * 1024 * 1024;
+
+/// Bir eklentinin bir oturumdaki EVREN kullanımı: ağa çıkmasına izin verilen
+/// istek sayısı ve gövde baytı (aşama 4 tasarımı §9.5). Oturumla sıfırlanır;
+/// kurtarılan oturumda kayıttaki `EklentiIstegi` öğelerinden yeniden kurulur.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EklentiKullanimi {
+    pub istek: u64,
+    pub bayt: u64,
+}
+
+impl EklentiKullanimi {
+    /// `bayt` büyüklüğünde yeni bir istek bu kullanıma eklenirse sınırlardan
+    /// biri aşılır mı? Sınır isteği ağa çıkmadan keser.
+    pub fn sinir_asilir_mi(&self, bayt: u64) -> bool {
+        self.istek.saturating_add(1) > EKLENTI_ISTEK_SINIRI
+            || self.bayt.saturating_add(bayt) > EKLENTI_BAYT_SINIRI
+    }
+
+    /// Ağa çıkmasına izin verilen bir isteği sayar.
+    pub fn say(&mut self, bayt: u64) {
+        self.istek = self.istek.saturating_add(1);
+        self.bayt = self.bayt.saturating_add(bayt);
+    }
+}
+
+/// Eklentinin EVREN isteğinin kayda, günlüğe ve önizlemeye giren özeti (aşama
+/// 4 tasarımı §9.3). Metnin kendisi kayda yazılmaz (karar 8): içeriğin kaynağı
+/// o çağrıda okunan dosyaların listesiyle anlatılır.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EklentiIstekOzeti {
+    pub eklenti: String,
+    pub uc: EkUc,
+    pub model: String,
+    /// `input` ya da `documents` içindeki metin sayısı (sıralamada sorgu
+    /// dahil değil).
+    pub metin_sayisi: u32,
+    /// Gönderilen gövdenin bayt sayısı.
+    pub bayt: u64,
+    /// Metinlerin SHA-256 özeti, onaltılık.
+    pub ozet: String,
+    /// O araç çağrısında o ana kadar okunan dosyalar, en çok `OKUNAN_SINIRI`.
+    pub dosyalar: Vec<String>,
+    #[serde(default)]
+    pub dosya_fazlasi: u32,
 }
 
 /// Bir istekte kullanılan token miktarı.
@@ -70,6 +132,9 @@ pub struct GunlukSatiri {
     pub yeni: Vec<GonderilenOge>,
     #[serde(default)]
     pub onceki: u32,
+    /// Eklenti isteğinin özeti (aşama 4 tasarımı §9.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eklenti: Option<EklentiIstekOzeti>,
 }
 
 /// Gönderim günlüğünün bir sayfası (spec §6.5, plan Task 4).
@@ -108,10 +173,38 @@ pub fn gunluk_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GunlukSatiri> {
                     sonuc: sonuc.clone(),
                     yeni: yeni.clone(),
                     onceki: *onceki,
+                    eklenti: None,
                 });
             }
+            KayitOgesi::EklentiIstegi {
+                istek,
+                istek_id,
+                kredi,
+                yonlendirilen_model,
+                sonuc,
+                ..
+            } => satirlar.push(GunlukSatiri {
+                sira: zarf.sira,
+                tur: zarf.tur,
+                zaman: kredi.as_ref().map(|k| k.zaman_ms),
+                amac: format!("eklenti:{}", istek.eklenti),
+                model: Some(istek.model.clone()),
+                yonlendirilen_model: yonlendirilen_model.clone(),
+                istek_id: istek_id.clone(),
+                token: None,
+                sonuc: sonuc.clone(),
+                yeni: vec![GonderilenOge {
+                    kaynak: format!("eklenti:{}:{}", istek.eklenti, istek.uc.etiket()),
+                    sira: None,
+                    bayt: istek.bayt,
+                }],
+                onceki: 0,
+                eklenti: Some(istek.clone()),
+            }),
+            // Sonucu ve token kullanımı yalnızca sohbet satırına iliştirilir;
+            // eklenti satırı sohbet isteği değildir.
             KayitOgesi::IstekKoptu { mesaj } => {
-                if let Some(son) = satirlar.last_mut() {
+                if let Some(son) = satirlar.last_mut().filter(|s| s.eklenti.is_none()) {
                     son.sonuc = IstekSonucu::Hata {
                         asama: IstekAsamasi::Yanit,
                         mesaj: mesaj.clone(),
@@ -123,7 +216,7 @@ pub fn gunluk_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GunlukSatiri> {
                 tamamlama,
                 dusunce,
             } => {
-                if let Some(son) = satirlar.last_mut() {
+                if let Some(son) = satirlar.last_mut().filter(|s| s.eklenti.is_none()) {
                     son.token = Some(GunlukToken {
                         istem: *istem,
                         tamamlama: *tamamlama,

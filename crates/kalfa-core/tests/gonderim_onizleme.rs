@@ -100,6 +100,7 @@ async fn acikken_asama_sonunda_kart_gelir() {
         .gonder(Komut::GonderimKarari {
             islem,
             gonderilmeyecekler: Vec::new(),
+            hep_gonderilecekler: Vec::new(),
         })
         .await;
     assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
@@ -129,6 +130,7 @@ async fn cikarilan_icerik_istekte_ve_kayitta_yok() {
         .gonder(Komut::GonderimKarari {
             islem,
             gonderilmeyecekler: vec![ogeler[0].cagri],
+            hep_gonderilecekler: Vec::new(),
         })
         .await;
     assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
@@ -267,6 +269,7 @@ async fn beklerken_kip_degisikligi() {
         .gonder(Komut::GonderimKarari {
             islem,
             gonderilmeyecekler: vec![ogeler[0].cagri],
+            hep_gonderilecekler: Vec::new(),
         })
         .await;
 
@@ -386,6 +389,7 @@ fn g8_onizleme_karti_olay_butcesine_sigar() {
             kaynak: format!("dosya:src/bilesenler/uzun_yol_adi_{i}.rs:1-120"),
             bayt: 64 * 1024,
             denetim: None,
+            eklenti: None,
         })
         .collect();
     let olay = Olay::GonderimOnizlemesi {
@@ -444,6 +448,7 @@ async fn ayni_hata_esiginde_onizleme_calisir_cikarilan_icerik_baglama_girmez() {
         .gonder(Komut::GonderimKarari {
             islem,
             gonderilmeyecekler: vec![ogeler[0].cagri],
+            hep_gonderilecekler: Vec::new(),
         })
         .await;
 

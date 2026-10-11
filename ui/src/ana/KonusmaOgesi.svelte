@@ -100,8 +100,8 @@
 {:else if oge.tip === 'GonderimOnizlemesi'}
   <OnizlemeKarti
     {oge}
-    onkarar={(islem, gonderilmeyecekler) =>
-      durum.gonderimKarari(oturum, islem, gonderilmeyecekler)}
+    onkarar={(islem, gonderilmeyecekler, hepGonderilecekler) =>
+      durum.gonderimKarari(oturum, islem, gonderilmeyecekler, hepGonderilecekler)}
   />
 {:else if oge.tip === 'SartIstegi'}
   <Card tone="accent" icon="shield" title={m('sart.kart.baslik', { surum: oge.surum })}>

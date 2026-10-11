@@ -176,9 +176,19 @@ export const gonderimOgesi = (oturum: OturumId, sira: number) =>
 export const onizlemeAyarla = (oturum: OturumId, acik: boolean) =>
   invoke<void>('onizleme_ayarla', { oturum, acik });
 
-/** Önizlemede kullanıcının kararı (aşama 3b). */
+/**
+ * Önizlemede kullanıcının kararı (aşama 3b). `hep_gonderilecekler`: eklenti
+ * isteğinde "Bu araç çağrısında hep gönder" (aşama 4 tasarımı §9.4).
+ */
 export const gonderimKarari = (
   oturum: OturumId,
   islem: IslemId,
   gonderilmeyecekler: CagriId[],
-) => invoke<void>('gonderim_karari', { oturum, islem, gonderilmeyecekler });
+  hep_gonderilecekler: CagriId[],
+) =>
+  invoke<void>('gonderim_karari', {
+    oturum,
+    islem,
+    gonderilmeyecekler,
+    hep_gonderilecekler,
+  });

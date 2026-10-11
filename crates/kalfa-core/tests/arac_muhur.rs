@@ -534,6 +534,7 @@ fn eklenti_tarifi_muhre_baglanir() {
         ozet: "a".repeat(64),
         globlar: vec!["**/*.rs".into()],
         evren_uclari: vec!["embeddings".into()],
+        ..Default::default()
     };
     let h = Hazirlik {
         eklenti: Some(tarif.clone()),
@@ -577,6 +578,23 @@ fn eklenti_tarifi_muhre_baglanir() {
         m
     );
     assert_eq!(degisik(tarif.clone()), m);
+    // Dosya sayısı ve bayt bilgi amaçlıdır: değişince onay bozulmaz (§8.3).
+    assert_eq!(
+        degisik(EklentiTarifi {
+            dosya_sayisi: 9,
+            bayt: 42,
+            ..tarif.clone()
+        }),
+        m
+    );
+    // İlk gönderim izni mühre girer: izin değişince onay geçersiz kalır (§8.4).
+    assert_ne!(
+        degisik(EklentiTarifi {
+            ilk_gonderim: true,
+            ..tarif.clone()
+        }),
+        m
+    );
     let kilitli = Hazirlik {
         kilitsiz: false,
         ..h.clone()

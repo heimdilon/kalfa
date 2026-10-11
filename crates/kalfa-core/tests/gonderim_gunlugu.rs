@@ -135,6 +135,7 @@ fn sayfalama_gecmis_gibi() {
             sonuc: IstekSonucu::Basarili,
             yeni: vec![],
             onceki: 0,
+            eklenti: None,
         })
         .collect();
 

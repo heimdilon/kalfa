@@ -38,6 +38,8 @@
         return m('onay.veri.DosyaAdlari');
       case 'YalnizcaYazildi':
         return m('onay.veri.YalnizcaYazildi');
+      case 'EklentiCiktisi':
+        return m('onay.veri.EklentiCiktisi');
       default:
         return m('onay.veri.Bilinmiyor');
     }

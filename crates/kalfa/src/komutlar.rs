@@ -355,8 +355,10 @@ pub async fn gonderim_karari(
     oturum: OturumId,
     islem: IslemId,
     gonderilmeyecekler: Vec<CagriId>,
+    hep_gonderilecekler: Vec<CagriId>,
 ) -> Sonuc<()> {
-    u.gonderim_karari(oturum, islem, gonderilmeyecekler).await
+    u.gonderim_karari(oturum, islem, gonderilmeyecekler, hep_gonderilecekler)
+        .await
 }
 
 // --- Şart penceresi ---

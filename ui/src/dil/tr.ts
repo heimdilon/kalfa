@@ -5,6 +5,7 @@ import type {
   AktarimDurmaNedeni,
   AracDurumu,
   DenetimKipi,
+  EkUc,
   Kip,
   KisayolTeklifi,
   ModelProfili,
@@ -158,6 +159,7 @@ export const tr = {
   'onay.veri.AramaSonuclari': 'Arama sonuçları',
   'onay.veri.DosyaAdlari': 'Dosya adları',
   'onay.veri.YalnizcaYazildi': 'Yalnızca "yazıldı" bilgisi',
+  'onay.veri.EklentiCiktisi': 'Eklentinin ürettiği metin modele gidecek.',
   'onay.veri.Bilinmiyor': 'Araç sonucu',
   'onay.sayfa.uyarilar': 'Uyarılar',
   'onay.sayfa.geri_alinabilir': 'Geri alınabilir mi',
@@ -278,6 +280,9 @@ export const tr = {
   'denetci.kip.Kati': 'katı',
   'onizleme.kart.yanitlandi': 'Yanıtlandı',
   'onizleme.kart.gecersiz': 'Tur bitti; karar gerekmiyor',
+  'onizleme.kart.eklenti_baslik': "Eklenti EVREN'e veri göndermek istiyor",
+  'onizleme.kart.eklenti.gonderme': 'Gönderme',
+  'onizleme.kart.eklenti.hep_gonder': 'Bu araç çağrısında hep gönder',
 
   'gunluk.baslik': 'Gönderim günlüğü',
   'gunluk.daha_eski': 'Daha eski istekler',
@@ -293,8 +298,23 @@ export const tr = {
   'gunluk.amac.denetci': 'Denetçi',
   'gunluk.sonuc.basarili': 'Başarılı',
   'gunluk.sonuc.hata': 'Hata: {mesaj}',
+  'gunluk.sonuc.gonderilmedi': 'Gönderilmedi: {neden}',
   'gunluk.metin_yukleniyor': 'Yükleniyor…',
   'gunluk.metin_baslik': 'Gönderilen içerik',
+
+  'eklenti.amac': 'Eklenti · {ad}',
+  'eklenti.uc': 'Uç',
+  'eklenti.uc.Gomme': 'Gömme',
+  'eklenti.uc.Siralama': 'Yeniden sıralama',
+  'eklenti.model': 'Model',
+  'eklenti.metin_sayisi': 'Metin sayısı',
+  'eklenti.boyut': 'Boyut',
+  'eklenti.ozet': 'Özet (SHA-256)',
+  'eklenti.dosyalar': 'Okunan dosyalar',
+  'eklenti.dosya_fazlasi': 've {sayi} dosya daha',
+  'eklenti.dosya_yok': 'Bu çağrıda okunan dosya yok.',
+  'eklenti.metin_kayitsiz':
+    'Metin kayda yazılmadı. Eklentinin gönderdiği metin okuduğu dosyalardan türetildiği için kayda kopyalanmaz; metni görmek için “Göndermeden önce göster”i açın.',
 
   'durum.ad': 'Durum çubuğu',
   'durum.hazir': 'Hazır',
@@ -480,6 +500,12 @@ export function denetimKategorisi(kategori: string): string {
   const anahtar = DENETIM_KATEGORISI[kategori];
   return anahtar ? m(anahtar) : kategori;
 }
+
+/** Eklenti EVREN ucunun okunur adı (aşama 4 tasarımı §9.1). */
+export const EKLENTI_UC_ADI: Record<EkUc, MetinAnahtari> = {
+  Gomme: 'eklenti.uc.Gomme',
+  Siralama: 'eklenti.uc.Siralama',
+};
 
 export const KIP_ADI: Record<Kip, MetinAnahtari> = {
   Inceleme: 'kip.Inceleme',

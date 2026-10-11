@@ -2851,6 +2851,7 @@ dependencies = [
  "hex",
  "jsonschema",
  "kalfa-core",
+ "kalfa-evren",
  "kalfa-plugin",
  "kalfa-tools",
  "semver",

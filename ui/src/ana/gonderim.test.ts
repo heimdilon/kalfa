@@ -1,7 +1,7 @@
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { GunlukSayfasi } from '../ipc/tipler';
+import type { EklentiIstekOzeti, GunlukSayfasi, OnizlemeOgesi } from '../ipc/tipler';
 import { SahteArka } from '../sahte/arka';
 import Ana from './Ana.svelte';
 import { AnaDurum } from './anaDurum.svelte';
@@ -307,5 +307,165 @@ describe('gönderim günlüğü ve önizleme kartı (aşama 3b)', () => {
     await fireEvent.click(menuGunluk);
 
     expect(await screen.findByRole('dialog', { name: 'Gönderim günlüğü' })).toBeTruthy();
+  });
+});
+
+describe('eklenti gönderimi (aşama 4b)', () => {
+  const EKLENTI_OZETI: EklentiIstekOzeti = {
+    eklenti: 'kalfa-rag',
+    uc: 'Gomme',
+    model: 'qwen3-embedding',
+    metin_sayisi: 12,
+    bayt: 2048,
+    ozet: 'f3a9c2',
+    dosyalar: ['src/a.rs', 'src/b.rs'],
+    dosya_fazlasi: 12,
+  };
+
+  const eklentiOgesi = (cagri: string): OnizlemeOgesi => ({
+    cagri,
+    kaynak: 'eklenti:kalfa-rag:gomme',
+    bayt: 2048,
+    eklenti: EKLENTI_OZETI,
+  });
+
+  it('önizleme kartı eklenti isteğini ayrıntısıyla gösterir ve üç kararı yollar', async () => {
+    const kararlar: { islem: string; gonderilmeyecekler: string[]; hep: string[] }[] = [];
+    const oge = {
+      anahtar: 'c-3',
+      sira: 3,
+      tur: 't1' as const,
+      tip: 'GonderimOnizlemesi' as const,
+      islem: 'islem-3',
+      neden: 'Eklenti' as const,
+      durum: 'Bekliyor' as const,
+      ogeler: [eklentiOgesi('c9')],
+    };
+
+    render(OnizlemeKarti, {
+      props: {
+        oge,
+        onkarar: (islem: string, gonderilmeyecekler: string[], hep: string[]) => {
+          kararlar.push({ islem, gonderilmeyecekler, hep });
+        },
+      },
+    });
+
+    expect(screen.getByText("Eklenti EVREN'e veri göndermek istiyor")).toBeTruthy();
+    expect(screen.getByText('Eklenti · kalfa-rag')).toBeTruthy();
+    expect(screen.getByText('Gömme')).toBeTruthy();
+    expect(screen.getByText('qwen3-embedding')).toBeTruthy();
+    expect(screen.getByText('2 KiB')).toBeTruthy();
+    expect(screen.getByText('src/b.rs')).toBeTruthy();
+    expect(screen.getByText('ve 12 dosya daha')).toBeTruthy();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Gönder' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Gönderme' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Bu araç çağrısında hep gönder' }));
+
+    expect(kararlar).toEqual([
+      { islem: 'islem-3', gonderilmeyecekler: [], hep: [] },
+      { islem: 'islem-3', gonderilmeyecekler: ['c9'], hep: [] },
+      { islem: 'islem-3', gonderilmeyecekler: [], hep: ['c9'] },
+    ]);
+  });
+
+  it('"hep gönder" düğmesi yalnızca eklenti isteğinde gelir', () => {
+    const oge = {
+      anahtar: 'c-4',
+      sira: 4,
+      tur: 't1' as const,
+      tip: 'GonderimOnizlemesi' as const,
+      islem: 'islem-4',
+      neden: 'Onizleme' as const,
+      durum: 'Bekliyor' as const,
+      ogeler: [{ cagri: 'c5', kaynak: 'dosya:src/c.rs:1-5', bayt: 300 }],
+    };
+
+    render(OnizlemeKarti, { props: { oge, onkarar: () => {} } });
+
+    expect(screen.getByRole('button', { name: 'Gönder' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Gönderme' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Bu araç çağrısında hep gönder' })).toBeNull();
+  });
+
+  it('"hep gönder" kararı gonderim_karari komutuna hep_gonderilecekler olarak gider', async () => {
+    const arka = new SahteArka().kur();
+    arka.oturumEkle(
+      { oturum: 'o1', gecmis: { ogeler: [], daha_eski_var: false } },
+      { baslik: 'Oturum 1', durum: { tip: 'Tamamlandi' } },
+    );
+    arka.uygulama.son_oturum = 'o1';
+
+    render(Ana, { props: { durum: new AnaDurum() } });
+    await screen.findByRole('heading', { name: 'Oturum 1' });
+
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      { tip: 'GonderimOnizlemesi', islem: 'islem-5', neden: 'Eklenti', ogeler: [eklentiOgesi('c7')] },
+    ]);
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Bu araç çağrısında hep gönder' }),
+    );
+
+    await waitFor(() =>
+      expect(arka.komutlar('gonderim_karari')).toEqual([
+        { oturum: 'o1', islem: 'islem-5', gonderilmeyecekler: [], hep_gonderilecekler: ['c7'] },
+      ]),
+    );
+  });
+
+  it('gönderim günlüğü eklenti satırını amacı, "Gönderilmedi" sonucu ve ayrıntısıyla gösterir', async () => {
+    const arka = new SahteArka().kur();
+    const gunluk: GunlukSayfasi = {
+      satirlar: [
+        {
+          sira: 30,
+          tur: 't1',
+          zaman: Date.parse('2026-10-08T09:00:00Z'),
+          amac: 'eklenti:kalfa-rag',
+          model: 'qwen3-embedding',
+          istek_id: 'istek-eklenti-1',
+          sonuc: { tip: 'Basarili' },
+          yeni: [{ kaynak: 'eklenti:kalfa-rag:gomme', bayt: 2048 }],
+          onceki: 0,
+          eklenti: EKLENTI_OZETI,
+        },
+        {
+          sira: 31,
+          tur: 't1',
+          amac: 'eklenti:kalfa-rag',
+          model: 'rerank-qwen3',
+          sonuc: { tip: 'Gonderilmedi', neden: 'kullanıcı göndermedi' },
+          yeni: [{ kaynak: 'eklenti:kalfa-rag:siralama', bayt: 512 }],
+          onceki: 0,
+          eklenti: { ...EKLENTI_OZETI, uc: 'Siralama', dosyalar: [], dosya_fazlasi: 0 },
+        },
+      ],
+      daha_eski_var: false,
+    };
+    arka.gonderimGunlukleri.set('o1', gunluk);
+
+    render(GonderimGunlugu, { props: { oturum: 'o1', onkapat: () => {} } });
+
+    await waitFor(() => expect(screen.getByText('istek-eklenti-1')).toBeTruthy());
+    expect(screen.getAllByText('Eklenti · kalfa-rag').length).toBe(2);
+    expect(screen.getByText('Gönderilmedi: kullanıcı göndermedi')).toBeTruthy();
+
+    // İlk satırın ayrıntısı: uç, okunan dosyalar, fazlası, özet ve metnin kaydedilmediği notu
+    const ilkSatir = screen.getByText('istek-eklenti-1').closest('tr');
+    await fireEvent.click(ilkSatir!);
+    expect(screen.getByText('Gömme')).toBeTruthy();
+    expect(screen.getByText('src/b.rs')).toBeTruthy();
+    expect(screen.getByText('ve 12 dosya daha')).toBeTruthy();
+    expect(screen.getByText('f3a9c2')).toBeTruthy();
+    expect(screen.getByText(/Metin kayda yazılmadı\./)).toBeTruthy();
+
+    // İkinci satır: okunan dosya yok ve yeniden sıralama ucu
+    const ikinciSatir = screen.getByText('Gönderilmedi: kullanıcı göndermedi').closest('tr');
+    await fireEvent.click(ikinciSatir!);
+    expect(screen.getByText('Yeniden sıralama')).toBeTruthy();
+    expect(screen.getByText('Bu çağrıda okunan dosya yok.')).toBeTruthy();
   });
 });

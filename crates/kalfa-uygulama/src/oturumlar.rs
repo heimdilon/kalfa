@@ -352,17 +352,21 @@ impl Uygulama {
         Ok(())
     }
 
-    /// Göndermeden önce göster kararını iletir (aşama 3b).
+    /// Göndermeden önce göster kararını iletir (aşama 3b). Eklenti isteğinde
+    /// "Bu araç çağrısında hep gönder" `hep_gonderilecekler` ile gelir (aşama 4
+    /// tasarımı §9.4).
     pub async fn gonderim_karari(
         &self,
         oturum: OturumId,
         islem: IslemId,
         gonderilmeyecekler: Vec<CagriId>,
+        hep_gonderilecekler: Vec<CagriId>,
     ) -> Result<(), KomutHatasi> {
         self.tutamac(oturum)?
             .gonder(Komut::GonderimKarari {
                 islem,
                 gonderilmeyecekler,
+                hep_gonderilecekler,
             })
             .await?;
         Ok(())

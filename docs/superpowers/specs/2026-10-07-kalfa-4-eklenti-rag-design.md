@@ -2,6 +2,7 @@
 
 **Tarih:** 2026-10-07
 **Durum:** Kapsam ve dört karar (§2.1) kullanıcıyla konuşulup onaylandı.
+4a ve 4b uygulandı; planlardaki "Tasarımdan farklar" bu belgeye işlendi.
 Belgeden önce bir ön ölçüm yapıldı: EVREN'in gömme ve yeniden sıralama uçları
 canlı yoklandı, wasmtime ile en küçük host ve eklenti prototipi kuruldu
 ([bulgular](../bulgular/2026-10-07-kalfa-4-on-olcum.md)). Ölçüm yalnızca
@@ -492,7 +493,7 @@ ayarlanır (G2).
 | `araclari-listele` | 5 sn | Eklenti yüklenmez |
 | `dosya-listele` sonucu | 100 000 kayıt | `sinir-asildi` |
 | `dosya-oku`: tek dosya / çağrı başına toplam | 4 MiB / 1 GiB | `sinir-asildi` |
-| `evren-cagir`: gövde / yanıt | 4 MiB / 32 MiB | `sinir-asildi` |
+| `evren-cagir`: gövde / yanıt | 4 MiB / 32 MiB (istemcinin 8 MiB'lık JSON sınırı önce işler; 4b) | `sinir-asildi` |
 | `evren-cagir`: çağrı başına istek / istek süresi | 1 000 / 120 sn | `sinir-asildi` / `evren("zaman aşımı")` |
 | `evren-cagir`: oturum başına, eklenti başına istek / gönderilen gövde | 5 000 / 256 MiB | `sinir-asildi`; istek ağa çıkmaz (§9.5) |
 | Depo: anahtar / değer / toplam | 1–200 bayt UTF-8 / 64 MiB / `depo-mb` | `diger` / `sinir-asildi` / `sinir-asildi` |
@@ -702,14 +703,16 @@ tek şey eklentinin kendi EVREN gönderimidir; onu §8.4 ve §9.4 karşılar.
   (`embedding`, `rerank`). Uymayan model `izin-yok("model bu uç için değil")`
   alır. Katalog alınamazsa `evren("model kataloğu alınamadı")`.
 - **Kimlik doğrulamayı host ekler;** eklenti anahtarı hiç görmez. TLS
-  doğrulaması kapatılamaz; yönlendirme izlenmez (`kalfa-evren`'in bugünkü
-  ayarı).
+  doğrulaması kapatılamaz; yönlendirme izlenmez (4b'de `kalfa-evren`'e `Policy::none()` eklendi;
+  reqwest'in varsayılanı izliyordu).
 - **Sıra:** gövde doğrulama → ilk gönderim izni (§8.4; yoksa `izin-yok`) →
-  önizleme (§9.4) → istek → kayıt (§9.3) → yanıt boyutu → eklentiye yanıt.
+  çağrı sınırı → şart kapısı → model kataloğu → önizleme (§9.4) → istek → kayıt (§9.3) → yanıt boyutu → eklentiye yanıt.
 - **Yanıt** eklentiye ham JSON metni olarak döner. Host onu yalnızca JSON
   olduğu ve 32 MiB'ı aşmadığı için denetler.
 
 ### 9.3 Gönderim günlüğü
+
+> **4b'de:** öğe ayrı bir varyanttır, `KayitOgesi::EklentiIstegi`: `Istek` sohbet isteğidir; kurtarma ve geçmiş onu sohbetin parçası sayar. Günlükte ikisi aynı satır biçimine döner ([4b planı](../plans/2026-10-08-kalfa-4b-evren-yolu.md), karar 1).
 
 - Her eklenti isteği bir `KayitOgesi::Istek` olur, başarısızlar dahil (aşama 3
   §6.2):

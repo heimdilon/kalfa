@@ -10,10 +10,12 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures_util::{StreamExt, stream};
 use kalfa_evren::tipler::{
-    ChatMessage, ChatRequest, ChatResponse, Choice, FunctionCall, TermsStatus, TermsText, ToolCall,
+    ChatMessage, ChatRequest, ChatResponse, Choice, FunctionCall, ModelInfo, TermsStatus,
+    TermsText, ToolCall,
 };
-use kalfa_evren::{AkisOlayi, EvrenError, YanitMeta};
+use kalfa_evren::{AkisOlayi, EkUc, EvrenError, HamYanit, YanitMeta};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, Hazirlik, YazmaHedefi};
@@ -114,6 +116,10 @@ pub struct SahteSaglayici {
     sohbet_istekleri: Mutex<Vec<ChatRequest>>,
     sart: Mutex<SahteSart>,
     durum_hatasi: Mutex<Option<EvrenError>>,
+    ek_istekleri: Mutex<Vec<(EkUc, Value)>>,
+    ek_senaryo: Mutex<VecDeque<Result<HamYanit, EvrenError>>>,
+    ek_gecikme: Mutex<Option<Duration>>,
+    modeller: Mutex<Result<Vec<ModelInfo>, EvrenError>>,
 }
 
 impl SahteSaglayici {
@@ -129,7 +135,32 @@ impl SahteSaglayici {
                 kabul_edilen: Vec::new(),
             }),
             durum_hatasi: Mutex::new(None),
+            ek_istekleri: Mutex::new(Vec::new()),
+            ek_senaryo: Mutex::new(VecDeque::new()),
+            ek_gecikme: Mutex::new(None),
+            modeller: Mutex::new(Ok(sahte_modeller())),
         })
+    }
+
+    /// Eklenti uçlarına gelen istekler, geliş sırasıyla (sahte EVREN'in
+    /// aldıkları).
+    pub fn ek_istekleri(&self) -> Vec<(EkUc, Value)> {
+        self.ek_istekleri.lock().unwrap().clone()
+    }
+
+    /// Sıradaki eklenti isteğine bu yanıt verilir; kuyruk boşken yanıt
+    /// belirlenimlidir (`sahte_ek_yanit`).
+    pub fn ek_yanit_ekle(&self, yanit: Result<HamYanit, EvrenError>) {
+        self.ek_senaryo.lock().unwrap().push_back(yanit);
+    }
+
+    /// Her eklenti isteği yanıttan önce bu kadar bekler.
+    pub fn ek_gecikme(&self, sure: Option<Duration>) {
+        *self.ek_gecikme.lock().unwrap() = sure;
+    }
+
+    pub fn modeller_ayarla(&self, modeller: Result<Vec<ModelInfo>, EvrenError>) {
+        *self.modeller.lock().unwrap() = modeller;
     }
 
     pub fn istekler(&self) -> Vec<ChatRequest> {
@@ -297,6 +328,179 @@ impl Saglayici for SahteSaglayici {
         s.kabul_edilen.push(surum);
         Ok(())
     }
+
+    async fn modeller(&self) -> Result<Vec<ModelInfo>, EvrenError> {
+        self.modeller.lock().unwrap().clone()
+    }
+
+    async fn ek_uc(&self, uc: EkUc, govde: &Value) -> Result<HamYanit, EvrenError> {
+        let sira = {
+            let mut istekler = self.ek_istekleri.lock().unwrap();
+            istekler.push((uc, govde.clone()));
+            istekler.len()
+        };
+        let gecikme = *self.ek_gecikme.lock().unwrap();
+        if let Some(sure) = gecikme {
+            tokio::time::sleep(sure).await;
+        }
+        if let Some(yanit) = self.ek_senaryo.lock().unwrap().pop_front() {
+            return yanit;
+        }
+        let model = govde["model"].as_str().unwrap_or_default().to_string();
+        Ok(HamYanit {
+            govde: sahte_ek_yanit(uc, govde).to_string(),
+            model: Some(format!("qwen/{model}")),
+            meta: YanitMeta {
+                istek_id: Some(format!("sahte-ek-{sira}")),
+                yonlendirilen_model: Some(format!("qwen/{model}")),
+                ..Default::default()
+            },
+        })
+    }
+}
+
+/// Sahte EVREN'in model kataloğu: bir sohbet, bir gömme, bir sıralama modeli.
+pub fn sahte_modeller() -> Vec<ModelInfo> {
+    [
+        ("glm-5.3", "chat"),
+        ("qwen3-embedding-8b", "embedding"),
+        ("qwen3-reranker-8b", "rerank"),
+    ]
+    .into_iter()
+    .map(|(id, task)| ModelInfo {
+        id: id.into(),
+        task: task.into(),
+        modalities: Vec::new(),
+        pricing: None,
+    })
+    .collect()
+}
+
+/// Metnin SHA-256'sından türetilen, birim uzunlukta belirlenimli vektör.
+/// Aynı metin her zaman aynı vektörü verir.
+pub fn sahte_vektor(metin: &str, boyut: usize) -> Vec<f32> {
+    let mut v = Vec::with_capacity(boyut);
+    let mut blok = 0u32;
+    while v.len() < boyut {
+        let mut h = Sha256::new();
+        h.update(metin.as_bytes());
+        h.update(blok.to_le_bytes());
+        for b in h.finalize() {
+            if v.len() == boyut {
+                break;
+            }
+            v.push((f32::from(b) - 127.5) / 127.5);
+        }
+        blok += 1;
+    }
+    let uzunluk = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if uzunluk > 0.0 {
+        for x in &mut v {
+            *x /= uzunluk;
+        }
+    }
+    v
+}
+
+/// Sahte EVREN'in belirlenimli yanıtı. Gömme: her girdiye `sahte_vektor`
+/// (`dimensions`, yoksa 1024; `encoding_format: "base64"` ise küçük endian
+/// `f32`'lerin base64'ü). Sıralama: puan, sorgunun (en az iki harfli)
+/// kelimelerinden belgede geçenlerin oranıdır; eşitlikte sıra korunur.
+pub fn sahte_ek_yanit(uc: EkUc, govde: &Value) -> Value {
+    let model = govde["model"].as_str().unwrap_or_default();
+    match uc {
+        EkUc::Gomme => {
+            let boyut = govde["dimensions"].as_u64().unwrap_or(1024) as usize;
+            let base64 = govde["encoding_format"].as_str() == Some("base64");
+            let girdiler: Vec<String> = match &govde["input"] {
+                Value::String(s) => vec![s.clone()],
+                Value::Array(a) => a
+                    .iter()
+                    .map(|x| x.as_str().unwrap_or_default().to_string())
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let veri: Vec<Value> = girdiler
+                .iter()
+                .enumerate()
+                .map(|(i, metin)| {
+                    let v = sahte_vektor(metin, boyut);
+                    let gomme = if base64 {
+                        let baytlar: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+                        Value::String(base64_kodla(&baytlar))
+                    } else {
+                        json!(v)
+                    };
+                    json!({"index": i, "object": "embedding", "embedding": gomme})
+                })
+                .collect();
+            let token: usize = girdiler.iter().map(|m| m.len() / 4 + 1).sum();
+            json!({
+                "object": "list",
+                "model": format!("qwen/{model}"),
+                "data": veri,
+                "usage": {"prompt_tokens": token, "total_tokens": token},
+            })
+        }
+        EkUc::Siralama => {
+            let sorgu = govde["query"].as_str().unwrap_or_default().to_lowercase();
+            let kelimeler: Vec<&str> = sorgu
+                .split_whitespace()
+                .filter(|k| k.chars().count() >= 2)
+                .collect();
+            let belgeler: Vec<String> = govde["documents"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .map(|x| x.as_str().unwrap_or_default().to_lowercase())
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut puanlar: Vec<(usize, f64)> = belgeler
+                .iter()
+                .enumerate()
+                .map(|(i, b)| {
+                    let gecen = kelimeler.iter().filter(|k| b.contains(*k)).count();
+                    (i, gecen as f64 / (kelimeler.len() as f64 + 1.0))
+                })
+                .collect();
+            puanlar.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+            let ilk_n = govde["top_n"]
+                .as_u64()
+                .map_or(puanlar.len(), |n| n as usize);
+            puanlar.truncate(ilk_n);
+            let sonuclar: Vec<Value> = puanlar
+                .into_iter()
+                .map(|(i, p)| json!({"index": i, "relevance_score": p}))
+                .collect();
+            json!({
+                "id": "sahte-siralama",
+                "model": format!("qwen/{model}"),
+                "results": sonuclar,
+            })
+        }
+    }
+}
+
+fn base64_kodla(veri: &[u8]) -> String {
+    const ABECE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut cikti = String::with_capacity(veri.len().div_ceil(3) * 4);
+    for parca in veri.chunks(3) {
+        let b = [
+            parca[0],
+            parca.get(1).copied().unwrap_or(0),
+            parca.get(2).copied().unwrap_or(0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for (i, kaydir) in [18u32, 12, 6, 0].into_iter().enumerate() {
+            if i <= parca.len() {
+                cikti.push(ABECE[((n >> kaydir) & 63) as usize] as char);
+            } else {
+                cikti.push('=');
+            }
+        }
+    }
+    cikti
 }
 
 /// Sahte yazan aracın hazırlığındaki önceki hâl.

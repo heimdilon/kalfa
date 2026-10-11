@@ -75,4 +75,16 @@ impl Saglayici for DegisirSaglayici {
     async fn sart_durumu(&self) -> Result<TermsStatus, EvrenError> {
         self.simdiki()?.sart_durumu().await
     }
+
+    async fn modeller(&self) -> Result<Vec<kalfa_evren::tipler::ModelInfo>, EvrenError> {
+        self.simdiki()?.modeller().await
+    }
+
+    async fn ek_uc(
+        &self,
+        uc: kalfa_evren::EkUc,
+        govde: &serde_json::Value,
+    ) -> Result<kalfa_evren::HamYanit, EvrenError> {
+        self.simdiki()?.ek_uc(uc, govde).await
+    }
 }

@@ -328,7 +328,14 @@ pub fn durum_ozeti(kayitlar: &[Zarf<KayitOgesi>]) -> DurumOzeti {
             KayitOgesi::ModelDegisti { model } => o.model = Some(model.clone()),
             KayitOgesi::KipDegisti { kip } => o.kip = Some(*kip),
             KayitOgesi::OnizlemeDegisti { acik } => o.onizleme_acik = *acik,
+            // Eklenti isteği de canlıda kredi ve yönlendirilen model gözlemi
+            // üretir; kurtarılan durum çubuğu aynısını göstermeli.
             KayitOgesi::Istek {
+                kredi,
+                yonlendirilen_model,
+                ..
+            }
+            | KayitOgesi::EklentiIstegi {
                 kredi,
                 yonlendirilen_model,
                 ..

@@ -733,7 +733,7 @@ async fn bilinmeyen_oturum_hata() {
 
     let err4 =
         o.t.uygulama
-            .gonderim_karari(bilinmeyen, islem, Vec::new())
+            .gonderim_karari(bilinmeyen, islem, Vec::new(), Vec::new())
             .await
             .unwrap_err();
     assert_eq!(err4.kod, HataKodu::OturumYok);

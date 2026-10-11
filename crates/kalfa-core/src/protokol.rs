@@ -78,6 +78,10 @@ pub enum Komut {
         islem: IslemId,
         #[serde(default)]
         gonderilmeyecekler: Vec<CagriId>,
+        /// Bu araç çağrılarının sonraki eklenti istekleri sorulmadan gider:
+        /// "Bu araç çağrısında hep gönder" (aşama 4 tasarımı §9.4).
+        #[serde(default)]
+        hep_gonderilecekler: Vec<CagriId>,
     },
 }
 
@@ -305,6 +309,8 @@ pub enum Olay {
 pub enum OnizlemeNedeni {
     Onizleme,
     Denetim,
+    /// Eklentinin EVREN isteği (aşama 4 tasarımı §9.4).
+    Eklenti,
 }
 
 /// Gönderim önizleme kartındaki bir öğe.
@@ -315,4 +321,7 @@ pub struct OnizlemeOgesi {
     pub bayt: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub denetim: Option<String>,
+    /// Eklenti isteğinin özeti; yalnızca `OnizlemeNedeni::Eklenti`'de.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eklenti: Option<crate::gonderim::EklentiIstekOzeti>,
 }

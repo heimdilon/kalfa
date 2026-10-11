@@ -366,6 +366,7 @@ async fn s12_onizlemede_cikarilan_oge_sonraki_istekte_yoktur() {
     d.gonder(Komut::GonderimKarari {
         islem,
         gonderilmeyecekler: vec![gizli.cagri],
+        hep_gonderilecekler: Vec::new(),
     })
     .await;
 
@@ -501,6 +502,7 @@ async fn s9_kati_denetci_denetleyemezse_icerik_karar_olmadan_gitmez() {
         d.gonder(Komut::GonderimKarari {
             islem,
             gonderilmeyecekler: vec![ogeler[0].cagri],
+            hep_gonderilecekler: Vec::new(),
         })
         .await;
         assert_eq!(d.tur_sonu().await, BitisNedeni::Normal, "{ad}");

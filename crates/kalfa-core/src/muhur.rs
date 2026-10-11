@@ -145,12 +145,17 @@ pub fn muhur_hesapla(
             serde_json::to_string(kabuk).unwrap_or_default().as_bytes(),
         );
     }
-    // Eklenti: sürüm, özet, globlar ve uçlar (aşama 4 tasarımı §8.3).
+    // Eklenti: sürüm, özet, globlar, uçlar ve ilk gönderim (aşama 4 tasarımı
+    // §8.3). Dosya sayısı ve bayt yalnızca bilgi amaçlıdır: mühre sıfırlanmış
+    // bir kopya girer; dosyalar onaydan sonra değişince onay bozulmaz.
     if let Some(eklenti) = &hazirlik.eklenti {
+        let mut muhurlu = eklenti.clone();
+        muhurlu.dosya_sayisi = 0;
+        muhurlu.bayt = 0;
         alan(&mut h, b"e");
         alan(
             &mut h,
-            serde_json::to_string(eklenti)
+            serde_json::to_string(&muhurlu)
                 .unwrap_or_default()
                 .as_bytes(),
         );

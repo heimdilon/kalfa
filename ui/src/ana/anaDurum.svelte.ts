@@ -239,12 +239,13 @@ export class AnaDurum {
     oturum: OturumId,
     islem: IslemId,
     gonderilmeyecekler: CagriId[],
+    hepGonderilecekler: CagriId[],
   ): Promise<void> {
     // Kart karar gider gitmez kapanır: hızlı bir yanıtta tur, IPC dönmeden
     // biter ve hâlâ bekleyen kartı geçersiz sayardı.
     this.#uygula(oturum, { tip: 'OnizlemeYanitlandi', islem });
     const basarili = await this.#dene(() =>
-      ipc.gonderimKarari(oturum, islem, gonderilmeyecekler),
+      ipc.gonderimKarari(oturum, islem, gonderilmeyecekler, hepGonderilecekler),
     );
     if (basarili === undefined) {
       this.#uygula(oturum, { tip: 'OnizlemeGonderilemedi', islem });

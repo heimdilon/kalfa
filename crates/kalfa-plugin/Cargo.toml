@@ -18,6 +18,7 @@ globset.workspace = true
 hex.workspace = true
 jsonschema.workspace = true
 kalfa-core = { path = "../kalfa-core" }
+kalfa-evren = { path = "../kalfa-evren" }
 kalfa-tools = { path = "../kalfa-tools" }
 semver.workspace = true
 serde.workspace = true

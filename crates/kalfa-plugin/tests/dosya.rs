@@ -154,9 +154,15 @@ async fn manifestte_olmayan_yetenek_izin_yok_alir() {
     );
 }
 
+/// Manifestte `evren` var ama bağlantı yok: istek ağa çıkmaz (4a yer tutucusunun
+/// yerini alır; 4b'de bağlantısız oturumun iletisi budur).
 #[tokio::test]
-async fn evren_yetenegi_olsa_da_4a_da_cagri_yok() {
+async fn evren_yetenegi_olsa_da_baglanti_yoksa_cagri_yok() {
     let d = Duzenek::yeni(&manifest(&[], &["embeddings"], 0)).await;
     let c = d.cagir("yetkisiz", json!({})).await;
-    assert!(c.icerik().contains("aşama 4b"), "{}", c.icerik());
+    assert!(
+        c.icerik().contains("EVREN bağlantısı bu oturumda yok"),
+        "{}",
+        c.icerik()
+    );
 }

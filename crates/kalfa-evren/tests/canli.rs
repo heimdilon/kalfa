@@ -7,7 +7,7 @@
 
 use futures_util::StreamExt;
 use kalfa_evren::tipler::{ChatMessage, ChatRequest, ToolDef};
-use kalfa_evren::{AkisOlayi, ApiAnahtari, EvrenIstemcisi, VARSAYILAN_TABAN};
+use kalfa_evren::{AkisOlayi, ApiAnahtari, EkUc, EvrenIstemcisi, VARSAYILAN_TABAN};
 use serde_json::json;
 
 fn canli_istemci() -> EvrenIstemcisi {
@@ -102,4 +102,28 @@ async fn canli_art_arda_iki_kullanici_mesaji_kabul_edilir() {
         );
         assert!(!metin.trim().is_empty(), "{model}: yanıt boş");
     }
+}
+
+#[tokio::test]
+#[ignore = "canlı EVREN API; EVREN_API_KEY gerekir"]
+async fn canli_gomme_tek_vektor_doner() {
+    let govde =
+        json!({"model": "qwen3-embedding-8b", "input": ["merhaba dünya"], "dimensions": 32});
+    let yanit = canli_istemci().ek_uc(EkUc::Gomme, &govde).await.unwrap();
+    let cozulmus: serde_json::Value = serde_json::from_str(&yanit.govde).unwrap();
+    assert_eq!(cozulmus["data"].as_array().map(Vec::len), Some(1));
+}
+
+#[tokio::test]
+#[ignore = "canlı EVREN API; EVREN_API_KEY gerekir"]
+async fn canli_siralama_iki_sonuc_doner() {
+    let govde = json!({
+        "model": "qwen3-reranker-8b",
+        "query": "kurtarma",
+        "documents": ["Kurtarma kaydı okur.", "Kabuk yalıtımda çalışır."],
+        "top_n": 2
+    });
+    let yanit = canli_istemci().ek_uc(EkUc::Siralama, &govde).await.unwrap();
+    let cozulmus: serde_json::Value = serde_json::from_str(&yanit.govde).unwrap();
+    assert_eq!(cozulmus["results"].as_array().map(Vec::len), Some(2));
 }

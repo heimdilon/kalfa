@@ -13,6 +13,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::akis::{AkisBirlestirici, AkisOlayi, VeriSonucu};
 use crate::butce::{JSON_BAYT_SINIRI, YANIT_CAGRI_SINIRI, YanitButcesi};
+use crate::eklenti::{EkUc, HamYanit};
 use crate::hata::{EvrenError, hata_esle};
 use crate::kredi::{YanitMeta, basliklardan};
 use crate::sse::{SseCozucu, VARSAYILAN_AZAMI_OLAY};
@@ -64,9 +65,11 @@ impl EvrenIstemcisi {
         // reqwest `rustls-no-provider` ile derlendi; süreç genelinde ring'i kur.
         // Zaten kuruluysa hata döner; yok sayılır.
         let _ = rustls::crypto::ring::default_provider().install_default();
+        // Belge §9.2: yönlendirme izlenmez; anahtar ve gövde başka hedefe gitmez.
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(15))
             .read_timeout(Duration::from_secs(180))
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("kalfa-evren/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| EvrenError::ag_baglanti(e.to_string()))?;
@@ -149,6 +152,25 @@ impl EvrenIstemcisi {
                 .ok_or(EvrenError::YanitSiniri)?;
         }
         Ok((cevap, meta))
+    }
+
+    /// Eklentinin gömme ya da yeniden sıralama isteği (aşama 4 tasarımı §9.1).
+    /// Gövde host'ta doğrulanmıştır ve olduğu gibi gider. Yanıt JSON olmalı
+    /// ve `JSON_BAYT_SINIRI`'ni aşmamalıdır; ham metin olarak döner.
+    pub async fn ek_uc(&self, uc: EkUc, govde: &serde_json::Value) -> Result<HamYanit, EvrenError> {
+        let (yanit, meta) = self
+            .gonder(self.http.post(self.url(uc.yol())).json(govde))
+            .await?;
+        let govde = sinirli_govde(yanit).await?;
+        let deger: serde_json::Value = serde_json::from_slice(&govde)
+            .map_err(|e| EvrenError::GecersizYanit(format!("JSON çözülemedi: {e}")))?;
+        let model = deger
+            .get("model")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        let govde = String::from_utf8(govde)
+            .map_err(|_| EvrenError::GecersizYanit("yanıt UTF-8 değil".into()))?;
+        Ok(HamYanit { govde, model, meta })
     }
 
     /// Akışlı sohbet. HTTP hatası akış başlamadan `Err` döner; akış sırasındaki

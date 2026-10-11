@@ -12,6 +12,7 @@
   import SourceTag from '../bilesenler/SourceTag.svelte';
   import { m } from '../dil/tr';
   import * as ipc from '../ipc/ana';
+  import EklentiAyrinti from './EklentiAyrinti.svelte';
   import type { GunlukSatiri, GunlukSayfasi, OturumId } from '../ipc/tipler';
 
   let {
@@ -152,7 +153,7 @@
       <div class="sag-kolon">
         {#if seciliSatir}
           <div class="ayrinti-paneli">
-            {#if seciliSatir.yeni.length === 0 && seciliSatir.onceki === 0}
+            {#if seciliSatir.yeni.length === 0 && seciliSatir.onceki === 0 && !seciliSatir.eklenti}
               <p class="ayrinti-yok">{m('gunluk.ayrinti_yok')}</p>
             {:else}
               <div class="ogeler-alani">
@@ -171,6 +172,11 @@
                   </span>
                 {/if}
               </div>
+
+              {#if seciliSatir.eklenti}
+                <EklentiAyrinti ozet={seciliSatir.eklenti} ozetGoster />
+                <p class="metin-kayitsiz">{m('eklenti.metin_kayitsiz')}</p>
+              {/if}
 
               {#if metinYukleniyor}
                 <p class="durum-mesaji">{m('gunluk.metin_yukleniyor')}</p>
@@ -289,5 +295,10 @@
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+  }
+  .metin-kayitsiz {
+    margin: 0;
+    font: var(--type-small);
+    color: var(--text-muted);
   }
 </style>

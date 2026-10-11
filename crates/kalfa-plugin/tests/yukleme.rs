@@ -63,6 +63,8 @@ async fn import_denetimi_atlansa_da_soket_baglanamaz() {
         &kalfa_tools::CalismaAlani::ac(siniflandirici).unwrap(),
         &std::sync::Arc::new(kalfa_core::kilit::KaynakKilitleri::yeni()),
         alan.path(),
+        None,
+        kalfa_plugin::BellekIzni::yeni(false),
     );
     let c = cagir(
         &araclar[0],

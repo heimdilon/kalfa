@@ -97,7 +97,9 @@ export type VeriCikisi =
   | 'KomutCiktisi'
   | 'AramaSonuclari'
   | 'DosyaAdlari'
-  | 'YalnizcaYazildi';
+  | 'YalnizcaYazildi'
+  /** Eklentinin ürettiği metin (aşama 4 tasarımı §8.1). */
+  | 'EklentiCiktisi';
 
 export interface OnaysizDegisiklikler {
   yollar: string[];
@@ -262,7 +264,7 @@ export type Olay =
   | { tip: 'DenetimAtlandi'; cagri: CagriId }
   | { tip: 'Kisayollar'; liste: Kisayol[] };
 
-export type OnizlemeNedeni = 'Onizleme' | 'Denetim';
+export type OnizlemeNedeni = 'Onizleme' | 'Denetim' | 'Eklenti';
 
 export type DenetimKipi = 'Kapali' | 'Uyar' | 'Kati';
 
@@ -297,6 +299,8 @@ export interface OnizlemeOgesi {
   kaynak: string;
   bayt: number;
   denetim?: string;
+  /** Eklenti isteğinin özeti; yalnızca `neden: 'Eklenti'` öğesinde (aşama 4). */
+  eklenti?: EklentiIstekOzeti;
 }
 
 export interface Zarf<T> {
@@ -509,7 +513,29 @@ export type IstekAsamasi = 'Baglanti' | 'Yanit';
 
 export type IstekSonucu =
   | { tip: 'Basarili' }
-  | { tip: 'Hata'; asama: IstekAsamasi; mesaj: string };
+  | { tip: 'Hata'; asama: IstekAsamasi; mesaj: string }
+  /** Ağa çıkmadı: kullanıcı göndermedi ya da eklenti sınırı doldu (aşama 4 §9.4, §9.5). */
+  | { tip: 'Gonderilmedi'; neden: string };
+
+/** Eklentilere açık EVREN ucu (aşama 4 tasarımı §9.1). */
+export type EkUc = 'Gomme' | 'Siralama';
+
+/**
+ * Eklentinin EVREN isteğinin özeti (aşama 4 tasarımı §9.3). Metnin kendisi
+ * kayda yazılmaz; içeriğin kaynağı `dosyalar` listesiyle anlatılır.
+ */
+export interface EklentiIstekOzeti {
+  eklenti: string;
+  uc: EkUc;
+  model: string;
+  metin_sayisi: number;
+  bayt: number;
+  /** Metinlerin SHA-256 özeti, onaltılık. */
+  ozet: string;
+  /** En çok 1 000 dosya yolu. */
+  dosyalar: string[];
+  dosya_fazlasi: number;
+}
 
 export interface GunlukToken {
   istem: number;
@@ -529,6 +555,8 @@ export interface GunlukSatiri {
   sonuc: IstekSonucu;
   yeni: GonderilenOge[];
   onceki: number;
+  /** Eklenti isteğinin özeti; yalnızca eklenti satırlarında (aşama 4). */
+  eklenti?: EklentiIstekOzeti | null;
 }
 
 export interface GunlukSayfasi {

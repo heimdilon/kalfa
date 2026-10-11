@@ -6,12 +6,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
+use kalfa_evren::YanitMeta;
 use kalfa_evren::tipler::ToolDef;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
+use crate::gonderim::{EklentiIstekOzeti, IstekSonucu};
 use crate::izin::Kip;
 use crate::kabuk::KabukTarifi;
 use crate::kimlik::CagriId;
@@ -103,6 +105,17 @@ pub struct EklentiTarifi {
     pub globlar: Vec<String>,
     /// Manifestin `evren` uçları.
     pub evren_uclari: Vec<String>,
+    /// Eklentinin `evren` yeteneği var ve bu çalışma alanında henüz gönderim
+    /// izni yok: çağrı her kipte yerel onay ister (aşama 4 tasarımı §8.4).
+    #[serde(default)]
+    pub ilk_gonderim: bool,
+    /// İlk gönderim kartı için: manifest globlarıyla okunabilecek dosya
+    /// sayısı ve toplam boyutu. Yalnızca `ilk_gonderim`'de hesaplanır; bilgi
+    /// amaçlıdır, mühre girmez.
+    #[serde(default)]
+    pub dosya_sayisi: u64,
+    #[serde(default)]
+    pub bayt: u64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -377,6 +390,114 @@ impl CiktiGonderici {
     }
 }
 
+/// Eklentinin bir EVREN isteği için oturumdan istediği izin (aşama 4
+/// tasarımı §8.7, §9.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GonderimTalebi {
+    pub ozet: EklentiIstekOzeti,
+    /// İsteğin gövdesi. Kayda yazılmaz; önizleme açıkken "Metni göster" için
+    /// oturum bellekte tutar.
+    pub govde: Arc<str>,
+}
+
+/// Oturumun gönderim talebine cevabı.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GonderimYaniti {
+    Gonder,
+    /// Kullanıcı önizlemede "Gönderme" dedi. Kaydı oturum yazdı.
+    Gonderme,
+    /// Oturum başına eklenti sınırı doldu (§9.5). Kaydı oturum yazdı.
+    SinirAsildi(String),
+    /// Tur iptal edildi ya da oturum kapandı.
+    Iptal,
+}
+
+/// Aracın oturuma ilettiği istekler. Oturumun araç aşaması bunları araç
+/// çalışırken işler.
+#[derive(Debug)]
+pub enum OrtamIstegi {
+    Gonderim {
+        cagri: CagriId,
+        talep: GonderimTalebi,
+        yanit: oneshot::Sender<GonderimYaniti>,
+    },
+    /// `Gonder` cevabından sonra ağa çıkan isteğin sonucu; oturum kayda
+    /// yazar (`KayitOgesi::EklentiIstegi`).
+    IstekBitti {
+        cagri: CagriId,
+        ozet: EklentiIstekOzeti,
+        meta: YanitMeta,
+        sonuc: IstekSonucu,
+    },
+}
+
+/// Aracın oturumla konuştuğu kanal (aşama 4 tasarımı §8.7): canlı çıktı,
+/// EVREN isteğinin izni ve kaydı. Yerleşik araçlar yalnızca çıktıyı kullanır.
+#[derive(Debug, Clone)]
+pub struct AracOrtami {
+    cikti: CiktiGonderici,
+    ic: Option<(CagriId, mpsc::Sender<OrtamIstegi>)>,
+}
+
+impl AracOrtami {
+    /// Oturumsuz ortam (testler, oturum dışı çağrı): gönderim talebine
+    /// `Gonder` döner, kayıt atılır.
+    pub fn bos() -> Self {
+        Self {
+            cikti: CiktiGonderici::bos(),
+            ic: None,
+        }
+    }
+
+    /// Yalnızca canlı çıktısı olan ortam.
+    pub fn ciktiyla(cikti: CiktiGonderici) -> Self {
+        Self { cikti, ic: None }
+    }
+
+    pub fn yeni(cikti: CiktiGonderici, cagri: CagriId, tx: mpsc::Sender<OrtamIstegi>) -> Self {
+        Self {
+            cikti,
+            ic: Some((cagri, tx)),
+        }
+    }
+
+    pub fn cikti(&self) -> CiktiGonderici {
+        self.cikti.clone()
+    }
+
+    /// Talebi oturuma iletir ve cevabı bekler. Oturum kapandıysa `Iptal`.
+    pub async fn gonderim_izni(&self, talep: GonderimTalebi) -> GonderimYaniti {
+        let Some((cagri, tx)) = &self.ic else {
+            return GonderimYaniti::Gonder;
+        };
+        let (yanit, alici) = oneshot::channel();
+        let istek = OrtamIstegi::Gonderim {
+            cagri: *cagri,
+            talep,
+            yanit,
+        };
+        if tx.send(istek).await.is_err() {
+            return GonderimYaniti::Iptal;
+        }
+        alici.await.unwrap_or(GonderimYaniti::Iptal)
+    }
+
+    /// Ağa çıkan isteğin sonucunu oturuma bildirir.
+    pub async fn istek_bitti(&self, ozet: EklentiIstekOzeti, meta: YanitMeta, sonuc: IstekSonucu) {
+        let Some((cagri, tx)) = &self.ic else {
+            return;
+        };
+        let _ = tx
+            .send(OrtamIstegi::IstekBitti {
+                cagri: *cagri,
+                ozet,
+                meta,
+                sonuc,
+            })
+            .await;
+    }
+}
+
 impl From<std::io::Error> for AracHatasi {
     fn from(hata: std::io::Error) -> Self {
         AracHatasi::GirisCikis(hata.to_string())
@@ -415,6 +536,20 @@ pub trait Arac: Send + Sync {
         _cikti: CiktiGonderici,
     ) -> Result<AracCiktisi, AracHatasi> {
         self.calistir(argumanlar, hazirlik, iptal).await
+    }
+
+    /// Oturumla konuşan araçlar (eklenti) bunu uygular: EVREN isteğinin izni
+    /// ve kaydı `AracOrtami`'yle gider (aşama 4 tasarımı §8.7). Oturum
+    /// araçları bununla çalıştırır; varsayılanı `calistir_akisli`'dir.
+    async fn calistir_ortamli(
+        &self,
+        argumanlar: &Value,
+        hazirlik: &Hazirlik,
+        iptal: CancellationToken,
+        ortam: AracOrtami,
+    ) -> Result<AracCiktisi, AracHatasi> {
+        self.calistir_akisli(argumanlar, hazirlik, iptal, ortam.cikti())
+            .await
     }
 }
 

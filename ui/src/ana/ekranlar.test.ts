@@ -336,6 +336,29 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
     expect(within(sayfa).getByText('Dosya içeriği')).toBeTruthy();
   });
 
+  it('eklenti çıktısının onay sayfası modele gideceğini söyler (aşama 4b)', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      {
+        tip: 'OnayGerekiyor',
+        islem: 'i_eklenti',
+        ogeler: [
+          onayOgesi({
+            cagri: 'c_eklenti',
+            arac: 'anlamsal_ara',
+            aciklama: 'kalfa-rag eklentisinin aracını çalıştırmak istiyor',
+            veri_cikisi: 'EklentiCiktisi',
+          }),
+        ],
+      },
+    ]);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    const sayfa = await screen.findByRole('dialog');
+    expect(within(sayfa).getByText('Veri çıkışı')).toBeTruthy();
+    expect(within(sayfa).getByText('Eklentinin ürettiği metin modele gidecek.')).toBeTruthy();
+  });
+
   it('kabuk onayı onaysız değişen dosyaları ve derleme dosyası uyarısını gösterir (Bulgu 3)', async () => {
     const { arka } = await ciz();
     arka.olaylar('o1', [

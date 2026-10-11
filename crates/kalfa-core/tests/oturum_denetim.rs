@@ -567,6 +567,7 @@ async fn kati_kipte_cikarilan_supheli_icerik_istekte_ve_kayitta_yok() {
     dvr.gonder(Komut::GonderimKarari {
         islem,
         gonderilmeyecekler: vec![ogeler[0].cagri],
+        hep_gonderilecekler: Vec::new(),
     })
     .await;
     let son = dvr.bekle(|o| matches!(o, Olay::Tamamlandi { .. })).await;
@@ -618,6 +619,7 @@ async fn kati_kipte_gonder_karari_kayda_yazilir_ve_uyari_satiri_kalir() {
     dvr.gonder(Komut::GonderimKarari {
         islem,
         gonderilmeyecekler: vec![],
+        hep_gonderilecekler: Vec::new(),
     })
     .await;
     dvr.bekle(|o| matches!(o, Olay::Tamamlandi { .. })).await;
@@ -720,6 +722,7 @@ async fn kip_turun_basinda_okunur_tur_sirasinda_degismez() {
     dvr.gonder(Komut::GonderimKarari {
         islem,
         gonderilmeyecekler: vec![],
+        hep_gonderilecekler: Vec::new(),
     })
     .await;
     dvr.bekle(|o| matches!(o, Olay::Tamamlandi { .. })).await;

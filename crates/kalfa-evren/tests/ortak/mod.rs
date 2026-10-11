@@ -23,3 +23,11 @@ pub fn sentetik_bayt(ad: &str) -> Vec<u8> {
         .join(ad);
     std::fs::read(&yol).unwrap_or_else(|e| panic!("sentetik veri {ad} okunamadı: {e}"))
 }
+
+/// `tests/kayitlar/` altındaki EVREN ön ölçüm kaydının baytları (aşama 4).
+pub fn kayit_bayt(ad: &str) -> Vec<u8> {
+    let yol = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/kayitlar")
+        .join(ad);
+    std::fs::read(&yol).unwrap_or_else(|e| panic!("kayıt {ad} okunamadı: {e}"))
+}

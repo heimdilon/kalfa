@@ -32,6 +32,14 @@ pub const SONUC: usize = 64 * 1024;
 pub const HATA_ILETISI: usize = 4 * 1024;
 /// `stderr`'in tutulan sonu.
 pub const STDERR: usize = 4 * 1024;
+/// `evren-cagir`: gövde (§7.4).
+pub const EVREN_GOVDESI: usize = 4 * 1024 * 1024;
+/// `evren-cagir`: yanıt.
+pub const EVREN_YANITI: usize = 32 * 1024 * 1024;
+/// `evren-cagir`: çağrı başına istek.
+pub const CAGRI_EVREN_ISTEGI: u32 = 1_000;
+/// `evren-cagir`: istek süresi.
+pub const EVREN_SURESI: Duration = Duration::from_secs(120);
 /// Uygulama genelinde aynı anda çalışan eklenti çağrısı.
 pub const ESZAMANLI: usize = 4;
 pub const ARAC_ACIKLAMASI: usize = 1_000;

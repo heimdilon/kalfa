@@ -12,8 +12,11 @@ use kalfa_core::izin::Siniflandirici;
 use kalfa_core::kilit::KaynakKilitleri;
 use kalfa_core::kimlik::CagriId;
 use kalfa_core::protokol::CiktiAkisi;
+use kalfa_core::saglayici::Saglayici;
+use kalfa_core::sart_kapisi::SartKapisi;
+use kalfa_core::test_destek::SahteSaglayici;
 use kalfa_plugin::sinir::Sureler;
-use kalfa_plugin::{Eklenti, EklentiAraci, Motor};
+use kalfa_plugin::{BellekIzni, Eklenti, EklentiAraci, EvrenBaglami, GonderimIzni, Motor};
 use kalfa_tools::CalismaAlani;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -139,11 +142,30 @@ pub struct Duzenek {
     pub eklenti: Arc<Eklenti>,
     pub calisma_alani: Arc<CalismaAlani>,
     pub kilitler: Arc<KaynakKilitleri>,
+    /// EVREN bağlantısı; varsayılan yok.
+    pub evren: Option<Arc<EvrenBaglami>>,
+    /// Çalışma alanının gönderim izni; varsayılan yok.
+    pub izin: Arc<dyn GonderimIzni>,
 }
 
 impl Duzenek {
     pub async fn yeni(manifest: &str) -> Self {
         Self::alanla(manifest, tempfile::tempdir().unwrap()).await
+    }
+
+    /// EVREN bağlantılı düzenek: `sahte` sağlayıcısı, onu kullanan şart kapısı
+    /// ve verilen gönderim izni.
+    pub async fn evrenli(
+        manifest: &str,
+        sahte: &Arc<SahteSaglayici>,
+        izin: Arc<dyn GonderimIzni>,
+    ) -> Self {
+        let mut d = Self::yeni(manifest).await;
+        let saglayici: Arc<dyn Saglayici> = sahte.clone();
+        let kapi = Arc::new(SartKapisi::yeni(saglayici.clone()));
+        d.evren = Some(EvrenBaglami::yeni(saglayici, kapi));
+        d.izin = izin;
+        d
     }
 
     pub async fn alanla(manifest: &str, alan: TempDir) -> Self {
@@ -170,6 +192,8 @@ impl Duzenek {
             motor,
             eklenti,
             kilitler: Arc::new(KaynakKilitleri::yeni()),
+            evren: None,
+            izin: BellekIzni::yeni(false),
         }
     }
 
@@ -189,6 +213,8 @@ impl Duzenek {
             &self.calisma_alani,
             &self.kilitler,
             depo_dizini,
+            self.evren.clone(),
+            self.izin.clone(),
         )
     }
 

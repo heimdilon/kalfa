@@ -25,6 +25,9 @@
   function amacMetni(amac: string): string {
     if (amac === 'ana') return m('gunluk.amac.ana');
     if (amac === 'denetci') return m('gunluk.amac.denetci');
+    if (amac.startsWith('eklenti:')) {
+      return m('eklenti.amac', { ad: amac.slice('eklenti:'.length) });
+    }
     return amac;
   }
 
@@ -68,6 +71,10 @@
           <td class="sonuc" title={satir.sonuc.tip === 'Hata' ? satir.sonuc.mesaj : undefined}>
             {#if satir.sonuc.tip === 'Basarili'}
               <Badge tone="ok">{m('gunluk.sonuc.basarili')}</Badge>
+            {:else if satir.sonuc.tip === 'Gonderilmedi'}
+              <Badge tone="neutral">
+                {m('gunluk.sonuc.gonderilmedi', { neden: satir.sonuc.neden })}
+              </Badge>
             {:else}
               <Badge tone="danger">
                 {m('gunluk.sonuc.hata', { mesaj: satir.sonuc.asama === 'Baglanti' ? 'Bağlantı' : 'Yanıt' })}

@@ -10,7 +10,7 @@ use kalfa_evren::tipler::{ChatMessage, Role, ToolDef};
 
 use crate::denetci::DenetimSonucu;
 use crate::geri_alma::GeriAlmaDizini;
-use crate::gonderim::{IstekAsamasi, IstekSonucu};
+use crate::gonderim::{EklentiKullanimi, IstekAsamasi, IstekSonucu};
 use crate::izin::Kip;
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, OturumId};
@@ -59,6 +59,9 @@ pub struct KurtarilmisDurum {
     /// Turların geri alma bilgisi (aşama 3 tasarımı §5.7). Depoda bunun
     /// kullanmadığı dosyalar kayda ulaşmamış yakalamalardır ve silinir (§5.2).
     pub geri_alma: GeriAlmaDizini,
+    /// Eklentilerin oturumdaki EVREN kullanımı (aşama 4 tasarımı §9.5),
+    /// kayıttaki `EklentiIstegi` öğelerinden. Sınırın sayacı buradan sürer.
+    pub eklenti_kullanimi: HashMap<String, EklentiKullanimi>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -91,6 +94,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
     let mut biten: HashSet<CagriId> = HashSet::new();
     let mut onizleme_acik = false;
     let mut denetimler = HashMap::new();
+    let mut eklenti_kullanimi: HashMap<String, EklentiKullanimi> = HashMap::new();
 
     for zarf in kayitlar {
         match &zarf.yuk {
@@ -169,6 +173,18 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
             KayitOgesi::Denetim { cagri, sonuc, .. } => {
                 denetimler.insert(*cagri, sonuc.clone());
             }
+            // Gönderilmeyen istek ağa çıkmadı; sınırı tüketmez (§9.5). Sohbet
+            // mantığına girmez: `gonderilen` ve sistem istemi buna bakmaz.
+            // ponytail: sonucu yazılmadan çökülen istek sayılmaz (çağrı başına en
+            // çok bir); izin anında yazılan bir kayıt bu boşluğu kapatır.
+            KayitOgesi::EklentiIstegi { istek, sonuc, .. }
+                if !matches!(sonuc, IstekSonucu::Gonderilmedi { .. }) =>
+            {
+                eklenti_kullanimi
+                    .entry(istek.eklenti.clone())
+                    .or_default()
+                    .say(istek.bayt);
+            }
             _ => {}
         }
     }
@@ -220,5 +236,6 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
         onizleme_acik,
         denetimler,
         geri_alma: GeriAlmaDizini::kayittan(kayitlar),
+        eklenti_kullanimi,
     })
 }

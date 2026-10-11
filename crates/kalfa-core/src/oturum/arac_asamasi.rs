@@ -7,17 +7,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
+use kalfa_evren::YanitMeta;
 use kalfa_evren::tipler::{ChatMessage, ToolCall};
 use serde_json::Value;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use super::{Etki, Oturum};
 use crate::arac::{
-    Arac, AracCiktisi, AracHatasi, CiktiGonderici, CiktiParcasi, DosyaDegisiklikleri, Hazirlik,
+    Arac, AracCiktisi, AracHatasi, AracOrtami, CiktiGonderici, CiktiParcasi, DosyaDegisiklikleri,
+    GonderimTalebi, GonderimYaniti, Hazirlik, OrtamIstegi,
 };
 use crate::denetci::{DenetimGirdisi, DenetimKipi, DenetimSonucu};
 use crate::geri_alma::{DIFF_SINIRI, DosyaYedegi, GeriAlinamazNedeni, OncekiHal, diff_sayilari};
+use crate::gonderim::{EklentiIstekOzeti, IstekSonucu};
 use crate::gorunum::{GORUNMEZ_UYARISI, gorunmez_var_mi};
 use crate::izin::{
     AYNI_ADIM_UYARISI, GERI_ALINAMAZ_UYARISI, Islem, Karar, Kip, Siniflandirici,
@@ -36,6 +39,18 @@ use crate::yol::CalismaYolu;
 
 /// Araçlardan oturuma gelen ara çıktı kanalının kapasitesi (parça).
 const CIKTI_KANALI: usize = 64;
+
+/// Eklenti aracından oturuma giden isteklerin kanalının kapasitesi (aşama 4
+/// tasarımı §8.7).
+const ORTAM_KANALI: usize = 16;
+
+/// Kullanıcı önizlemede karar verene kadar bekleyen eklenti isteği (aşama 4
+/// tasarımı §9.4). Gövde yalnızca bellekte tutulur, kayda yazılmaz.
+struct EklentiBekleyen {
+    cagri: CagriId,
+    talep: GonderimTalebi,
+    yanit: oneshot::Sender<GonderimYaniti>,
+}
 
 struct BekleyenSonuc {
     cagri: CagriId,
@@ -457,6 +472,14 @@ impl Oturum {
                 uyarilar: vec![GORUNMEZ_UYARISI.to_string()],
             });
         }
+        // Eklentinin bu çalışma alanında ilk EVREN gönderimi her kipte (Serbest
+        // dahil) yerel onay ister (aşama 4 tasarımı §8.4). Yerel onaylı karar
+        // kısayol teklifine girmez.
+        if hazirlik.eklenti.as_ref().is_some_and(|e| e.ilk_gonderim) {
+            karar = karar.birlestir(Karar::YerelOnayli {
+                uyarilar: Vec::new(),
+            });
+        }
         karar
     }
 
@@ -848,6 +871,8 @@ impl Oturum {
 
         let azami = self.ayarlar.sinirlar.azami_arac_ciktisi;
         let (cikti_tx, mut cikti_rx) = mpsc::channel::<CiktiParcasi>(CIKTI_KANALI);
+        // Eklenti aracının oturuma giden istekleri (izin, kayıt) bu kanaldan geçer.
+        let (ortam_tx, mut ortam_rx) = mpsc::channel::<OrtamIstegi>(ORTAM_KANALI);
         let mut isler = FuturesUnordered::new();
         let mut denetim_isleri = FuturesUnordered::new();
         // Araç tarafında atılan (oturuma hiç ulaşmayan) baytların sayaçları.
@@ -861,6 +886,7 @@ impl Oturum {
             let iptal = self.iptal.child_token();
             let cikti = CiktiGonderici::yeni(p.cagri, cikti_tx.clone());
             arac_sayaclari.insert(p.cagri, cikti.atlanan_sayaci());
+            let ortam = AracOrtami::yeni(cikti, p.cagri, ortam_tx.clone());
             isler.push(async move {
                 let sonuc = tek_calistir(
                     &p,
@@ -869,19 +895,30 @@ impl Oturum {
                     &siniflandirici,
                     &kisayollar,
                     iptal,
-                    cikti,
+                    ortam,
                 )
                 .await;
                 (p, sonuc)
             });
         }
         drop(cikti_tx);
+        drop(ortam_tx);
 
         let mut iptal_nedeni = None;
         let mut cikti_kapali = false;
+        let mut ortam_kapali = false;
+        // Eklenti istekleri: önizlemede karar bekleyenler ve "bu araç çağrısında
+        // hep gönder" verilenler (aşama 4 tasarımı §9.4). Kapsam bu yürütmedir.
+        let mut eklenti_bekleyen: HashMap<IslemId, EklentiBekleyen> = HashMap::new();
+        let mut eklenti_hep: HashSet<CagriId> = HashSet::new();
         // Arayüze iletilemeyen ara çıktının çağrı başına bayt sayısı.
         let mut atlanan: HashMap<CagriId, u64> = HashMap::new();
         loop {
+            // İptal gelmişse bekleyen eklenti istekleri bırakılır; araç
+            // `GonderimYaniti::Iptal` alıp çıkar.
+            if iptal_nedeni.is_some() {
+                eklenti_bekleyen.clear();
+            }
             if (isler.is_empty() && denetim_isleri.is_empty())
                 || (iptal_nedeni.is_some() && isler.is_empty())
             {
@@ -896,8 +933,27 @@ impl Oturum {
                     Some(parca) => self.cikti_ilet(parca, &mut atlanan).await,
                     None => cikti_kapali = true,
                 },
+                // Eklenti isteği de sonuçtan önce işlenir: araç `IstekBitti`'yi
+                // gönderip hemen dönebilir (aynı sıralama, aşama 4 tasarımı §8.7).
+                istek = ortam_rx.recv(), if !ortam_kapali => match istek {
+                    Some(istek) => self.ortam_istegi_isle(istek, &mut eklenti_bekleyen, &mut eklenti_hep).await,
+                    None => ortam_kapali = true,
+                },
                 komut = self.komutlar.recv(), if iptal_nedeni.is_none() => {
                     match self.komut_geldi(komut).await {
+                        // Eklenti önizlemesinin kararı; öteki araçlar sürer.
+                        Some(Komut::GonderimKarari { islem, gonderilmeyecekler, hep_gonderilecekler })
+                            if eklenti_bekleyen.contains_key(&islem) =>
+                        {
+                            self.eklenti_karari_isle(
+                                islem,
+                                &gonderilmeyecekler,
+                                &hep_gonderilecekler,
+                                &mut eklenti_bekleyen,
+                                &mut eklenti_hep,
+                            )
+                            .await;
+                        }
                         Some(k) => {
                             if self.genel_komut(k).await == Etki::Iptal {
                                 iptal_nedeni = Some(BitisNedeni::Iptal);
@@ -936,6 +992,24 @@ impl Oturum {
                 }
                 Some((cagri, girdi, yanit)) = denetim_isleri.next(), if !denetim_isleri.is_empty() => {
                     self.denetim_sonucu_isle(cagri, girdi, yanit, bekleyen_sonuclar).await;
+                }
+            }
+        }
+        // Döngü bitmeden kanalda kalan ağ isteği kayda girer; bitmiş bir araç
+        // için artık gönderim izni sorulmaz.
+        while let Ok(istek) = ortam_rx.try_recv() {
+            match istek {
+                OrtamIstegi::Gonderim { yanit, .. } => {
+                    let _ = yanit.send(GonderimYaniti::Iptal);
+                }
+                OrtamIstegi::IstekBitti {
+                    cagri,
+                    ozet,
+                    meta,
+                    sonuc,
+                } => {
+                    self.eklenti_istek_bitti_isle(cagri, ozet, meta, sonuc)
+                        .await
                 }
             }
         }
@@ -1164,6 +1238,7 @@ impl Oturum {
                 kaynak: b.kaynak.clone(),
                 bayt: b.icerik.len() as u64,
                 denetim: denetim_etiketi(&b.denetim),
+                eklenti: None,
             })
             .collect();
 
@@ -1191,6 +1266,7 @@ impl Oturum {
                 Komut::GonderimKarari {
                     islem: gelen_islem,
                     gonderilmeyecekler: haric,
+                    ..
                 } => {
                     if gelen_islem != islem {
                         self.hata(
@@ -1246,6 +1322,191 @@ impl Oturum {
         }
 
         None
+    }
+}
+
+impl Oturum {
+    /// Eklenti aracından oturuma gelen istek (aşama 4 tasarımı §8.7).
+    async fn ortam_istegi_isle(
+        &mut self,
+        istek: OrtamIstegi,
+        bekleyen: &mut HashMap<IslemId, EklentiBekleyen>,
+        hep: &mut HashSet<CagriId>,
+    ) {
+        match istek {
+            OrtamIstegi::Gonderim {
+                cagri,
+                talep,
+                yanit,
+            } => {
+                self.eklenti_talebi_isle(cagri, talep, yanit, bekleyen, hep)
+                    .await
+            }
+            OrtamIstegi::IstekBitti {
+                cagri,
+                ozet,
+                meta,
+                sonuc,
+            } => {
+                self.eklenti_istek_bitti_isle(cagri, ozet, meta, sonuc)
+                    .await
+            }
+        }
+    }
+
+    /// Eklentinin EVREN isteğine izin: oturum sınırı (§9.5), sonra önizleme
+    /// (§9.4), en sonunda sayaç. Önizleme açıksa karar gelene kadar araç bekler;
+    /// öteki araçlar sürer.
+    async fn eklenti_talebi_isle(
+        &mut self,
+        cagri: CagriId,
+        talep: GonderimTalebi,
+        yanit: oneshot::Sender<GonderimYaniti>,
+        bekleyen: &mut HashMap<IslemId, EklentiBekleyen>,
+        hep: &HashSet<CagriId>,
+    ) {
+        if self.iptal.is_cancelled() {
+            let _ = yanit.send(GonderimYaniti::Iptal);
+            return;
+        }
+        let ad = talep.ozet.eklenti.clone();
+        let kullanim = self.eklenti_kullanimi.get(&ad).copied().unwrap_or_default();
+        if kullanim.sinir_asilir_mi(talep.ozet.bayt) {
+            let neden = "bu oturumda eklentinin EVREN sınırı doldu".to_string();
+            self.eklenti_gonderilmedi(cagri, talep.ozet, neden.clone())
+                .await;
+            let _ = yanit.send(GonderimYaniti::SinirAsildi(neden));
+            return;
+        }
+        if self.onizleme_acik && !hep.contains(&cagri) {
+            let islem = IslemId::yeni();
+            let oge = OnizlemeOgesi {
+                cagri,
+                kaynak: format!("eklenti:{}:{}", talep.ozet.eklenti, talep.ozet.uc.etiket()),
+                bayt: talep.ozet.bayt,
+                denetim: None,
+                eklenti: Some(talep.ozet.clone()),
+            };
+            self.yay(Olay::GonderimOnizlemesi {
+                islem,
+                ogeler: vec![oge],
+                neden: OnizlemeNedeni::Eklenti,
+            })
+            .await;
+            bekleyen.insert(
+                islem,
+                EklentiBekleyen {
+                    cagri,
+                    talep,
+                    yanit,
+                },
+            );
+            return;
+        }
+        self.eklenti_kullanimi
+            .entry(ad)
+            .or_default()
+            .say(talep.ozet.bayt);
+        let _ = yanit.send(GonderimYaniti::Gonder);
+    }
+
+    /// Kullanıcının önizleme kararı (§9.4). "Gönderme" kaydedilir ve araç
+    /// `Gonderme` alır; ötekiler ağa çıkar. "Hep gönder" o araç çağrısının
+    /// sonraki isteklerini de kart açmadan geçirir.
+    async fn eklenti_karari_isle(
+        &mut self,
+        islem: IslemId,
+        gonderilmeyecekler: &[CagriId],
+        hep_gonderilecekler: &[CagriId],
+        bekleyen: &mut HashMap<IslemId, EklentiBekleyen>,
+        hep: &mut HashSet<CagriId>,
+    ) {
+        let Some(EklentiBekleyen {
+            cagri,
+            talep,
+            yanit,
+        }) = bekleyen.remove(&islem)
+        else {
+            return;
+        };
+        if self.iptal.is_cancelled() {
+            let _ = yanit.send(GonderimYaniti::Iptal);
+            return;
+        }
+        if gonderilmeyecekler.contains(&cagri) {
+            self.eklenti_gonderilmedi(cagri, talep.ozet, "kullanıcı göndermedi".into())
+                .await;
+            let _ = yanit.send(GonderimYaniti::Gonderme);
+            return;
+        }
+        if hep_gonderilecekler.contains(&cagri) {
+            hep.insert(cagri);
+        }
+        self.eklenti_kullanimi
+            .entry(talep.ozet.eklenti.clone())
+            .or_default()
+            .say(talep.ozet.bayt);
+        let _ = yanit.send(GonderimYaniti::Gonder);
+    }
+
+    /// Ağa çıkmayan eklenti isteği: kayda `Gonderilmedi` ile girer ve
+    /// `IstekBilgisi` ile bildirilir (§9.4, §9.5).
+    async fn eklenti_gonderilmedi(
+        &mut self,
+        cagri: CagriId,
+        ozet: EklentiIstekOzeti,
+        neden: String,
+    ) {
+        let amac = format!("eklenti:{}", ozet.eklenti);
+        self.kaydet(KayitOgesi::EklentiIstegi {
+            cagri,
+            istek: ozet,
+            istek_id: None,
+            kredi: None,
+            yonlendirilen_model: None,
+            sonuc: IstekSonucu::Gonderilmedi { neden },
+        })
+        .await;
+        self.yay(Olay::IstekBilgisi {
+            istek_id: None,
+            yonlendirilen_model: None,
+            amac,
+            basarili: false,
+        })
+        .await;
+    }
+
+    /// Ağa çıkan eklenti isteğinin sonucu (§9.3): kayıt, tur özeti, olaylar.
+    /// Kayıt ve olaylar sohbet isteğiyle aynı düzendedir.
+    async fn eklenti_istek_bitti_isle(
+        &mut self,
+        cagri: CagriId,
+        ozet: EklentiIstekOzeti,
+        meta: YanitMeta,
+        sonuc: IstekSonucu,
+    ) {
+        let amac = format!("eklenti:{}", ozet.eklenti);
+        let basarili = sonuc == IstekSonucu::Basarili;
+        self.kaydet(KayitOgesi::EklentiIstegi {
+            cagri,
+            istek: ozet,
+            istek_id: meta.istek_id.clone(),
+            kredi: meta.kredi.clone(),
+            yonlendirilen_model: meta.yonlendirilen_model.clone(),
+            sonuc,
+        })
+        .await;
+        self.tur_ozeti.istek();
+        self.yay(Olay::IstekBilgisi {
+            istek_id: meta.istek_id.clone(),
+            yonlendirilen_model: meta.yonlendirilen_model.clone(),
+            amac,
+            basarili,
+        })
+        .await;
+        if let Some(gozlem) = meta.kredi {
+            self.yay(Olay::KrediGozlemi { gozlem }).await;
+        }
     }
 }
 
@@ -1358,6 +1619,17 @@ fn onayla_kapsanan(mut taze: Hazirlik, onaylanan: &Hazirlik) -> Hazirlik {
     if let Some(o) = &onaylanan.kabuk {
         taze.kabuk = taze.kabuk.map(|t| t.onayla_kapsanan(o));
     }
+    // İlk gönderim onayı verildikten sonra izin başka bir çağrıyla verildiyse
+    // (taze tarifte artık yok), onaylanan tarif geçerli kalır: çağrı yine
+    // onaylanmış sayılır (aşama 4 tasarımı §8.4).
+    if let (Some(o), Some(t)) = (&onaylanan.eklenti, taze.eklenti.as_mut())
+        && o.ilk_gonderim
+        && !t.ilk_gonderim
+    {
+        t.ilk_gonderim = true;
+        t.dosya_sayisi = o.dosya_sayisi;
+        t.bayt = o.bayt;
+    }
     taze
 }
 
@@ -1386,7 +1658,7 @@ async fn tek_calistir(
     siniflandirici: &Siniflandirici,
     kisayollar: &std::sync::Mutex<Vec<Kisayol>>,
     iptal: CancellationToken,
-    cikti: CiktiGonderici,
+    ortam: AracOrtami,
 ) -> Result<AracCiktisi, AracHatasi> {
     let yazilan: Vec<CalismaYolu> = p.hazirlik.yazilan.iter().map(|h| h.yol.clone()).collect();
     // Kilitsiz araç (eklenti) kilidini dokunduğu her yol için kendisi alır.
@@ -1466,7 +1738,7 @@ async fn tek_calistir(
         return Err(AracHatasi::PolitikaDegisti);
     }
     p.arac
-        .calistir_akisli(&p.argumanlar, &taze, iptal, cikti)
+        .calistir_ortamli(&p.argumanlar, &taze, iptal, ortam)
         .await
 }
 

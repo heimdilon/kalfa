@@ -25,6 +25,7 @@ use crate::denetci::{DenetimKipi, GuvenlikDenetcisi};
 use crate::geri_alma::{
     GeriAlmaDizini, GeriYukleyici, OTURUM_ALT_SINIRI, OTURUM_SINIRI, OncekiHalDeposu,
 };
+use crate::gonderim::EklentiKullanimi;
 use crate::izin::{Kip, Siniflandirici};
 use crate::kayit::{KayitOgesi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
@@ -767,6 +768,7 @@ pub fn devam_et(
             son_sistem_istemi: durum.son_sistem_istemi.clone(),
             son_arac_tanimlari: durum.son_arac_tanimlari.clone(),
             onizleme_acik: durum.onizleme_acik,
+            eklenti_kullanimi: durum.eklenti_kullanimi.clone(),
         },
         GeriAlmaKurulumu {
             depo,
@@ -848,6 +850,7 @@ fn baslat_ic(
             son_sistem_istemi: None,
             son_arac_tanimlari: None,
             onizleme_acik: false,
+            eklenti_kullanimi: HashMap::new(),
         },
         GeriAlmaKurulumu {
             depo,
@@ -919,6 +922,9 @@ struct Oturum {
     tur_ozeti: TurBiriktirici,
     /// Süren turun başında okunan güvenlik denetçisi kipi (aşama 3c).
     pub(super) tur_denetci_kipi: DenetimKipi,
+    /// Eklentilerin bu oturumdaki EVREN kullanımı (aşama 4 tasarımı §9.5).
+    /// Kayda yazılmaz; kurtarmada `EklentiIstegi` öğelerinden yeniden kurulur.
+    eklenti_kullanimi: HashMap<String, EklentiKullanimi>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -935,6 +941,7 @@ struct BaglamGirdisi {
     son_sistem_istemi: Option<(Option<u64>, String)>,
     son_arac_tanimlari: Option<(Option<u64>, Vec<ToolDef>)>,
     onizleme_acik: bool,
+    eklenti_kullanimi: HashMap<String, EklentiKullanimi>,
 }
 
 impl Oturum {
@@ -983,6 +990,7 @@ impl Oturum {
             geri_alma: geri_alma.dizin,
             tur_ozeti: TurBiriktirici::default(),
             tur_denetci_kipi,
+            eklenti_kullanimi: baglam_girdisi.eklenti_kullanimi,
         };
         (
             oturum,
