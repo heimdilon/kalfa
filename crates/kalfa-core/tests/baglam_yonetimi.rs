@@ -512,3 +512,41 @@ async fn zaman_asiminda_yer_tutucu_konur() {
     );
     assert_eq!(ozetlendi(&d), Some((0, 1)));
 }
+
+/// Codex incelemesi (#2): durdurucu bir hata geldiğinde başlamış özetleme
+/// istekleri bırakılmaz, kayda yazılır; durduktan sonra başarısızlık yer
+/// tutucuya dönmez.
+#[tokio::test]
+async fn durdurucu_hatada_baslamis_istekler_kaydedilir() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (mut ayar, yol) = ayarlar(dizin.path());
+    ayar.sinirlar.baglam_esigi = 64_000;
+    ayar.sinirlar.baglam_hedefi = 32_000;
+    // Eşik ancak üçüncü yanıtın kullanımıyla aşılır.
+    let s = SahteSaglayici::yeni(vec![
+        oku_cagrisi("a.txt"),
+        oku_cagrisi("b.txt"),
+        kullanimla(oku_cagrisi("c.txt"), 10_000_000),
+        SahteYanit::metin("tamam"),
+    ]);
+    // Dördüncü istekten önce iki aday (a, b) aynı anda özetlenir: a'nın
+    // isteği yavaş (başlamış, sürüyor), b'ninki hemen günlük sınıra çarpar.
+    s.sohbet_ekle(SahteSohbet::Gecikme(Duration::from_millis(50)));
+    s.sohbet_ekle(SahteSohbet::Hata(EvrenError::GunlukSinir {
+        sifirlanma: None,
+    }));
+    let (_, neden) = tur(&s, ayar).await;
+    assert_eq!(neden, BitisNedeni::Normal);
+    assert_eq!(s.sohbet_istekleri().len(), 2);
+    let kayitlar = OturumKaydi::oku(&yol).unwrap();
+    let ozetleme = kayitlar
+        .iter()
+        .filter(|z| matches!(&z.yuk, KayitOgesi::Istek { amac, .. } if amac == "özetleme"))
+        .count();
+    assert_eq!(ozetleme, 2, "başlamış her özetleme isteği günlükte olmalı");
+    assert!(
+        !kayitlar
+            .iter()
+            .any(|z| matches!(z.yuk, KayitOgesi::BaglamOzeti { .. }))
+    );
+}

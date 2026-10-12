@@ -2,6 +2,7 @@
 //! Saf işlevler; oturum bunları `baglami_yonet`'te kullanır.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -278,14 +279,27 @@ impl Oturum {
             })
             .collect();
         let saglayici = self.baglam.saglayici.clone();
+        // Durunca yeni istek başlamaz; başlamış olanlar beklenir ve kayda
+        // yazılır, çünkü EVREN'e ulaşmış ve kredi harcamış olabilirler.
+        let durdu = Arc::new(AtomicBool::new(false));
+        let durdu_akista = durdu.clone();
         let mut sonuclar = stream::iter(istekler.into_iter().map(move |(i, istek)| {
             let saglayici = saglayici.clone();
-            async move { (i, ozetle(saglayici, istek).await) }
+            let durdu = durdu_akista.clone();
+            async move {
+                if durdu.load(Ordering::SeqCst) {
+                    return (i, None);
+                }
+                (i, Some(ozetle(saglayici, istek).await))
+            }
         }))
         .buffer_unordered(ESZAMANLI_OZET);
 
         let (mut adet, mut yer_tutucu_sayisi) = (0u32, 0u32);
         while let Some((i, sonuc)) = self.iptal_edilebilir(sonuclar.next()).await? {
+            let Some(sonuc) = sonuc else {
+                continue;
+            };
             // Ana isteğin de alacağı hatalarda (şart, ağ yok, günlük sınır,
             // anahtar, hız sınırı) özetleme durur; kalan çıktılar olduğu gibi
             // kalır, geçici bir hata bağlamı kalıcı olarak silmez (§7, §13).
@@ -302,7 +316,11 @@ impl Oturum {
             );
             let ozet = self.ozet_istegini_kaydet(sonuc).await;
             if durdur {
-                break;
+                durdu.store(true, Ordering::SeqCst);
+            }
+            // Durduktan sonra başarısızlık yer tutucuya dönmez; çıktı kalır.
+            if ozet.is_none() && durdu.load(Ordering::SeqCst) {
+                continue;
             }
             let Some(ozgun) = self.mesajlar.get(i).and_then(|m| m.content.clone()) else {
                 continue;
