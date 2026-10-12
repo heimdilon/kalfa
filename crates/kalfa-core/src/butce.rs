@@ -4,8 +4,11 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::future::Future;
+use std::time::Duration;
 
-use kalfa_evren::EvrenError;
+use kalfa_evren::tipler::Usage;
+use kalfa_evren::{EvrenError, YanitMeta};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 
@@ -359,6 +362,18 @@ pub fn eski_kayit_devri<'a>(ogeler: impl IntoIterator<Item = &'a KayitOgesi>) ->
     }
 }
 
+/// Yardımcının bir ağ denemesi (5b tasarımı §6): denetçi ya da özetleyici her
+/// `sohbet` çağrısı için bir kayıt. Gönderim günlüğü her denemeyi kendi `Istek`
+/// satırı olarak yazar. Bütçe bitişi bu kayıttan bağımsız, denemenin hemen
+/// ardından `ButceTalepci::bitir` ile oturuma gider.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ButceDenemesi {
+    pub islem: ButceIslemId,
+    pub kullanim: Option<GunlukToken>,
+    pub meta: Option<YanitMeta>,
+    pub sonuc: IstekSonucu,
+}
+
 /// Bütçe talep kanalının kapasitesi (5b tasarımı §4.1).
 const TALEP_KAPASITESI: usize = 16;
 
@@ -369,14 +384,24 @@ pub struct ButceTalebi {
     pub yanit: oneshot::Sender<Option<ButceIslemId>>,
 }
 
+/// Bütçe kanalının mesajı. Aynı göndericinin mesajları gönderildiği sırayla
+/// işlenir: bir denemenin bitişi, aynı çağıranın sonraki izin talebinden önce gelir.
+pub enum ButceMesaji {
+    Talep(ButceTalebi),
+    Bitis {
+        islem: ButceIslemId,
+        kullanim: Option<GunlukToken>,
+    },
+}
+
 /// Oturuma bağlı izin istemcisi (5b tasarımı §4.1). Her oturumun kendi kanalı
 /// vardır; iki oturum birbirinin sayacını tüketmez.
 #[derive(Clone)]
-pub struct ButceTalepci(mpsc::Sender<ButceTalebi>);
+pub struct ButceTalepci(mpsc::Sender<ButceMesaji>);
 
 impl ButceTalepci {
     /// Oturumun talep kanalı: gönderici istemcide, alıcı oturum görevindedir.
-    pub(crate) fn kanal() -> (Self, mpsc::Receiver<ButceTalebi>) {
+    pub(crate) fn kanal() -> (Self, mpsc::Receiver<ButceMesaji>) {
         let (gonderici, alici) = mpsc::channel(TALEP_KAPASITESI);
         (Self(gonderici), alici)
     }
@@ -387,13 +412,22 @@ impl ButceTalepci {
     pub async fn izin(&self, amac: &str) -> Option<ButceIslemId> {
         let (yanit, alici) = oneshot::channel();
         self.0
-            .send(ButceTalebi {
+            .send(ButceMesaji::Talep(ButceTalebi {
                 amac: amac.to_string(),
                 yanit,
-            })
+            }))
             .await
             .ok()?;
         alici.await.ok().flatten()
+    }
+
+    /// Bir ağ denemesinin tek bitişini oturuma bildirir (5b tasarımı §4.1). Denetçi
+    /// ve özetleyici her denemeyi, bir sonraki izin talebinden önce bitirir; aksi
+    /// hâlde yeniden deneme, başlamış ama bitmemiş bir denemenin arkasında kart
+    /// bekler ve tur kilitlenir. Oturum kapanmışsa bitiş yazılamaz; tur sonu
+    /// süpürmesi o denemeyi zaten bilinmeyen olarak kapatmıştır.
+    pub async fn bitir(&self, islem: ButceIslemId, kullanim: Option<GunlukToken>) {
+        let _ = self.0.send(ButceMesaji::Bitis { islem, kullanim }).await;
     }
 }
 
@@ -417,6 +451,28 @@ pub fn hata_kullanimi(hata: &EvrenError) -> Option<GunlukToken> {
         // 5xx Sunucu, Ag { govde_gitti: true } ve gelecekte eklenecek varyantlar.
         _ => None,
     }
+}
+
+/// Başarılı bir yanıtın bütçe kullanımı (5b tasarımı §2, §6). Kullanım yoksa ya
+/// da tutarsızsa bilinmeyendir: `None` sıfır sayılmaz.
+pub fn yanit_kullanimi(usage: Option<&Usage>) -> Option<GunlukToken> {
+    let usage = usage?;
+    let (istem, tamamlama) = usage.butce_kullanimi()?;
+    Some(GunlukToken {
+        istem,
+        tamamlama,
+        dusunce: usage.reasoning_tokens(),
+    })
+}
+
+/// Ağ süresinden (`kalan`) harcayarak bekler: geçen süre düşülür, süre dolarsa
+/// `None`. İzin beklemesi bu süreye girmez; çağıran izni bu çağrıdan önce alır
+/// (5b tasarımı §7).
+pub(crate) async fn sureli<F: Future>(kalan: &mut Duration, gelecek: F) -> Option<F::Output> {
+    let basla = tokio::time::Instant::now();
+    let sonuc = tokio::time::timeout(*kalan, gelecek).await.ok();
+    *kalan = kalan.saturating_sub(basla.elapsed());
+    sonuc
 }
 
 #[cfg(test)]
@@ -991,7 +1047,9 @@ mod testler {
     async fn izin_verilen_kimligi_dondurur() {
         let (talepci, mut alici) = ButceTalepci::kanal();
         let izin = tokio::spawn(async move { talepci.izin("denetci").await });
-        let talep = alici.recv().await.expect("talep gelmeli");
+        let Some(ButceMesaji::Talep(talep)) = alici.recv().await else {
+            panic!("talep gelmeli");
+        };
         assert_eq!(talep.amac, "denetci");
         talep
             .yanit
@@ -1004,8 +1062,48 @@ mod testler {
     async fn izin_cevap_gelmeden_dusurulurse_none_doner() {
         let (talepci, mut alici) = ButceTalepci::kanal();
         let izin = tokio::spawn(async move { talepci.izin("ozet").await });
-        let talep = alici.recv().await.expect("talep gelmeli");
+        let Some(ButceMesaji::Talep(talep)) = alici.recv().await else {
+            panic!("talep gelmeli");
+        };
         drop(talep.yanit);
         assert_eq!(izin.await.expect("görev bitmeli"), None);
+    }
+
+    #[test]
+    fn yanit_kullanimi_eksik_ya_da_tutarsizi_bilinmeyen_sayar() {
+        let kullanim = |istem, tamamlama, toplam| Usage {
+            prompt_tokens: istem,
+            completion_tokens: tamamlama,
+            total_tokens: toplam,
+            completion_tokens_details: None,
+            evren: None,
+        };
+        assert_eq!(yanit_kullanimi(None), None);
+        assert_eq!(
+            yanit_kullanimi(Some(&kullanim(10, 5, 15))),
+            Some(GunlukToken {
+                istem: 10,
+                tamamlama: 5,
+                dusunce: 0,
+            })
+        );
+        // Boş ya da toplamı tutmayan kullanım bilinmeyendir; sıfır değildir.
+        assert_eq!(yanit_kullanimi(Some(&kullanim(0, 0, 0))), None);
+        assert_eq!(yanit_kullanimi(Some(&kullanim(10, 5, 16))), None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sureli_yalniz_gecen_sureyi_harcar() {
+        let mut kalan = Duration::from_secs(30);
+        assert_eq!(
+            sureli(&mut kalan, tokio::time::sleep(Duration::from_secs(10))).await,
+            Some(())
+        );
+        assert_eq!(kalan, Duration::from_secs(20));
+        assert_eq!(
+            sureli(&mut kalan, tokio::time::sleep(Duration::from_secs(60))).await,
+            None
+        );
+        assert_eq!(kalan, Duration::ZERO);
     }
 }

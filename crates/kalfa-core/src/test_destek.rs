@@ -19,7 +19,7 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, Hazirlik, YazmaHedefi};
-use crate::butce::{ButceGorunumu, ButceSinirlari};
+use crate::butce::{ButceGorunumu, ButceIslemId, ButceMesaji, ButceSinirlari, ButceTalepci};
 use crate::geri_alma::{DosyaDurumu, GeriYukleyici};
 use crate::izin::Siniflandirici;
 use crate::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
@@ -108,13 +108,51 @@ impl SahteYanit {
     }
 }
 
-/// Sahte sağlayıcının bir `sohbet()` çağrısına vereceği bloklu yanıt.
+/// Sahte sağlayıcının bir `sohbet()` çağrısına vereceği bloklu yanıt. `Json`,
+/// `Metin` ve `Gecikme` geçerli bir kullanım taşır; `KullanimsizMetin` kullanım
+/// bildirmez ve 5b bütçesinde bilinmeyen tüketimdir.
 #[derive(Debug, Clone)]
 pub enum SahteSohbet {
     Json(Value),
     Metin(String),
+    KullanimsizMetin(String),
     Hata(EvrenError),
     Gecikme(Duration),
+}
+
+/// Başarılı bir `sohbet` yanıtının geçerli kullanımı (5b tasarımı §6): istem 10,
+/// tamamlama 5.
+fn sohbet_kullanimi() -> Option<Usage> {
+    Some(Usage {
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 15,
+        completion_tokens_details: None,
+        evren: None,
+    })
+}
+
+fn sohbet_yaniti(
+    sira: usize,
+    model: String,
+    metin: String,
+    usage: Option<Usage>,
+    meta: YanitMeta,
+) -> (ChatResponse, YanitMeta) {
+    let message = ChatMessage::assistant(Some(metin), Vec::new());
+    (
+        ChatResponse {
+            id: format!("sahte-sohbet-{sira}"),
+            model,
+            choices: vec![Choice {
+                index: 0,
+                message,
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage,
+        },
+        meta,
+    )
 }
 
 struct SahteSart {
@@ -263,54 +301,27 @@ impl Saglayici for SahteSaglayici {
             ..Default::default()
         };
         match yanit {
-            SahteSohbet::Json(deger) => {
-                let metin = deger.to_string();
-                let message = ChatMessage::assistant(Some(metin), Vec::new());
-                Ok((
-                    ChatResponse {
-                        id: format!("sahte-sohbet-{sira}"),
-                        model,
-                        choices: vec![Choice {
-                            index: 0,
-                            message,
-                            finish_reason: Some("stop".to_string()),
-                        }],
-                        usage: None,
-                    },
-                    meta,
-                ))
-            }
+            SahteSohbet::Json(deger) => Ok(sohbet_yaniti(
+                sira,
+                model,
+                deger.to_string(),
+                sohbet_kullanimi(),
+                meta,
+            )),
             SahteSohbet::Metin(metin) => {
-                let message = ChatMessage::assistant(Some(metin), Vec::new());
-                Ok((
-                    ChatResponse {
-                        id: format!("sahte-sohbet-{sira}"),
-                        model,
-                        choices: vec![Choice {
-                            index: 0,
-                            message,
-                            finish_reason: Some("stop".to_string()),
-                        }],
-                        usage: None,
-                    },
-                    meta,
-                ))
+                Ok(sohbet_yaniti(sira, model, metin, sohbet_kullanimi(), meta))
+            }
+            SahteSohbet::KullanimsizMetin(metin) => {
+                Ok(sohbet_yaniti(sira, model, metin, None, meta))
             }
             SahteSohbet::Hata(hata) => Err(hata),
             SahteSohbet::Gecikme(sure) => {
                 tokio::time::sleep(sure).await;
-                let message = ChatMessage::assistant(Some(String::new()), Vec::new());
-                Ok((
-                    ChatResponse {
-                        id: format!("sahte-sohbet-{sira}"),
-                        model,
-                        choices: vec![Choice {
-                            index: 0,
-                            message,
-                            finish_reason: Some("stop".to_string()),
-                        }],
-                        usage: None,
-                    },
+                Ok(sohbet_yaniti(
+                    sira,
+                    model,
+                    String::new(),
+                    sohbet_kullanimi(),
                     meta,
                 ))
             }
@@ -1067,6 +1078,36 @@ pub fn sanal_siniflandirici() -> Arc<Siniflandirici> {
         Siniflandirici::yeni(std::env::temp_dir().join("kalfa-sanal-calisma-alani"), &[])
             .expect("sınıflandırıcı"),
     )
+}
+
+/// Her izin talebini sırayla kabul eden sahte bütçe kanalı: bütçe kapısı hiç
+/// kapanmaz. Bitişler yok sayılır. Bütçe davranışını değil, yardımcının kendi
+/// mantığını (ağ çağrısı sayısı, süre, sonuç) sınayan testler için.
+pub fn sinirsiz_butce_talepci() -> ButceTalepci {
+    let (talepci, mut alici) = ButceTalepci::kanal();
+    tokio::spawn(async move {
+        let mut sira = 0;
+        while let Some(mesaj) = alici.recv().await {
+            if let ButceMesaji::Talep(talep) = mesaj {
+                sira += 1;
+                let _ = talep.yanit.send(Some(ButceIslemId(sira)));
+            }
+        }
+    });
+    talepci
+}
+
+/// Her izin talebini reddeden sahte bütçe kanalı: izin yok, çağıran ağa çıkmaz.
+pub fn reddeden_butce_talepci() -> ButceTalepci {
+    let (talepci, mut alici) = ButceTalepci::kanal();
+    tokio::spawn(async move {
+        while let Some(mesaj) = alici.recv().await {
+            if let ButceMesaji::Talep(talep) = mesaj {
+                let _ = talep.yanit.send(None);
+            }
+        }
+    });
+    talepci
 }
 
 /// Yeni bir kilit yöneticisiyle bağlam. Aynı çalışma alanını paylaşan iki

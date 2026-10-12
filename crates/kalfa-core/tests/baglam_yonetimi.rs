@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use kalfa_core::arac::Arac;
+use kalfa_core::butce::ButceSinirlari;
 use kalfa_core::gonderim::{IstekSonucu, oge_metni};
 use kalfa_core::kayit::{KayitOgesi, OturumKaydi, OzetYontemi};
 use kalfa_core::kurtarma::kurtar;
@@ -186,12 +187,27 @@ async fn kullanim_orani_varsayilan_esigi_tetikler() {
     assert_eq!(s.sohbet_istekleri().len(), 1);
 }
 
-async fn yer_tutucu_bekle(yanit: SahteSohbet) {
+/// Özetleyici kullanımsız bitince tüketim bilinmez; ana istek kartta bekler
+/// (5b tasarımı §2, §7). Bu testler yer tutucu davranışını sınar; kart, sınırı
+/// yükselten bir kararla geçilir.
+fn kart_karari() -> Option<ButceSinirlari> {
+    Some(ButceSinirlari {
+        istek: 50,
+        token: 5_000_000,
+    })
+}
+
+async fn yer_tutucu_bekle(yanit: SahteSohbet, kart_beklenir: bool) {
     let dizin = tempfile::tempdir().unwrap();
     let (ayar, yol) = ayarlar(dizin.path());
     let s = iki_okuma();
     s.sohbet_ekle(yanit);
-    let (d, neden) = tur(&s, ayar).await;
+    let mut d = surucu(&s, ayar);
+    d.gonder(mesaj()).await;
+    if kart_beklenir {
+        d.butce_devam_et(kart_karari()).await;
+    }
+    let neden = d.tur_sonu().await;
     assert_eq!(neden, BitisNedeni::Normal);
     let istekler = s.istekler();
     let ozgun = icerik(arac_mesajlari(&istekler[1].messages)[0]).len();
@@ -212,17 +228,21 @@ async fn yer_tutucu_bekle(yanit: SahteSohbet) {
 
 #[tokio::test]
 async fn ozetleyici_hatasinda_yer_tutucu_konur() {
-    yer_tutucu_bekle(SahteSohbet::Hata(EvrenError::Sunucu {
-        durum: 500,
-        kod: None,
-        mesaj: "iç hata".into(),
-    }))
+    // 5xx bilinmeyen tüketimdir: ana istek kartta bekler.
+    yer_tutucu_bekle(
+        SahteSohbet::Hata(EvrenError::Sunucu {
+            durum: 500,
+            kod: None,
+            mesaj: "iç hata".into(),
+        }),
+        true,
+    )
     .await;
 }
 
 #[tokio::test]
 async fn bos_ozet_yer_tutucu_olur() {
-    yer_tutucu_bekle(SahteSohbet::Metin("  \n ".into())).await;
+    yer_tutucu_bekle(SahteSohbet::Metin("  \n ".into()), false).await;
 }
 
 #[tokio::test]
@@ -511,6 +531,8 @@ async fn zaman_asiminda_yer_tutucu_konur() {
     s.sohbet_ekle(SahteSohbet::Gecikme(Duration::from_secs(60)));
     let mut d = surucu(&s, ayar).zaman_asimi(Duration::from_secs(120));
     d.gonder(mesaj()).await;
+    // Zaman aşımı bilinmeyen tüketimdir (5b §2): ana istek kartta bekler.
+    d.butce_devam_et(kart_karari()).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
     assert!(
         icerik(arac_mesajlari(&s.istekler()[2].messages)[0])

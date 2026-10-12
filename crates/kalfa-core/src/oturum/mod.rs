@@ -23,8 +23,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::arac::AracKayitDefteri;
 use crate::butce::{
-    ButceDevri, ButceDurumu, ButceGorunumu, ButceHatasi, ButceIslemId, ButceSinirlari, ButceTalebi,
-    ButceTalepci, eski_kayit_devri,
+    ButceDevri, ButceDurumu, ButceGorunumu, ButceHatasi, ButceIslemId, ButceMesaji, ButceSinirlari,
+    ButceTalebi, ButceTalepci, eski_kayit_devri,
 };
 use crate::denetci::{DenetimKipi, GuvenlikDenetcisi};
 use crate::geri_alma::{
@@ -758,6 +758,60 @@ mod tests {
             Some(1)
         );
     }
+
+    /// Denetçi her denemesinin bitişini bir sonraki talepten önce gönderir. Aynı
+    /// denemenin ikinci bitişi (çift sonuç) ya da sonuçlanmamış bir kimlik sayaca
+    /// dokunmaz ve oturumu bozmaz.
+    #[tokio::test]
+    async fn bitis_mesaji_yalniz_acik_denemeyi_kapatir() {
+        let (mut oturum, _olaylar) = kayitsiz_oturum(ButceSinirlari {
+            istek: 5,
+            token: 1_000,
+        });
+        oturum.tur = Some(TurId::yeni());
+        let talepci = oturum.butce_talepci();
+        let izin = {
+            let talepci = talepci.clone();
+            tokio::spawn(async move { talepci.izin("denetçi").await })
+        };
+        let talep = oturum
+            .butce_talep_alici
+            .recv()
+            .await
+            .expect("talep gelmeli");
+        oturum.butce_talebi_geldi(talep).await;
+        let islem = izin.await.expect("görev bitmeli").expect("izin verilmeli");
+
+        talepci
+            .bitir(
+                islem,
+                Some(GunlukToken {
+                    istem: 4,
+                    tamamlama: 3,
+                    dusunce: 0,
+                }),
+            )
+            .await;
+        let bitis = oturum
+            .butce_talep_alici
+            .recv()
+            .await
+            .expect("bitiş gelmeli");
+        oturum.butce_talebi_geldi(bitis).await;
+
+        // Aynı kimlik ikinci kez bitince yok sayılır.
+        talepci.bitir(islem, None).await;
+        let ikinci = oturum
+            .butce_talep_alici
+            .recv()
+            .await
+            .expect("ikinci bitiş gelmeli");
+        oturum.butce_talebi_geldi(ikinci).await;
+
+        let g = oturum.butce.as_ref().expect("bütçe hazır").gorunum();
+        assert_eq!((g.aktif, g.bilinen_token, g.bilinmeyen), (0, 7, 0));
+        assert!(oturum.butce_hatasi.is_none(), "çift bitiş bozmamalı");
+    }
 }
 
 #[derive(Clone)]
@@ -1093,7 +1147,7 @@ struct Oturum {
     /// Sayaç tutarsızlığı yüzünden bu oturumda yeni izin verilmez.
     butce_hatasi: Option<String>,
     /// Denetçi, özetleyici ve eklentinin izin talepleri (5b tasarımı §4.1).
-    butce_talep_alici: mpsc::Receiver<ButceTalebi>,
+    butce_talep_alici: mpsc::Receiver<ButceMesaji>,
     /// Talep göndericisi; oturum yaşadıkça kanal açık kalır.
     butce_talepci: ButceTalepci,
     /// Kapı kapalıyken bekleyen talepler, geliş sırasıyla. Doluysa kapı kapalıdır.
@@ -1690,9 +1744,30 @@ impl Oturum {
         }
     }
 
-    /// Bütçe kanalına gelen talep (denetçi, özetleyici, eklenti). Tur dışındaysa
+    /// Bütçe kanalının mesajı (5b tasarımı §4.1, §7): izin talebi ya da bir ağ
+    /// denemesinin bitişi. Bitiş, aynı çağıranın sonraki talebinden önce gelir.
+    async fn butce_talebi_geldi(&mut self, mesaj: ButceMesaji) {
+        match mesaj {
+            ButceMesaji::Talep(talep) => self.izin_talebi_geldi(talep).await,
+            ButceMesaji::Bitis { islem, kullanim } => self.deneme_bitti(islem, kullanim).await,
+        }
+    }
+
+    /// Yardımcının bir denemesinin bitişi. Kimlik hâlâ sonuçlanmamışsa tek bitiş
+    /// yazılır; tur sonunda süpürülmüş ya da zaten bitmiş bir kimlik yok sayılır.
+    async fn deneme_bitti(&mut self, islem: ButceIslemId, kullanim: Option<GunlukToken>) {
+        let acik = self
+            .butce
+            .as_ref()
+            .is_some_and(|durum| durum.sonuclanmamis().contains(&islem));
+        if acik {
+            self.butce_bitir(islem, kullanim).await;
+        }
+    }
+
+    /// Bütçe kanalına gelen izin talebi (denetçi, özetleyici, eklenti). Tur dışındaysa
     /// ya da tur iptal edilmişse izin verilmez; kapı kapalıysa kuyrukta bekler.
-    async fn butce_talebi_geldi(&mut self, talep: ButceTalebi) {
+    async fn izin_talebi_geldi(&mut self, talep: ButceTalebi) {
         if self.tur.is_none() || self.iptal.is_cancelled() {
             let _ = talep.yanit.send(None);
             return;
@@ -1837,9 +1912,8 @@ impl Oturum {
         }
     }
 
-    /// Oturumun bütçe talep göndericisi. Denetçi, özetleyici ve eklenti
-    /// bağlantıları (5b Görev 4–5) bu göndericiyi kullanacak.
-    #[allow(dead_code)]
+    /// Oturumun bütçe talep göndericisi. Denetçi ve özetleyici her ağ denemesinden
+    /// önce bu göndericiden izin ister (5b tasarımı §4.1).
     pub(crate) fn butce_talepci(&self) -> ButceTalepci {
         self.butce_talepci.clone()
     }
