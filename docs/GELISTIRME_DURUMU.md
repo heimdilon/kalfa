@@ -92,13 +92,22 @@ denetçi, özetleme ve eklentilerin her üretim denemesi aynı oturum kapısınd
 geçer; iç 429 tekrarları ayrı sayılır. Kullanıcı kararı: tüketim bildirilmiyorsa
 yeni istekten önce durup sor. Başlatma izni/karar kalıcı yazılır; sahipli izin
 bırakıldığında tüketim kaybolmaz. Bekleyen eklenti çağrısı yeniden yürütülmez.
-Önerilen varsayılanlar 100 istek/1 000 000 bilinen token; henüz kesinleşmedi.
-Token eşiği önceden kesin harcama tavanı değildir. Kabul modeli Rust 1.98.1
+Token eşiği önceden kesin harcama tavanı değildir.
+
+Claude incelemesi (12 Ekim): çağrı/kayıt haritası koda uyuyor; prototip
+Windows'ta yeniden 11/11. Kullanıcı kararları: varsayılan **200 istek /
+5 000 000 bilinen token** (64 bin bağlam eşiğinde 1 milyon ~16 turda
+biterdi); EVREN'in üretimden önce reddettiği denemeler (429, günlük sınır,
+bağlam aşımı, anahtar/şart/model, 4xx, gövdesi gitmemiş bağlantı) istek
+sayılır, tokenı bilinen 0'dır ve soru sordurmaz. Kayıtlı EVREN hata
+yanıtlarında `usage` yok; katı sayım 5a'nın otomatik tekrarını her seferinde
+soruya çevirirdi. Reddedilen isteğe kredi tutulmadığı canlı doğrulanmadı. Kabul modeli Rust 1.98.1
 ile Windows ve WSL'de **11/11** geçti; ürün async/JSONL/IPC entegrasyonu
 henüz uygulanmadı. [Ön doğrulama](superpowers/bulgular/2026-10-12-kalfa-5b-butce-on-dogrulama.md).
 
-**Sıradaki tek iş:** 5b tasarım/plan incelemesi ve önerilen varsayılanların
-kesinleştirilmesi; sonra planlı uygulama devri. Linux paketleri sonraki
+**Sıradaki tek iş:** 5b planının uygulama devri (AGENTS planlı iş akışı,
+PR [#3](https://github.com/heimdilon/kalfa/pull/3) dalında); tasarım
+incelemesi ve varsayılanlar tamam. Linux paketleri sonraki
 adaydır; canlı `baglam_canli` deneyi ayrı onay bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık

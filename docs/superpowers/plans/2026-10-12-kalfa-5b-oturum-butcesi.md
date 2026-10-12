@@ -1,6 +1,7 @@
 # Kalfa 5b — Oturum bütçesi: Uygulama planı
 
-**Durum:** İnceleme taslağı. Ürün kodunu uygulama yetkisi değildir.
+**Durum:** Claude incelemesi ve kullanıcı kararları işlendi (12 Ekim).
+Ürün kodunu uygulama yetkisi değildir; uygulama AGENTS'taki planlı devirle başlar.
 **Taban:** `3133248`; [tasarım](../specs/2026-10-12-kalfa-5b-oturum-butcesi-design.md).
 **Hedef:** Her üretim denemesinin oturum bütçesinden izin alması, kullanımın
 istek kimliğiyle sayılması, limit/eksik kullanımda kullanıcı kararının
@@ -16,6 +17,9 @@ beklenmesi ve kurtarmanın sayaçları koruması.
 - İstek başına kimlik; her 429/bağlam/şart sonrası tekrar yeni denemedir.
 - Kullanıcı kararı: kullanım eksikse yeni denemeden önce dur ve sor.
   Eksiklik 0 sayılmaz; bilinmeyeni kabul etmek geçmişi sıfırlamaz.
+- Kullanıcı kararı: tasarım §2'deki üretim öncesi ret hataları istek
+  sayılır, tokenı bilinen 0'dır ve soru sordurmaz. Liste dışındaki
+  hatalar bilinmeyendir; listeyi genişletmeyin.
 - Başlamış istekler kayda girer; yeni izin reddi onların sonucunu düşürmez.
 - Önizleme reddi, boş denetçi ve yerel gövde/model/izin reddi istek sayılmaz.
   Başlatma izni verilmiş bağlantı hatası/iptal deneme sayısını geri almaz.
@@ -23,8 +27,8 @@ beklenmesi ve kurtarmanın sayaçları koruması.
   çağrılmaz. Canlı testler, paket ve sistem kurulumu ayrıca yetki ister.
 - Mevcut yalıtım, gizli dosya, denetçi ve eklenti sınırları korunur.
 - Bekleyen eklentinin bütçe devamı bütün aracı yeniden çalıştırmaz.
-- Varsayılan öneri 100 istek/1 000 000 token; ürün uygulamasından önce
-  tasarım incelemesinde kesinleştirilir. 0/sınırsız seçenek eklenmez.
+- Varsayılan 200 istek/5 000 000 bilinen token (kullanıcı kararı, 12 Ekim).
+  0/sınırsız seçenek eklenmez.
 - Şema 1, eski kaydı okuma ve isteğe bağlı alanların serde varsayılanları
   korunur; eski sürümün yeni kayıtları okuyabildiği vaat edilmez.
 - Prototip yalnız kabul modelini doğrular; asenkron/IPC entegrasyonunu
@@ -87,7 +91,11 @@ Doğrulama: `cargo test -p kalfa-core --locked`, ilgili clippy/fmt.
    yazın: istem + varsa tamamlama; yalnız toplam; boş/negatif/taşmış/
    çelişkili alanlar. Yeni bağımlılık yoktur. Hatalı yanıtın mevcut hata
    yolunu koruyun; bütçe tüketimi bilinmeyen olur.
-4. `reasoning_tokens` ikinci kez sayılmamalı. Akışta yinelenen kullanım
+4. `EvrenError`'dan bütçe kullanımına tek saf işlev yazın: tasarım §2'deki
+   üretim öncesi ret sınıfı `Some(0, 0)`, diğerleri `None`. Her varyant
+   için tablo testi; `Sunucu` için 4xx/5xx sınırı ve `Ag`'ın iki
+   `govde_gitti` değeri ayrı sınanır.
+5. `reasoning_tokens` ikinci kez sayılmamalı. Akışta yinelenen kullanım
    tek toplam olarak sonlandırılmalı; kullanım olmadan bitiş/iptal test
    edilmelidir. Kredi bilgisi kullanımın yerine geçmez.
 
@@ -114,7 +122,9 @@ host kullanım yardımcısı. Doğrulama: iki crate'in test/clippy'si.
 
 Kabul: sahte sağlayıcıda 1 istek limitinde ikinci `akis` çağrısı yok;
 ikinci tur ve kayıttan açma sıfırlamaz; eksik kullanımda kullanıcı kararından
-önce yeni `akis`/özet isteği yok; iptal beklemeyi sonlandırır.
+önce yeni `akis`/özet isteği yok; iptal beklemeyi sonlandırır. 429 ve
+`BaglamAsimi` sonrası tek tekrar soru sormadan sürer, her ikisi de istek
+sayılır; 5a'nın sıkı özetleme regresyonları değişmeden geçer.
 
 ## Görev 4 — Denetçi ve özetleyicinin her denemesi
 

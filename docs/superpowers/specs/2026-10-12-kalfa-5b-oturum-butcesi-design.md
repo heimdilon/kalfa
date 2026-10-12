@@ -1,7 +1,8 @@
 # Kalfa 5b — Oturum bütçesi: Tasarım
 
 **Tarih:** 2026-10-12.
-**Durum:** İnceleme taslağı; ürün uygulaması henüz yapılmadı.
+**Durum:** Claude incelemesi ve kullanıcı kararları işlendi (12 Ekim);
+ürün uygulaması henüz yapılmadı.
 **Taban:** `main`, `3133248` (5a tamamlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §6.8.
 **Plan:** [5b uygulama planı](../plans/2026-10-12-kalfa-5b-oturum-butcesi.md).
@@ -28,16 +29,30 @@ aşabilir. Bu ayrım kullanıcıya gösterilir.
 
 **Kullanıcı kararı (12 Ekim, bu çalışmanın sohbeti):** EVREN bir isteğin
 token kullanımını bildirmezse yeni istekten önce durup sorulur. Eksik
-kullanım sıfır sayılmaz. Aynı karar, kullanım vermeyen başarısız deneme,
-iptal ve zaman aşımı için de geçerlidir; 429 tekrarından önce gerekirse
-kullanıcı kararı beklenir.
+kullanım sıfır sayılmaz. Aynı karar, üretimden sonra kullanım vermeden
+biten deneme, gönderim sonrası iptal ve zaman aşımı için de geçerlidir.
 
-**Plan önerileri; henüz kullanıcıyla kesinleşmedi:**
+**Kullanıcı kararı (12 Ekim, Claude incelemesi):** EVREN'in üretimden önce
+reddettiği deneme istek olarak sayılır, tokenı **bilinen 0**'dır ve soru
+sordurmaz. Bu sınıf yalnız şu hatalardır: `HizSiniri`, `GunlukSinir`,
+`BaglamAsimi`, `AnahtarGecersiz`, `SartKabulGerekli`, `ModelBulunamadi`,
+4xx `Sunucu` ve `Ag { govde_gitti: false }`. `AkisYarimKaldi`,
+`YanitSiniri`, `GecersizYanit`, 5xx `Sunucu`, `Ag { govde_gitti: true }`,
+gönderim sonrası iptal/zaman aşımı ve kullanımsız başarılı yanıt
+bilinmeyendir. Gerekçe: kayıtlı EVREN hata yanıtlarında `usage` yoktur;
+katı sayım 5a'nın bağlam aşımı tekrarını, ana isteğin 429 tekrarını ve
+RAG'ın 429 küçültmesini her seferinde kullanıcı sorusuna çevirirdi.
+Varsayım: EVREN reddettiği isteğe kredi tutmaz; canlı doğrulanmadı.
 
-- Yeni oturum için 100 istek ve 1 000 000 bilinen token. Bunlar ölçülmüş
-  optimum değerler değildir; korumacı başlangıç değerleridir. Büyük ilk
-  RAG indekslemesi bütçe artırmayı gerektirebilir (5a öncesi tam indeks
-  yaklaşık 2,62 milyon token tüketti).
+**Kullanıcı kararı (12 Ekim, Claude incelemesi):** Yeni oturum için
+**200 istek ve 5 000 000 bilinen token**. Gerekçe: bağlam eşiği 64 bin
+token olduğundan uzun oturumda her ana istek bu sınıra yaklaşır;
+1 000 000 token yaklaşık 16 tam bağlamlı turda biterdi. 5 milyon, tam
+bağlamda yaklaşık 78 ana tura ve tam ilk RAG indekslemesine (yaklaşık
+2,62 milyon token) yeter. Ölçülmüş optimum değildir.
+
+**Plan kuralları:**
+
 - Limitler yalnız pozitif, sonlu tamsayıdır; 0, sınırsız anlamına gelmez.
   Arayüz girdileri JavaScript'in güvenli tamsayı aralığında doğrulanır.
 - Ayarlar'daki varsayılanlar yeni oturumlara uygulanır. Açık/kurtarılan
@@ -152,7 +167,9 @@ satırlarıyla yeniden toplanmaz. Gönderim günlüğü yeni satırların token�
 Eski satırlarda mevcut çözüm korunur. Tur özeti de her denemenin kullanımını
 bir kez toplar. Akışta yinelenen kümülatif kullanım toplam olarak eklenmez;
 bir isteğin son/geçerli kullanımı tek sonlandırmada sayılır. Çelişkili
-veya eksik kullanım bilinmeyendir.
+veya eksik kullanım bilinmeyendir. §2'deki üretim öncesi ret sınıfı
+`kullanim: Some(0, 0)` ile sonlandırılır; sınıflandırma tek bir saf
+`EvrenError` → kullanım işlevindedir ve dört çağrı yolu onu kullanır.
 
 Eklenti yanıtı sınırlı JSON'dan, yeni paket olmadan okunur. Gömme/sıralamada
 sayısal `prompt_tokens` ve yoksa 0 tamamlamaya izin verilir; sohbet için
