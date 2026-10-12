@@ -10,6 +10,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use globset::{GlobBuilder, GlobMatcher};
 use kalfa_core::arac::{AracHatasi, AracOrtami, CiktiGonderici, GonderimTalebi, GonderimYaniti};
+use kalfa_core::butce::hata_kullanimi;
 use kalfa_core::gonderim::{EklentiIstekOzeti, IstekAsamasi, IstekSonucu, OKUNAN_SINIRI};
 use kalfa_core::kilit::KaynakKilitleri;
 use kalfa_core::protokol::CiktiAkisi;
@@ -24,7 +25,8 @@ use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use crate::bag::kalfa::plugin::tipler::{DosyaBilgisi, EvrenUcu, Hata, Ilerleme, Seviye};
 use crate::depo::Depo;
 use crate::evren::{
-    BellekIzni, EvrenBaglami, GonderimIzni, ek_uc, eklenti_hatasi, govde_dogrula, kayit_hatasi,
+    BellekIzni, EvrenBaglami, GonderimIzni, ek_uc, eklenti_hatasi, govde_dogrula, ham_kullanim,
+    kayit_hatasi,
 };
 use crate::manifest::Manifest;
 use crate::sinir;
@@ -420,8 +422,8 @@ impl CagriOrtami {
     }
 
     /// `evren-cagir` (§9.2): yetenek ve bağlantı denetimi, gövde doğrulama, izin,
-    /// sınırlar, model ve şart, gönderim izni (önizleme), istek, kayıt, yanıt
-    /// boyutu. Hiçbir hata yolunda istek iki kez gönderilmez.
+    /// sınırlar, model ve şart, gönderim izni (önizleme), bütçe izni (5b), istek,
+    /// kayıt, yanıt boyutu. Hiçbir hata yolunda istek iki kez gönderilmez.
     async fn evren_cagir(&mut self, uc: EvrenUcu, govde: String) -> Result<String, Hata> {
         let uc = match uc {
             EvrenUcu::Embeddings => crate::manifest::EvrenUcu::Embeddings,
@@ -484,6 +486,15 @@ impl CagriOrtami {
             GonderimYaniti::SinirAsildi(ileti) => return Err(Hata::SinirAsildi(ileti)),
             GonderimYaniti::Iptal => return Err(Hata::IptalEdildi),
         }
+        // Bütçe izni ağdan hemen önce (5b tasarımı §7). Reddedilen ya da iptal
+        // edilen çağrı ağa çıkmaz ve eklentiye bütçe hatası olarak gitmez: RAG'ın
+        // toplu küçültmesi bu yüzden tetiklenmez. Çağrı aynı future'da bekler.
+        let amac = format!("eklenti:{}", self.manifest.ad);
+        let butce_islem = tokio::select! {
+            izin = self.ortam.butce_izni(&amac) => izin,
+            _ = self.iptal.cancelled() => return Err(Hata::IptalEdildi),
+        };
+        let butce_islem = butce_islem.map_err(|()| Hata::IptalEdildi)?;
         let cevap = tokio::select! {
             sonuc = tokio::time::timeout(
                 sinir::EVREN_SURESI,
@@ -513,7 +524,16 @@ impl CagriOrtami {
                 },
             ),
         };
-        self.ortam.istek_bitti(ozet, meta, kayit).await;
+        // Kullanım yalnız ağa çıkmış denemeden gelir: başarılı yanıtın gövdesinden,
+        // hatada hata sınıfına göre; zaman aşımı ve iptal bilinmeyendir (5b §2, §6).
+        let kullanim = match &cevap {
+            Cevap::Yanit(yanit) => ham_kullanim(&yanit.govde),
+            Cevap::Hata(hata) => hata_kullanimi(hata),
+            Cevap::ZamanAsimi | Cevap::Iptal => None,
+        };
+        self.ortam
+            .istek_bitti(ozet, meta, kayit, butce_islem, kullanim)
+            .await;
         match cevap {
             Cevap::Yanit(yanit) if yanit.govde.len() > sinir::EVREN_YANITI => {
                 Err(Hata::SinirAsildi(format!(

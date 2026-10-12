@@ -1837,9 +1837,7 @@ impl Oturum {
         }
     }
 
-    /// Oturumun bütçe talep göndericisi. Denetçi, özetleyici ve eklenti
-    /// bağlantıları (5b Görev 4–5) bu göndericiyi kullanacak.
-    #[allow(dead_code)]
+    /// Oturumun bütçe talep göndericisi; eklentinin araç ortamına verilir.
     pub(crate) fn butce_talepci(&self) -> ButceTalepci {
         self.butce_talepci.clone()
     }

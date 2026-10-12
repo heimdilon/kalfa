@@ -283,8 +283,6 @@ pub(crate) fn kayit_hatasi(hata: &EvrenError) -> IstekSonucu {
 /// Ham EVREN yanıtının `usage` nesnesinden bütçe kullanımı. Gövde JSON değilse,
 /// `usage` yoksa ya da nesne değilse, ya da `Usage::butce_kullanimi` kullanımı
 /// bilinmez diyorsa `None` döner; bu 0 anlamına gelmez.
-// 5b Görev 5'te host bitişine bağlanır.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn ham_kullanim(govde: &str) -> Option<GunlukToken> {
     /// Yanıtın yalnız `usage` alanı okunur; geri kalanı yok sayılır.
     #[derive(Deserialize)]
