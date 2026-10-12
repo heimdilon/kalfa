@@ -330,15 +330,7 @@ impl Oturum {
                     kalfa_evren::tipler::Role::Tool => "kalfa:sonuç".to_string(),
                     kalfa_evren::tipler::Role::System => "kalfa:sistem".to_string(),
                 });
-            let mut bayt = mesaj.content.as_deref().map_or(0, |s| s.len() as u64);
-            if let Some(ref dusunce) = mesaj.reasoning {
-                bayt += dusunce.len() as u64;
-            }
-            if let Some(ref cagrilar) = mesaj.tool_calls {
-                for tc in cagrilar {
-                    bayt += tc.function.name.len() as u64 + tc.function.arguments.len() as u64;
-                }
-            }
+            let bayt = super::baglam::mesaj_bayti(mesaj);
             ogeler.push(GonderilenOge { kaynak, sira, bayt });
         }
         ogeler

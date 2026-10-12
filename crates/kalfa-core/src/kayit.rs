@@ -63,6 +63,10 @@ impl From<Komut> for KayitKomutu {
     }
 }
 
+/// Bağlam yönetiminin özetlediği mesajın kaynak öneki (5a tasarımı §8). Bu
+/// önekli mesaj yeniden özetlenmez; kurtarma onu gönderilen mesaj saymaz.
+pub const OZET_ONEKI: &str = "özet:";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "tip")]
 pub enum KayitOgesi {

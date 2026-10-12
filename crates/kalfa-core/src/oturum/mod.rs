@@ -5,6 +5,7 @@
 //! (akış, onay, araç, şart) komut kanalı da dinlenir: iptal her an işler.
 
 mod arac_asamasi;
+pub mod baglam;
 mod geri_alma;
 mod model_turu;
 
