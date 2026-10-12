@@ -185,6 +185,12 @@ ağ geçidi reddeder (§11).
 - Şart kapısı ana istekteki gibi geçerlidir: `SartKabulGerekli` gelirse
   özetleme durur, ana istek şart akışına girer; şart asla kullanıcı adına
   kabul edilmez.
+- Ana isteğin de alacağı hatalarda (`SartKabulGerekli`, `GunlukSinir`,
+  `AnahtarGecersiz`, yeniden denemeden sonra `HizSiniri`, gövdesi ağa
+  çıkmayan `Ag`) özetleme durur ve kalan çıktılar olduğu gibi kalır:
+  geçici bir hata bağlamı kalıcı olarak silmemeli (son inceleme). Yer tutucu
+  yalnız çıktıya özgü başarısızlıklarda (sunucu hatası, zaman aşımı, boş
+  yanıt) konur.
 - Her özet tamamlandıkça bağlama uygulanır ve kaydedilir. İptalde biten
   özetler kalır, bitmeyenler bırakılır; tur `Iptal` ile biter.
 
@@ -201,6 +207,9 @@ ağ geçidi reddeder (§11).
   çıktının özetine sızamaz. Özetleyici enjeksiyona uyup talimat yazsa bile
   sonuç yine dış kaynak etiketiyle araç rolündedir; özgün çıktının taşıdığı
   riskten fazlası yoktur. Bu yüzden özet denetçiden yeniden geçmez.
+- Özgün çıktının sarmal dışındaki Kalfa satırları (`[güvenlik]` uyarıları,
+  denetçinin `[denetçi]` satırı) özetin sarmalından sonra olduğu gibi
+  korunur; özet bu uyarıları kaybetmez.
 - Özgün çıktı gizli dosya içeriği taşıyorsa (onaylı okuma) o içerik
   zaten EVREN'e gönderilmiştir (§6, madde 2); özetleme aynı sağlayıcıya ikinci
   kez, başka modelle gönderir. Bu, 2.1/4 kararının bilinen sonucudur.
@@ -282,7 +291,7 @@ KayitOgesi::BaglamOzeti {
 | Durum | Davranış |
 |---|---|
 | Özetleyici hata/zaman aşımı/boş yanıt | Yer tutucu, tur sürer (§7) |
-| `GunlukSinir` özetlemede | Kalan adaylar yer tutucu olur; ana istek kendi hatasını alır |
+| `GunlukSinir`, anahtar, ağ yok, ikinci 429 özetlemede | Özetleme durur, çıktılar olduğu gibi kalır; ana istek kendi hatasını alır (§7) |
 | `SartKabulGerekli` özetlemede | Özetleme durur, şart akışı (§7) |
 | İptal | Biten özetler kalır, tur `Iptal` (§7) |
 | Kayıt yazılamadı | Tur `Hata` (§10) |

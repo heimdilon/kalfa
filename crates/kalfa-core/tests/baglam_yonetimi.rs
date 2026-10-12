@@ -420,3 +420,95 @@ async fn aday_yoksa_asim_hemen_hata() {
         d.hatalar()
     );
 }
+
+// İnceleme düzeltmeleri (5a son inceleme).
+
+#[tokio::test]
+async fn ozet_kalfa_uyarilarini_korur() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (ayar, _) = ayarlar(dizin.path());
+    let s = iki_okuma();
+    s.sohbet_ekle(SahteSohbet::Metin("özet".into()));
+    let arac = Arc::new(
+        SahteArac::okuyan("oku")
+            .yanit("x".repeat(3000))
+            .guvenlik_uyarisi("görünmez karakter var"),
+    );
+    let araclar: Vec<Arc<dyn Arac>> = vec![arac];
+    let mut d = test_oturumu(
+        test_baglami(s.clone(), araclar, sanal_siniflandirici()),
+        ayar,
+    );
+    d.gonder(mesaj()).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    let ozet = arac_mesajlari(&s.istekler()[2].messages)[0].clone();
+    assert!(
+        icerik(&ozet).starts_with("<arac_sonucu kaynak=\"özet:"),
+        "{}",
+        icerik(&ozet)
+    );
+    assert!(
+        icerik(&ozet).ends_with("\n[güvenlik] görünmez karakter var"),
+        "{}",
+        icerik(&ozet)
+    );
+}
+
+#[tokio::test]
+async fn gunluk_sinirda_ozgun_cikti_kalir() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (ayar, yol) = ayarlar(dizin.path());
+    let s = iki_okuma();
+    s.sohbet_ekle(SahteSohbet::Hata(EvrenError::GunlukSinir {
+        sifirlanma: None,
+    }));
+    let (d, neden) = tur(&s, ayar).await;
+    assert_eq!(neden, BitisNedeni::Normal);
+    let istekler = s.istekler();
+    assert_eq!(
+        icerik(arac_mesajlari(&istekler[2].messages)[0]),
+        icerik(arac_mesajlari(&istekler[1].messages)[0])
+    );
+    assert_eq!(ozetlendi(&d), None);
+    let kayitlar = OturumKaydi::oku(&yol).unwrap();
+    assert!(
+        !kayitlar
+            .iter()
+            .any(|z| matches!(z.yuk, KayitOgesi::BaglamOzeti { .. }))
+    );
+}
+
+#[tokio::test]
+async fn sart_gerekirse_ozetleme_durur_ve_sart_kabul_edilmez() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (ayar, _) = ayarlar(dizin.path());
+    let s = iki_okuma();
+    s.sohbet_ekle(SahteSohbet::Hata(EvrenError::SartKabulGerekli {
+        surum: Some(1),
+    }));
+    let (d, neden) = tur(&s, ayar).await;
+    assert_eq!(neden, BitisNedeni::Normal);
+    let istekler = s.istekler();
+    assert_eq!(
+        icerik(arac_mesajlari(&istekler[2].messages)[0]),
+        icerik(arac_mesajlari(&istekler[1].messages)[0])
+    );
+    assert!(s.kabul_edilen_surumler().is_empty());
+    assert_eq!(ozetlendi(&d), None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn zaman_asiminda_yer_tutucu_konur() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (ayar, _) = ayarlar(dizin.path());
+    let s = iki_okuma();
+    s.sohbet_ekle(SahteSohbet::Gecikme(Duration::from_secs(60)));
+    let mut d = surucu(&s, ayar).zaman_asimi(Duration::from_secs(120));
+    d.gonder(mesaj()).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    assert!(
+        icerik(arac_mesajlari(&s.istekler()[2].messages)[0])
+            .starts_with("[eski araç çıktısı kaldırıldı:")
+    );
+    assert_eq!(ozetlendi(&d), Some((0, 1)));
+}
