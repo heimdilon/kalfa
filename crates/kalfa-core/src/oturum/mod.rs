@@ -42,6 +42,7 @@ use crate::sart_kapisi::SartKapisi;
 use crate::tur_ozeti::TurBiriktirici;
 use crate::yol::CalismaYolu;
 use arac_asamasi::AsamaSonucu;
+use baglam::Oran;
 
 const KOMUT_KANALI: usize = 256;
 
@@ -60,6 +61,13 @@ pub struct Sinirlar {
     /// §5.2). Testler küçültür.
     pub geri_alma_oturum: u64,
     pub geri_alma_oturum_alt: u64,
+    /// Bağlamın tahmini istem tokenı bunu aşarsa eski araç çıktıları
+    /// özetlenir (5a tasarımı §5). Testler küçültür.
+    pub baglam_esigi: u64,
+    /// Özetleme, tahmin buna inene kadar sürer.
+    pub baglam_hedefi: u64,
+    /// Son bu kadar araç çıktısı özetlenmez.
+    pub korunan_arac_ciktisi: usize,
 }
 
 impl Default for Sinirlar {
@@ -72,6 +80,9 @@ impl Default for Sinirlar {
             azami_bekleme: Duration::from_secs(60),
             geri_alma_oturum: OTURUM_SINIRI,
             geri_alma_oturum_alt: OTURUM_ALT_SINIRI,
+            baglam_esigi: 64_000,
+            baglam_hedefi: 32_000,
+            korunan_arac_ciktisi: 4,
         }
     }
 }
@@ -785,6 +796,7 @@ pub fn devam_et(
             son_arac_tanimlari: durum.son_arac_tanimlari.clone(),
             onizleme_acik: durum.onizleme_acik,
             eklenti_kullanimi: durum.eklenti_kullanimi.clone(),
+            bekleyen_ozetler: durum.bekleyen_ozetler.clone(),
         },
         GeriAlmaKurulumu {
             depo,
@@ -867,6 +879,7 @@ fn baslat_ic(
             son_arac_tanimlari: None,
             onizleme_acik: false,
             eklenti_kullanimi: HashMap::new(),
+            bekleyen_ozetler: BTreeSet::new(),
         },
         GeriAlmaKurulumu {
             depo,
@@ -942,6 +955,13 @@ struct Oturum {
     /// Eklentilerin bu oturumdaki EVREN kullanımı (aşama 4 tasarımı §9.5).
     /// Kayda yazılmaz; kurtarmada `EklentiIstegi` öğelerinden yeniden kurulur.
     eklenti_kullanimi: HashMap<String, EklentiKullanimi>,
+    /// Son ana isteğin token/bayt oranı (5a tasarımı §5). Kayda yazılmaz.
+    // ponytail: kurtarılan oturum 1/3'ten başlar; ilk ana istek ölçer.
+    oran: Oran,
+    /// Son ana isteğin bağlam baytı; oran bununla kurulur.
+    son_istek_bayti: u64,
+    /// Özetlenmiş, henüz bir ana istekle gönderilmemiş mesajlar (§9).
+    pub(super) bekleyen_ozetler: BTreeSet<usize>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -959,6 +979,7 @@ struct BaglamGirdisi {
     son_arac_tanimlari: Option<(Option<u64>, Vec<ToolDef>)>,
     onizleme_acik: bool,
     eklenti_kullanimi: HashMap<String, EklentiKullanimi>,
+    bekleyen_ozetler: BTreeSet<usize>,
 }
 
 impl Oturum {
@@ -1010,6 +1031,9 @@ impl Oturum {
             tur_ozeti: TurBiriktirici::default(),
             tur_denetci_kipi,
             eklenti_kullanimi: baglam_girdisi.eklenti_kullanimi,
+            oran: Oran::default(),
+            son_istek_bayti: 0,
+            bekleyen_ozetler: baglam_girdisi.bekleyen_ozetler,
         };
         (
             oturum,

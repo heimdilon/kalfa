@@ -306,6 +306,14 @@ pub enum Olay {
         cagri: CagriId,
         sonuc: DenetimSonucu,
     },
+    /// Eski araç çıktıları özetlendi (5a tasarımı §12). `once`/`sonra`
+    /// tahmini istem tokenıdır.
+    BaglamOzetlendi {
+        adet: u32,
+        yer_tutucu: u32,
+        once: u64,
+        sonra: u64,
+    },
 }
 
 /// Gönderim önizlemesinin gösterilme nedeni.

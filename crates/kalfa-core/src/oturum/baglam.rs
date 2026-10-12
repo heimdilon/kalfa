@@ -1,10 +1,20 @@
 //! Bağlam yönetimi (5a tasarımı): eşik, aday seçimi ve özetleyici isteği.
 //! Saf işlevler; oturum bunları `baglami_yonet`'te kullanır.
 
-use kalfa_evren::tipler::{ChatMessage, ChatRequest, Role};
+use std::sync::Arc;
+use std::time::Duration;
 
+use futures_util::StreamExt;
+use futures_util::stream;
+use kalfa_evren::tipler::{ChatMessage, ChatRequest, ChatResponse, Role};
+use kalfa_evren::{EvrenError, YanitMeta};
+
+use super::Oturum;
 use super::arac_asamasi::kaynak_kacisla;
-use crate::kayit::OZET_ONEKI;
+use crate::gonderim::{IstekAsamasi, IstekSonucu};
+use crate::kayit::{KayitOgesi, OZET_ONEKI, OzetYontemi};
+use crate::protokol::{BitisNedeni, Olay};
+use crate::saglayici::Saglayici;
 
 /// Özetleyici model (üst belge §6.5).
 pub const OZETLEYICI_MODELI: &str = "qwen3.8-flash-next";
@@ -161,6 +171,212 @@ fn ozet_sarmali_sinirla(ozet: &str, kaynak: &str, ozgun_bayt: usize, sinir: &str
 /// Özetlenemeyen çıktının yerine konan Kalfa metni (§7).
 pub fn yer_tutucu(ozgun_bayt: usize) -> String {
     format!("[eski araç çıktısı kaldırıldı: {ozgun_bayt} bayt; gerekirse aracı yeniden çalıştırın]")
+}
+
+/// Aynı anda en çok bu kadar özetleme isteği (§7).
+const ESZAMANLI_OZET: usize = 4;
+const OZET_ZAMAN_ASIMI: Duration = Duration::from_secs(30);
+
+type OzetSonucu = Result<(ChatResponse, YanitMeta), EvrenError>;
+
+/// Özetleme isteği; 429'da bir kez yeniden dener, 30 sn'de zaman aşımına
+/// uğrar (§7).
+async fn ozetle(saglayici: Arc<dyn Saglayici>, istek: ChatRequest) -> OzetSonucu {
+    let calis = async {
+        match saglayici.sohbet(istek.clone()).await {
+            Err(EvrenError::HizSiniri { tekrar_dene }) => {
+                let bekle = tekrar_dene
+                    .unwrap_or(Duration::from_millis(500))
+                    .min(Duration::from_secs(5));
+                tokio::time::sleep(bekle).await;
+                saglayici.sohbet(istek).await
+            }
+            sonuc => sonuc,
+        }
+    };
+    tokio::time::timeout(OZET_ZAMAN_ASIMI, calis)
+        .await
+        .unwrap_or_else(|_| Err(EvrenError::ag_yanit("zaman aşımı (30 sn)")))
+}
+
+impl Oturum {
+    /// Bağlamın bayt ölçüsü: sistem mesajı, araç tanımları ve mesajlar (§5).
+    pub(super) fn baglam_bayti(&self) -> u64 {
+        let tanimlar = serde_json::to_vec(&self.baglam.araclar.tanimlar(self.ayarlar.kip))
+            .map_or(0, |v| v.len() as u64);
+        self.ayarlar.sistem_mesaji.len() as u64
+            + tanimlar
+            + self.mesajlar.iter().map(mesaj_bayti).sum::<u64>()
+    }
+
+    /// Bağlam eşiği aşıldıysa eski araç çıktılarını özetler (§5–§9).
+    /// `siki`: bağlam aşımından sonra (§11); eşiğe bakılmaz, son çıktılar
+    /// korunmaz, bütün adaylar özetlenir. Bir şey değiştiyse `true`.
+    pub(super) async fn baglami_yonet(&mut self, siki: bool) -> Result<bool, BitisNedeni> {
+        let sinirlar = &self.ayarlar.sinirlar;
+        let tavan = pencere(&self.ayarlar.model) / 5 * 4;
+        let bayt = self.baglam_bayti();
+        let once = self.oran.tahmin(bayt);
+        if !siki && once <= sinirlar.baglam_esigi.min(tavan) {
+            return Ok(false);
+        }
+        let (korunan, hedef) = if siki {
+            (0, 0)
+        } else {
+            (
+                sinirlar.korunan_arac_ciktisi,
+                sinirlar.baglam_hedefi.min(tavan),
+            )
+        };
+        let adaylar = adaylar(
+            &self.mesajlar,
+            &self.mesaj_bilgileri,
+            self.gonderilen,
+            korunan,
+        );
+        let secilen = sec(&adaylar, &self.mesajlar, self.oran, bayt, hedef);
+        if secilen.is_empty() {
+            return Ok(false);
+        }
+
+        let istekler: Vec<(usize, ChatRequest)> = secilen
+            .iter()
+            .map(|&i| {
+                let icerik = self.mesajlar[i].content.as_deref().unwrap_or_default();
+                (i, ozet_istegi(icerik))
+            })
+            .collect();
+        let saglayici = self.baglam.saglayici.clone();
+        let mut sonuclar = stream::iter(istekler.into_iter().map(move |(i, istek)| {
+            let saglayici = saglayici.clone();
+            async move { (i, ozetle(saglayici, istek).await) }
+        }))
+        .buffer_unordered(ESZAMANLI_OZET);
+
+        let (mut adet, mut yer_tutucu_sayisi) = (0u32, 0u32);
+        while let Some((i, sonuc)) = self.iptal_edilebilir(sonuclar.next()).await? {
+            // Şart akışı ana istekte işler; kalan çıktılar olduğu gibi kalır (§7).
+            let sart = matches!(sonuc, Err(EvrenError::SartKabulGerekli { .. }));
+            let ozet = self.ozet_istegini_kaydet(sonuc).await;
+            if sart {
+                break;
+            }
+            let Some(ozgun) = self.mesajlar.get(i).map(icerik_bayti) else {
+                continue;
+            };
+            let kaynak = self
+                .mesaj_bilgileri
+                .get(i)
+                .and_then(|(_, k)| k.clone())
+                .unwrap_or_else(|| "kalfa:sonuç".to_string());
+            let (icerik, yontem) = match ozet {
+                Some(o) => (ozet_sarmali(&o, &kaynak, ozgun), OzetYontemi::Ozet),
+                None => (yer_tutucu(ozgun), OzetYontemi::YerTutucu),
+            };
+            if !self
+                .ozet_uygula(i, ozet_kaynagi(&kaynak), icerik, yontem)
+                .await
+            {
+                return Err(BitisNedeni::Hata);
+            }
+            match yontem {
+                OzetYontemi::Ozet => adet += 1,
+                OzetYontemi::YerTutucu => yer_tutucu_sayisi += 1,
+            }
+        }
+        if adet + yer_tutucu_sayisi == 0 {
+            return Ok(false);
+        }
+        let sonra = self.oran.tahmin(self.baglam_bayti());
+        self.yay(Olay::BaglamOzetlendi {
+            adet,
+            yer_tutucu: yer_tutucu_sayisi,
+            once,
+            sonra,
+        })
+        .await;
+        Ok(true)
+    }
+
+    /// Özetleme isteğini günlüğe ve kullanımı kayda yazar (§9); özet metnini
+    /// döndürür. Boş yanıt ve hata `None`'dır.
+    async fn ozet_istegini_kaydet(&mut self, sonuc: OzetSonucu) -> Option<String> {
+        let model = Some(OZETLEYICI_MODELI.to_string());
+        match sonuc {
+            Ok((yanit, meta)) => {
+                self.istek_kaydet(
+                    "özetleme",
+                    &meta,
+                    model,
+                    Vec::new(),
+                    1,
+                    IstekSonucu::Basarili,
+                )
+                .await;
+                if let Some(u) = &yanit.usage {
+                    let (istem, tamamlama, dusunce) =
+                        (u.prompt_tokens, u.completion_tokens, u.reasoning_tokens());
+                    self.kaydet(KayitOgesi::Kullanim {
+                        istem,
+                        tamamlama,
+                        dusunce,
+                    })
+                    .await;
+                    self.tur_ozeti.kullanim(istem, tamamlama, dusunce);
+                }
+                yanit
+                    .choices
+                    .into_iter()
+                    .next()
+                    .and_then(|c| c.message.content)
+                    .map(|m| m.trim().to_string())
+                    .filter(|m| !m.is_empty())
+            }
+            Err(e) => {
+                let asama = match e {
+                    EvrenError::Ag {
+                        govde_gitti: false, ..
+                    } => IstekAsamasi::Baglanti,
+                    _ => IstekAsamasi::Yanit,
+                };
+                self.istek_kaydet_hata("özetleme", model, Vec::new(), 1, asama, e.to_string())
+                    .await;
+                None
+            }
+        }
+    }
+
+    /// Özeti kayda yazar ve bağlama uygular (§10). Kayıt yazılamazsa `false`.
+    async fn ozet_uygula(
+        &mut self,
+        i: usize,
+        kaynak: String,
+        icerik: String,
+        yontem: OzetYontemi,
+    ) -> bool {
+        let Some(mesaj_sira) = self.mesaj_bilgileri.get(i).map(|(s, _)| *s) else {
+            return true;
+        };
+        let sira = self.kayit.is_some().then_some(self.sira + 1);
+        if let Some(mesaj_sira) = mesaj_sira
+            && !self
+                .kaydet(KayitOgesi::BaglamOzeti {
+                    mesaj_sira,
+                    kaynak: kaynak.clone(),
+                    icerik: icerik.clone(),
+                    yontem,
+                })
+                .await
+        {
+            return false;
+        }
+        if let Some(m) = self.mesajlar.get_mut(i) {
+            m.content = Some(icerik);
+        }
+        self.mesaj_bilgileri[i] = (sira, Some(kaynak));
+        self.bekleyen_ozetler.insert(i);
+        true
+    }
 }
 
 #[cfg(test)]
