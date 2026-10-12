@@ -78,6 +78,38 @@ fn hiz_siniri_retry_after_ile_ve_onsuz() {
     );
 }
 
+/// Canlıda (2026-10-08) görülen yanıt: `Retry-After: 60` gelir, ama sınır
+/// ancak `resets_at`'te açılır; bu yüzden hız sınırı sayılmaz.
+const GUNLUK_SINIR: &[u8] = br#"{"error":{"message":"G\u00fcnl\u00fck token limitiniz a\u015f\u0131ld\u0131 (t\u00fcm API anahtarlar\u0131n\u0131z\u0131n toplam\u0131).","type":"rate_limit_error","param":null,"code":"daily_token_limit_exceeded","evren":{"resets_at":"2026-10-09T00:00:00Z","estimated_prompt_tokens":66744,"remaining_tokens":17761,"limit_tokens":15000000}}}"#;
+
+#[test]
+fn gunluk_token_siniri_hiz_sinirindan_ayrilir() {
+    let h = hata_esle(429, Some("60"), GUNLUK_SINIR);
+    assert_eq!(
+        h,
+        EvrenError::GunlukSinir {
+            sifirlanma: Some("2026-10-09T00:00:00Z".into())
+        }
+    );
+    assert_eq!(
+        h.to_string(),
+        "EVREN'in günlük token sınırına ulaşıldı (bütün anahtarlarınızın toplamı). \
+         Sınır 2026-10-09T00:00:00Z itibarıyla sıfırlanır."
+    );
+}
+
+#[test]
+fn gunluk_sinirda_zaman_damgasi_olmayan_sifirlanma_gosterilmez() {
+    for deger in ["\"yarın <b>sabah</b>\"", "\"\"", "12", "null"] {
+        let govde = format!(
+            r#"{{"error":{{"code":"daily_token_limit_exceeded","evren":{{"resets_at":{deger}}}}}}}"#
+        );
+        let h = hata_esle(429, None, govde.as_bytes());
+        assert_eq!(h, EvrenError::GunlukSinir { sifirlanma: None }, "{deger}");
+        assert!(h.to_string().ends_with("toplamı)."), "{h}");
+    }
+}
+
 #[test]
 fn json_olmayan_govde_kirpilarak_tasinir() {
     assert_eq!(

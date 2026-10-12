@@ -1,7 +1,76 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-10-07. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-10-12; G5 kapandı. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
+
+## Güncel devam noktası — 2026-10-12 11:30 TSİ
+
+Aşama 1–3 tamamlandı. Aşama 4'te tasarım #49, çalışma zamanı #50
+(`d1aa225`) ve EVREN yolu #51 (`4807265`) ana dala birleşti. **4c ve 4d
+uygulandı, fakat #52/#53 henüz birleşmedi; aşama 4 tamamlandı sayılmaz.**
+
+| İş | Yayınlanmış baş / taban | Durum |
+|---|---|---|
+| Ana dal | `kalfa-asama-1`, `4807265` | 4a ve 4b birleşmiş kod |
+| [#52 — 4c](https://github.com/heimdilon/kalfa-arsiv/pull/52) | `4c/plan`, `f64a413` → `kalfa-asama-1` | Taslak; [CI 147](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38145248319) dört işiyle yeşil; G5 kapandı, sonuç kaydı yeni baş |
+| [#53 — 4d](https://github.com/heimdilon/kalfa-arsiv/pull/53) | `4d/plan`, `9980516` → `4c/plan` | Taslak; [CI 148](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38145500135) dört işiyle yeşil; inceleme düzeltmesi doğrulandı |
+
+Aktif 4c worktree'si `C:\Users\kullanici\kalfa-4a-uygula`, 4d worktree'si
+`C:\Users\kullanici\kalfa-4d`'dir. Ana klasörün kodu `4807265`'tedir;
+buradaki güncel belge, açık PR'ların durumunu da anlatır. Ana klasördeki
+ilgisiz `tasks.png`'ye dokunulmaz.
+
+**Ölçüm kararları:** G4/G6/G8 ve G5'in aday/dosya, talimat dili, boyut,
+parça penceresi kıyasları tamam. **İngilizce / 50 aday / 1024 boyut /
+60 satır–2400 karakter–10 satır örtüşme** korunur. Tam ilk indeksleme
+566 dosya/4 056 parçada yaklaşık **2,62 milyon token**: 2 157 582 doğrudan
+sayılmış, ilk 747 parçanın yaklaşık 460 600 tokenı tahmin edilmiştir
+(toplamın yaklaşık %18'i).
+
+**G5 kapandı (12 Ekim):** Tam indeks artımlı güncellendi (568 dosya,
+76 140 token); aynı 32 sorgu gerçek wasm/host üzerinden ilk beş parçada
+**26/32 (%81, eşik %80)**, ilk beş farklı dosyada **28/32** verdi. Sorgu
+ort. 2,0 sn, p95 2,3 sn; toplam 1 339 234 sayılmış token, hız sınırı ve
+başarısız istek yok. Ürün ayarları değişmez.
+[Ölçüm](superpowers/bulgular/2026-10-12-kalfa-g5-tam.md).
+
+**4d incelemesi:** `9980516`, aynı adlı yerleşik ve eski kurulum kaydının
+Svelte listelerini bozmasını düzeltir. İki regresyon önce düştü, sonra
+geçti. Windows **1090 + 175**, WSL **1033 + 175** Rust testi; workspace'te
+18 atlanan canlı test; iki platformda üç clippy/fmt temiz. Arayüz **390
+test**, 0 hata/uyarı, paket denetimi temiz. Bu arayüz düzeltmesinde gerçek
+yalıtım/e2e yeniden koşmadı; Claude'un `017aacd` kaydı Windows AppContainer
+uyumluluk 24/24 ve e2e 38/38, WSL yalıtım 26, uyumluluk 16/16 ve e2e 38/38'dir.
+
+**Sıradaki iş:** G5 sonucu ve biriken belge farkları #52'ye tek push'la
+gönderilir; yeni başın CI'ı yeşil olunca #52 kullanıcının açık squash
+onayını bekler. Canlı EVREN çağrısı gerekmez.
+
+**CI bütçesi:** Kullanıcının 11 Ekim bildirimi **2719/3000 dakika**, kalan
+**281 dakika (%9,37)**; bu hesap kullanım uç noktasından doğrulanmış bir
+ölçüm değildir. Değişiklikler yerelde doğrulanıp toplu gönderilir. Bu
+belge/hafıza işi için commit/push ve yeni CI başlatılmadı; yerel belge
+farkları sonraki yetkili işte ilgili dalda toplanır. CI kapsamı ve iki
+platform gerekliliği korunur. G5'in yerel koşusu GitHub dakikası tüketmez;
+sonuç push'u, ana dala merge ve #53 taban değişimi CI tetikleyebilir.
+
+**Birleştirme sırası:** G5 (tamam) ve güncel CI → #52 için açık squash
+onayı → #53'ü yeni ana dala taşıma → yeni CI → #53 için ayrı açık onay.
+G5 sonucu merge/rebase/force push yapmadı.
+
+**Korunacaklar:** 4c'nin eski ve yeni indeksleri, kesinti öncesi kopyası,
+320 parça ölçüm makbuzu ve doğrulama logları; 4d logları; mevcut WSL
+`/home/kalfatest/kalfa-4d` ve ortak `/home/kalfatest/kalfa-4b-target`.
+WSL kaynağı `017aacd`'de temizdir; yeniden doğrulamada yeni baş bundle ile
+taşınır. Eski ajan worktree'leri bu belge işiyle silinmez.
+
+**Sonraki iyileştirme adayı:** İlk indekslemede dakikalık 429 tekrarları
+30 dakika ilerlemedi. Yanıt gövdesi alınmadığı için uyarlamalı toplu istek
+değişikliği kararlaştırılmadı. Linux paketlemesi depoda henüz yoktur.
+
+Ayrıntılı yerel handoff: `C:\Users\kullanici\kalfa-yedek\HANDOFF-asama-4.md`;
+[PR handoff'u](https://github.com/heimdilon/kalfa-arsiv/pull/52#issuecomment-6078860023).
+Aşağıdaki tarihli doğrulamalar geçmişi korur; güncel devam yukarıdadır.
 
 ## Mevcut uygulama
 
@@ -1344,9 +1413,10 @@ Tasarım:
   - İndeks arama çağrısında oluşur; çalışma alanındaki ilk EVREN gönderimi
     yerel onaylıdır.
   - Ön ölçüm yapıldı.
-- **Ön ölçüm:**
-  - EVREN gömmede her istekte ~7–9 sn sabit gecikme var; yeniden sıralama
-    hızlı. `dimensions` ve `base64` destekleniyor.
+- **7 Ekim ön ölçümü (tarihsel):**
+  - İlk denemede gömme ~7–9 sn sürdü. Sonraki G4/G8 ölçümünde sorgu gömme
+    0,092–0,266 sn; sabit gecikme varsayımı korunmadı. `dimensions` ve
+    `base64` destekleniyor. Güncel kararlar aşağıdaki 4c kaydındadır.
   - wasmtime 49.0.2: örnekleme 0,15 ms. Rust std eklentisi
     `wasi:filesystem`'i her zaman import ediyor; bu yüzden import izin
     listesi ve ön açık dizinsiz dosya sistemi kullanılıyor.
@@ -1365,7 +1435,7 @@ işlendi: kayıtlar `research/`'ten taşındı; indeks yazma sırası her kesilm
 tutarlı; aynı boyut ve zamanla yeniden yazılan dosya yakalanıyor; eklentinin
 EVREN isteklerine oturum başına sınır.
 
-### 4a — sözleşme ve çalışma zamanı (uygulandı; PR #50 incelemede)
+### 4a — sözleşme ve çalışma zamanı (birleşti; PR #50)
 
 Plan: [`2026-10-07-kalfa-4a-sozlesme-calisma-zamani.md`](superpowers/plans/2026-10-07-kalfa-4a-sozlesme-calisma-zamani.md).
 Kodu önceden yazıldı ve Windows ile WSL'de doğrulandı (yerel dal `deneme/4a`).
@@ -1392,5 +1462,159 @@ karşılaştırdı (fark yok), derledi ve iki platformda doğruladı:
   gerçek okuma yolunu ve depoyu kullanır; depo `kalfa-plugin`'de, yeri 4d'de.
 - `evren-cagir` 4a'da `izin-yok("… aşama 4b")` döndürür.
 
-**Sıradaki iş:** #50'nin CI'sı ve birleşmesi; ardından 4b ve 4c planları.
+PR #50 `d1aa225` ile `kalfa-asama-1`'e birleşti.
 
+### 4b — EVREN yolu (birleşti; PR #51)
+
+[PR #51](https://github.com/heimdilon/kalfa-arsiv/pull/51) 11 Ekim'de `4807265`
+ile `kalfa-asama-1`'e birleşti. Plan ve uygulama kaydı
+`docs/superpowers/plans/2026-10-08-kalfa-4b-evren-yolu.md`'dedir.
+
+- Eklentinin gömme ve yeniden sıralama çağrısı gerçek EVREN yolundan geçer.
+  Gövde izin listesiyle doğrulanır; modelin görevi uca uymalıdır.
+- İlk gönderim her kipte yerel onaylı; önizleme ve gönderim günlüğü eklenti
+  isteğini taşır. Oturum başına eklenti sınırı kurtarmada yeniden sayılır.
+- Gönderim izni 4b'de bellekte; `eklentiler.json`, Eklentiler ekranı ve
+  “Metni göster” 4d'dedir.
+- Devralınan doğrulama: Windows 918 ve e2e özellikli 114, WSL 861 ve 113
+  test; üç clippy/fmt temiz. Arayüz 309 test, 0 hata/uyarı; WSL
+  yalıtım/uyumluluk 26/15. Ayrıntı #51'in kaydında.
+
+### 4c — Türkçe anlamsal arama (uygulandı; PR #52 taslak)
+
+Plan ve uygulama kaydı:
+[`2026-10-09-kalfa-4c-rag.md`](https://github.com/heimdilon/kalfa-arsiv/blob/f64a413af110006a258a3a283f50a52622190eaf/docs/superpowers/plans/2026-10-09-kalfa-4c-rag.md).
+Dal `4c/plan`, [PR #52](https://github.com/heimdilon/kalfa-arsiv/pull/52),
+ilk incelenen kod `003035e`. #51 birleşince yeniden tabanlandı;
+tabanı `kalfa-asama-1`, 11 Ekim canlı ölçüm kaydının başı `171908c`'dir.
+[CI 145](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38128314461)
+bu başta biçim, arayüz, Linux ve Windows işleriyle yeşil. Yayınlanmış son
+baş `f64a413` için [CI 147](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38145248319)
+dört işiyle yeşildir.
+
+- `kalfa-rag`: satır pencereleri, artımlı ve kesintiye dayanıklı indeks;
+  gömme (1024 boyut/base64), ilk 50 adayın yeniden sıralanması; dosya yolu,
+  satır aralığı ve puan içeren sonuç. İndekste metin saklanmaz.
+- SDK'nın EVREN/depo yardımcıları; gerçek wasm/host bütünleşmesi ve S14.
+- Canlıda görülen günlük token sınırı ayrı `EvrenError::GunlukSinir` oldu;
+  sohbet/denetçi yeniden denemez. Günlük sınırın ayrı arayüz durumu 4d'dedir.
+- **8–9 Ekim tarihsel canlı değerlendirmesi:** 26/32 (%81,25), 547 dosya,
+  yaklaşık 4120 parça; arama 1,7–2,0 sn, yaklaşık 39 000 token. O ilk indeks
+  iki güne bölünmüştü. 11 Ekim'de ayrı boş indeksin maliyeti ölçüldü;
+  aşağıdaki rapor bunu kapatır, tam/güncel kalite tekrarını kapatmaz.
+- `e0d44bf` için devralınan sonuç: Windows 979 ve 114, WSL 921 ve 113
+  test. `003035e` için bu oturumda iki platformda tam testler, e2e özellikli
+  testler, üç clippy ve fmt doğrulandı; kesin sonuç
+  [inceleme kaydındadır](https://github.com/heimdilon/kalfa-arsiv/blob/f64a413af110006a258a3a283f50a52622190eaf/docs/superpowers/bulgular/2026-10-09-kalfa-4c-inceleme.md).
+- **İnceleme düzeltmeleri:** Boyutu uygun dosya birden çok toplu isteğe
+  bölünür; tamamlanan parçalar `meta.bekleyen` ile kesintiden sonra yeniden
+  kullanılır. Dosya bütünü bitmeden tamamlandı sayılmaz. Sorgu indekslemeden
+  önce gömülür; yeniden sıralama 429/günlük sınıra takılırsa doğrulanmış
+  kaynaklar kosinüs puanı ve açıklama notuyla döner. Sorgu gömmesi baştan
+  reddedilirse hata korunur. Windows'ta 994 + 114, WSL'de 936 + 113 test
+  geçti; üç clippy ve fmt temiz. Ayrıntı inceleme kaydındadır.
+- **CI:** G5 aday/dosya ölçüm commit'i `76afebe` için
+  [koşu 137](https://github.com/heimdilon/kalfa-arsiv/actions/runs/37947611609)
+  dört işiyle yeşil. Talimat dili `0ffef46` için
+  [koşu 138](https://github.com/heimdilon/kalfa-arsiv/actions/runs/37954272157)
+  ilk Windows denemesinde değişmemiş iptal süre testinde düştü;
+  yerelde iki tam takım ve üç ayrı Windows tekrarında geçti. Test sınırı
+  değiştirilmedi; CI 138 tekrarı dört işiyle yeşil. Boyut `b3488e2` için
+  [CI 139](https://github.com/heimdilon/kalfa-arsiv/actions/runs/37961173852)
+  dört işiyle yeşil. Parça deneyi `1aa1ac4` için
+  [CI 140](https://github.com/heimdilon/kalfa-arsiv/actions/runs/37969507051)
+  dört işiyle yeşil; sonuç kaydının yeni başı ayrıca kontrol edilir.
+- **G6 kapandı:** İki platformda yerel SDK ve gerçek wasm/host ölçümü;
+  256 × 1024 base64 yanıt wasm'da yaklaşık 2 ms, float yaklaşık 18 ms.
+  Base64 JSON yaklaşık %75 küçük; crate basit elle çözücüden hızlı.
+  Mevcut seçim korunur; kaynaklar, ham sonuçlar ve sınırlar
+  [G6 kaydındadır](https://github.com/heimdilon/kalfa-arsiv/blob/f64a413af110006a258a3a283f50a52622190eaf/docs/superpowers/bulgular/2026-10-09-kalfa-g6-cozme.md).
+- **G4/G8 ölçümü ve v1 kararı kapandı:** Kullanıcının açık onayıyla canlı
+  ölçüm; sorgu gömme 0,092–0,266 sn. 256 gerçek parçada tek toplu istek
+  medyan 5,855 sn, dört paralel 4,893 sn; her iki kip 193 012 token.
+  Mevcut toplu istek/WIT 0.1 korunur. Bir hız sınırı ve devam dahil
+  3 047 820 token; iki platformda 994 + 114 / 936 + 113 test ve üç clippy/fmt
+  temiz. Varsayılan takımda yeni canlı testle 14 test atlanır. Yöntem ve
+  sınırlar [G4/G8 kaydındadır](https://github.com/heimdilon/kalfa-arsiv/blob/f64a413af110006a258a3a283f50a52622190eaf/docs/superpowers/bulgular/2026-10-09-kalfa-g4-g8-gomme.md).
+- **G5 aday/dosya karşılaştırması ölçüldü:** Mevcut indeksin güncel kaynakla
+  eşleşen 411 dosya/3564 parçasında, onaylı 32 sorgu. 20 ve 50 aday
+  26/32; 20 aday sıralama tokenını %60,33 azalttı ama bir sorgu kazandırıp
+  birini kaybettirdi. Sonuçta dosya tekilleştirme 28/32; aday seçerken dosya
+  başına iki parça sınırı 25/32. Ürün 50 adayda kalır. 127 HTTP isteği
+  2 251 896 token; bir aynı gövde yeniden gönderilmedi, indeksin 18 dosyası
+  değişmedi. Bu kontrollü alt küme tam/güncel ürün kalite testi değildir.
+  İki platformda 1000 + 114 / 942 + 113 test, üç clippy/fmt temiz; atlanan
+  sayı 15. [Yöntem, ham kayıt ve karar](https://github.com/heimdilon/kalfa-arsiv/blob/f64a413af110006a258a3a283f50a52622190eaf/docs/superpowers/bulgular/2026-10-09-kalfa-g5-aday.md).
+- **G5 talimat dili ölçüldü:** Aynı 32 sorgu ve kontrollü kümede İngilizce
+  talimat ilk beş parçada 26/32, Türkçe 25/32; ilk beş farklı dosyada ikisi
+  de 28/32. Türkçe bir sorgu kazanıp ikisini kaybetti; ürün İngilizce
+  talimatta kalır. 128 HTTP isteği 2 548 682 token; indeksin 18 dosyası
+  değişmedi. Windows 1002 + 114, WSL 944 + 113 test, üç clippy/fmt temiz;
+  varsayılan takımda 16 test atlandı.
+  [Yöntem, ham kayıt ve karar](https://github.com/heimdilon/kalfa-arsiv/blob/f64a413af110006a258a3a283f50a52622190eaf/docs/superpowers/bulgular/2026-10-09-kalfa-g5-dil.md).
+- **G5 boyut karşılaştırması ölçüldü:** Onaylı 32 sorgu, kaynakla eşleşen
+  411 dosya/3555 parça; 1024 ve 4096 ilk beş parçada aynı sorgularda 26/32,
+  ilk beş farklı dosyada 28/32. Kaynak ve sorgu ön ek uyumu geçti.
+  4096 kalite kazandırmadı, ham vektör alanı dört kat büyüdü; ürün
+  İngilizce/50 aday/1024 boyutta kalır. 184 yeni HTTP isteği 4 821 637 token;
+  indeksin 18 dosyası değişmedi. Windows 1007 + 114, WSL 949 + 113 test,
+  üç clippy/fmt temiz; varsayılan takımda 17 test atlandı.
+  [Yöntem, ham kayıt ve karar](https://github.com/heimdilon/kalfa-arsiv/blob/f64a413af110006a258a3a283f50a52622190eaf/docs/superpowers/bulgular/2026-10-09-kalfa-g5-boyut.md).
+- **İlk indeksleme maliyeti ölçüldü (11 Ekim):** Ayrı boş indekste
+  566 dosya/4 056 parça; yaklaşık **2,62 milyon token**. 3 309 parçanın
+  2 157 582 tokenı doğrudan sayıldı; ilk kesintideki 747 parçanın tüketimi
+  ölçülen oranla tahmindir (toplamın yaklaşık %18'i). Dakikalık pencerede
+  429 tekrarları 30 dakika ilerlemedi; gövde görülmeden toplu isteği
+  küçültme kararı verilmedi. Eski ve yeni indeks korunur.
+  [Ölçüm ve sınırlar](https://github.com/heimdilon/kalfa-arsiv/blob/f64a413af110006a258a3a283f50a52622190eaf/docs/superpowers/bulgular/2026-10-11-kalfa-4c-ilk-indeks.md).
+- **Açık ölçüm:** G5 tam/güncel indeksle gerçek wasm/host kalite doğrulaması;
+  32 sorgu günlük kota sıfırlandıktan sonra (12 Ekim 03:00 TSİ), mevcut
+  50 adayla; aynı sonuçtan ilk beş parça ve ilk beş farklı dosya ölçülür.
+- **G5 parça kıyası ölçüldü (11 Ekim):** Aynı 408 tam doğrulanmış dosyada
+  30/1200/5, 60/2400/10 ve 120/4800/20 satır/karakter/örtüşme pencereleri;
+  ilk beş parçada **24/26/26**, ilk beş farklı dosyada **25/28/27** isabet
+  (32 sorgu). Küçük pencere sıralama tokenını %43,94 azalttı ama kaliteyi
+  düşürdü; büyük pencere %81,84 fazla tokenla net kalite kazandırmadı.
+  Mevcut **60/2400/10** korunur. 9 Ekim kotadan ertelenen tarif 11 Ekim
+  devam onayıyla koştu; üç hız sınırı ve ayrıca onaylı sınırlı devamla
+  **320 başarılı/323 toplam HTTP**, **10 934 194 bilinen token**.
+  325 deneme/16 milyon raporlanan bütçenin altında; başarısız tüketim bilinmez.
+  İndeksin 18 dosyası değişmedi; tam/güncel ürün kalitesi ayrıca açık.
+  Windows 1025 + 114, WSL 967 + 113 test; 18 test atlandı, üç clippy/fmt
+  iki platformda temiz. Kaynak özetleri aynı, ürün kodu değişmedi.
+  [Yöntem, ham kayıt ve karar](https://github.com/heimdilon/kalfa-arsiv/blob/f64a413af110006a258a3a283f50a52622190eaf/docs/superpowers/bulgular/2026-10-09-kalfa-g5-parca.md).
+
+### 4d — Eklenti arayüzü ve dağıtım (uygulandı; PR #53 taslak)
+
+[PR #53](https://github.com/heimdilon/kalfa-arsiv/pull/53), `4d/plan` → `4c/plan`.
+Kod ve doğrulama kaydı bu PR'daki
+`docs/superpowers/plans/2026-10-11-kalfa-4d-arayuz-dagitim.md`'dedir.
+
+- Eklentiler ekranı; klasörden doğrulanan baytlarla yerel onaylı kurulum,
+  güncelleme/kaldırma, alana göre açma ve gönderim iznini kaldırma.
+- Atomik `eklentiler.json`; izin ve kurulu sürüm her turda denetlenir.
+  İlk gönderim kartı, metin önizlemesi ve günlük sınırın arayüz durumu.
+- NSIS'e yerleşik `kalfa-rag`; Linux paketlemesi henüz depoda yok.
+- Claude'un `017aacd` kodunda Windows 1090 + 175 test, arayüz 388,
+  gerçek AppContainer uyumluluk 24/24, e2e 38/38; WSL test/clippy/fmt,
+  yalıtım 26, uyumluluk 16/16, e2e 38/38 geçti.
+- **Codex inceleme düzeltmesi (`9980516`):** Aynı adlı yerleşik/eski kurulum
+  Eklentiler ekranı ve izin panelinde iki ayrı anahtarla gösterilir;
+  kullanılamayan kurulum kaldırılırken yerleşik korunur. İki regresyon
+  önce Svelte hatasıyla düştü, düzeltmeyle geçti. Windows 1090 + 175,
+  WSL 1033 + 175 test; iki platform üç clippy/fmt temiz; arayüz 390 test,
+  0 hata/uyarı ve build temiz. Gerçek yalıtım/e2e bu arayüz düzeltmesinde
+  yeniden koşmadı. [CI 148](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38145500135)
+  bu başta dört işiyle yeşil. G1: Windows sürüm kalfa.exe 41,85 MB (+17,2 MB).
+
+**Sıradaki işler:**
+
+1. Kota sıfırlandıktan sonra onaylı G5 tam/güncel kalite ölçümünü
+   tamamlayın; mevcut indeksleri silmeyin. Bu koşuda 20 aday ölçülmez;
+   50 adaydan dönen sonuçta dosya tekilleştirme de değerlendirilir.
+2. G5 ve gerekli kayıtlar tamamlanınca #52 için açık squash onayı alın.
+   #53'ün mevcut incelemesi ve iki platform/CI doğrulaması tamamlandı;
+   #52 birleşince yeni tabana taşınır, yeni CI ve ayrı merge onayı gerekir.
+3. Yalnız bu belge güncellemesi için push/CI başlatmayın: kullanıcının
+   bildirdiği 281 dakikayı korumak için yerel belge farklarını sonraki
+   yetkili değişiklikle birleştirin. CI kapsamı ve gerekli testler korunur.

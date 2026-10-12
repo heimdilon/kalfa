@@ -119,6 +119,7 @@ pub struct SahteSaglayici {
     ek_istekleri: Mutex<Vec<(EkUc, Value)>>,
     ek_senaryo: Mutex<VecDeque<Result<HamYanit, EvrenError>>>,
     ek_gecikme: Mutex<Option<Duration>>,
+    ek_hatalari: Mutex<BTreeMap<usize, EvrenError>>,
     modeller: Mutex<Result<Vec<ModelInfo>, EvrenError>>,
 }
 
@@ -138,6 +139,7 @@ impl SahteSaglayici {
             ek_istekleri: Mutex::new(Vec::new()),
             ek_senaryo: Mutex::new(VecDeque::new()),
             ek_gecikme: Mutex::new(None),
+            ek_hatalari: Mutex::new(BTreeMap::new()),
             modeller: Mutex::new(Ok(sahte_modeller())),
         })
     }
@@ -152,6 +154,11 @@ impl SahteSaglayici {
     /// belirlenimlidir (`sahte_ek_yanit`).
     pub fn ek_yanit_ekle(&self, yanit: Result<HamYanit, EvrenError>) {
         self.ek_senaryo.lock().unwrap().push_back(yanit);
+    }
+
+    /// Eklenti isteklerinden `sira`'ncısı (1'den) bu hatayı alır.
+    pub fn ek_hata_sirada(&self, sira: usize, hata: EvrenError) {
+        self.ek_hatalari.lock().unwrap().insert(sira, hata);
     }
 
     /// Her eklenti isteği yanıttan önce bu kadar bekler.
@@ -342,6 +349,9 @@ impl Saglayici for SahteSaglayici {
         let gecikme = *self.ek_gecikme.lock().unwrap();
         if let Some(sure) = gecikme {
             tokio::time::sleep(sure).await;
+        }
+        if let Some(hata) = self.ek_hatalari.lock().unwrap().remove(&sira) {
+            return Err(hata);
         }
         if let Some(yanit) = self.ek_senaryo.lock().unwrap().pop_front() {
             return yanit;

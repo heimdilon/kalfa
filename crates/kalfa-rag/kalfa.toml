@@ -1,0 +1,10 @@
+[eklenti]
+ad = "kalfa-rag"
+surum = "0.1.0"
+sozlesme = "0.1"
+aciklama = "Çalışma alanında Türkçe anlamsal arama"
+
+[yetenekler]
+dosya-oku = ["**/*.{md,mdx,txt,rst,adoc,rs,toml,ts,tsx,js,jsx,mjs,cjs,svelte,vue,py,go,java,kt,c,h,cc,cpp,hpp,cs,rb,php,swift,sh,ps1,sql,yaml,yml}"]
+evren = ["embeddings", "rerank"]
+depo-mb = 200

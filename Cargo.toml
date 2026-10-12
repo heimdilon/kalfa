@@ -10,6 +10,7 @@ members = [
     "crates/kalfa-yalitim",
     "crates/kalfa-plugin-sdk",
     "crates/kalfa-plugin",
+    "crates/kalfa-rag",
     "crates/kalfa-plugin/test-eklentileri/kalfa-test-eklentisi",
     "crates/kalfa-plugin/test-eklentileri/kalfa-test-soket",
     "crates/kalfa-plugin/test-eklentileri/kalfa-test-yanlis-dunya",
@@ -30,6 +31,7 @@ debug = "line-tables-only"
 
 [workspace.dependencies]
 async-trait = "0.1.92"
+base64 = "0.22"
 bytes = "1.12"
 cap-fs-ext = "4.0.3"
 cap-std = "4.0.3"

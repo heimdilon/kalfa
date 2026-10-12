@@ -1,0 +1,30 @@
+[package]
+name = "kalfa-rag"
+description = "Kalfa'nın yerleşik eklentisi: çalışma alanında Türkçe anlamsal arama (EVREN gömme ve yeniden sıralama)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+kalfa-plugin-sdk = { path = "../kalfa-plugin-sdk" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+# Bütünleşme testleri eklentiyi wasm32-wasip2 için derleyip gerçek host'la
+# (kalfa-plugin) ve sahte EVREN'le çalıştırır (aşama 4 tasarımı §16.4).
+[dev-dependencies]
+async-trait.workspace = true
+kalfa-core = { path = "../kalfa-core", features = ["test-destek"] }
+kalfa-evren = { path = "../kalfa-evren" }
+kalfa-plugin = { path = "../kalfa-plugin" }
+kalfa-tools = { path = "../kalfa-tools" }
+tempfile.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true

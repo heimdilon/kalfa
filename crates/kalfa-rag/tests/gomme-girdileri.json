@@ -1,0 +1,1538 @@
+[
+  {
+    "yol": "crates/kalfa-core/src/kurtarma.rs",
+    "bas_bayt": 0,
+    "son_bayt": 2368,
+    "ozet": "ce9f0ab2c0f8a8edfc4f88489c88f3595e8f541d95ac11400e57b17a036e78ff"
+  },
+  {
+    "yol": "crates/kalfa-core/src/kurtarma.rs",
+    "bas_bayt": 1809,
+    "son_bayt": 4189,
+    "ozet": "ba2b41ec1fe9807ad6567fd4797aacb9c1ff55ec49f64ecc0cee10a23bd8ff02"
+  },
+  {
+    "yol": "crates/kalfa-core/src/kurtarma.rs",
+    "bas_bayt": 3715,
+    "son_bayt": 6059,
+    "ozet": "67b515b44838d3402b9888e3cb300843ff1d6d9e50b6cbb680e88f33d872b38c"
+  },
+  {
+    "yol": "crates/kalfa-core/src/kurtarma.rs",
+    "bas_bayt": 5554,
+    "son_bayt": 7910,
+    "ozet": "101059c7a012981c8b9f5f0b8e834553b852f9d5c1d479b448299587de42b9d6"
+  },
+  {
+    "yol": "crates/kalfa-core/src/kurtarma.rs",
+    "bas_bayt": 7689,
+    "son_bayt": 9660,
+    "ozet": "09d4d71da4825e77833eba3e724305df26419234fc06756c9160d7c9588c4cf9"
+  },
+  {
+    "yol": "crates/kalfa-core/src/kilit.rs",
+    "bas_bayt": 0,
+    "son_bayt": 1793,
+    "ozet": "86adc34e2cf4b12572c4c75b321fc26ead2d7b4be4e1cf0d2e3194fe3d8c5fa2"
+  },
+  {
+    "yol": "crates/kalfa-core/src/kilit.rs",
+    "bas_bayt": 1479,
+    "son_bayt": 3555,
+    "ozet": "90bd7a2ed549e018287b7cb8e767357354491b6ecc30facf77a04af9ffab2c04"
+  },
+  {
+    "yol": "crates/kalfa-core/src/kilit.rs",
+    "bas_bayt": 3150,
+    "son_bayt": 5259,
+    "ozet": "4f550dae753cecf4c4e7f626d996c0d94c1a0057d4120fef788132b1bf24401e"
+  },
+  {
+    "yol": "crates/kalfa-core/src/kilit.rs",
+    "bas_bayt": 4940,
+    "son_bayt": 5390,
+    "ozet": "922ea07cac8adda41d64d6661dadecef812318c022b3b3cb3238ecd22512e545"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 0,
+    "son_bayt": 2426,
+    "ozet": "8cc05b92131bed371fc610deedcabd935ea60f0e9354a7792b89e3443a9ea2fe"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 1990,
+    "son_bayt": 4420,
+    "ozet": "025bc291f5edf98407074f005b479e27f9d0e7c5924b518753b6422ae9998031"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 3853,
+    "son_bayt": 6013,
+    "ozet": "727a860803f95ce57d27a90706f53f226bdd151d58f08cc7ed6677d69c02afa6"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 5758,
+    "son_bayt": 7674,
+    "ozet": "d331cafd3c2126817d78e7d67d7fc26b93dc1ae8b1cd1a52fea74e8b621e9b78"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 7273,
+    "son_bayt": 9207,
+    "ozet": "9fe21a538be552eebe915293563b16c9a11f39b80d13ebb450d3c9a4a2b58300"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 8919,
+    "son_bayt": 11232,
+    "ozet": "824d71cf2d6a819e92bbc49fde756c2913e63ae4762f064f9c0508e8c3da1033"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 10815,
+    "son_bayt": 12731,
+    "ozet": "a0f216fbf586cf6943ac6515493260012b122a009b7fd6a5d5bcdcbab4ce526f"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 12407,
+    "son_bayt": 14378,
+    "ozet": "45f430054cc3a242226a42b46131e7ee27831df249f5de62f54f26aec951898a"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 14132,
+    "son_bayt": 16359,
+    "ozet": "199f37088adc535667fdc560bcb93ae40eb0696f7ea66e94607e9767930c5db0"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 15909,
+    "son_bayt": 18115,
+    "ozet": "02087e05855e65ed3ae8e983eb778c73357bca27659259cfc82270e9fd701d98"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 17725,
+    "son_bayt": 19825,
+    "ozet": "896fa55882a2316095d79ca268be6274adf43282425567babf23e673a803fe61"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 19569,
+    "son_bayt": 21454,
+    "ozet": "4a789e933d98f057f5623131108055e11a40885dffe10a48f020e7df2b5b1354"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 21090,
+    "son_bayt": 23180,
+    "ozet": "2692a463801e6e1ab59296c711163672651336ce8800816b550b196a66250e56"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 22800,
+    "son_bayt": 25077,
+    "ozet": "ff887cc45d66449a98a781aed25aaa14ddf98d28cc577dabb209ba4dfdce9061"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 24740,
+    "son_bayt": 26491,
+    "ozet": "5dec59355bdcaa7d039af10d13e65d476cbfc44dca748df65218b98a2ff9abc1"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 26239,
+    "son_bayt": 28170,
+    "ozet": "cc4b35efb48defbd3cd1c964103a5182b27c58b1f51bfe8d02a6b2a158108900"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 27666,
+    "son_bayt": 29954,
+    "ozet": "24e09e670d01261778c87febe9a32c7e636284c7d5359c27dc3628e05e2755ce"
+  },
+  {
+    "yol": "crates/kalfa-core/src/geri_alma.rs",
+    "bas_bayt": 29608,
+    "son_bayt": 31628,
+    "ozet": "482dc17b0cda37c346c75978a1945510fc8007e55b6dfa2f59ecfec7a47dbbab"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/linux/seccomp.rs",
+    "bas_bayt": 0,
+    "son_bayt": 2132,
+    "ozet": "e7fb6e0712a3b70fb2bbdf513df37c74d7575a000ed0470a15c88782c6b670b2"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/linux/seccomp.rs",
+    "bas_bayt": 1906,
+    "son_bayt": 4143,
+    "ozet": "5566feeb4498398fb08211ab26b2cd76e7e5d227ceeaba7fe027fe66982e07f3"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/linux/seccomp.rs",
+    "bas_bayt": 3660,
+    "son_bayt": 5984,
+    "ozet": "a8968f79118ecb1bc5df96b0352ab4f9c9d7068a1427ad7ff0c424c753b880ea"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/linux/seccomp.rs",
+    "bas_bayt": 5562,
+    "son_bayt": 7513,
+    "ozet": "0e6178c33f0ecd98fb81fb97563427e3d9d21b3f3d977c9ab6ee491e5d7588f8"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 0,
+    "son_bayt": 2480,
+    "ozet": "532999b4991cb0fb205016650ca9fb1dc908509558124ce73020156764aaf641"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 2115,
+    "son_bayt": 4058,
+    "ozet": "5980a1807bd8dcacfa53d2866a4d465c7c62f7f845d1952a36dcfd7ec0f664be"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 3760,
+    "son_bayt": 5338,
+    "ozet": "3c74c6b5b99e85df0af6a548352820061229d8e81cd3b8765d85e6e37630e0ff"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 5044,
+    "son_bayt": 6901,
+    "ozet": "242e1564ae9616c69b4968f8032275190dcaf512f3a52a5df7added46cf71aea"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 6580,
+    "son_bayt": 8396,
+    "ozet": "6777c04517f0b02dad35943a80a809612847e12b6f2f2cc9df6e7773ddf256f5"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 7899,
+    "son_bayt": 9864,
+    "ozet": "88d3699039b3c0685341d7a8e162971a6589ff9e673d55c4d6fb19a473b7112f"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 9438,
+    "son_bayt": 11757,
+    "ozet": "dd3c4ee799adca7c0fda49ffac9f464b9f23d698e8c54063ee7b5b821884ee64"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 11410,
+    "son_bayt": 13747,
+    "ozet": "20ef082e29a2e5d2f98f83737a0e4ff31be2844e5c3d04de0871383ee380c470"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 13327,
+    "son_bayt": 15094,
+    "ozet": "1a3c4346f4f081ab4ceff8aaf6cd24d755bf5879ca2605cb85ae97664cf611d8"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 14803,
+    "son_bayt": 16964,
+    "ozet": "6b4360ccaca50bb718844a715cd166c0a72745318579afd290c25708b95eee69"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 16535,
+    "son_bayt": 18429,
+    "ozet": "8412f99d3191fd709739c2e64e11be25d3023fc6bc77230eb3998e3018fe650d"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 18238,
+    "son_bayt": 20477,
+    "ozet": "11c5590581a9fbcddd84e9237287c81e485cf773f6d0efd67c8a50d4d9e1d73c"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 20155,
+    "son_bayt": 22394,
+    "ozet": "a62747830fd17bcafa6af0ff52a2e1d0ee51b8fa7f3156113c8809aebd9fd935"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 22026,
+    "son_bayt": 24283,
+    "ozet": "b22118a76a714db6a5b1a4e3580c893beaa16992f036ee6da14c90dfee79a5bf"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 23905,
+    "son_bayt": 26227,
+    "ozet": "bd04d812166b76871e5e85417cfbd2cbcb7017cf5652bceab339ac8d2f649be8"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 25763,
+    "son_bayt": 27994,
+    "ozet": "780741075da9521b681559da56bfc6f085edd9b5cbfbcc4192e4f6d86d458887"
+  },
+  {
+    "yol": "crates/kalfa-sandbox/src/tarama.rs",
+    "bas_bayt": 27786,
+    "son_bayt": 28806,
+    "ozet": "36501f65152d2c1c1c300a2e1fda780984da06eafd70c81c7032f778b57168dd"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 0,
+    "son_bayt": 2557,
+    "ozet": "cdf762ec0e44d94db345981c1b3c805ef195168cf49bb05c8d8ddd6f9d81af8d"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 1948,
+    "son_bayt": 4434,
+    "ozet": "52223c4fd05789b828ff6ce8f50c46ffe41600787f6d99ad34e29c8dd1b3479c"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 3996,
+    "son_bayt": 6434,
+    "ozet": "7001783ffdd1b3305565fb568b676482c73008f32915a0759b1baf39de360f80"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 5834,
+    "son_bayt": 8327,
+    "ozet": "36f00aa7979a53d8e6c2c3df89159ad7c6d439d2a76eb6483457359ded2a86a7"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 7995,
+    "son_bayt": 10466,
+    "ozet": "a29bfc699490faf6a366dbdb4c83c41149005719fed6691a143ec2be60a40a18"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 10153,
+    "son_bayt": 12706,
+    "ozet": "850f75ff34dc77f1c806e22f0269ac6609d8788e90ec906d20058c0d117cde6a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 12160,
+    "son_bayt": 14675,
+    "ozet": "a596d34244bf9263cfc939bffab90766ee5fa0c5a7ebfb4788540339b1610a2a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 14035,
+    "son_bayt": 16561,
+    "ozet": "ff7a5ac1ec4d1b17efde6f9198d3bfbaf165c4ccf4142bafe67685989e5bf8cb"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 16022,
+    "son_bayt": 18529,
+    "ozet": "4615f1df7b75f7956e62208404de5c460db45896f4cd587759e7041b3bab3d65"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 18125,
+    "son_bayt": 20717,
+    "ozet": "bb7aa56c2b3411cc9bd2bc310875b7998e4b8d3db3c25b1514d0d0d1422b982e"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 20032,
+    "son_bayt": 22580,
+    "ozet": "e25c64550c859a4d5459f83ce700f17cd2ef1114c150201918331618207ab313"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 22133,
+    "son_bayt": 24695,
+    "ozet": "a124e69467964bbabc0d624baf85c150ed8cc35ffac31d911c3be0933bb0e86d"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 23901,
+    "son_bayt": 26457,
+    "ozet": "9bedf7c6dad7f33ac98f26777a4d5ca03d19a250ca931124596f83b12ef34fe4"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 25680,
+    "son_bayt": 28266,
+    "ozet": "b5547de69dfd19187fcee83ee2f0dcb8d9cd3c05e2a8931d3ccd42f74bcd2809"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 27578,
+    "son_bayt": 30085,
+    "ozet": "15a39dbb7ccfb92ccc847540a07716a345f7ebf5bdeca10a47d5f5006f822adb"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 29381,
+    "son_bayt": 31959,
+    "ozet": "52dd964a8a70b88b87484a2e70b63457c0cd897dd68fdaaba2327538c3f8bdd3"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 31455,
+    "son_bayt": 33997,
+    "ozet": "acba2b9c6859c9e2836ad0175ee11ce4674c0139a8d91ace0da16d03f0126634"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 33524,
+    "son_bayt": 36105,
+    "ozet": "c423cbd8c44c6b2ba79df4cb1a43e8d606fa9c7c064eef01572c0b719b130dd2"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 35551,
+    "son_bayt": 38096,
+    "ozet": "cb8a30c84b630ff4e36dd4df95ba3ce4d7346434855ca257d9dae3cc595aba26"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 37432,
+    "son_bayt": 39971,
+    "ozet": "14c2ac54198d5cbbc187069cc6db65ecb6197add9ea94e7759e4a6caf04e599f"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 39289,
+    "son_bayt": 41871,
+    "ozet": "8fb4c6d702cde2929bfa84069f87e2af40ff9075b3d8c68a9109d3f4e3a0ecd9"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 41437,
+    "son_bayt": 43995,
+    "ozet": "df159c4443db87180f2b9ba697baa1d5cb093acea9b59635b98d22afa1d9d03b"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 43338,
+    "son_bayt": 45890,
+    "ozet": "88373c10c5088f423e690046072aac6ecc8f93a6038d07dc976cfe08f05d1796"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 45285,
+    "son_bayt": 47782,
+    "ozet": "2dc98a14f76d4d445e91e488be5b69a6f9c7a6164435605e28fc245feaf2d047"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 46851,
+    "son_bayt": 49404,
+    "ozet": "7129a4ffcfb15153a03382c523069be250745475c06f7d86922f1b6e299ab308"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 48874,
+    "son_bayt": 51447,
+    "ozet": "a47e3493dd2fc25931784c147cb9fcb1723299104e014e50f3ac49b3a1926047"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 50744,
+    "son_bayt": 53295,
+    "ozet": "a35e41d800c6cec23d556f759f51ae348b931c86c2ce8110e1de23889aa00077"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 52584,
+    "son_bayt": 55099,
+    "ozet": "da7397dc2cc4709f7963b206a20e9b8b1331c60b39fa4230eb19613c33353c10"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 54505,
+    "son_bayt": 57019,
+    "ozet": "878845c264f6ccf955ad44b94b47e1012944a90732e94563d46452426ef4b8e9"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 56404,
+    "son_bayt": 59021,
+    "ozet": "00849d9c9f34f8aa0c6d6a5088912a60404db2a9c21f085e9da78b723c77917a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 58735,
+    "son_bayt": 61055,
+    "ozet": "612f555552889df1b4a69e6502c9f6d4c776644846de5a82c89f9cc71f77c7c6"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 60488,
+    "son_bayt": 62875,
+    "ozet": "6ec2feb38c8b116f7365ceb3b37102b80c089df703234cb34d347f8d77a7d232"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 62136,
+    "son_bayt": 64694,
+    "ozet": "2d97a151fb60cfcc7ea103ad1e7dbf4e8c397b56e628e4eafa2ac19aaf346a4f"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 64206,
+    "son_bayt": 66746,
+    "ozet": "b22e7a85cebca706fcb88eb8b3e0b2525105395168fe939ed2fcfe9d4307f62e"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 66189,
+    "son_bayt": 68717,
+    "ozet": "a62bb4bcb571eef44e38cd203bd2e9eae8e7eb22b32262eb6dd043be9a858975"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 68223,
+    "son_bayt": 70761,
+    "ozet": "93324b8c7a793b78bfa41756141e7ee44091b459bdef900f45f3f74eb1d7ba32"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 70008,
+    "son_bayt": 72596,
+    "ozet": "ab5b11cdb8e17d0fb677da1b56df970e013b701f31edc97a0ec88dc878313092"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 71995,
+    "son_bayt": 74522,
+    "ozet": "1ea945372a7a7b6d3cd8cba4b976810361233e94f2443fc0f42cc9bef342777e"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 74125,
+    "son_bayt": 76698,
+    "ozet": "e5c1625c24f20bb7ea718661d66ce10a4b13becebf8434b26e84ad1e7ff8a3ea"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 76306,
+    "son_bayt": 78867,
+    "ozet": "7c3fe1d4f7f75a73fbbf0950fab48cbde50fc68d51b69b83cc0f4deb4d815172"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 78360,
+    "son_bayt": 80940,
+    "ozet": "a3cd669670207c0d39a12bf447efe11cc2465efe5a742a545720c9ffe1caf6cb"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 80005,
+    "son_bayt": 82894,
+    "ozet": "9f495a246ebe9b2e269b05beabc62fd67681920496e4c6130f542f97213b56de"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 82072,
+    "son_bayt": 85028,
+    "ozet": "9ee94fb20ab9b4fd01031a86d2b3f41df5501f276af47adf8790de02578b204e"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 84410,
+    "son_bayt": 86966,
+    "ozet": "db6aaa6d55775eda640b8c13f3e92dcd7003baa52f1ae29d4f87818c9d27eb72"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 86257,
+    "son_bayt": 88791,
+    "ozet": "5b2c0d8f603a1021cfad87157ba21d60727bd90cd35dc2c841d0e5f519d653cd"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 88065,
+    "son_bayt": 90552,
+    "ozet": "359a56beec7e1bcf97f45929d66a39ac0d63f1c7d856431f3af3a96f3b0c4a2d"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 90154,
+    "son_bayt": 92639,
+    "ozet": "e31e4a07a43b2bddb79866e6a199cd87c53c7efb850d1950af025d391c4eb0ed"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 91985,
+    "son_bayt": 94537,
+    "ozet": "a1138fa631f9f8beb519eac477907eaacd9e07a533bef7265733e9a00634c8ce"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 93761,
+    "son_bayt": 96338,
+    "ozet": "1416beea9a9e016bd19bd52fd61096ed067cc6dcc66e88907c320b9f28b604ab"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 95847,
+    "son_bayt": 98385,
+    "ozet": "3202db66ebadeeca4812c5a7020a345df9c1bc3289aa71da82e0f844da0d49c2"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 97972,
+    "son_bayt": 100521,
+    "ozet": "99528cc778c45b5e09082143bad6a0486fc85a5972967c9835090942b86035be"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 99201,
+    "son_bayt": 101706,
+    "ozet": "8bcc2f1c8f30e8d3f7304bb93a51e09f489cd94661578714aec189c0bfbaabff"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 100521,
+    "son_bayt": 103080,
+    "ozet": "daca60c802287596e37e0ab286a87773e0bfa68a84c82dd3689bc625a12f521d"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 102544,
+    "son_bayt": 104924,
+    "ozet": "3bd8bcd434a0e09e80e5e31e2a5e62898dbdcf27899c4aa1e8a7d615e9564211"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 103080,
+    "son_bayt": 105480,
+    "ozet": "b861d39595010bbdc95c633a9cb7ce58d05c0fe95cbba70a9af3b34c9bb394a7"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 104121,
+    "son_bayt": 106513,
+    "ozet": "5c78a4cfe69c14bc6184f06e6360ae671b333e9d32f9965bf292761e8b90f670"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 105246,
+    "son_bayt": 107825,
+    "ozet": "807667d6d7c73a0bcb1efa1e3367a87c58c508620bf43561d3e47d69b27f8ad0"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 107370,
+    "son_bayt": 109904,
+    "ozet": "40ac40117795d15cc80beaf53947140ecf464abd4d2e78dbb12c90125799241d"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 108681,
+    "son_bayt": 111197,
+    "ozet": "b70067a5f71507a80b90e6e7c9d756fb3bfaeba4bb7451cccf2cc3df372f29c4"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 109729,
+    "son_bayt": 112217,
+    "ozet": "903db6bc31de5a7d7457785b997ecbc90077b915223368f7dfa9dd4fb67138f4"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 110928,
+    "son_bayt": 113498,
+    "ozet": "d0557ecda7bfd15bb57a5ccf027472de966dac383a2ef16e35b7f1de864550ef"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 112217,
+    "son_bayt": 114777,
+    "ozet": "3e59cbc7e632dcbe5d84397dd134d3c47f8188399e9fb2ad1646c2eb020de1f0"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 114528,
+    "son_bayt": 117131,
+    "ozet": "bda7b481d0751ca84cc09c4f87da23a9ad072b3f35c4da94817df64b31e0b4c0"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 116509,
+    "son_bayt": 119075,
+    "ozet": "1248648e5accf3f434d4ee5e572504a15a33f153fe242eb97ca5b2bb1c3f6f55"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 118426,
+    "son_bayt": 120994,
+    "ozet": "3f7602b1f88c6d0a6bc524621097e258053c7b39a4aba97d0452a32efbf0d879"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 120378,
+    "son_bayt": 122947,
+    "ozet": "22a9429ece155bb016c2edaa48fc8e9f67702e825db72a12c74ccfede5d6bbca"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 122397,
+    "son_bayt": 124941,
+    "ozet": "ffb73d8b792016f6b282122304671ead927c120ae7ae89344d8b8fee981bfbd1"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-21-kalfa-design.md",
+    "bas_bayt": 124389,
+    "son_bayt": 126096,
+    "ozet": "ebd006813dc0bc38f7dff0fb33d388739f238510f9ce976a4779a3d935c7328a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 0,
+    "son_bayt": 2605,
+    "ozet": "fdec55f7aa42dcad8455b26e9f50ea1c68d5bbefe659267f52aa9fd277001120"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 1906,
+    "son_bayt": 4456,
+    "ozet": "71c5b2232f2a17284eeea819736dd10eda3349c542b7b4e2315fbed3de84c4c4"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 4094,
+    "son_bayt": 6668,
+    "ozet": "5ded59201a6048fd3c209b69f5cd9127d0be27105b16fbbbb99a2265e7a8077c"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 6094,
+    "son_bayt": 8606,
+    "ozet": "44dc334201043928ffda0a6040f453b606dfc8595773a468940167b85c29dd51"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 8125,
+    "son_bayt": 10575,
+    "ozet": "d31a18d75c2a9d02b2c54b5b9ab58b1f7b80112c33718e01c17c3477b51b9480"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 9951,
+    "son_bayt": 12436,
+    "ozet": "ecf234cbec2ce22f9aacb65f39af7f876619a112754551357a8893c06329cd87"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 11658,
+    "son_bayt": 14193,
+    "ozet": "78f725e4ba817e5ec19146430abef389dd0b473453c0a4904cf44ffbf017722c"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 13483,
+    "son_bayt": 15963,
+    "ozet": "4c21885fcd57b54d7b0d6a18e3ddc0665efa62caede66a8014df5374703b6e17"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 15351,
+    "son_bayt": 17871,
+    "ozet": "0d2f2b558e4ae09f583fb7a3dc6d8b0c91a4c149af358d7435974a6678e426ae"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 17384,
+    "son_bayt": 19906,
+    "ozet": "3a7964482128005c8e0201aa2db837ceb7e8c35f59cedb19ade058754870a1e7"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 19418,
+    "son_bayt": 21980,
+    "ozet": "97668dce442eedbcee7f48b4e83a557fb5ac3b09d660f5e3030198670b22becc"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 21658,
+    "son_bayt": 24167,
+    "ozet": "ad102f9aeecad46969915ff66328ceaf877fa43a295a43f84c1144ff7a451879"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 23434,
+    "son_bayt": 25947,
+    "ozet": "d6a0722f9f9a23311601dfbb2e8f6ab9b9130fa4312862f1daf0a084dab82892"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 25282,
+    "son_bayt": 27781,
+    "ozet": "13f3319e4db187e71306d5c458e941aad7a7002fec04bbf55ffe8d94c5b6f6d0"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 27419,
+    "son_bayt": 29980,
+    "ozet": "d2934af0d6b1a8f51e82cc3021e0e6b4fc0e8ff9f4d22c19c1d25195ca6c9b78"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 29470,
+    "son_bayt": 31909,
+    "ozet": "3f3f079c4e724d6f477bbfb95fd886c7f9253b22756454c79fd3b88afdbf52c2"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 31314,
+    "son_bayt": 33784,
+    "ozet": "573ee38302fa14626e4136d26bbd3b78b8ad9b0c88b2d8674dfe3686334ad7b5"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 33050,
+    "son_bayt": 35486,
+    "ozet": "86f92cb7c47fd6274c4f483683df8d258dead0fb64ef5695159f39aa415509a5"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 34798,
+    "son_bayt": 37264,
+    "ozet": "dddf6843cc151dbd82470d3a88dbce903afed8eb0425a1ae8f72b1d17d419d90"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 36630,
+    "son_bayt": 39119,
+    "ozet": "32a6c16d0b35ba057c9b8d3d2327a18f638eb20f32cb852703c236b0068c5064"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 38712,
+    "son_bayt": 41236,
+    "ozet": "23cdcd2fbb7b193af2962731b8f4402b5dab261cae2d73c4bd23d67911952d91"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 40536,
+    "son_bayt": 42998,
+    "ozet": "d5534fcb207b67668414624ad2b91929d99f55c3f8c4f975747e5694ab45693a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 42502,
+    "son_bayt": 44945,
+    "ozet": "d62fd621f351b62fbd4d90f02516d9ed7f8653ae149f5823738d870ced7b93da"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 44212,
+    "son_bayt": 46745,
+    "ozet": "29d4d95a2fa3d84cbecc73c09a032f6cb756c30ea1750783f73baef978d745b1"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 46209,
+    "son_bayt": 48704,
+    "ozet": "213fee72a33674e2370fa3e03bfdb8ca75f04bbde0d557ebc18f8a9c9ae5ee06"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 48040,
+    "son_bayt": 50519,
+    "ozet": "4bfad29ee56da8cba8b0be2ae91bd47a059367cca56f73ad77e708e0b32a6052"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 49846,
+    "son_bayt": 52406,
+    "ozet": "a6a54e3a424b0eb679fb79d02b8a1425f7cbb2e405a379e448571c655a43a626"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 51784,
+    "son_bayt": 54286,
+    "ozet": "5bb134fa424c114cc9e2cc95e6a771607382445c6422a61b749721e641316d1b"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 53660,
+    "son_bayt": 56198,
+    "ozet": "aa5c6bf6d89435ddc1e0ecde46dea73deb21207b611b4d66149b56657da0c182"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 55540,
+    "son_bayt": 58021,
+    "ozet": "ff00bb74e10a024f7e387020fab89065ce292131ac16d32dfef2435f06e88d24"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 57329,
+    "son_bayt": 59850,
+    "ozet": "3cc4eee73fc45d41145b13c7f1f082ed8a43fd9031772cd34aa9bca4397b0925"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 59089,
+    "son_bayt": 61612,
+    "ozet": "0ee7e1b7157364570bdb1d45fe9ea1605080cc16a9d571f06c114271c313f0fc"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 60942,
+    "son_bayt": 63468,
+    "ozet": "599623f70a8745f8aaf22fabdf5bb5848bea93fa011b8fa52a142023fcb73d4a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 62853,
+    "son_bayt": 65333,
+    "ozet": "f276827d52b4d925ba23b54cade5221904221bf07bf3fce570306b743c26adb6"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 64616,
+    "son_bayt": 67139,
+    "ozet": "32f19adaca0b556dd320cb7ea529e24ab4cb5faf606d3a5ad28ee4838938409f"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 66427,
+    "son_bayt": 68900,
+    "ozet": "1d3e955311124b7317898cf360346c08517b51315112f2eb15f77d695022fd17"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 68248,
+    "son_bayt": 70781,
+    "ozet": "15af8e229c77dffe2fc73807f3ab164e81f77f847d71bdae780ccfcfc2dc6879"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 70078,
+    "son_bayt": 72615,
+    "ozet": "0d218e67614b87b78c37eabfbabf348d81cfd7f2f8d4234583782871779bb92b"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 72110,
+    "son_bayt": 74618,
+    "ozet": "41356987906099775ae3ea0237fd29e62b6760d8c98a24458a2df82acfc0a613"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 73994,
+    "son_bayt": 76485,
+    "ozet": "22aa562fa11efac29b23aea20c89d983ba3e037b9775393de49d576a14808f0a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 75780,
+    "son_bayt": 78245,
+    "ozet": "62c09d7a8a515be250beaa517cfe5dffcd80b21533f525de20d0c1226359075c"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 77462,
+    "son_bayt": 80010,
+    "ozet": "82d992ed665645c292f53e518845501cf4477abab856d409045c49ec4f4ea41c"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 79546,
+    "son_bayt": 82116,
+    "ozet": "9c3569af76b4cecd13b826a4f03e1123bb0e799d6321f7a73ee3a7599ac8ad94"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 81352,
+    "son_bayt": 83936,
+    "ozet": "c4a4e6964c977a5231e9d14a50f530b999bd0501d979f125141fdd0c8cf21d73"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 83551,
+    "son_bayt": 86103,
+    "ozet": "442db6fe2fb7cd8ef6e71727a5ada3dc4ae7e9a5b7aa12eeace30dfdfa3a03ef"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 85759,
+    "son_bayt": 88247,
+    "ozet": "199456ff6a4d4b2b6509189a88e88f22b7bd8eac7067f29d0005276f3b61249a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 87662,
+    "son_bayt": 90221,
+    "ozet": "691423954bcde1e81927ed5fc096046d281c22785d3b5abf298232f84e3c5a90"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 89636,
+    "son_bayt": 92209,
+    "ozet": "26316a68177f2563c29c065c1e0dfcd7120db6390b989a739e0cabbf2994925e"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 91327,
+    "son_bayt": 93892,
+    "ozet": "c3e4745a3fa526cb5553221be948e747dcd3415144827b732788e2678ab4f914"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 93482,
+    "son_bayt": 95974,
+    "ozet": "801cdbb64ee95bd725887e66886000cc8fa3f0690e818213cbafd7dc903494ee"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 95489,
+    "son_bayt": 97986,
+    "ozet": "d26232ebbbf954060534608d3f0806a95fb1a16ef4dbf7df2baaa90414109d5a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 97447,
+    "son_bayt": 100012,
+    "ozet": "88a63ed9445260ed7129376e7608ed607649323e2730aff892e3fd2682a55456"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 98553,
+    "son_bayt": 100978,
+    "ozet": "bff501ba51d072026c1409d27f014f005e75037d9bf1f8cf6406ef46288259d1"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 99398,
+    "son_bayt": 101717,
+    "ozet": "571aaa87aba20910d0ffbad289139749d264a0fc37d779b42281ef906b11a358"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 100524,
+    "son_bayt": 103013,
+    "ozet": "c45fbc04ef61125dd7e22875650dfa6298ee7888f9180d478134ac3e5c59e425"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 102454,
+    "son_bayt": 104962,
+    "ozet": "0e5a75d9c602b4ea7579c1a0fa5859f3cbe810d806660fdff862ef45f132ae33"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-24-kalfa-2-kabuk-yalitim-design.md",
+    "bas_bayt": 104490,
+    "son_bayt": 105705,
+    "ozet": "e9c427b5b993b64a1abffc9a45be68be4c5f99f99e9bd0c3488674d8f2554ebb"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 0,
+    "son_bayt": 2453,
+    "ozet": "abae4cd123300f56d9d99ef17b03cedacc2c5e120ca0dd69738c134560fa9b8a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 2036,
+    "son_bayt": 4544,
+    "ozet": "8e25fd5147c82bddb1415f17ff211966f069fe8f596b267cedd74ebe37a4ed2c"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 4354,
+    "son_bayt": 6738,
+    "ozet": "4cb50dba2fa17628238fed75132109d5b1f00eeca8a7de0096d77b516e5bd78a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 6012,
+    "son_bayt": 8432,
+    "ozet": "2f8385a11d185a8e114cb65c7958c7beb4da2864bacb01d97295152f2c066e11"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 7473,
+    "son_bayt": 9955,
+    "ozet": "b3815c965d607a8fa20f4f8dd025d3452d7949fef2a0c571a65ccf610bdfac87"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 9319,
+    "son_bayt": 11902,
+    "ozet": "47d7fc32e0c61e4961d87247b4965152101999ddb58ccc0640de4cb2cb278ba3"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 11574,
+    "son_bayt": 14145,
+    "ozet": "238d12fea0d2af0b1cab3621f04b33bf55edf70d0f9e2cce37e368e23bb151f5"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 13682,
+    "son_bayt": 16224,
+    "ozet": "e6a296f596b5a60cf220c49e77ed4498ec59753cd4e4ebb96bfc990812eb077e"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 15781,
+    "son_bayt": 18326,
+    "ozet": "de09abaf1e22705a3fae13c5decb713e506f442192075f255712ae72e8439c57"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 17744,
+    "son_bayt": 20180,
+    "ozet": "b9635cf22935f8dcf84e682a3d3c22d254c9f1864be81811e3cb9cef1bc9326a"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 19948,
+    "son_bayt": 22364,
+    "ozet": "334c438def6b34e97aafe8ed8c6208d0316a24793e2e35b20e7b77b86e47ae39"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 21609,
+    "son_bayt": 24054,
+    "ozet": "a03742c1e704fbf7bc6b43e8876b591a11db712b91862d3965a14804c9b99754"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 23423,
+    "son_bayt": 25849,
+    "ozet": "45774fa3f84a62065ccc15764675868bfcdfc083d0ad990c0f7e85db1bb81851"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 25287,
+    "son_bayt": 27672,
+    "ozet": "d3033b70a137d5f23da5ddee416f51eeb28507671a8cc7588c5b09e04ba02a84"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 27163,
+    "son_bayt": 29745,
+    "ozet": "d0b7c94d35d86a30dbf875e42256100609a5d92c2c836b0977ec90905a72f27e"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 29110,
+    "son_bayt": 31636,
+    "ozet": "0dedf289288aa83cbbf5bdea79b8557e8b062cca7929e42138bc466e49e74e24"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 31204,
+    "son_bayt": 33701,
+    "ozet": "398e698e31526c5510c6d6470d150456d6b06d456ee249cae14a66ca95e288b3"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 33181,
+    "son_bayt": 35713,
+    "ozet": "6cd6b23898497e65f0a68fe1a36d99001582e9c523d9e4ebe3c8799cecefbcdb"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 35244,
+    "son_bayt": 37716,
+    "ozet": "f448eaaece53c32a8d10bcfaa8030aa9ff344d7d4342ba33cacb0efa271e99af"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 37203,
+    "son_bayt": 39725,
+    "ozet": "c88242c1d31f938c074affeecc57505cee62100e00392f21b6c65771fbddf8a8"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 38298,
+    "son_bayt": 40819,
+    "ozet": "9351772668c4804371ba6bdd265739371cbac9cd92c362db8240697b13afb853"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 40258,
+    "son_bayt": 42755,
+    "ozet": "dd968d5524f12773fc8f83f21ec441dfcf497a3223006401894a5567e15f36c7"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 42122,
+    "son_bayt": 44654,
+    "ozet": "f5c44dfca0a08f52a8f7c2837a652e3abd502baf650a869241723149d35a52de"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 44117,
+    "son_bayt": 46618,
+    "ozet": "b7139d5f2582671dbfb3714c5da341f89c2c0d08e7b8967b75b68c2cd229b156"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 45979,
+    "son_bayt": 48456,
+    "ozet": "842b711f29eb7e4b882fb775c138c68bb06ac18571159623c1abc70903186455"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 48065,
+    "son_bayt": 50489,
+    "ozet": "8df2c867c7aee269d1fb49273824196fd276370a6c10e60f2417f4b78445e8c3"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 49707,
+    "son_bayt": 52127,
+    "ozet": "c4b8b79f267ee9202bd439304ed890c34ac62a8ee02776eb3b12986fd3ecec45"
+  },
+  {
+    "yol": "docs/superpowers/specs/2026-09-22-kalfa-1c-design.md",
+    "bas_bayt": 51587,
+    "son_bayt": 53423,
+    "ozet": "d9963738028c99e0250c504d98cd9f2b2b7d6feb63162c0a48c63781d5c7509e"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 0,
+    "son_bayt": 2513,
+    "ozet": "6b3d15c6f4d9624db4367802a4c9dd2542051f1bee984871cd0c13388a26ba2f"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 1773,
+    "son_bayt": 4171,
+    "ozet": "c1d02cdda11efeced70df32ca4998eac1c2461b64e1bdc3f23beab07f88f6e2b"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 3665,
+    "son_bayt": 6152,
+    "ozet": "b1d96315cb7ca7e316a566431fc39316a3b90bb095c2b5ef3630a8ae039e2ada"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 5274,
+    "son_bayt": 7759,
+    "ozet": "a0684ec7c3dfb6a9654d845f87390de43ba90af7250827e60a167e358e112b60"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 6340,
+    "son_bayt": 8694,
+    "ozet": "4c9525e79f36c2127f3c19281604624844845f7ccd2df9887580bc8cc9800cef"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 7699,
+    "son_bayt": 10152,
+    "ozet": "bd5af230e1f100238cc710b0215a714c36ea17d951217e7135abaf5e57d670f1"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 9606,
+    "son_bayt": 11800,
+    "ozet": "334b13425c0d7284d22c4e69cc95954e241de20df9a1a43eeaeb47f57eb23263"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 11098,
+    "son_bayt": 13450,
+    "ozet": "76d5bc9b755d9dbbb8d6c18b99f6c3fb620ab7bc16669de3e686df18d02e2b04"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 12317,
+    "son_bayt": 14722,
+    "ozet": "04f9a0d3514088ec9a39a68dc0d0abb1a09160cc90f2e066834a3ee676c7b4ae"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 14460,
+    "son_bayt": 16245,
+    "ozet": "5cf7899b029da1912a546ad04c6a9b79b1433759329f9607cd94b19d0336b1f6"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 15919,
+    "son_bayt": 17821,
+    "ozet": "239b551397f59c65cdab9b30e7990bbcaed609da459f0d06317250b43821c7e7"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 17483,
+    "son_bayt": 19341,
+    "ozet": "1104615d3e67072e8c15d90f1d783ff2577d79d63a58940306b58a94af3fc16d"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 19040,
+    "son_bayt": 20831,
+    "ozet": "411c43f95e9eaf99c0b40fc7b62c309cc4ca04538d5b975bf292e4b135b8c877"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 20565,
+    "son_bayt": 22246,
+    "ozet": "6d839ec9070ff73e8558bb55d2f5d1c3eb059314aad8bf545b2fe8a1f440765e"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 21891,
+    "son_bayt": 23762,
+    "ozet": "11d42d255afdb1a60063111672205e405d0c0ee9c4f2d15583a737de194af0c8"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 23411,
+    "son_bayt": 25229,
+    "ozet": "6c44e84ba26c02da7490751866f9cbb36d526b38b3107038c827ae1415b33a27"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 24983,
+    "son_bayt": 27340,
+    "ozet": "04ff4839fdf0cc2972be8ab533a21b0badb988612b65c2cffed4efde050c4839"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 26797,
+    "son_bayt": 29059,
+    "ozet": "6cd7ad9336a01bbbcda49e2bf8aaee066ed968e2f53f8c6bef54fb654081f1d1"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 28593,
+    "son_bayt": 30490,
+    "ozet": "8cdd18d6f377d8a1834159cbbe8aa27654b828a6fa87c2ee9a82b8b14c6d5f11"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 30300,
+    "son_bayt": 32140,
+    "ozet": "f2b8b5a7c94e6cac99f7fbddf1f56c8b402ea50a6ea851079b6bd166892b1c04"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 31726,
+    "son_bayt": 34049,
+    "ozet": "e4f8b84eba72c041a3e9f8d86174d7e8e078f5472165704b13740c73de38fcca"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 33555,
+    "son_bayt": 35369,
+    "ozet": "807c4386e718957537ef50266bd0e7a176ecf2be14d5b6f8ec6e671a63b78982"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 35228,
+    "son_bayt": 36374,
+    "ozet": "329bde29171bddb398202224aa72ff866a73d924d2353ce5f0dc2dfd17707ff3"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 36159,
+    "son_bayt": 37936,
+    "ozet": "fd664e29a916d3dfe46ab0e60397704fac11539ecc1dd35cfeebb814955c0515"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 37676,
+    "son_bayt": 39436,
+    "ozet": "35d08c908a2d85d682ea4bdf86e673df969934bdacc266e5a58865478745765c"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 39092,
+    "son_bayt": 41205,
+    "ozet": "1721eab2c618a4901ee2cca6503e01b8f220478edb8fbd0f6c57235fd8ace644"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 40809,
+    "son_bayt": 42832,
+    "ozet": "476def321f96cf295c16242330e289e3b15ca5c987925764048a706c2117a7d3"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 42539,
+    "son_bayt": 44339,
+    "ozet": "7ea59a8ca623387f2d01aa54d4c08e13b9f8b72b0d7583294d14826b51ecbc4b"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 43934,
+    "son_bayt": 45747,
+    "ozet": "01550648b790274f196e9c027a0ae5a36bb252952025b32a0bc840bd70209814"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 45414,
+    "son_bayt": 47603,
+    "ozet": "569d5ebb9aea33eed6ab0ad6b8c15a65128ffec482ff7a49623153aec1059a2f"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 47296,
+    "son_bayt": 49660,
+    "ozet": "2e921b1425f40a4db7f47e68bb5dce7790d5d78ee41b902d17e772651d1c9483"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 48510,
+    "son_bayt": 50985,
+    "ozet": "1f231b57169525c823bb57b3c2f15f1c4d010ea6ccbafe58bcaa1784cdaf6091"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 50083,
+    "son_bayt": 52295,
+    "ozet": "bcf9e4e9a15845102e2f4817ad8259f025ff8b76540f04e97f507160d8641dcb"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 52100,
+    "son_bayt": 53814,
+    "ozet": "5d54aaf75d38376a06f00b9dc296bd81052f8c23ef1f8464c82ddc980adfe9f1"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 53478,
+    "son_bayt": 55069,
+    "ozet": "8a2356b8ea8a97c14581faf0a32c9001cd56dec59453ea2abb5eff7ded047984"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 54844,
+    "son_bayt": 56515,
+    "ozet": "59873aafa33f3e11e400050402b5dc7de3813047db6f31127212b63cbb4e0cfa"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 56198,
+    "son_bayt": 57964,
+    "ozet": "c3cc17bf24498260ab0a428c9cc57ee7020ccd6712e0cfeaf96fa2e8517f6318"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 57686,
+    "son_bayt": 59390,
+    "ozet": "ac6abf68058e66edad71c0d191c25767853f7604e9532533c39555063309acdf"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 59118,
+    "son_bayt": 61048,
+    "ozet": "13301288040768c5921c353d0cafa51d1efe78574603cbe1b413370a334d0c69"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 60686,
+    "son_bayt": 62624,
+    "ozet": "6025d6f989d2ffa2045c4f4c8563b65acacdd6cc74ddba9985c300a0ccf4125e"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 62412,
+    "son_bayt": 63703,
+    "ozet": "2f5addce5849f65061294805175be9a4d043ad608445be8c0731b48a13e7e079"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 63457,
+    "son_bayt": 64859,
+    "ozet": "48f26883c87e68bd4fe2d58a75ac18b3d57a04aeb051366141d11a24780594f1"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 64616,
+    "son_bayt": 66220,
+    "ozet": "69ccde190debbc7bb52be698ed2c2ef8fe1f6531e80ac77ce3d8d3b6ff9d30aa"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 66058,
+    "son_bayt": 67781,
+    "ozet": "301af1b6bf857143d043b644fa844ac3896d15085256b0e0f262fb0810dc10b6"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 67491,
+    "son_bayt": 69219,
+    "ozet": "343072358a1545a8dc283d8f8f2fc46668e66d46d9d300d6a1124fd36521a14d"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 69142,
+    "son_bayt": 70730,
+    "ozet": "f9193996a46f7bf7e36b11bf97cec90c7a54739d95472a9928c98449af5351fd"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 70491,
+    "son_bayt": 71876,
+    "ozet": "e5d84ef115bd17e02a44bf3861f12bc88989fee4affdab76be71516551e93617"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 71735,
+    "son_bayt": 73588,
+    "ozet": "1fc9297667f1af1eff99696b0d204a6d745a7c89b5193b8f7811e27d4fc649cc"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 73194,
+    "son_bayt": 75035,
+    "ozet": "c83ec5b6052de6851ca615a3360a620a9187d99ad0f0110d8864aa43694101df"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 74908,
+    "son_bayt": 76005,
+    "ozet": "e7df2af652e67c50610c322973ee4a90322d2ad46cb34f6ebaeaa54aa32f5f8a"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 75652,
+    "son_bayt": 77026,
+    "ozet": "9687a6731797a4af34d793440a9c2d46ceffa68919a63486db73bc12dd7d8653"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 76827,
+    "son_bayt": 78129,
+    "ozet": "1c537ab7420fd590fa5e80bb9bf079cc754bcf85a4bdfc7820eb2d508666caf1"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 77911,
+    "son_bayt": 79501,
+    "ozet": "cbb5f1f9c0725620800a11d40792720028eacaf75d4ac39f984b3fc5432eaeae"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 79099,
+    "son_bayt": 80825,
+    "ozet": "d59dc182801973153ea0f52f7b58852a22c5ac84fcfd014bf585f809e59fc073"
+  },
+  {
+    "yol": "docs/superpowers/plans/2026-09-24-kalfa-2a-kabuk.md",
+    "bas_bayt": 80641,
+    "son_bayt": 81949,
+    "ozet": "b3be6d71c704b2bac55128a4e479b2442e55d29cbd07591a0b38f3a66f3318b6"
+  }
+]

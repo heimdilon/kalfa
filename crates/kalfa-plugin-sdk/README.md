@@ -73,3 +73,32 @@ Eklenti dizini `kalfa.toml` ve tek bir `.wasm` içerir. Eklentinin dosya
 sistemine, ağa ya da ortam değişkenlerine doğrudan erişimi yoktur; dosyaları
 yalnızca `host::dosya_oku` ve `host::dosya_listele` ile, manifestteki
 globlar içinde okuyabilir. Gizli dosyalar eklentiye hiç açılmaz.
+
+## EVREN ve depo yardımcıları
+
+`gomme`, `yeniden_sirala` ve `depo` host çağrısı yaptığı için yalnızca eklenti
+içinde (wasm) çalışır. İlgili yetenek manifestte olmalıdır, yoksa host
+`izin-yok` döner:
+
+- `gomme`: `evren = ["embeddings"]`
+- `yeniden_sirala`: `evren = ["rerank"]`
+- `depo`: `depo-mb`
+
+```rust
+use kalfa_plugin_sdk::{depo, gomme, yeniden_sirala};
+
+// Her metin için bir vektör, aynı sırayla.
+let vektorler = gomme("qwen3-embedding-8b", &metinler, 1024)?;
+
+// (belgenin sırası, puan); puana göre azalan, en çok 5 tane.
+let sirali = yeniden_sirala("qwen3-reranker-8b", "sorgu", &belgeler, 5)?;
+
+// Değer JSON olarak saklanır; anahtar yoksa `None` döner.
+depo::yaz("son-sorgu", &"merhaba")?;
+let eski: Option<String> = depo::oku("son-sorgu")?;
+```
+
+İstek gövdesini ve yanıtı elle kurmak isterseniz `gomme_govdesi`,
+`gomme_yanitini_coz`, `siralama_govdesi` ve `siralama_yanitini_coz` de dışa
+verilir. Bunlar host çağrısı yapmaz, bu yüzden `cargo test` ile host hedefinde
+sınanabilir.

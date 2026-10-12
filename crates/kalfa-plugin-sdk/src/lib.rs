@@ -29,6 +29,13 @@ wit_bindgen::generate!({
     runtime_path: "kalfa_plugin_sdk::wit_bindgen::rt",
 });
 
+pub mod depo;
+mod evren;
+
+pub use evren::{
+    gomme, gomme_govdesi, gomme_yanitini_coz, siralama_govdesi, siralama_yanitini_coz,
+    yeniden_sirala,
+};
 pub use exports::kalfa::plugin::arac::{AracTanimi, Guest, Sonuc};
 pub use kalfa::plugin::host;
 pub use kalfa::plugin::tipler::{DosyaBilgisi, EvrenUcu, Hata, Ilerleme, Seviye};

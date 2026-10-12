@@ -317,6 +317,28 @@ async fn ikinci_hiz_siniri_turu_bitirir() {
 }
 
 #[tokio::test]
+async fn gunluk_sinir_yeniden_denenmez() {
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::Hata(EvrenError::GunlukSinir {
+            sifirlanma: Some("2026-10-09T00:00:00Z".into()),
+        }),
+        SahteYanit::metin("denenmemeli"),
+    ]);
+    let mut d = oturum(&s, vec![], ayarlar());
+    d.gonder(mesaj("selam")).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);
+    assert_eq!(s.istekler().len(), 1);
+    assert!(
+        d.hatalar()
+            .iter()
+            .any(|h| h.contains("günlük token sınırına ulaşıldı")
+                && h.contains("2026-10-09T00:00:00Z")),
+        "{:?}",
+        d.hatalar()
+    );
+}
+
+#[tokio::test]
 async fn hiz_siniri_beklemesi_iptal_edilebilir() {
     let s = SahteSaglayici::yeni(vec![SahteYanit::Hata(EvrenError::HizSiniri {
         tekrar_dene: Some(Duration::from_secs(600)),

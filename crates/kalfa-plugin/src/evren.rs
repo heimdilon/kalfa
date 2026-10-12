@@ -255,6 +255,7 @@ pub(crate) fn eklenti_hatasi(hata: EvrenError) -> Hata {
             ),
             None => "EVREN hız sınırı; biraz sonra yeniden deneyin".into(),
         }),
+        gunluk @ EvrenError::GunlukSinir { .. } => Hata::SinirAsildi(gunluk.to_string()),
         diger => Hata::Evren(diger.to_string()),
     }
 }

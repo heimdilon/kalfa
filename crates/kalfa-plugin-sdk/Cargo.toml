@@ -10,6 +10,7 @@ authors.workspace = true
 include = ["src/**", "wit/**", "Cargo.toml", "README.md", "LICENSE", "LICENSE-LLVM-exception", "NOTICE"]
 
 [dependencies]
+base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 wit-bindgen.workspace = true

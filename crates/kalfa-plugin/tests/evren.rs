@@ -427,6 +427,22 @@ async fn hata_eslemesi_hiz_sart_ag() {
         }
     ));
 
+    sahte.ek_yanit_ekle(Err(EvrenError::GunlukSinir {
+        sifirlanma: Some("2026-10-09T00:00:00Z".into()),
+    }));
+    let hazirlik = hazirlikla(&arac, &args).await;
+    let c = ortamli(arac.clone(), args.clone(), hazirlik, |_| {
+        GonderimYaniti::Gonder
+    })
+    .await;
+    assert!(
+        c.icerik()
+            .contains("sinir-asildi: EVREN'in günlük token sınırına ulaşıldı"),
+        "{}",
+        c.icerik()
+    );
+    assert!(matches!(c.kayitlar[0].1, IstekSonucu::Hata { .. }));
+
     sahte.ek_yanit_ekle(Err(EvrenError::SartKabulGerekli { surum: Some(2) }));
     let hazirlik = hazirlikla(&arac, &args).await;
     let c = ortamli(arac.clone(), args.clone(), hazirlik, |_| {

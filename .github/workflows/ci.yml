@@ -98,7 +98,7 @@ jobs:
       - name: cargo clippy (e2e özelliği)
         run: cargo clippy -p kalfa -p kalfa-uygulama --features e2e --all-targets --locked -- -D warnings
       - name: cargo clippy (eklentiler, wasm32-wasip2)
-        run: cargo clippy --target wasm32-wasip2 --locked -p kalfa-plugin-sdk -p kalfa-test-eklentisi -p kalfa-test-soket -p kalfa-test-yanlis-dunya -- -D warnings
+        run: cargo clippy --target wasm32-wasip2 --locked -p kalfa-plugin-sdk -p kalfa-rag -p kalfa-test-eklentisi -p kalfa-test-soket -p kalfa-test-yanlis-dunya -- -D warnings
       - name: cargo test
         if: runner.os == 'Linux'
         run: cargo test --workspace --locked
@@ -113,7 +113,7 @@ jobs:
         run: |
           cargo test --workspace --locked --no-run
           cargo test -p kalfa-uygulama -p kalfa --features e2e --locked --no-run
-          cargo build --target wasm32-wasip2 --locked -p kalfa-test-eklentisi -p kalfa-test-soket -p kalfa-test-yanlis-dunya
+          cargo build --target wasm32-wasip2 --locked -p kalfa-rag -p kalfa-test-eklentisi -p kalfa-test-soket -p kalfa-test-yanlis-dunya
       - name: cargo test, yönetici olmayan kullanıcıyla (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

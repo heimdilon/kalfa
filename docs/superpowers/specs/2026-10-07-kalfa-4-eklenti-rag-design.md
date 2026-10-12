@@ -771,6 +771,13 @@ yazdı.
   deneyin")` alır; süre `Retry-After`'dan ya da `X-Ratelimit-Reset`'ten
   gelir. Host yeniden denemez; `kalfa-rag` indekslemeyi durdurup o ana kadar
   yaptığıyla sonuç verir (§11.2).
+- **Günlük token sınırı (4c'de eklendi):** EVREN'in ayrıca günlük bir sınırı
+  var (15 M token, bütün anahtarların toplamı). Yanıtı da `429` ve
+  `Retry-After: 60`'tır; ayıran gövdedeki `code: "daily_token_limit_exceeded"`,
+  sıfırlanma anı `evren.resets_at`'tir. `kalfa-evren` bunu
+  `EvrenError::GunlukSinir` olarak döner; sohbet ve denetçi yeniden denemez,
+  eklenti `sinir-asildi("EVREN'in günlük token sınırına ulaşıldı …")` alır.
+  Ölçüm: [`2026-10-08-kalfa-4c-evren-sinirlari.md`](../bulgular/2026-10-08-kalfa-4c-evren-sinirlari.md).
 - **Kredi:** gözlem olarak gösterilir, maliyet türetilmez (üst belge §5.2).
   Oturum bütçesi (üst belge §6.8) henüz yok. İlk gönderim onayı yalnızca
   hangi verinin gidebileceğini onaylar, harcamayı sınırlamaz. Çağrı başına
@@ -927,7 +934,8 @@ kod.
 
 1. Sorgu, Qwen3-Embedding'in önerdiği biçimde talimatla gömülür:
    `Instruct: Given a code search query, retrieve relevant code or documentation passages\nQuery: <sorgu>`.
-   Talimatın Türkçesi ile İngilizcesi 4c'de karşılaştırılır (G5).
+   [Türkçe/İngilizce karşılaştırması](../bulgular/2026-10-09-kalfa-g5-dil.md)
+   aynı kontrollü kümede 25/32 ve 26/32 verdi; mevcut İngilizce korunur (G5).
 2. Bütün vektörlerle kosinüs benzerliği hesaplanır (vektörler normalize
    saklanır). Kalfa deposu boyutunda ~3 700 × 1 024 çarpım; eklentide
    milisaniyeler sürer.
@@ -1293,11 +1301,11 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 | G1 | Linux'ta wasmtime: derleme süresi, ikili boyutu, epoch ve bellek sınırı; CI süresine etkisi | **Kapandı (4a).** WSL'de `kalfa-plugin`'in temiz sürüm derlemesi 2 dk 7 sn (12 çekirdek). Epoch ve bellek sınırı testleri iki platformda geçiyor. İkili boyutu, `kalfa` ikilisine girdiği 4d'de ölçülür; CI süresi 4a PR'ında görünür. |
 | G2 | §7.4'teki sınır değerleri (512 MiB, 60 sn, 30 dk, 4 eşzamanlı) | 4a ve 4c ölçümüyle; `kalfa-rag`'ın gerçek kullanımı |
 | G3 | Epoch geri çağrısıyla CPU bütçesi: host çağrısı sırasında geçen süre sayaca girmiyor mu; yer verme tokio'yu gerçekten serbest bırakıyor mu | **Kapandı (4a).** Tek iş parçacıklı çalışma zamanında, bütçeye kadar dönen eklenti sürerken öteki görev ilerliyor (`YieldCustom` + `tokio::task::yield_now`). Host çağrısında 3 sn bekleyen eklenti 2 sn'lik bütçeye takılmıyor. |
-| G4 | Gömmedeki 7–9 sn sabit bekleme kalıcı mı (gün içi, yük)? Sorgu gömme için daha hızlı bir yol var mı? | 4c; gerekirse EVREN'e sorulur |
-| G5 | Türkçe arama kalitesi; talimatın dili; 1024 ile 4096 boyut farkı; parça boyutu | 4c değerlendirme kümesi |
-| G6 | `base64` ile `float` yanıtın eklentide çözülme maliyeti; `base64` crate'i mi, elle çözücü mü | 4c |
+| G4 | Gömmedeki 7–9 sn sabit bekleme kalıcı mı (gün içi, yük)? Sorgu gömme için daha hızlı bir yol var mı? | **Mevcut karar için kapandı (4c).** 8–9 Ekim gözlemleri ve [canlı ölçüm](../bulgular/2026-10-09-kalfa-g4-g8-gomme.md): 16 tekli sorgu 0,092–0,266 sn. Sabit 7–9 sn varsayımı kaldırılır; mevcut tekli yol korunur. Günün/yükün tümü ve sunucu önbelleği bilinmiyor; süre garantisi değildir |
+| G5 | Türkçe arama kalitesi; talimatın dili; 1024 ile 4096 boyut farkı; parça boyutu | [Aday/dosya kıyası](../bulgular/2026-10-09-kalfa-g5-aday.md): kontrollü kümede 20/50 aday 26/32, 20 aday %60,33 az token; dosya tekilleştirme 28/32, ön dosya sınırı 25/32. [Talimat dili](../bulgular/2026-10-09-kalfa-g5-dil.md): İngilizce 26/32, Türkçe 25/32; farklı dosyada ikisi 28/32. [Boyut kıyası](../bulgular/2026-10-09-kalfa-g5-boyut.md): 1024/4096 aynı sorgularda 26/32 ve farklı dosyada 28/32; 4096 ham vektör alanı dört kat. [Parça kıyası](../bulgular/2026-10-09-kalfa-g5-parca.md): 408 tam dosyada 30/60/120 satır ilk beş parçada 24/26/26, farklı dosyada 25/28/27. Ürün 50 aday/İngilizce/1024 ve 60/2400/10'da kalır. **Kapandı (12 Ekim):** [tam/güncel indeksle wasm/host](../bulgular/2026-10-12-kalfa-g5-tam.md) 568 dosyada ilk beş parça 26/32 (%81), ilk beş farklı dosya 28/32 |
+| G6 | `base64` ile `float` yanıtın eklentide çözülme maliyeti; `base64` crate'i mi, elle çözücü mü | **Kapandı (4c).** İki platformda gerçek wasm/host ve yerel SDK ölçümü: tam base64 çözme wasm'da 8,6–10,7 kat hızlı; yanıt yaklaşık %75 küçük. Ham kıyasta crate, basit skaler elle çözücüden 2,2–5,9 kat hızlı. Mevcut base64/crate seçimi korunur; [ölçüm ve sınırlar](../bulgular/2026-10-09-kalfa-g6-cozme.md). |
 | G7 | Test eklentilerinin derlenmesi: ayrı komut mu, geliştirme bağımlılığının build betiği mi | **Kapandı (4a):** ikisi de değil; testler kendileri derler (§17.1). |
-| G8 | Paralel gömme isteği gerekir mi (`evren-cagir-coklu`)? Büyük toplu istek tek başına yeterli mi | 4c ölçümü; gerekirse sözleşme 0.1'e eklenir (henüz dış eklenti yok) |
+| G8 | Paralel gömme isteği gerekir mi (`evren-cagir-coklu`)? Büyük toplu istek tek başına yeterli mi | **Ölçüm ve v1 kararı kapandı (4c).** 256 aynı gerçek parçada 1×256 medyan 5,855 sn, 4×64 paralel 4,893 sn; token aynı (193 012). %16,4 süre kazancıyla mevcut toplu istek korunur, WIT 0.1'e çoklu çağrı eklenmez. Gerçek wasm konuğunda yeni paralel yol ölçülmedi; [yöntem, hız sınırı ve karar](../bulgular/2026-10-09-kalfa-g4-g8-gomme.md) |
 | G9 | Eklentiyi ayrıca işletim sistemi yalıtımında (AppContainer, bwrap) çalıştırmak | v1 dışı; wasmtime'da bir JIT hatası riskine karşı (R18) |
 | G10 | `qwen3-reranker-8b` isteğinin `qwen3-vl-reranker-8b`'ye yönlenmesi kalıcı mı | Kullanımla; günlükte görünür |
 
@@ -1306,7 +1314,7 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 | # | Risk | Etki | Azaltma |
 |---|---|---|---|
 | R18 | wasmtime'da (JIT, çalışma zamanı) bir hata | Eklenti Kalfa'nın sürecini düşürebilir ya da bellek yalıtımını aşabilir | wasmtime'ın kararlı sürümü, tam sürümle sabit; güvenlik duyurularında yükseltme; `cargo-audit`. İşletim sistemi yalıtımı v1 dışı (G9) |
-| R19 | Gömmede ~7–9 sn sabit gecikme | Her RAG araması ≥ ~10 sn; ilk indeksleme dakikalar | Büyük toplu istek; ilerleme ve iptal; kalıcı mı diye ölçüm (G4) |
+| R19 | Gömme gecikmesi sağlayıcı yükü/zamanına göre değişebilir | Sorgu beklemesi aramayı, toplu istekler ilk indekslemeyi uzatabilir; sabit ≥10 sn varsayımı güncel ölçümlere uymuyor | Büyük toplu istek, ilerleme/iptal; [G4/G8 ölçümü](../bulgular/2026-10-09-kalfa-g4-g8-gomme.md), hız/günlük sınır ayrımı |
 | R20 | Yeniden sıralama katalogda olmayan bir modele yönleniyor (`qwen3-vl-reranker-8b`) | Kalite ve fiyat katalogdan farklı olabilir | Günlükte yönlendirilen model görünür; değerlendirme kümesi (G5, G10) |
 | R21 | wasmtime derleme süresini ve ikili boyutunu artırıyor | Temiz derleme sürümde +~3 dk, ikili +~14 MB (Windows) | Özellikler en aza indirildi (§5.2); Linux'ta ve CI'da ölçüm (G1) |
 
@@ -1340,3 +1348,57 @@ yazar; uygulayıcı her plan için ayrıca seçilir.
 - 4d en son gelir. Arayüzün sahte arka uçla yazılan kısmı (Vitest) 4b ile
   paralel başlayabilir.
 - S14 ve S17 prompt injection örneği içerir; Antigravity'ye verilmez (§16.3).
+
+### 4c uygulama ve inceleme kaydı (2026-10-09)
+
+`kalfa-rag` [PR #52](https://github.com/heimdilon/kalfa-arsiv/pull/52)'de
+uygulandı; [plan ve uygulama kaydı](../plans/2026-10-09-kalfa-4c-rag.md)
+işin dosyalarını, kararlarını ve doğrulamasını toplar. Canlı değerlendirme
+26/32 (%81,25) ile §3.5'i geçti; 547 dosya ve yaklaşık 4120 parçada arama
+1,7–2,0 sn ve yaklaşık 39 000 token tuttu
+([ölçüm](../bulgular/2026-10-08-kalfa-4c-evren-sinirlari.md)). Bu sonuç
+G5'i tamamlamaz: parça karşılaştırması;
+tam ilk indeksleme maliyeti henüz ölçülmedi. Aday/dosya karşılaştırması
+ayrıca mevcut indeksin doğrulanmış alt kümesinde ölçüldü: 20/50 aday
+26/32, 20 aday %60,33 az sıralama tokenı; sonuçta farklı dosya seçimi 28/32,
+aday seçerken dosya başına iki parça sınırı 25/32. Ürün 50 adayda kalır;
+tam/güncel indeksle wasm/host kalite doğrulaması açık
+([ölçüm ve karar](../bulgular/2026-10-09-kalfa-g5-aday.md)).
+Talimat dili ayrıca aynı kontrollü kümede ölçüldü: İngilizce 26/32,
+Türkçe 25/32, ilk beş farklı dosyada ikisi 28/32. Mevcut İngilizce korunur;
+128 HTTP isteği 2 548 682 token, indeks değişmedi
+([ölçüm ve karar](../bulgular/2026-10-09-kalfa-g5-dil.md)).
+Boyut kıyası ayrıca kaynakla eşleşen 411 dosya/3555 parçada ölçüldü:
+1024 ve 4096 aynı sorgularda 26/32, ilk beş farklı dosyada 28/32.
+Kaynak/sorgu ön ek uyumu geçti; 4096 ham vektör alanı dört kat büyüdü,
+kalite kazandırmadı. Mevcut 1024 korunur; 184 HTTP isteği 4 821 637 token,
+indeks değişmedi. İki platformun tam kontrolleri geçti
+([ölçüm, sınırlar ve karar](../bulgular/2026-10-09-kalfa-g5-boyut.md)).
+Parça penceresi kıyası aynı 408 tam doğrulanmış dosyada 11 Ekim'de
+onaylı devamla ölçüldü: 30/60/120 satır ilk beş parçada 24/26/26,
+farklı dosyada 25/28/27. Küçük %43,94 az sıralama tokenıyla kalite
+kaybetti; büyük %81,84 fazla tokenla net kalite kazandırmadı. Mevcut
+**60/2400/10** korunur; parça kıyası mevcut karar için kapandı
+([yöntem, ham kayıt ve karar](../bulgular/2026-10-09-kalfa-g5-parca.md)).
+9 Ekim koşusu yaklaşık 1 milyon günlük token kaldığı için ertelenmişti;
+o gün gönderim yapılmadı. 11 Ekim'de üç hız sınırı ve ayrıca onaylı
+sınırlı devamla 320 başarılı/323 toplam HTTP, 10 934 194 bilinen token;
+başarısız tüketim bilinmez. Ürün kodu ve mevcut indeks değişmedi.
+Tam/güncel wasm/host kalite doğrulaması ve tam ilk indeks maliyeti açık.
+G6 ayrıca yerel SDK ve gerçek wasm/host düzeneğinde iki platformda ölçüldü
+ve mevcut base64/crate seçimi için kapandı
+([ölçüm](../bulgular/2026-10-09-kalfa-g6-cozme.md)).
+G4/G8 ayrıca kullanıcının açık onayıyla 256 gerçek parçada ölçüldü;
+sabit gecikme varsayımı kaldırıldı ve mevcut toplu istek/WIT 0.1 için v1
+kararı kapandı ([ölçüm ve sınırlar](../bulgular/2026-10-09-kalfa-g4-g8-gomme.md)).
+
+İncelemede §11.2/§9.5 ile iki çelişki yeniden üretildi ve düzeltildi:
+boyutu uygun dosya birden çok toplu isteğe bölünür; biten parçalar
+`meta.bekleyen`'de metinsiz korunur, dosya bitince tam tabloya alınır.
+Sorgu indekslemeden önce gömülür; indeksleme ya da yeniden sıralama
+429/günlük sınıra takılırsa eldeki doğrulanmış kaynaklar kosinüs puanı ve
+açıklama notuyla dönebilir. Sorgu gömmesi baştan reddedilmişse hata korunur;
+sorgu vektörü kalıcı saklanmaz. Regresyon ve iki platform sonuçları kayıttadır
+([inceleme](../bulgular/2026-10-09-kalfa-4c-inceleme.md)). #52 taslaktır;
+#51 birleşince tabanı `kalfa-asama-1` yapılır. Eklenti ekranları, dağıtım ve
+günlük sınırın ayrı arayüz durumu 4d'de kalır.

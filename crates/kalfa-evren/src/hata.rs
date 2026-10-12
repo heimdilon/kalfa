@@ -21,6 +21,14 @@ pub enum EvrenError {
     },
     #[error("EVREN istek sınırına ulaşıldı; biraz sonra yeniden denenecek.")]
     HizSiniri { tekrar_dene: Option<Duration> },
+    /// Günlük token sınırı (`429 daily_token_limit_exceeded`). EVREN bunda da
+    /// `Retry-After: 60` gönderir, ama sınır ancak `resets_at`'te açılır; bu
+    /// yüzden yeniden denenmez.
+    #[error(
+        "EVREN'in günlük token sınırına ulaşıldı (bütün anahtarlarınızın toplamı).{}",
+        sifirlanma_eki(.sifirlanma)
+    )]
+    GunlukSinir { sifirlanma: Option<String> },
     #[error("Yanıt akışı yarıda kaldı; model yanıtı tamamlanmadı.")]
     AkisYarimKaldi,
     #[error("Sağlayıcı yanıtı boyut, olay veya araç çağrısı sınırını aştı; yanıt durduruldu.")]
@@ -84,6 +92,14 @@ pub fn hata_esle(durum: u16, retry_after: Option<&str>, govde: &[u8]) -> EvrenEr
             oneriler: evren.map(|e| e.suggested_models).unwrap_or_default(),
         };
     }
+    if kod.as_deref() == Some("daily_token_limit_exceeded") {
+        return EvrenError::GunlukSinir {
+            sifirlanma: evren
+                .and_then(|e| e.resets_at)
+                .and_then(|z| z.as_str().map(str::to_owned))
+                .filter(|z| zaman_damgasi_mi(z)),
+        };
+    }
     if durum == 429 {
         let tekrar_dene = retry_after
             .and_then(|v| v.trim().parse::<u64>().ok())
@@ -91,6 +107,22 @@ pub fn hata_esle(durum: u16, retry_after: Option<&str>, govde: &[u8]) -> EvrenEr
         return EvrenError::HizSiniri { tekrar_dene };
     }
     EvrenError::Sunucu { durum, kod, mesaj }
+}
+
+/// Sunucudan gelen değer kullanıcıya gösterilir: yalnızca RFC 3339 zaman
+/// damgasının karakterleri (izin listesi) ve makul bir uzunluk kabul edilir.
+fn zaman_damgasi_mi(z: &str) -> bool {
+    !z.is_empty()
+        && z.len() <= 40
+        && z.chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, '-' | ':' | 'T' | 'Z' | '.' | '+'))
+}
+
+fn sifirlanma_eki(sifirlanma: &Option<String>) -> String {
+    match sifirlanma {
+        Some(z) => format!(" Sınır {z} itibarıyla sıfırlanır."),
+        None => String::new(),
+    }
 }
 
 fn kirp(metin: &str) -> String {

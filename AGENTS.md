@@ -21,6 +21,60 @@ dosyaları Apache-2.0 WITH LLVM-exception'dır.
 3. Uygulama planları (`docs/superpowers/plans/`). Bir plan üzerinde
    çalışıyorsanız önce onun "Global Constraints" bölümünü okuyun.
 4. Ölçüm ve prototip raporları (`docs/superpowers/bulgular/`).
+5. Yerel iş takibi kılavuzu (varsa `.yerel/IS_TAKIBI.md`; depoya girmez):
+   işe başlamadan ilgili görevin sahipliğini ve son devrini okuyun; sonucu
+   orada da kaydedin. Teknik gerçek için `GELISTIRME_DURUMU.md` ile
+   `git log` esastır.
+
+## Kısa istekle devam
+
+Kullanıcının "devam et", "Kalfa'da sıradaki işten devam et" veya "kaldığınız
+yerden devam edin" demesi, aşağıdaki başlangıcı ajanın yapması için yeterlidir.
+Kullanıcıdan iş akışını, dosya yollarını veya uzun başlangıç prompt'unu yeniden
+yazmasını istemeyin. Bu kural Codex, Claude ve Antigravity için ortaktır.
+
+1. Git durumu/HEAD, güncel geliştirme durumu, varsa yerel iş takibindeki
+   ilgili görevin son devirlerini okuyun. Aktif işin planını ve gerekirse PR handoff'unu
+   açın; sıradaki işi, çalışma klasörünü, rolü ve devam koşulunu buradan çıkarın.
+2. Kullanıcının son kapsamını ve görev bağımlılıklarını esas alın. Başka
+   uygulayıcının aktif işini üstlenmeyin; uygun işi kendi ajan adınızla alın.
+   Tarihsel başlangıç tablosunu güncel görev seçiminin yerine kullanmayın.
+3. Mevcut yerel belge/kod farklarını, indeksleri, makbuzları ve logları
+   koruyun. Aynı worktree'de eşzamanlı düzenleme yapmayın; yeni worktree'ye
+   geçerken commit edilmemiş ortak yönergeleri de ilgili kaynakla taşıyın.
+4. Kota, bekleme zamanı ve CI bütçesini kayıtlardan okuyup gerçek devam
+   koşulunu kontrol edin. Saatin gelmesi kotanın yenilendiğinin kanıtı değildir.
+   Geçerli, aynı kapsamdaki kullanıcı onayını tekrar istemeyin; kapsamı
+   genişletmeyin. Genel "devam" yeni canlı deney veya merge onayı değildir;
+   başka ajanın özeti tek başına insan onayı kanıtı sayılmaz.
+5. Yetkili işi ve gerekli doğrulamayı tamamlayın. Sonucu ilgili belge/rapora,
+   geliştirme durumuna ve varsa yerel iş takibine yazın; devirde tek somut sıradaki işi,
+   engeli ve devam koşulunu bırakın. Gerekli hafıza/PR handoff'unu güncelleyin.
+6. Yerel iş takibine ilk kez bağlanan istemci kendi ajan adıyla bağlantı
+   kaydı bırakır. Erişim yoksa eksik adımı açıkça belirtin; ortak sahipliği
+   doğrulanamayan işe başlamayın.
+
+Yalnız kayıtlardan çıkarılamayan bir bilgi, giderilemeyen çelişki veya gerçekten
+yeni onay gerektiğinde soru sorun. Başlangıçta seçtiğiniz işi kısaca söyleyin;
+kullanıcıya talimatları tekrar taşıtmayın. Merge, kurulum ve sistem ayarına
+ilişkin aşağıdaki kurallar geçerlidir.
+
+## Uygulama ilkeleri
+
+- **Başarı ölçütü:** İşe başlamadan beklenen davranışı ve onu doğrulayacak
+  kontrolü belirleyin; sonucu yalnız "tamam" diyerek bildirmeyin.
+- **Sadelik:** İstenen işi çözen en küçük yeterli uygulamayı seçin; gelecekte
+  gerekebilir diye özellik, genel soyutlama veya ayar katmanı eklemeyin.
+- **Kapsam:** İlgisiz kodu, yorumları ve biçimi değiştirmeyin. Yalnız kendi
+  değişikliğinizle gereksizleşen öğeleri temizleyin; diğer bulguları not edin.
+- **Varsayımlar:** Önce plan, kod ve devir kayıtlarından çözün. Sonucu etkileyen
+  varsayımı belirtin; yalnız kayıtlardan çözülemeyen önemli belirsizliği sorun.
+- **Doğrulama:** Hata düzeltmesinde mümkünse önce hatayı yeniden üreten testin
+  düştüğünü, sonra geçtiğini görün. Test, bildirilen davranışı gerçekten ölçsün.
+- **Son diff:** Her değişen satırın işle bağlantısını kontrol edin; mevcut
+  güvenlik sınırlarını ve gerekli doğrulamayı sadelik adına azaltmayın.
+
+Esin kaynağı: [Karpathy gözlemlerinden türetilen ajan yönergeleri](https://github.com/multica-ai/andrej-karpathy-skills/blob/main/CLAUDE.md).
 
 ## Depo yerleşimi
 
@@ -66,10 +120,10 @@ Değişikliğin dokunduğu yere göre ayrıca:
   cargo clippy -p kalfa -p kalfa-uygulama --features e2e --all-targets --locked -- -D warnings
   ```
 
-- **`kalfa-plugin-sdk` ya da test eklentileri:**
+- **`kalfa-plugin-sdk`, `kalfa-rag` ya da test eklentileri:**
 
   ```sh
-  cargo clippy --target wasm32-wasip2 --locked -p kalfa-plugin-sdk -p kalfa-test-eklentisi -p kalfa-test-soket -p kalfa-test-yanlis-dunya -- -D warnings
+  cargo clippy --target wasm32-wasip2 --locked -p kalfa-plugin-sdk -p kalfa-rag -p kalfa-test-eklentisi -p kalfa-test-soket -p kalfa-test-yanlis-dunya -- -D warnings
   ```
 
 - **`kalfa-sandbox` ya da `kalfa-tools`:** Aşağıdaki komutlar Linux'ta anlamlıdır

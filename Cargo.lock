@@ -2871,9 +2871,28 @@ dependencies = [
 name = "kalfa-plugin-sdk"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "serde",
  "serde_json",
  "wit-bindgen 0.62.0",
+]
+
+[[package]]
+name = "kalfa-rag"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "kalfa-core",
+ "kalfa-evren",
+ "kalfa-plugin",
+ "kalfa-plugin-sdk",
+ "kalfa-tools",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

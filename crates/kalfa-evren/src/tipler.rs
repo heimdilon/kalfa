@@ -326,4 +326,9 @@ pub struct ErrorEvren {
     pub required_terms_version: Option<u32>,
     #[serde(default)]
     pub suggested_models: Vec<String>,
+    /// Günlük token sınırı yanıtında sınırın sıfırlanacağı an (RFC 3339).
+    /// Beklenmeyen tipte gelirse gövdenin geri kalanı yine ayrıştırılsın diye
+    /// `Value`'dur; yalnızca metin hâli kullanılır.
+    #[serde(default)]
+    pub resets_at: Option<Value>,
 }

@@ -201,6 +201,28 @@ async fn yuz_yirmi_dokuzda_bir_kez_yeniden_dener() {
 }
 
 #[tokio::test]
+async fn gunluk_sinirda_yeniden_denemez_bilinmiyor_der() {
+    let s = SahteSaglayici::yeni(vec![]);
+    s.sohbet_ekle(SahteSohbet::Hata(EvrenError::GunlukSinir {
+        sifirlanma: None,
+    }));
+    s.sohbet_ekle(SahteSohbet::Json(json!({
+        "guvenli": true,
+        "kategori": "yok",
+        "gerekce": "denenmemeli"
+    })));
+
+    let d = YapilandirilmisSiniflandirici::yeni(s.clone());
+    let girdi = DenetimGirdisi {
+        kaynak: "dosya_oku: x".into(),
+        icerik: "test".into(),
+    };
+    let yanit = d.denetle(&girdi).await;
+    assert!(matches!(yanit.sonuc, DenetimSonucu::Bilinmiyor { .. }));
+    assert_eq!(s.sohbet_istekleri().len(), 1);
+}
+
+#[tokio::test]
 async fn istek_sabit_model_max_tokens_ve_sema_tasir() {
     let s = SahteSaglayici::yeni(vec![]);
     s.sohbet_ekle(SahteSohbet::Json(json!({
