@@ -18,9 +18,10 @@ use crate::arac::{
     Arac, AracCiktisi, AracHatasi, AracOrtami, CiktiGonderici, CiktiParcasi, DosyaDegisiklikleri,
     GonderimTalebi, GonderimYaniti, Hazirlik, OrtamIstegi,
 };
+use crate::butce::ButceIslemId;
 use crate::denetci::{DenetimGirdisi, DenetimKipi, DenetimSonucu};
 use crate::geri_alma::{DIFF_SINIRI, DosyaYedegi, GeriAlinamazNedeni, OncekiHal, diff_sayilari};
-use crate::gonderim::{EklentiIstekOzeti, IstekSonucu};
+use crate::gonderim::{EklentiIstekOzeti, GunlukToken, IstekSonucu};
 use crate::gorunum::{GORUNMEZ_UYARISI, gorunmez_var_mi};
 use crate::izin::{
     AYNI_ADIM_UYARISI, GERI_ALINAMAZ_UYARISI, Islem, Karar, Kip, Siniflandirici,
@@ -887,7 +888,7 @@ impl Oturum {
             let iptal = self.iptal.child_token();
             let cikti = CiktiGonderici::yeni(p.cagri, cikti_tx.clone());
             arac_sayaclari.insert(p.cagri, cikti.atlanan_sayaci());
-            let ortam = AracOrtami::yeni(cikti, p.cagri, ortam_tx.clone());
+            let ortam = AracOrtami::yeni(cikti, p.cagri, ortam_tx.clone(), self.butce_talepci());
             isler.push(async move {
                 let sonuc = tek_calistir(
                     &p,
@@ -1019,8 +1020,10 @@ impl Oturum {
                     ozet,
                     meta,
                     sonuc,
+                    butce_islem,
+                    kullanim,
                 } => {
-                    self.eklenti_istek_bitti_isle(cagri, ozet, meta, sonuc)
+                    self.eklenti_istek_bitti_isle(cagri, ozet, meta, sonuc, butce_islem, kullanim)
                         .await
                 }
             }
@@ -1363,8 +1366,10 @@ impl Oturum {
                 ozet,
                 meta,
                 sonuc,
+                butce_islem,
+                kullanim,
             } => {
-                self.eklenti_istek_bitti_isle(cagri, ozet, meta, sonuc)
+                self.eklenti_istek_bitti_isle(cagri, ozet, meta, sonuc, butce_islem, kullanim)
                     .await
             }
         }
@@ -1517,6 +1522,8 @@ impl Oturum {
         ozet: EklentiIstekOzeti,
         meta: YanitMeta,
         sonuc: IstekSonucu,
+        butce_islem: Option<ButceIslemId>,
+        kullanim: Option<GunlukToken>,
     ) {
         let amac = format!("eklenti:{}", ozet.eklenti);
         let basarili = sonuc == IstekSonucu::Basarili;
@@ -1527,9 +1534,13 @@ impl Oturum {
             kredi: meta.kredi.clone(),
             yonlendirilen_model: meta.yonlendirilen_model.clone(),
             sonuc,
-            butce_islem: None,
+            butce_islem,
         })
         .await;
+        // Bütçe izni olan deneme kayıttan sonra tek kez bitirilir (5b tasarımı §6).
+        if let Some(islem) = butce_islem {
+            self.butce_bitir(islem, kullanim).await;
+        }
         self.tur_ozeti.istek();
         self.yay(Olay::IstekBilgisi {
             istek_id: meta.istek_id.clone(),

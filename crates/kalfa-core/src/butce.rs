@@ -396,7 +396,7 @@ pub enum ButceMesaji {
 
 /// Oturuma bağlı izin istemcisi (5b tasarımı §4.1). Her oturumun kendi kanalı
 /// vardır; iki oturum birbirinin sayacını tüketmez.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ButceTalepci(mpsc::Sender<ButceMesaji>);
 
 impl ButceTalepci {

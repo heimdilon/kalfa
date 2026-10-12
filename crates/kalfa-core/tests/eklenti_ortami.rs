@@ -11,7 +11,7 @@ use kalfa_core::arac::{
     Arac, AracCiktisi, AracHatasi, AracOrtami, EklentiTarifi, GonderimTalebi, GonderimYaniti,
     Hazirlik,
 };
-use kalfa_core::butce::ButceSinirlari;
+use kalfa_core::butce::{ButceEngeli, ButceGorunumu, ButceIslemId, ButceSinirlari};
 use kalfa_core::gonderim::{
     EKLENTI_BAYT_SINIRI, EKLENTI_ISTEK_SINIRI, EklentiIstekOzeti, EklentiKullanimi, GunlukToken,
     IstekSonucu, gunluk_uret,
@@ -21,8 +21,8 @@ use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
 use kalfa_core::kimlik::{CagriId, IslemId, OturumId};
 use kalfa_core::oturum::{OturumAyarlari, devam_et};
 use kalfa_core::protokol::{
-    AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OnayOgesi, OnizlemeNedeni, OnizlemeOgesi,
-    SEMA_SURUMU, VeriCikisi, Zarf,
+    AracDurumu, BitisNedeni, ButceKarari, Komut, Olay, OnayKarari, OnayOgesi, OnizlemeNedeni,
+    OnizlemeOgesi, SEMA_SURUMU, VeriCikisi, Zarf,
 };
 use kalfa_core::test_destek::{
     SahteSaglayici, SahteYanit, Surucu, sanal_siniflandirici, test_baglami, test_oturumu,
@@ -35,6 +35,7 @@ const ARAC: &str = "kalfa_rag__ara";
 const EKLENTI: &str = "kalfa-rag";
 const SINIR_NEDENI: &str = "bu oturumda eklentinin EVREN sınırı doldu";
 const MEBI: u64 = 1024 * 1024;
+const EKLENTI_AMACI: &str = "eklenti:kalfa-rag";
 
 /// Eklentinin EVREN'e istek atan sahte aracı. Argümanlar: `sayi` (istek adedi,
 /// varsayılan 1), `bayt` (her isteğin bildirilen gövde baytı, varsayılan 10),
@@ -123,6 +124,11 @@ impl Arac for SahteEklenti {
         let sayi = argumanlar["sayi"].as_u64().unwrap_or(1);
         let bayt = argumanlar["bayt"].as_u64().unwrap_or(10);
         let kredili = argumanlar["kredi"].as_bool() == Some(true);
+        let kullanim = argumanlar["kullanim"].as_u64().unwrap_or(10);
+        let kullanimsiz = argumanlar["kullanimsiz"].as_bool() == Some(true);
+        let butce_bekleme = argumanlar["butce_bekleme_ms"]
+            .as_u64()
+            .map(Duration::from_millis);
         let mut icerik = String::new();
         for _ in 0..sayi {
             let ozet = istek_ozeti(bayt);
@@ -132,12 +138,37 @@ impl Arac for SahteEklenti {
             };
             match ortam.gonderim_izni(talep).await {
                 GonderimYaniti::Gonder => {
+                    // Ağdan önce bütçe izni (5b tasarımı §7). Reddedilen ya da
+                    // düşen talep ağa çıkmaz.
+                    let izin = match butce_bekleme {
+                        Some(sure) => {
+                            match tokio::time::timeout(sure, ortam.butce_izni(EKLENTI_AMACI)).await
+                            {
+                                Ok(izin) => izin,
+                                Err(_) => {
+                                    return Err(AracHatasi::Gecersiz("zaman aşımı".into()));
+                                }
+                            }
+                        }
+                        None => ortam.butce_izni(EKLENTI_AMACI).await,
+                    };
+                    let islem = match izin {
+                        Ok(islem) => islem,
+                        Err(()) => return Err(AracHatasi::Iptal),
+                    };
                     let meta = if kredili {
                         kredi_meta()
                     } else {
                         YanitMeta::default()
                     };
-                    ortam.istek_bitti(ozet, meta, IstekSonucu::Basarili).await;
+                    let bilinen = (!kullanimsiz).then_some(GunlukToken {
+                        istem: kullanim,
+                        tamamlama: 0,
+                        dusunce: 0,
+                    });
+                    ortam
+                        .istek_bitti(ozet, meta, IstekSonucu::Basarili, islem, bilinen)
+                        .await;
                     self.bitti.fetch_add(1, Ordering::SeqCst);
                     icerik.push_str("tamam\n");
                 }
@@ -249,6 +280,11 @@ fn kayitli(d: &Path, kip: Kip) -> (OturumAyarlari, PathBuf) {
 
 fn arac_cagrisi(sayi: u64, bayt: u64) -> Value {
     json!({"sayi": sayi, "bayt": bayt})
+}
+
+/// Her eklenti isteğinin bilinen kullanımı `kullanim` istemdir.
+fn arac_cagrisi_kullanimli(sayi: u64, kullanim: u64) -> Value {
+    json!({"sayi": sayi, "bayt": 10, "kullanim": kullanim})
 }
 
 fn eklenti_kaydi(sonuc: IstekSonucu, bayt: u64) -> KayitOgesi {
@@ -1040,5 +1076,280 @@ fn gunluk_eklenti_satiri_sohbet_kullanimini_almaz() {
         satirlar[1].sonuc,
         IstekSonucu::Basarili,
         "kopma eklenti satırına yazılmaz"
+    );
+}
+
+/// Bütçe kartını bekler ve kartın sayaçlarını döner.
+async fn kart_bekle(d: &mut Surucu) -> ButceGorunumu {
+    match d
+        .bekle(|o| matches!(o, Olay::ButceKarariGerekli { .. }))
+        .await
+        .yuk
+    {
+        Olay::ButceKarariGerekli { durum } => durum,
+        diger => unreachable!("{diger:?}"),
+    }
+}
+
+/// Oturumdaki son bütçe görünümü.
+fn son_butce(d: &Surucu) -> ButceGorunumu {
+    d.olaylar()
+        .iter()
+        .rev()
+        .find_map(|o| match o {
+            Olay::ButceDurumu { durum } => Some(*durum),
+            _ => None,
+        })
+        .expect("bütçe durumu olmalı")
+}
+
+fn butce_ayari(mut ayar: OturumAyarlari, istek: u64) -> OturumAyarlari {
+    ayar.butce = ButceSinirlari {
+        istek,
+        token: 5_000_000,
+    };
+    ayar
+}
+
+fn durdur() -> Komut {
+    Komut::ButceKarari {
+        karar: ButceKarari::Durdur,
+    }
+}
+
+/// `DevamEt` kararı; gözlenen sayaçlar kartın sayaçlarıdır.
+fn devam(istek: u64, baslatilan: u64, bilinmeyen: u64) -> Komut {
+    Komut::ButceKarari {
+        karar: ButceKarari::DevamEt {
+            sinirlar: ButceSinirlari {
+                istek,
+                token: 5_000_000,
+            },
+            gozlenen_baslatilan: baslatilan,
+            gozlenen_bilinmeyen: bilinmeyen,
+        },
+    }
+}
+
+/// İki paralel eklenti çağrısı ile model isteği aynı oturum sayacını paylaşır:
+/// sınır üçte dolar ve ikinci model isteği kartla bekler.
+#[tokio::test]
+async fn paralel_eklenti_cagrilari_ayni_oturum_sayacini_paylasir() {
+    let d = tempfile::tempdir().unwrap();
+    let (ayar, _yol) = kayitli(d.path(), Kip::Serbest);
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::araclar(vec![
+            (ARAC, arac_cagrisi(1, 10)),
+            (ARAC, arac_cagrisi(1, 10)),
+        ]),
+        SahteYanit::metin("tamam"),
+    ]);
+    let arac = SahteEklenti::yeni(Arc::new(AtomicBool::new(true)));
+    let mut surucu = test_oturumu(
+        test_baglami(s.clone(), vec![a(&arac)], sanal_siniflandirici()),
+        butce_ayari(ayar, 3),
+    );
+    surucu.gonder(selam()).await;
+
+    let kart = kart_bekle(&mut surucu).await;
+    assert_eq!((kart.baslatilan, kart.engel), (3, Some(ButceEngeli::Istek)));
+    assert_eq!(
+        s.istekler().len(),
+        1,
+        "ikinci model isteği karardan önce gitmemeli"
+    );
+    assert_eq!(arac.bitti(), 2);
+    surucu.gonder(durdur()).await;
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Iptal);
+}
+
+/// Ayrı bir oturumun sayacı diğerinin sınırını paylaşmaz: biri kartta beklerken
+/// öteki kendi ilk isteğini gönderir.
+#[tokio::test]
+async fn ayri_oturumlar_butce_sayacini_paylasmaz() {
+    let d = tempfile::tempdir().unwrap();
+    let s_a = SahteSaglayici::yeni(vec![
+        SahteYanit::arac(ARAC, arac_cagrisi(1, 10)),
+        SahteYanit::metin("son"),
+    ]);
+    let arac = SahteEklenti::yeni(Arc::new(AtomicBool::new(true)));
+    let mut a_surucu = test_oturumu(
+        test_baglami(s_a, vec![a(&arac)], sanal_siniflandirici()),
+        butce_ayari(OturumAyarlari::yeni("glm-5.3", d.path()), 1),
+    );
+    a_surucu.gonder(selam()).await;
+    assert_eq!(kart_bekle(&mut a_surucu).await.baslatilan, 1);
+
+    let s_b = SahteSaglayici::yeni(vec![SahteYanit::metin("tamam")]);
+    let mut b_surucu = test_oturumu(
+        test_baglami(s_b.clone(), vec![], sanal_siniflandirici()),
+        butce_ayari(OturumAyarlari::yeni("glm-5.3", d.path()), 1),
+    );
+    b_surucu.gonder(selam()).await;
+    assert_eq!(b_surucu.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(
+        s_b.istekler().len(),
+        1,
+        "ikinci oturumun ilk isteği serbest"
+    );
+
+    a_surucu.gonder(durdur()).await;
+    assert_eq!(a_surucu.tur_sonu().await, BitisNedeni::Iptal);
+}
+
+/// "Gönderme" kararı bütçe tüketmez: yalnız iki model isteği izin harcar.
+#[tokio::test]
+async fn onizlemede_gonderme_butce_tuketmez() {
+    let d = tempfile::tempdir().unwrap();
+    let (ayar, _yol) = kayitli(d.path(), Kip::Serbest);
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac(ARAC, arac_cagrisi(1, 10)),
+        SahteYanit::metin("tamam"),
+    ]);
+    let arac = SahteEklenti::yeni(Arc::new(AtomicBool::new(true)));
+    let mut surucu = test_oturumu(
+        test_baglami(s, vec![a(&arac)], sanal_siniflandirici()),
+        ayar,
+    );
+    surucu.gonder(Komut::OnizlemeAyarla { acik: true }).await;
+    surucu.gonder(selam()).await;
+
+    let (islem, _neden, ogeler) = onizleme_bekle(&mut surucu).await;
+    surucu
+        .gonder(Komut::GonderimKarari {
+            islem,
+            gonderilmeyecekler: vec![ogeler[0].cagri],
+            hep_gonderilecekler: Vec::new(),
+        })
+        .await;
+
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(arac.bitti(), 0);
+    assert_eq!(
+        son_butce(&surucu).baslatilan,
+        2,
+        "yalnız iki model isteği izin harcar"
+    );
+}
+
+/// Eklenti isteklerinin bilinen kullanımı bilinen tokena eklenir ve her deneme
+/// kendi izin kimliğiyle kayda girer.
+#[tokio::test]
+async fn eklenti_kullanimi_bilinen_tokena_eklenir_ve_kayitta_izinle_baglanir() {
+    let d = tempfile::tempdir().unwrap();
+    let (ayar, yol) = kayitli(d.path(), Kip::Serbest);
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac(ARAC, arac_cagrisi_kullanimli(2, 5)),
+        SahteYanit::metin("tamam"),
+    ]);
+    let arac = SahteEklenti::yeni(Arc::new(AtomicBool::new(true)));
+    let mut surucu = test_oturumu(
+        test_baglami(s, vec![a(&arac)], sanal_siniflandirici()),
+        ayar,
+    );
+    surucu.gonder(selam()).await;
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
+
+    // Modeller 15 + 15 (10 istem, 5 tamamlama); iki eklenti isteği 5 + 5.
+    assert_eq!(son_butce(&surucu).bilinen_token, 40);
+    let kimlikler: Vec<Option<ButceIslemId>> = OturumKaydi::oku(&yol)
+        .unwrap()
+        .into_iter()
+        .filter_map(|z| match z.yuk {
+            KayitOgesi::EklentiIstegi { butce_islem, .. } => Some(butce_islem),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        kimlikler,
+        vec![Some(ButceIslemId(2)), Some(ButceIslemId(3))]
+    );
+}
+
+/// Kart beklerken çağrı yeniden başlamaz: `DevamEt` aynı eklenti çağrısını
+/// sürdürür ve araç bir kez çalışır.
+#[tokio::test]
+async fn butce_devami_ayni_eklenti_cagrisini_surdurur() {
+    let d = tempfile::tempdir().unwrap();
+    let (ayar, _yol) = kayitli(d.path(), Kip::Serbest);
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac(ARAC, arac_cagrisi(1, 10)),
+        SahteYanit::metin("tamam"),
+    ]);
+    let arac = SahteEklenti::yeni(Arc::new(AtomicBool::new(true)));
+    let mut surucu = test_oturumu(
+        test_baglami(s.clone(), vec![a(&arac)], sanal_siniflandirici()),
+        butce_ayari(ayar, 1),
+    );
+    surucu.gonder(selam()).await;
+
+    let kart = surucu
+        .butce_devam_et(Some(ButceSinirlari {
+            istek: 10,
+            token: 5_000_000,
+        }))
+        .await;
+    assert_eq!(kart.baslatilan, 1);
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(arac.calisma(), 1, "devam aracı yeniden çalıştırmaz");
+    assert_eq!(arac.bitti(), 1);
+    assert_eq!(s.istekler().len(), 2);
+    assert_eq!(son_butce(&surucu).baslatilan, 3);
+}
+
+/// `Durdur` bekleyen eklenti isteğini iptal eder: araç ağa çıkmaz ve model
+/// isteği bir daha gönderilmez.
+#[tokio::test]
+async fn durdur_bekleyen_eklenti_istegini_iptal_eder() {
+    let d = tempfile::tempdir().unwrap();
+    let (ayar, _yol) = kayitli(d.path(), Kip::Serbest);
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac(ARAC, arac_cagrisi(1, 10)),
+        SahteYanit::metin("tamam"),
+    ]);
+    let arac = SahteEklenti::yeni(Arc::new(AtomicBool::new(true)));
+    let mut surucu = test_oturumu(
+        test_baglami(s.clone(), vec![a(&arac)], sanal_siniflandirici()),
+        butce_ayari(ayar, 1),
+    );
+    surucu.gonder(selam()).await;
+    kart_bekle(&mut surucu).await;
+
+    surucu.gonder(durdur()).await;
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Iptal);
+    assert_eq!(arac.calisma(), 1);
+    assert_eq!(arac.bitti(), 0, "durdurulan eklenti isteği ağa çıkmaz");
+    assert_eq!(s.istekler().len(), 1, "durdurmadan sonra model isteği yok");
+}
+
+/// Araç zaman aşımına uğrayınca bekleyen bütçe talebi düşer; sonradan gelen
+/// devam kararı onu yeniden başlatmaz.
+#[tokio::test]
+async fn zaman_asimi_bekleyen_butce_talebini_birakir() {
+    let d = tempfile::tempdir().unwrap();
+    let (ayar, _yol) = kayitli(d.path(), Kip::Serbest);
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac(ARAC, json!({"sayi": 1, "bayt": 10, "butce_bekleme_ms": 20})),
+        SahteYanit::metin("tamam"),
+    ]);
+    let arac = SahteEklenti::yeni(Arc::new(AtomicBool::new(true)));
+    let mut surucu = test_oturumu(
+        test_baglami(s.clone(), vec![a(&arac)], sanal_siniflandirici()),
+        butce_ayari(ayar, 1),
+    );
+    surucu.gonder(selam()).await;
+    assert_eq!(kart_bekle(&mut surucu).await.baslatilan, 1);
+
+    // Araç 20 ms sonra vazgeçer; ikinci model isteği, düşen talebin arkasında
+    // kartla bekler. Sonra karar verilir.
+    surucu.bekle(|o| matches!(o, Olay::AracSonucu { .. })).await;
+    surucu.gonder(devam(10, 1, 0)).await;
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(arac.bitti(), 0, "düşen talep ağa çıkış başlatmaz");
+    assert_eq!(s.istekler().len(), 2);
+    assert_eq!(
+        son_butce(&surucu).baslatilan,
+        2,
+        "yalnız iki model isteği başladı"
     );
 }

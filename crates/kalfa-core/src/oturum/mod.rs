@@ -1912,8 +1912,8 @@ impl Oturum {
         }
     }
 
-    /// Oturumun bütçe talep göndericisi. Denetçi ve özetleyici her ağ denemesinden
-    /// önce bu göndericiden izin ister (5b tasarımı §4.1).
+    /// Oturumun bütçe talep göndericisi. Denetçi, özetleyici ve eklentinin araç
+    /// ortamı her ağ denemesinden önce bundan izin ister (5b tasarımı §4.1).
     pub(crate) fn butce_talepci(&self) -> ButceTalepci {
         self.butce_talepci.clone()
     }

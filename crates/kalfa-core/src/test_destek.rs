@@ -19,7 +19,9 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, Hazirlik, YazmaHedefi};
-use crate::butce::{ButceGorunumu, ButceIslemId, ButceMesaji, ButceSinirlari, ButceTalepci};
+use crate::butce::{
+    ButceGorunumu, ButceIslemId, ButceMesaji, ButceSinirlari, ButceTalebi, ButceTalepci,
+};
 use crate::geri_alma::{DosyaDurumu, GeriYukleyici};
 use crate::izin::Siniflandirici;
 use crate::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
@@ -508,10 +510,17 @@ pub fn sahte_ek_yanit(uc: EkUc, govde: &Value) -> Value {
                 .into_iter()
                 .map(|(i, p)| json!({"index": i, "relevance_score": p}))
                 .collect();
+            // Gerçek sıralama yanıtı da `usage` taşır (5b tasarımı §2): istem tokenı
+            // sorgu ve belgelerin kabaca uzunluğudur.
+            let token: usize = std::iter::once(sorgu.len())
+                .chain(belgeler.iter().map(String::len))
+                .map(|uzunluk| uzunluk / 4 + 1)
+                .sum();
             json!({
                 "id": "sahte-siralama",
                 "model": format!("qwen/{model}"),
                 "results": sonuclar,
+                "usage": {"prompt_tokens": token, "total_tokens": token},
             })
         }
     }
@@ -1070,6 +1079,25 @@ impl Surucu {
     pub fn olaylar(&self) -> Vec<Olay> {
         self.gecmis.iter().map(|z| z.yuk.clone()).collect()
     }
+}
+
+/// Bir ortama verilecek bütçe talepçisi ve alıcısı. Alıcıyı çağıran tutar ve
+/// izni o verir (ya da vermez): fake oturumun yerini tutar.
+pub fn butce_kanali() -> (ButceTalepci, tokio::sync::mpsc::Receiver<ButceTalebi>) {
+    // Yalnız izin talepleri iletilir; eklenti bitişi araç ortamından geçer,
+    // bu kanaldaki bitiş mesajları burada yok sayılır.
+    let (talepci, mut alici) = ButceTalepci::kanal();
+    let (tx, rx) = tokio::sync::mpsc::channel(16);
+    tokio::spawn(async move {
+        while let Some(mesaj) = alici.recv().await {
+            if let ButceMesaji::Talep(talep) = mesaj
+                && tx.send(talep).await.is_err()
+            {
+                break;
+            }
+        }
+    });
+    (talepci, rx)
 }
 
 /// Var olmayan bir kök: git koruması yoktur, yalnızca gizli kalıplar çalışır.
