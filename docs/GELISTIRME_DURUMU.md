@@ -69,8 +69,14 @@ atlanan; iki platformda clippy (düz ve e2e)/fmt temiz; arayüz 393 test, 0
 hata/uyarı, build temiz. Canlı özet testi (`baglam_canli`) koşmadı; ayrı
 onay ister.
 
-**Sıradaki iş:** 5a PR'ı, CI ve kullanıcının squash onayı. Ardından 5b
-oturum bütçesi (üst belge §6.8) ve Linux paketleri.
+Codex incelemesi (`f9ee299`): durdurucu bir hata gelince başlamış özetleme
+istekleri artık bırakılmıyor, beklenip günlüğe yazılıyor; Windows
+`kalfa-core` 434 test, clippy/fmt temiz.
+
+**Sıradaki iş:** [#2](https://github.com/heimdilon/kalfa/pull/2) için
+`f9ee299`'un Linux doğrulaması ve CI; ikisi yeşilse kullanıcının açık squash
+onayı (`--match-head-commit`). Birleşince Linux doğrulama kopyası silinir.
+Ardından 5b oturum bütçesi (üst belge §6.8) ve Linux paketleri.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
