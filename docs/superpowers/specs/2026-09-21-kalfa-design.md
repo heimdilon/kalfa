@@ -444,6 +444,12 @@ modelle** yapılır (`qwen3.8-flash-next`), ana modelle değil.
 talimatına ya da kullanıcı mesajına dönüşmez. Özetleme çağrısı da gönderim
 günlüğüne ve bütçeye girer.
 
+Eşik token tasarrufuna göre konur (varsayılan 64 bin istem tokenı); modelin
+bağlam penceresi tavandır. Katalog pencereyi vermediği için 12 Ekim 2026'da
+canlı ölçüldü: `qwen3.8-flash-next` 262 144, `glm-5.3` 524 288,
+`deepseek-v4-flash` 1 048 576 token. Ayrıntı:
+[5a tasarımı](2026-10-12-kalfa-5a-baglam-yonetimi-design.md).
+
 ### 6.6 Oturum kaydı ve kurtarma
 
 - **Oturum kaydı**, §4.1 zarfıyla aynı biçimde tutulan kayıt öğelerinin yalnızca
@@ -1675,6 +1681,10 @@ teslim edilir:
    bölünür: **4a** sözleşme ve çalışma zamanı · **4b** EVREN yolu (gömme,
    yeniden sıralama, ilk gönderim onayı, günlük, önizleme) · **4c**
    `kalfa-rag` · **4d** arayüz ve dağıtım.
+
+5. **Bağlam ve bütçe:** **5a** bağlam yönetimi (§6.5,
+   [tasarımı](2026-10-12-kalfa-5a-baglam-yonetimi-design.md)) · **5b**
+   oturum bütçesi (§6.8).
 
 MCP (v1.1) bunlardan sonra gelir.
 

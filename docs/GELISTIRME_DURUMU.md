@@ -42,10 +42,19 @@ test**, 0 hata/uyarı, paket denetimi temiz. Bu arayüz düzeltmesinde gerçek
 yalıtım/e2e yeniden koşmadı; Claude'un `017aacd` kaydı Windows AppContainer
 uyumluluk 24/24 ve e2e 38/38, WSL yalıtım 26, uyumluluk 16/16 ve e2e 38/38'dir.
 
-**Sıradaki iş:** 429'da toplu gömme isteğini küçültme (`rag/toplu-daralma`)
-iki platformda yerelde doğrulandı; açık depoda PR olarak CI ve kullanıcının
-squash onayını bekler. Ardından aşama 5 adayları: bağlam yönetimi (üst belge
-§6.5) ve oturum bütçesi (§6.8); sonra Linux paketleri.
+**429'da toplu istek küçültme (12 Ekim):** Gömme isteği hız sınırına
+çarpınca `kalfa-rag` toplu parça sınırını yarıya indirir (256 → en az 16),
+her başarılı istekte iki katına çıkarır; sınır `meta`'da isteğe bağlı
+`toplu_sinir` alanında kalır. Windows 1092, WSL 1035 test; üç clippy/fmt
+temiz; CI yeşil. Kullanıcının onayıyla squash birleşti
+([#1](https://github.com/heimdilon/kalfa/pull/1), `1738b8e`). Canlı EVREN
+koşusu yapılmadı.
+
+**Sıradaki iş — 5a bağlam yönetimi:** Tasarım yazıldı
+([5a tasarımı](superpowers/specs/2026-10-12-kalfa-5a-baglam-yonetimi-design.md));
+kullanıcının belge onayını, ardından uygulama planını bekler. Bağlam
+pencereleri 12 Ekim'de üç küçük canlı istekle ölçüldü (262 144 / 524 288 /
+1 048 576 token). Sonra 5b oturum bütçesi (§6.8) ve Linux paketleri.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
