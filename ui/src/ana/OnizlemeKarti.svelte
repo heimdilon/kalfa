@@ -3,7 +3,8 @@
   modele gönderilmeden önce kullanıcıya gösterilir. Kullanıcı isterse bazı
   öğeleri çıkarabilir. Güvenlik denetçisi (3c) şüpheli bulduğu öğeleri de
   bu kartla sunar. Eklentinin EVREN isteğinde (aşama 4, §9.4) kart üç karar
-  sunar: gönder, gönderme, bu araç çağrısında hep gönder.
+  sunar: gönder, gönderme, bu araç çağrısında hep gönder; kullanıcı "Metni
+  göster" ile bekleyen isteğin gövdesini görebilir.
 -->
 <script lang="ts">
   import Badge from '../bilesenler/Badge.svelte';
@@ -16,10 +17,12 @@
   import type { EkranOgesi } from '../durum/oturum';
   import type { CagriId, IslemId } from '../ipc/tipler';
   import EklentiAyrinti from './EklentiAyrinti.svelte';
+  import EklentiMetni from './EklentiMetni.svelte';
 
   let {
     oge,
     onkarar,
+    onmetin,
   }: {
     oge: Extract<EkranOgesi, { tip: 'GonderimOnizlemesi' }>;
     onkarar: (
@@ -27,6 +30,8 @@
       gonderilmeyecekler: CagriId[],
       hepGonderilecekler: CagriId[],
     ) => void;
+    /** Bekleyen eklenti isteğinin gövdesini ister; verilmezse "Metni göster" çıkmaz. */
+    onmetin?: (islem: IslemId) => Promise<string>;
   } = $props();
 
   const eklenti = $derived(oge.neden === 'Eklenti');
@@ -104,6 +109,9 @@
             <EklentiAyrinti ozet={o.eklenti} />
           {:else}
             <SourceTag kaynak={o.kaynak} bayt={o.bayt} />
+          {/if}
+          {#if onmetin && oge.durum === 'Bekliyor'}
+            <EklentiMetni yukle={() => onmetin(oge.islem)} />
           {/if}
         </li>
       {/each}

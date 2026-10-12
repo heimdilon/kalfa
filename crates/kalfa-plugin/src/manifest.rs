@@ -176,6 +176,85 @@ impl Manifest {
     pub fn model_adi(&self, arac: &str) -> String {
         format!("{}__{arac}", self.ad.replace('-', "_"))
     }
+
+    /// Kurulumda kullanıcının gördüğü yetenek cümlesi (§6.4, üst belge §8.4).
+    pub fn yetenek_cumlesi(&self) -> String {
+        let okuma = if self.dosya_oku.is_empty() {
+            "Bu eklenti çalışma alanındaki dosyaları okumayacak".to_string()
+        } else {
+            let globlar = self
+                .dosya_oku
+                .iter()
+                .map(|g| format!("`{g}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("Bu eklenti {globlar} ile eşleşen dosyaları okuyacak")
+        };
+        let evren = match self.evren.as_slice() {
+            [] => " ve EVREN'e veri göndermeyecek.".to_string(),
+            uclar => {
+                let amac = match uclar {
+                    [EvrenUcu::Embeddings] => "gömme",
+                    [EvrenUcu::Rerank] => "yeniden sıralama",
+                    _ => "gömme ve yeniden sıralama",
+                };
+                let kaynak = if self.dosya_oku.is_empty() {
+                    "ürettiği metinleri"
+                } else {
+                    "bu dosyalardan seçtiği parçaları"
+                };
+                format!(" ve {kaynak} {amac} için EVREN'e gönderecek.")
+            }
+        };
+        let depo = if self.depo_mb == 0 {
+            " Kendi verisini saklamayacak.".to_string()
+        } else {
+            format!(
+                " Kendi verisi için çalışma alanı başına en fazla {} MB yer kullanacak.",
+                self.depo_mb
+            )
+        };
+        format!(
+            "{okuma}{evren} Gizli dosyaları okuyamaz. Dosya yazamaz, komut çalıştıramaz, internete doğrudan erişemez.{depo}"
+        )
+    }
+
+    /// Güncellemede `eski`'de olmayıp bunda olan yetenekler (§13.2): yeni
+    /// `dosya-oku` kalıpları, yeni EVREN uçları ve büyüyen depo kotası. Boşsa
+    /// güncelleme erişimi genişletmez.
+    pub fn yeni_yetenekler(&self, eski: &Manifest) -> Vec<String> {
+        let mut yeni: Vec<String> = self
+            .dosya_oku
+            .iter()
+            .filter(|g| !eski.dosya_oku.contains(g))
+            .map(|g| format!("`{g}` ile eşleşen dosyaları okuma"))
+            .collect();
+        yeni.extend(
+            self.evren
+                .iter()
+                .filter(|u| !eski.evren.contains(u))
+                .map(|u| format!("EVREN `{}` ucuna gönderim", u.ad())),
+        );
+        if self.depo_mb > eski.depo_mb {
+            yeni.push(format!(
+                "depo kotası {} MB yerine {} MB",
+                eski.depo_mb, self.depo_mb
+            ));
+        }
+        yeni
+    }
+
+    /// Güncelleme gönderim izinlerini düşürür mü (§13.2): `evren` uçları ya
+    /// da `dosya-oku` kalıpları değiştiyse.
+    pub fn gonderim_kapsami_degisti(&self, eski: &Manifest) -> bool {
+        let mut a = self.dosya_oku.clone();
+        let mut b = eski.dosya_oku.clone();
+        a.sort();
+        b.sort();
+        a != b
+            || self.evren.iter().any(|u| !eski.evren.contains(u))
+            || eski.evren.iter().any(|u| !self.evren.contains(u))
+    }
 }
 
 /// Sözleşme 0.1'de olmayan her alan reddedilir.
@@ -270,6 +349,70 @@ depo-mb = 200
         .unwrap();
         assert!(m.dosya_oku.is_empty() && m.evren.is_empty() && m.depo_mb == 0);
         assert!(!m.okuyabilir("a.rs"));
+    }
+
+    #[test]
+    fn yetenek_cumlesi_manifestten_uretilir() {
+        let m = Manifest::coz(TAM).unwrap();
+        assert_eq!(
+            m.yetenek_cumlesi(),
+            "Bu eklenti `**/*.{md,rs,ts}`, `docs/**` ile eşleşen dosyaları okuyacak ve bu \
+             dosyalardan seçtiği parçaları gömme ve yeniden sıralama için EVREN'e gönderecek. \
+             Gizli dosyaları okuyamaz. Dosya yazamaz, komut çalıştıramaz, internete doğrudan \
+             erişemez. Kendi verisi için çalışma alanı başına en fazla 200 MB yer kullanacak."
+        );
+        let hesap = Manifest::coz(
+            "[eklenti]\nad = \"hesap\"\nsurum = \"1.0.0\"\nsozlesme = \"0.1\"\naciklama = \"x\"\n",
+        )
+        .unwrap();
+        let cumle = hesap.yetenek_cumlesi();
+        assert!(cumle.starts_with(
+            "Bu eklenti çalışma alanındaki dosyaları okumayacak ve EVREN'e veri göndermeyecek."
+        ));
+        assert!(cumle.ends_with("Kendi verisini saklamayacak."));
+    }
+
+    #[test]
+    fn guncellemenin_yeni_yetenekleri_ve_gonderim_kapsami() {
+        let eski = Manifest::coz(TAM).unwrap();
+        assert!(eski.yeni_yetenekler(&eski).is_empty());
+        assert!(!eski.gonderim_kapsami_degisti(&eski));
+
+        let sirasi_degisik = Manifest::coz(&TAM.replace(
+            r#"["**/*.{md,rs,ts}", "docs/**"]"#,
+            r#"["docs/**", "**/*.{md,rs,ts}"]"#,
+        ))
+        .unwrap();
+        assert!(!sirasi_degisik.gonderim_kapsami_degisti(&eski));
+
+        let genis = Manifest::coz(
+            &TAM.replace(r#""docs/**"]"#, r#""docs/**", "**/*.py"]"#)
+                .replace("depo-mb = 200", "depo-mb = 300"),
+        )
+        .unwrap();
+        assert_eq!(
+            genis.yeni_yetenekler(&eski),
+            vec![
+                "`**/*.py` ile eşleşen dosyaları okuma".to_string(),
+                "depo kotası 200 MB yerine 300 MB".to_string(),
+            ]
+        );
+        assert!(genis.gonderim_kapsami_degisti(&eski));
+
+        let dar = Manifest::coz(&TAM.replace(
+            r#"evren = ["embeddings", "rerank"]"#,
+            r#"evren = ["embeddings"]"#,
+        ))
+        .unwrap();
+        assert!(
+            dar.yeni_yetenekler(&eski).is_empty(),
+            "daralma yeni yetenek değil"
+        );
+        assert!(dar.gonderim_kapsami_degisti(&eski), "uç kümesi değişti");
+        assert_eq!(
+            eski.yeni_yetenekler(&dar),
+            vec!["EVREN `rerank` ucuna gönderim".to_string()]
+        );
     }
 
     #[test]

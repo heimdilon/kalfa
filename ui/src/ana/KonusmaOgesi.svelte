@@ -10,6 +10,7 @@
   import ToolCallCard from '../bilesenler/ToolCallCard.svelte';
   import { AKTARIM_DURMA_METNI, denetimKategorisi, m } from '../dil/tr';
   import type { EkranOgesi } from '../durum/oturum';
+  import * as ipc from '../ipc/ana';
   import type { BitisNedeni, OturumId } from '../ipc/tipler';
   import Markdown from '../markdown/Markdown.svelte';
   import type { AnaDurum } from './anaDurum.svelte';
@@ -102,6 +103,7 @@
     {oge}
     onkarar={(islem, gonderilmeyecekler, hepGonderilecekler) =>
       durum.gonderimKarari(oturum, islem, gonderilmeyecekler, hepGonderilecekler)}
+    onmetin={(islem) => ipc.eklentiIstegi(oturum, islem)}
   />
 {:else if oge.tip === 'SartIstegi'}
   <Card tone="accent" icon="shield" title={m('sart.kart.baslik', { surum: oge.surum })}>

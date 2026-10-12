@@ -4,7 +4,7 @@
 // denetler).
 
 /// Ana pencerenin komutları.
-pub const ANA_PENCERE_KOMUTLARI: [&str; 47] = [
+pub const ANA_PENCERE_KOMUTLARI: [&str; 57] = [
     "uygulama_durumu",
     "oturumlari_listele",
     "calisma_alani_sec",
@@ -52,6 +52,16 @@ pub const ANA_PENCERE_KOMUTLARI: [&str; 47] = [
     "gonderim_ogesi",
     "onizleme_ayarla",
     "gonderim_karari",
+    "eklentileri_listele",
+    "eklenti_klasorden_kur",
+    "eklenti_kaldir",
+    "eklenti_etkin_ayarla",
+    "eklenti_alani_ayarla",
+    "gonderim_iznini_kaldir",
+    "eklenti_verisini_sil",
+    "oturum_eklentileri",
+    "eklenti_istegi",
+    "gunluk_sinir",
 ];
 
 /// Şart penceresinin komutları. Şart kabulüne giden tek yol buradaki

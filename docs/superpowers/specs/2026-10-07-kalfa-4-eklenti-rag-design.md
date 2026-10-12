@@ -1029,6 +1029,9 @@ kod.
    araç listesi. Ad zaten kuruluysa kart bunu bir **güncelleme** olarak
    gösterir: eski ve yeni sürüm, **yeni yetenekler** ayrıca işaretli.
 4. Onay **yerel pencerede** verilir (karar 7): kurmak erişimi genişletir.
+   *4d'de:* 3. maddedeki kartın metni yerel pencerenin kendisidir; arayüz
+   ayrı bir kart göstermez. Tek komut seçer, doğrular, sorar ve kurar
+   ([4d kaydı](../plans/2026-10-11-kalfa-4d-arayuz-dagitim.md), karar 1).
 5. Dosyalar `<veri>/eklentiler/<ad>/`'a kopyalanır (`kalfa.toml`,
    `eklenti.wasm`). Kaynak klasör sonradan değişse de kurulan eklenti
    değişmez.
@@ -1063,15 +1066,15 @@ bir sürüm de kurulabilir; kart bunu "eski sürüm" diye işaretler.
       "surum": "0.2.0",
       "sha256": "…",
       "kaynak": "C:\\Users\\…\\ornek",
-      "kurulum": "2026-10-20T10:00:00Z",
+      "kurulum_ms": 1792490400000,
       "etkin": true,
       "calisma_alanlari": {
-        "<alan kimliği>": { "acik": true, "gonderim_izni": "2026-10-20T10:05:00Z" }
+        "<alan kimliği>": { "yol": "C:\…", "acik": true, "gonderim_izni_ms": 1792490700000 }
       }
     }
   ],
   "yerlesik": {
-    "kalfa-rag": { "etkin": true, "calisma_alanlari": {} }
+    "kalfa-rag": { "etkin": true, "manifest": "<son görülen kalfa.toml>", "calisma_alanlari": {} }
   }
 }
 ```
@@ -1261,6 +1264,7 @@ filtresine takılıyor (3c dersi). Bu senaryoları Claude yazar.
   dosyası olarak `<kurulum>/eklentiler/kalfa-rag/`'a girer. `derle.mjs`
   önce `.wasm`'ı derler.
 - **Linux (`.deb`, `.rpm`):** aynı dosyalar paketin kaynak dizinine girer.
+  *4d'de:* depoda Linux paketlemesi henüz yok; paketleme gelince eklenir.
 - `SHA256SUMS` ve `cargo-audit` (üst belge §12.1) wasmtime'ın bağımlılık
   ağacını da kapsar.
 
@@ -1298,7 +1302,7 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 
 | # | Soru | Nerede |
 |---|---|---|
-| G1 | Linux'ta wasmtime: derleme süresi, ikili boyutu, epoch ve bellek sınırı; CI süresine etkisi | **Kapandı (4a).** WSL'de `kalfa-plugin`'in temiz sürüm derlemesi 2 dk 7 sn (12 çekirdek). Epoch ve bellek sınırı testleri iki platformda geçiyor. İkili boyutu, `kalfa` ikilisine girdiği 4d'de ölçülür; CI süresi 4a PR'ında görünür. |
+| G1 | Linux'ta wasmtime: derleme süresi, ikili boyutu, epoch ve bellek sınırı; CI süresine etkisi | **Kapandı (4a).** WSL'de `kalfa-plugin`'in temiz sürüm derlemesi 2 dk 7 sn (12 çekirdek). Epoch ve bellek sınırı testleri iki platformda geçiyor. CI süresi 4a PR'ında görünür. **İkili boyutu (4d, Windows, sürüm):** `kalfa.exe` 24,68 MB'tan 41,85 MB'a (+17,2 MB, %70). |
 | G2 | §7.4'teki sınır değerleri (512 MiB, 60 sn, 30 dk, 4 eşzamanlı) | 4a ve 4c ölçümüyle; `kalfa-rag`'ın gerçek kullanımı |
 | G3 | Epoch geri çağrısıyla CPU bütçesi: host çağrısı sırasında geçen süre sayaca girmiyor mu; yer verme tokio'yu gerçekten serbest bırakıyor mu | **Kapandı (4a).** Tek iş parçacıklı çalışma zamanında, bütçeye kadar dönen eklenti sürerken öteki görev ilerliyor (`YieldCustom` + `tokio::task::yield_now`). Host çağrısında 3 sn bekleyen eklenti 2 sn'lik bütçeye takılmıyor. |
 | G4 | Gömmedeki 7–9 sn sabit bekleme kalıcı mı (gün içi, yük)? Sorgu gömme için daha hızlı bir yol var mı? | **Mevcut karar için kapandı (4c).** 8–9 Ekim gözlemleri ve [canlı ölçüm](../bulgular/2026-10-09-kalfa-g4-g8-gomme.md): 16 tekli sorgu 0,092–0,266 sn. Sabit 7–9 sn varsayımı kaldırılır; mevcut tekli yol korunur. Günün/yükün tümü ve sunucu önbelleği bilinmiyor; süre garantisi değildir |
@@ -1316,7 +1320,7 @@ Plan aşamasında ya da ölçümle cevaplanacaklar:
 | R18 | wasmtime'da (JIT, çalışma zamanı) bir hata | Eklenti Kalfa'nın sürecini düşürebilir ya da bellek yalıtımını aşabilir | wasmtime'ın kararlı sürümü, tam sürümle sabit; güvenlik duyurularında yükseltme; `cargo-audit`. İşletim sistemi yalıtımı v1 dışı (G9) |
 | R19 | Gömme gecikmesi sağlayıcı yükü/zamanına göre değişebilir | Sorgu beklemesi aramayı, toplu istekler ilk indekslemeyi uzatabilir; sabit ≥10 sn varsayımı güncel ölçümlere uymuyor | Büyük toplu istek, ilerleme/iptal; [G4/G8 ölçümü](../bulgular/2026-10-09-kalfa-g4-g8-gomme.md), hız/günlük sınır ayrımı |
 | R20 | Yeniden sıralama katalogda olmayan bir modele yönleniyor (`qwen3-vl-reranker-8b`) | Kalite ve fiyat katalogdan farklı olabilir | Günlükte yönlendirilen model görünür; değerlendirme kümesi (G5, G10) |
-| R21 | wasmtime derleme süresini ve ikili boyutunu artırıyor | Temiz derleme sürümde +~3 dk, ikili +~14 MB (Windows) | Özellikler en aza indirildi (§5.2); Linux'ta ve CI'da ölçüm (G1) |
+| R21 | wasmtime derleme süresini ve ikili boyutunu artırıyor | Temiz derleme sürümde +~3 dk, ikili +17,2 MB (Windows, 4d'de ölçüldü) | Özellikler en aza indirildi (§5.2); Linux'ta ve CI'da ölçüm (G1) |
 
 ---
 
@@ -1402,3 +1406,15 @@ sorgu vektörü kalıcı saklanmaz. Regresyon ve iki platform sonuçları kayıt
 ([inceleme](../bulgular/2026-10-09-kalfa-4c-inceleme.md)). #52 taslaktır;
 #51 birleşince tabanı `kalfa-asama-1` yapılır. Eklenti ekranları, dağıtım ve
 günlük sınırın ayrı arayüz durumu 4d'de kalır.
+
+### 4d uygulama kaydı (2026-10-11)
+
+Eklentiler ekranı, kalıcı kayıt (`eklentiler.json`), klasörden kurulum ve
+güncelleme, kaldırma, devre dışı bırakma, çalışma alanında açma, ilk
+gönderim kartı, "Metni göster", günlük sınırın durum çubuğu öğesi, NSIS
+kurucusunda `kalfa-rag`, S17 ve uçtan uca `11-eklenti` 4d'de uygulandı
+([plan ve uygulama kaydı](../plans/2026-10-11-kalfa-4d-arayuz-dagitim.md)).
+Farklar: kurulum kartı yerel penceredir; zamanlar Unix ms; Linux paketi
+henüz yok. İncelemede ilk gönderimin yerel penceresinin yanlış başlık ve
+boş metinle açıldığı bulundu ve düzeltildi. G1'in ikili boyutu ölçüldü
+(+17,2 MB).

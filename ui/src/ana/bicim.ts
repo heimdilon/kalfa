@@ -1,7 +1,7 @@
 // Ana pencerede gösterilen değerlerin biçimi: zaman, gün grubu, oturum durumu,
 // araç kartı başlığı, sayılar. Saf işlevler; DOM'a dokunmaz.
 import { ARAC_DURUMU_ADI, m, type MetinAnahtari } from '../dil/tr';
-import type { AracDurumu, OturumDurumu, OturumSatiri } from '../ipc/tipler';
+import type { AracDurumu, GunlukSinirDurumu, OturumDurumu, OturumSatiri } from '../ipc/tipler';
 import type { Anlik, EkranOgesi } from '../durum/oturum';
 
 const GUN_MS = 24 * 60 * 60 * 1000;
@@ -239,4 +239,63 @@ export function sayi(n: number): string {
 export function kredi(ondalik: string): string {
   const n = Number(ondalik);
   return Number.isFinite(n) ? KREDI.format(n) : ondalik;
+}
+
+const GUN_AY_UZUN = new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long' });
+const TARIH = new Intl.DateTimeFormat('tr-TR', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+});
+
+/** "20 Ekim": gönderim izninin verildiği gün. */
+export function gunAy(ms: number): string {
+  return GUN_AY_UZUN.format(ms);
+}
+
+/** "20 Ekim 2026": eklentinin kurulum tarihi. */
+export function tarih(ms: number): string {
+  return TARIH.format(ms);
+}
+
+// Rust'ın `{:.1}` biçimi tam yarıda çifte yuvarlar; kart ikisini yan yana gösterir.
+const MB = new Intl.NumberFormat('tr-TR', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+  roundingMode: 'halfEven',
+});
+
+/** Ondalık MB, Rust'taki ilk gönderim metniyle aynı biçimde: `6,0 MB`. */
+export function mbMetni(bayt: number): string {
+  return `${MB.format(bayt / 1_000_000)} MB`;
+}
+
+/**
+ * Metni ters tırnaklı kod parçalarına böler (`a \`b\` c` → düz, kod, düz).
+ * Yalnızca ters tırnak çözülür; başka işaret ya da HTML yorumlanmaz. Kapanmayan
+ * ters tırnak olduğu gibi kalır.
+ */
+export function kodParcalari(metin: string): { metin: string; kod: boolean }[] {
+  const parcalar = metin.split('`');
+  if (parcalar.length % 2 === 0) {
+    const son = parcalar.pop() ?? '';
+    parcalar[parcalar.length - 1] += `\`${son}`;
+  }
+  return parcalar.map((p, i) => ({ metin: p, kod: i % 2 === 1 })).filter((p) => p.metin !== '');
+}
+
+const ZAMAN_DAMGASI = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+/**
+ * Durum çubuğundaki günlük sınır metni (aşama 4c): sıfırlanma anı yerel
+ * saatle; zaman damgası geçersizse yalnızca "Günlük sınır doldu".
+ */
+export function gunlukSinirMetni(sinir: GunlukSinirDurumu): string {
+  const ms =
+    sinir.sifirlanma && ZAMAN_DAMGASI.test(sinir.sifirlanma)
+      ? Date.parse(sinir.sifirlanma)
+      : Number.NaN;
+  return Number.isNaN(ms)
+    ? m('durum.gunluk_sinir')
+    : m('durum.gunluk_sinir_sifirlanma', { saat: saat(ms) });
 }

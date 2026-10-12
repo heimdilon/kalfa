@@ -80,6 +80,22 @@ export interface OnayOgesi {
   veri_cikisi?: VeriCikisi;
   /** "Bu oturumda izin ver" teklifi (aşama 3 tasarımı §9.1); yalnızca uygun öğede. */
   kisayol?: KisayolTeklifi;
+  /** Eklenti aracında eklentinin tarifi; ilk gönderim kartı buna bakar (aşama 4 §8.4). */
+  eklenti?: EklentiTarifi;
+}
+
+/** Eklenti aracının kimliği ve yetenekleri (aşama 4 tasarımı §8.1). */
+export interface EklentiTarifi {
+  ad: string;
+  surum: string;
+  /** `.wasm`'ın SHA-256'sı. */
+  ozet: string;
+  globlar: string[];
+  evren_uclari: string[];
+  /** Bu çalışma alanında EVREN'e ilk gönderim; onay yerel penceredir. */
+  ilk_gonderim: boolean;
+  dosya_sayisi: number;
+  bayt: number;
 }
 
 export type KisayolTeklifi =
@@ -564,3 +580,66 @@ export interface GunlukSayfasi {
   daha_eski_var: boolean;
 }
 
+
+// ── Eklentiler (aşama 4 tasarımı §13, §14) ───────────────────────────────
+
+export type EklentiDurumu =
+  | { tip: 'Yuklendi' }
+  | { tip: 'DevreDisi' }
+  | { tip: 'Yuklenemedi'; neden: string };
+
+/** Modelin gördüğü araç; `ad` örneğin `kalfa_rag__anlamsal_ara`. */
+export interface EklentiAraci {
+  ad: string;
+  aciklama: string;
+}
+
+/** Bir eklentinin bir çalışma alanındaki durumu. `yol` yalnızca gösterilir. */
+export interface EklentiAlani {
+  kimlik: string;
+  yol: string;
+  acik: boolean;
+  gonderim_izni_ms: number | null;
+  depo_bayt: number;
+}
+
+export interface EklentiSatiri {
+  ad: string;
+  surum: string;
+  aciklama: string;
+  yerlesik: boolean;
+  durum: EklentiDurumu;
+  sha256: string;
+  kaynak: string | null;
+  kurulum_ms: number | null;
+  yetenek: string | null;
+  araclar: EklentiAraci[];
+  alanlar: EklentiAlani[];
+}
+
+export type KurulumSonucu =
+  | {
+      tip: 'Kuruldu';
+      ad: string;
+      surum: string;
+      guncelleme: boolean;
+      izinler_silindi: boolean;
+    }
+  | { tip: 'Vazgecildi' }
+  | { tip: 'Basarisiz'; mesaj: string };
+
+/** Arayüz yol göndermez: açık oturumun alanı ya da kayıttaki kimlik. */
+export type AlanHedefi = { tip: 'Oturum'; oturum: OturumId } | { tip: 'Kimlik'; kimlik: string };
+
+export interface OturumEklentisi {
+  ad: string;
+  yerlesik: boolean;
+  acik: boolean;
+  kullanilamaz: boolean;
+  gonderim_izni_ms: number | null;
+}
+
+/** EVREN'in günlük token sınırı doldu (aşama 4c). */
+export interface GunlukSinirDurumu {
+  sifirlanma: string | null;
+}

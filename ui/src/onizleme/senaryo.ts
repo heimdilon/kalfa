@@ -1,10 +1,41 @@
 // Önizlemenin sahte verisi ve senaryolu turu. Yalnızca `onizleme.html`
 // kullanır; uygulama paketine girmez. Metinler örnektir, EVREN'den gelmez.
-import type { Kisayol, Olay, OturumId } from '../ipc/tipler';
+import type { EklentiIstekOzeti, EklentiTarifi, Kisayol, Olay, OturumId } from '../ipc/tipler';
 import { bosOzet, onayOgesi, SahteArka } from '../sahte/arka';
 
 const SAAT = 3600_000;
 const GUN = 24 * SAAT;
+
+/** `kalfa-rag`ın bir çalışma alanındaki ilk EVREN gönderimi (aşama 4 tasarımı §8.4). */
+const RAG_TARIFI: EklentiTarifi = {
+  ad: 'kalfa-rag',
+  surum: '0.1.0',
+  ozet: '9f2c4e7a1b8d03a65c4f7e2b90d1a3c8e5f6b7a4d2c1908e3f4a5b6c7d8e9f01',
+  globlar: ['**/*.md', '**/*.rs'],
+  evren_uclari: ['embeddings', 'rerank'],
+  ilk_gonderim: true,
+  dosya_sayisi: 412,
+  bayt: 6_000_000,
+};
+
+const RAG_ACIKLAMA = [
+  'kalfa-rag eklentisinin `anlamsal_ara` aracını çalıştırmak istiyor.',
+  "**kalfa-rag** bu çalışma alanında ilk kez EVREN'e veri gönderecek.",
+  "Okuyabileceği dosyalar: `**/*.md`, `**/*.rs` ile eşleşen **412 dosya (6,0 MB)**. Bu dosyalardan seçtiği parçalar gömme ve yeniden sıralama için EVREN'e gidecek. Gizli dosyalar gönderilmez.",
+  'İzin verirseniz bu çalışma alanında bir daha sorulmaz. İzni Eklentiler ekranından geri alabilirsiniz.',
+].join('\n\n');
+
+/** "Göndermeden önce göster" kartının eklenti isteği (aşama 4 tasarımı §9.4). */
+const RAG_ISTEK: EklentiIstekOzeti = {
+  eklenti: 'kalfa-rag',
+  uc: 'Gomme',
+  model: 'qwen3-embedding-8b',
+  metin_sayisi: 14,
+  bayt: 412_000,
+  ozet: '5d41402abc4b2a76b9719d911017c592e4d7a3b1f0c8e92a6b3d5f7a1c4e8b20',
+  dosyalar: ['docs/README.md', 'src/auth.rs', 'src/depo.rs'],
+  dosya_fazlasi: 409,
+};
 
 const YANIT = [
   'Kimlik doğrulama akışını inceledim. Genel yapı sağlam; iki yerde düzeltme öneriyorum:\n\n',
@@ -53,11 +84,29 @@ function gecikmeli(adimlar: [number, () => void][]) {
   }
 }
 
-/** `windows`: Ayarlar Windows'taki gibi görünür (`onizleme.html#windows`). */
-export function anaSenaryosu(windows = false): SahteArka {
+/**
+ * `windows`: Ayarlar Windows'taki gibi görünür (`onizleme.html#windows`).
+ * `gunlukSinir`: durum çubuğunda EVREN'in günlük sınırı dolu görünür
+ * (`onizleme.html#sinir`).
+ */
+export function anaSenaryosu(windows = false, gunlukSinir = false): SahteArka {
   const arka = new SahteArka();
   const simdi = Date.now();
   arka.uygulama.son_oturum = 'o1';
+  if (gunlukSinir) arka.gunlukSinir = { sifirlanma: new Date(simdi + 5 * SAAT).toISOString() };
+  // "Bu oturumdaki izinler" paneli (aşama 4 tasarımı §14): Eklentiler ekranındaki
+  // örnek verinin bu çalışma alanındaki hâli.
+  arka.oturumEklentileri = [
+    {
+      ad: 'kalfa-rag',
+      yerlesik: true,
+      acik: true,
+      kullanilamaz: false,
+      gonderim_izni_ms: simdi - 2 * GUN,
+    },
+    { ad: 'ornek-notlar', yerlesik: false, acik: false, kullanilamaz: false, gonderim_izni_ms: null },
+    { ad: 'bozuk-eklenti', yerlesik: false, acik: false, kullanilamaz: true, gonderim_izni_ms: null },
+  ];
   // Ayarlar (aşama 2 tasarımı §10.4): "Yeniden dene" yalıtımı bulur.
   if (windows) {
     arka.uygulama.platform = 'windows';
@@ -150,6 +199,38 @@ export function anaSenaryosu(windows = false): SahteArka {
     tur += 1;
     const t = `t${tur}`;
     const gonder = (olaylar: Olay[]) => arka.olaylar(oturum, olaylar, t);
+    // "eklenti" geçen mesaj bir eklenti aracı çağırır (aşama 4): önce ilk
+    // gönderim onayı, onaydan sonra "Göndermeden önce göster" kartı.
+    if (String(a.metin).includes('eklenti')) {
+      gecikmeli([
+        [200, () => gonder([{ tip: 'TurBasladi' }])],
+        [
+          300,
+          () => gonder([{ tip: 'TokenParcasi', metin: 'Anlamsal arama için eklentiyi çalıştırıyorum.' }]),
+        ],
+        [
+          400,
+          () =>
+            gonder([
+              {
+                tip: 'OnayGerekiyor',
+                islem: `islem-${tur}`,
+                ogeler: [
+                  onayOgesi({
+                    cagri: `e${tur}`,
+                    arac: 'kalfa_rag__anlamsal_ara',
+                    aciklama: RAG_ACIKLAMA,
+                    yerel_onay: true,
+                    veri_cikisi: 'EklentiCiktisi',
+                    eklenti: RAG_TARIFI,
+                  }),
+                ],
+              },
+            ]),
+        ],
+      ]);
+      return null;
+    }
     // "test" geçen mesaj kabuk çağrısı ister (aşama 2 tasarımı §10).
     if (String(a.metin).includes('test')) {
       gecikmeli([
@@ -244,6 +325,58 @@ export function anaSenaryosu(windows = false): SahteArka {
       ];
       gonder([{ tip: 'Kisayollar', liste: kisayollar }]);
     }
+    const eklenti = kararlar.find((k) => k.cagri.startsWith('e'));
+    if (eklenti) {
+      const cagri = eklenti.cagri;
+      if (eklenti.karar.tip !== 'Onayla') {
+        gecikmeli([
+          [
+            200,
+            () =>
+              gonder([
+                {
+                  tip: 'AracSonucu',
+                  cagri,
+                  arac: 'kalfa_rag__anlamsal_ara',
+                  durum: 'Reddedildi',
+                  icerik: 'Kullanıcı eklentinin gönderimini reddetti.',
+                },
+                { tip: 'Tamamlandi', neden: { tip: 'Normal' } },
+              ]),
+          ],
+        ]);
+        return null;
+      }
+      gecikmeli([
+        [
+          200,
+          () =>
+            gonder([
+              {
+                tip: 'AracCagrisiBasladi',
+                cagri,
+                arac: 'kalfa_rag__anlamsal_ara',
+                aciklama: 'kalfa-rag eklentisinin `anlamsal_ara` aracını çalıştırmak istiyor.',
+              },
+            ]),
+        ],
+        [
+          400,
+          () =>
+            gonder([
+              {
+                tip: 'GonderimOnizlemesi',
+                islem: `onizleme-${tur}`,
+                neden: 'Eklenti',
+                ogeler: [
+                  { cagri: `${cagri}-gomme`, kaynak: 'eklenti:kalfa-rag:gomme', bayt: 412_000, eklenti: RAG_ISTEK },
+                ],
+              },
+            ]),
+        ],
+      ]);
+      return null;
+    }
     const kabuk = kararlar.find((k) => k.cagri.startsWith('k'));
     if (kabuk) {
       const cagri = kabuk.cagri;
@@ -328,6 +461,40 @@ export function anaSenaryosu(windows = false): SahteArka {
               },
             },
           ]),
+      ],
+    ]);
+    return null;
+  });
+  // Eklenti önizlemesinin kararı: gönderilirse arama sonuç verir, gönderilmezse eklenti hata alır.
+  arka.ozel.set('gonderim_karari', (a) => {
+    const oturum = a.oturum as OturumId;
+    const gonderilmedi = (a.gonderilmeyecekler as string[]).length > 0;
+    gecikmeli([
+      [
+        300,
+        () =>
+          arka.olaylar(
+            oturum,
+            [
+              {
+                tip: 'AracSonucu',
+                cagri: `e${tur}`,
+                arac: 'kalfa_rag__anlamsal_ara',
+                durum: gonderilmedi ? 'Basarisiz' : 'Basarili',
+                icerik: gonderilmedi
+                  ? 'Eklenti hatası (kalfa-rag): izin-yok: kullanıcı göndermedi'
+                  : 'dosya:src/auth.rs:12-40\nconst TOKEN_SURESI: Duration = Duration::from_secs(24 * 3600);',
+              },
+              {
+                tip: 'TokenParcasi',
+                metin: gonderilmedi
+                  ? 'Anlamsal arama yapılamadı; gönderim onaylanmadı.'
+                  : 'En yakın sonuç `src/auth.rs` içinde.',
+              },
+              { tip: 'Tamamlandi', neden: { tip: 'Normal' } },
+            ],
+            `t${tur}`,
+          ),
       ],
     ]);
     return null;

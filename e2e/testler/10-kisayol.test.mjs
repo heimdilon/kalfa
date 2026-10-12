@@ -94,7 +94,12 @@ describe('kısayollar ve gizli sayılmayanlar', () => {
     // Kip değişince kısayol silinir; sonraki yazma yine onay ister.
     assert.equal(await k.invoke('izin_kipi_degistir', { oturum, kip: 'Proje' }), 'Proje');
     assert.equal(await k.invoke('izin_kipi_degistir', { oturum, kip: 'Siki' }), 'Siki');
-    await sureyleBekle(async () => (await izinler(k)) === '', 5000, 'kısayol listesi kalkmadı');
+    // Panel eklentiler için görünür kalabilir (aşama 4 §14); kısayol sayılmaz.
+    await sureyleBekle(
+      async () => ['', 'Bu oturumdaki izinler (0)'].includes(await izinler(k)),
+      5000,
+      'kısayol listesi kalkmadı',
+    );
     await k.gonder('üçüncü yazma');
     await sureyleBekle(() => onayKartiVar(k), 15000, 'üçüncü yazmada onay sorulmadı');
     await k.onaySayfasiniAc();

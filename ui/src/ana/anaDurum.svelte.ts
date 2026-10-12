@@ -11,6 +11,7 @@ import { komutHatasi } from '../ipc/hata';
 import type {
   DenetciDurumu,
   CagriId,
+  GunlukSinirDurumu,
   IslemId,
   Kip,
   OnarimSonucu,
@@ -38,8 +39,10 @@ export class AnaDurum {
   gunlukAcik = $derived(this.gunlukOturum !== null);
   /** Ekran okuyucuya okunan son duyuru (`aria-live`, 1c tasarımı §9.5). */
   duyuru = $state('');
-  /** Menünün seçtiği görünüm: oturumlar ya da Ayarlar (aşama 2 tasarımı §10.4). */
-  gorunum = $state<'oturumlar' | 'ayarlar'>('oturumlar');
+  /** Menünün seçtiği görünüm: oturumlar, Eklentiler ya da Ayarlar (aşama 2 tasarımı §10.4). */
+  gorunum = $state<'oturumlar' | 'eklentiler' | 'ayarlar'>('oturumlar');
+  /** EVREN'in günlük token sınırı doldu; `null`: dolmadı (aşama 4c). */
+  gunlukSinir = $state<GunlukSinirDurumu | null>(null);
   /** Yalıtıma açılan araç zinciri dizinleri (Linux ve Windows). */
   aracZinciri = $state<string[]>([]);
   /** Windows: kayıtlı bir dizin kapta okunamıyor; Gelişmiş'te Onar gösterilir. */
@@ -71,6 +74,7 @@ export class AnaDurum {
     await this.#dene(async () => {
       this.denetci = await ipc.denetciKipi();
     });
+    await this.gunlukSiniriYenile();
     await this.#dene(() => ipc.yalitimiDinle((d) => this.#yalitimYaz(d)));
     await this.listeyiYenile();
     const son = this.uygulama?.son_oturum;
@@ -290,6 +294,21 @@ export class AnaDurum {
     this.hata = null;
   }
 
+  /** Eklentiler ekranını açar; listeyi ekranın kendisi okur (aşama 4 tasarımı §14). */
+  eklentileriAc(): void {
+    this.gorunum = 'eklentiler';
+    this.hata = null;
+  }
+
+  /**
+   * Günlük sınırın şimdiki durumunu okur: açılışta ve tur bitince. Sınır bir
+   * istek reddedilince konur, başarılı bir istekle kalkar (aşama 4c).
+   */
+  async gunlukSiniriYenile(): Promise<void> {
+    const sinir = await this.#dene(() => ipc.gunlukSinir());
+    if (sinir !== undefined) this.gunlukSinir = sinir;
+  }
+
   /** Algılamayı yeniden çalıştırır (aşama 2 tasarımı §8.3). */
   async yalitimiAlgila(): Promise<void> {
     this.algilaniyor = true;
@@ -388,10 +407,14 @@ export class AnaDurum {
       // Paket numarasında boşluk: oturum kayıttan yeniden açılır (1c tasarımı §4.4).
       queueMicrotask(() => void this.yenidenAc(oturum));
     }
-    const turBitti = yeni.ogeler
-      .slice(onceki.ogeler.length)
-      .some((o) => o.tip === 'TurSonu' || o.tip === 'AktarimDurdu');
+    const yeniOgeler = yeni.ogeler.slice(onceki.ogeler.length);
+    const turBitti = yeniOgeler.some((o) => o.tip === 'TurSonu' || o.tip === 'AktarimDurdu');
     if (turBitti) void this.listeyiYenile();
+    // Hatayla biten tur sınıra çarpmış olabilir; normal biten tur sınırı kaldırmış olabilir.
+    const sinirDegisti = yeniOgeler.some(
+      (o) => o.tip === 'TurSonu' && (o.neden.tip === 'Normal' || o.neden.tip === 'Hata'),
+    );
+    if (sinirDegisti) void this.gunlukSiniriYenile();
   }
 
   /** Onay istekleri ve tur sonları duyurulur; akan token'lar duyurulmaz. */

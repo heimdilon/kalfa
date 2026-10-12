@@ -189,6 +189,8 @@ async fn kimlik_deposu_yazilamazsa_anahtar_bellekte_tutulur() {
         aktarim: Default::default(),
         yalitim_dizini: d.path().join("yalitim"),
         geri_alma_dizini: d.path().join("geri-alma"),
+        eklenti_verisi_dizini: d.path().join("eklenti-verisi"),
+        yerlesik_eklentiler: None,
         kalfa_araclari: Vec::new(),
         ev_dizini: std::env::temp_dir(),
         yalitim: YalitimKaynagi::Kurucu(Box::new(|_| Arc::new(Yalitimsiz))),

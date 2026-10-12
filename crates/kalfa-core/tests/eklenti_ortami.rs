@@ -518,6 +518,11 @@ async fn onizleme_acikken_karar_gelmeden_ilerlemez() {
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(arac.bitti(), 0);
     assert!(eklenti_sonuclari(&yol).is_empty());
+    // "Metni göster": gövde karar gelene kadar tutamaçtan okunur.
+    assert_eq!(
+        surucu.tutamac.bekleyen_eklenti_govdesi(islem).as_deref(),
+        Some("metin")
+    );
 
     surucu
         .gonder(Komut::GonderimKarari {
@@ -528,6 +533,11 @@ async fn onizleme_acikken_karar_gelmeden_ilerlemez() {
         .await;
     // Aracın kendi sonucu da modele gitmeden önce gösterilir.
     let (islem2, neden2, _) = onizleme_bekle(&mut surucu).await;
+    assert_eq!(
+        surucu.tutamac.bekleyen_eklenti_govdesi(islem),
+        None,
+        "karar verilince gövde bırakılır"
+    );
     assert_eq!(neden2, OnizlemeNedeni::Onizleme);
     surucu
         .gonder(Komut::GonderimKarari {
@@ -654,11 +664,17 @@ async fn onizleme_beklerken_tur_iptali() {
     );
     surucu.gonder(Komut::OnizlemeAyarla { acik: true }).await;
     surucu.gonder(selam()).await;
-    onizleme_bekle(&mut surucu).await;
+    let (islem, _, _) = onizleme_bekle(&mut surucu).await;
+    assert!(surucu.tutamac.bekleyen_eklenti_govdesi(islem).is_some());
 
     surucu.tutamac.iptal_et();
 
     assert_eq!(surucu.tur_sonu().await, BitisNedeni::Iptal);
+    assert_eq!(
+        surucu.tutamac.bekleyen_eklenti_govdesi(islem),
+        None,
+        "iptalde gövde bırakılır"
+    );
     assert_eq!(arac.bitti(), 0);
     assert!(eklenti_sonuclari(&yol).is_empty());
     assert!(surucu.olaylar().iter().any(|o| matches!(

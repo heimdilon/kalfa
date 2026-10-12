@@ -132,6 +132,10 @@ pub struct OnayOgesi {
     /// uygun öğede. Mühre girmez.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kisayol: Option<crate::kisayol::KisayolTeklifi>,
+    /// Eklenti aracında eklentinin tarifi; arayüz ilk gönderim kartını buna
+    /// göre gösterir (aşama 4 tasarımı §8.4, §14). Mühre hazırlıktan girer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eklenti: Option<crate::arac::EklentiTarifi>,
 }
 
 /// Onay kartında "Veri çıkışı" satırı (aşama 3b, tasarım §9.3).

@@ -180,3 +180,60 @@ describe('komutlar', () => {
     expect(durum.ekranlar.has('o1')).toBe(false);
   });
 });
+
+describe('eklentiler ve günlük sınır (aşama 4d)', () => {
+  it('Eklentiler görünümü açılır, şerit temizlenir; oturum seçilince geri dönülür', async () => {
+    const { durum } = await acilmis();
+    durum.hata = 'eski hata';
+    durum.eklentileriAc();
+    expect(durum.gorunum).toBe('eklentiler');
+    expect(durum.hata).toBeNull();
+    await durum.oturumSec('o1');
+    expect(durum.gorunum).toBe('oturumlar');
+  });
+
+  it('açılışta günlük sınır bir kez okunur; yoksa null', async () => {
+    const { arka, durum } = await acilmis();
+    expect(arka.komutlar('gunluk_sinir')).toEqual([{}]);
+    expect(durum.gunlukSinir).toBeNull();
+  });
+
+  it('açılışta dolu sınır durumda tutulur', async () => {
+    const { durum } = await acilmis((a) => (a.gunlukSinir = { sifirlanma: '2026-10-12T00:00:00Z' }));
+    expect(durum.gunlukSinir).toEqual({ sifirlanma: '2026-10-12T00:00:00Z' });
+  });
+
+  it('normal ve hatayla biten tur sınırı yeniden okur; iptal ve aktarım durması okumaz', async () => {
+    const { arka, durum } = await acilmis();
+    const say = () => arka.komutlar('gunluk_sinir').length;
+    const bekle = () => new Promise((r) => setTimeout(r, 0));
+    expect(say()).toBe(1);
+
+    arka.gunlukSinir = { sifirlanma: null };
+    arka.olaylar('o1', [{ tip: 'TurBasladi' }, { tip: 'Tamamlandi', neden: { tip: 'Hata' } }]);
+    await bekle();
+    expect(say()).toBe(2);
+    expect(durum.gunlukSinir).toEqual({ sifirlanma: null });
+
+    arka.gunlukSinir = null;
+    arka.olaylar('o1', [{ tip: 'TurBasladi' }, { tip: 'Tamamlandi', neden: { tip: 'Normal' } }]);
+    await bekle();
+    expect(say()).toBe(3);
+    expect(durum.gunlukSinir).toBeNull();
+
+    arka.olaylar('o1', [{ tip: 'TurBasladi' }, { tip: 'Tamamlandi', neden: { tip: 'Iptal' } }]);
+    arka.olaylar('o1', [{ tip: 'TurBasladi' }, { tip: 'AktarimDurdu', neden: 'Diger' }]);
+    await bekle();
+    expect(say()).toBe(3);
+  });
+
+  it('başka oturum seçiliyken biten turda da sınır okunur: sınır hesap geneldir', async () => {
+    const { arka, durum } = await acilmis((a) => a.oturumEkle({ oturum: 'o2' }, { baslik: 'İkinci' }));
+    await durum.oturumSec('o2');
+    const once = arka.komutlar('gunluk_sinir').length;
+    arka.olaylar('o1', [{ tip: 'TurBasladi' }, { tip: 'Tamamlandi', neden: { tip: 'Normal' } }]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(durum.secili).toBe('o2');
+    expect(arka.komutlar('gunluk_sinir').length).toBe(once + 1);
+  });
+});

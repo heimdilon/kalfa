@@ -7,10 +7,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use kalfa_core::saglayici::{Saglayici, SaglayiciAkisi};
+use kalfa_core::test_destek::{sahte_ek_yanit, sahte_modeller};
 use kalfa_evren::tipler::{
-    ChatMessage, ChatRequest, ChatResponse, Choice, Role, TermsStatus, TermsText,
+    ChatMessage, ChatRequest, ChatResponse, Choice, ModelInfo, Role, TermsStatus, TermsText,
 };
-use kalfa_evren::{EvrenError, YanitMeta};
+use kalfa_evren::{EkUc, EvrenError, HamYanit, YanitMeta};
 
 use super::senaryo::{self, Adim, Senaryo};
 use super::{E2eAyarlari, SartBaslangici};
@@ -186,5 +187,33 @@ impl Saglayici for SahteSaglayici {
         }
         *self.evren.kabul() = true;
         Ok(())
+    }
+
+    /// Bir sohbet, bir gömme ve bir yeniden sıralama modeli (aşama 4).
+    async fn modeller(&self) -> Result<Vec<ModelInfo>, EvrenError> {
+        self.denetle()?;
+        Ok(sahte_modeller())
+    }
+
+    /// Eklentinin gömme ve yeniden sıralama istekleri: metnin özetinden
+    /// belirlenimli vektör ve kelime örtüşmesine göre puan (`sahte_ek_yanit`).
+    async fn ek_uc(&self, uc: EkUc, govde: &serde_json::Value) -> Result<HamYanit, EvrenError> {
+        self.denetle()?;
+        if !*self.evren.kabul() {
+            return Err(EvrenError::SartKabulGerekli {
+                surum: Some(SART_SURUMU),
+            });
+        }
+        let no = self.evren.istek_sayaci.fetch_add(1, Ordering::Relaxed);
+        let model = format!("qwen/{}", govde["model"].as_str().unwrap_or_default());
+        Ok(HamYanit {
+            govde: sahte_ek_yanit(uc, govde).to_string(),
+            model: Some(model.clone()),
+            meta: YanitMeta {
+                istek_id: Some(format!("e2e-ek-{no}")),
+                yonlendirilen_model: Some(model),
+                kredi: None,
+            },
+        })
     }
 }

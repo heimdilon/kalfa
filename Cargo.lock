@@ -2964,6 +2964,7 @@ dependencies = [
  "futures-util",
  "kalfa-core",
  "kalfa-evren",
+ "kalfa-plugin",
  "kalfa-sandbox",
  "kalfa-tools",
  "kalfa-uygulama",

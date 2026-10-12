@@ -6,6 +6,7 @@ import type {
   AracDurumu,
   DenetimKipi,
   EkUc,
+  EklentiDurumu,
   Kip,
   KisayolTeklifi,
   ModelProfili,
@@ -78,6 +79,7 @@ export const tr = {
 
   'menu.ad': 'Menü',
   'menu.oturumlar': 'Oturumlar',
+  'menu.eklentiler': 'Eklentiler',
   'menu.ayarlar': 'Ayarlar',
   'menu.anahtar': 'Anahtarı değiştir',
   'menu.gunluk': 'Gönderim günlüğü',
@@ -154,6 +156,8 @@ export const tr = {
   'onay.sayfa.ne': 'Ne',
   'onay.sayfa.nerede': 'Nerede',
   'onay.sayfa.veri_cikisi': 'Veri çıkışı',
+  'onay.sayfa.kaynak': 'Kaynak',
+  'onay.sayfa.kaynak_eklenti': 'Eklenti {ad} {surum}',
   'onay.veri.DosyaIcerigi': 'Dosya içeriği',
   'onay.veri.KomutCiktisi': 'Komut çıktısı',
   'onay.veri.AramaSonuclari': 'Arama sonuçları',
@@ -315,6 +319,66 @@ export const tr = {
   'eklenti.dosya_yok': 'Bu çağrıda okunan dosya yok.',
   'eklenti.metin_kayitsiz':
     'Metin kayda yazılmadı. Eklentinin gönderdiği metin okuduğu dosyalardan türetildiği için kayda kopyalanmaz; metni görmek için “Göndermeden önce göster”i açın.',
+  'eklenti.metin_goster': 'Metni göster',
+  'eklenti.metin_gizle': 'Metni gizle',
+  'eklenti.metin_baslik': "EVREN'e gidecek metin",
+
+  // İlk gönderim kartı (aşama 4 tasarımı §8.4, §14).
+  'ilk_gonderim.baslik': "EVREN'e ilk gönderim: {ad}",
+  'ilk_gonderim.eklenti': 'Eklenti',
+  'ilk_gonderim.uclar': 'EVREN uçları',
+  'ilk_gonderim.dosyalar': 'Okuyabileceği dosyalar',
+  'ilk_gonderim.dosya_degeri': '{sayi} dosya ({boyut})',
+  'ilk_gonderim.neden': 'Neden izin gerekiyor',
+  'ilk_gonderim.yerel':
+    'Bu izin kalıcı olduğu için onayınız yerel bir pencerede ayrıca sorulur.',
+
+  // Eklentiler ekranı (aşama 4 tasarımı §13, §14).
+  'eklentiler.baslik': 'Eklentiler',
+  'eklentiler.kur': 'Klasörden kur',
+  'eklentiler.aciklama':
+    "Eklentiler Kalfa'ya yeni araçlar ekler. Bir eklenti yalnızca açtığınız çalışma alanlarında kullanılır; yerleşik eklentiler başlangıçta hiçbir çalışma alanında açık değildir.",
+  'eklentiler.liste': 'Kurulu eklentiler',
+  'eklentiler.yukleniyor': 'Eklentiler yükleniyor…',
+  'eklentiler.bos': 'Kurulu eklenti yok. "Klasörden kur" ile bir eklenti ekleyebilirsiniz.',
+  'eklentiler.yerlesik': 'Yerleşik',
+  'eklentiler.kurulu': 'Kurulu',
+  'eklentiler.durum.Yuklendi': 'Yüklendi',
+  'eklentiler.durum.DevreDisi': 'Devre dışı',
+  'eklentiler.durum.Yuklenemedi': 'Yüklenemedi',
+  'eklentiler.neden': 'Neden: {neden}',
+  'eklentiler.araclar': 'Araçlar',
+  'eklentiler.ayrinti': 'Ayrıntı',
+  'eklentiler.ayrinti.aciklama': 'Açıklama',
+  'eklentiler.ayrinti.yetenek': 'Yetenekler',
+  'eklentiler.ayrinti.sha256': 'SHA-256',
+  'eklentiler.ayrinti.kaynak': 'Kaynak klasör',
+  'eklentiler.ayrinti.kurulum': 'Kurulum tarihi',
+  'eklentiler.devre_disi': 'Devre dışı bırak',
+  'eklentiler.etkinlestir': 'Etkinleştir',
+  'eklentiler.guncelle': 'Güncelle',
+  'eklentiler.kaldir': 'Kaldır',
+  'eklentiler.alanlar': 'Çalışma alanları',
+  'eklentiler.alan_yok':
+    'Bu eklenti henüz hiçbir çalışma alanında açılmadı. Bir oturumun "Bu oturumdaki izinler" panelinden o çalışma alanında açabilirsiniz.',
+  'eklentiler.alan_acik': 'Bu çalışma alanında açık',
+  'eklentiler.gonderim': "EVREN'e gönderim",
+  'eklentiler.izin_var': 'İzin var · {tarih}',
+  'eklentiler.izin_yok': 'İzin yok',
+  'eklentiler.izni_kaldir': 'İzni kaldır',
+  'eklentiler.depo': 'Depo',
+  'eklentiler.veriyi_sil': 'Veriyi sil',
+  'eklentiler.kuruldu': '{ad} {surum} kuruldu.',
+  'eklentiler.guncellendi': '{ad} {surum} güncellendi.',
+  'eklentiler.izinler_silindi':
+    "Yeni sürüm EVREN'e gönderim kapsamını değiştirdiği için bu eklentinin gönderim izinleri silindi. İlk gönderim yeniden sorulacak.",
+  'eklentiler.kurulamadi': 'Eklenti kurulamadı: {mesaj}',
+
+  // "Bu oturumdaki izinler" panelindeki eklentiler (aşama 4 tasarımı §14).
+  'oturum.eklentiler': 'Eklentiler',
+  'oturum.eklenti.aciklama':
+    "Açık eklentilerin araçları modele sunulur. Eklentinin EVREN'e ilk gönderimi ayrıca sorulur.",
+  'oturum.eklenti.kullanilamaz': 'Devre dışı ya da yüklenemedi',
 
   'durum.ad': 'Durum çubuğu',
   'durum.hazir': 'Hazır',
@@ -334,6 +398,10 @@ export const tr = {
   'durum.yalitimsiz_ipucu':
     'Yalıtım yok; komutlar onayınızla yalıtımsız çalışıyor. Ayrıntı için tıklayın.',
   'durum.yalitimli_ipucu': 'Komutlar yalıtımda çalışıyor ({arka_uc})',
+  'durum.gunluk_sinir': 'Günlük sınır doldu',
+  'durum.gunluk_sinir_sifirlanma': 'Günlük sınır doldu · sıfırlanma {saat}',
+  'durum.gunluk_sinir_ipucu':
+    "EVREN'in günlük token sınırı doldu (bütün anahtarlarınızın toplamı). Sınır açılana kadar EVREN istekleri yanıtlanmaz.",
 
   'ayarlar.baslik': 'Ayarlar',
   'ayarlar.yalitim': 'Yalıtım',
@@ -506,6 +574,23 @@ export const EKLENTI_UC_ADI: Record<EkUc, MetinAnahtari> = {
   Gomme: 'eklenti.uc.Gomme',
   Siralama: 'eklenti.uc.Siralama',
 };
+
+/** Eklenti durumunun okunur adı (aşama 4 tasarımı §14). */
+export const EKLENTI_DURUMU_ADI: Record<EklentiDurumu['tip'], MetinAnahtari> = {
+  Yuklendi: 'eklentiler.durum.Yuklendi',
+  DevreDisi: 'eklentiler.durum.DevreDisi',
+  Yuklenemedi: 'eklentiler.durum.Yuklenemedi',
+};
+
+/**
+ * Eklenti tarifindeki manifest ucunun (`embeddings`, `rerank`) okunur adı;
+ * bilinmeyen uç olduğu gibi.
+ */
+export function evrenUcuAdi(uc: string): string {
+  if (uc === 'embeddings') return m(EKLENTI_UC_ADI.Gomme);
+  if (uc === 'rerank') return m(EKLENTI_UC_ADI.Siralama);
+  return uc;
+}
 
 export const KIP_ADI: Record<Kip, MetinAnahtari> = {
   Inceleme: 'kip.Inceleme',

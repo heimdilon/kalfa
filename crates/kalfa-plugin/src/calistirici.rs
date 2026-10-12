@@ -389,7 +389,27 @@ impl Eklenti {
 
 #[cfg(test)]
 mod tests {
-    use super::izinli_import;
+    use super::{araclari_dogrula, izinli_import};
+    use crate::bag::exports::kalfa::plugin::arac::AracTanimi;
+
+    fn tanim(aciklama: String) -> AracTanimi {
+        AracTanimi {
+            ad: "ara".into(),
+            aciklama,
+            parametre_semasi: r#"{"type":"object"}"#.into(),
+        }
+    }
+
+    /// S17 (§16.3): araç açıklaması güvenilmeyen içeriktir; 1 000 karakterden
+    /// uzunu eklentiyi yükletmez.
+    #[test]
+    fn arac_aciklamasi_bin_karakterle_sinirli() {
+        assert!(araclari_dogrula(vec![tanim("ş".repeat(1_000))]).is_ok());
+        let hata = araclari_dogrula(vec![tanim("ş".repeat(1_001))])
+            .unwrap_err()
+            .to_string();
+        assert!(hata.contains("1 000 karakter"), "{hata}");
+    }
 
     #[test]
     fn import_izin_listesi() {

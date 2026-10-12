@@ -114,3 +114,40 @@ pub fn oturum_dizini(veri_dizini: &Path) -> PathBuf {
 pub fn kayit_yolu(oturum_dizini: &Path, oturum: OturumId) -> PathBuf {
     oturum_dizini.join(format!("{oturum}.jsonl"))
 }
+
+/// Klasörden kurulan eklentilerin kökü (aşama 4 tasarımı §13.2): her eklenti
+/// `<kök>/<ad>/` altında `kalfa.toml` ve `eklenti.wasm`'dır.
+pub fn kurulu_eklenti_dizini(veri_dizini: &Path) -> PathBuf {
+    veri_dizini.join("eklentiler")
+}
+
+/// Eklenti depolarının kökü (§10); kural `geri_alma_dizini`'ninkidir:
+/// Windows'ta `%LOCALAPPDATA%\Kalfa\eklenti-verisi`. Bir depo
+/// `<kök>/<eklenti adı>/<çalışma alanı kimliği>/`'dir.
+pub fn eklenti_verisi_dizini(veri: &Path, yerel_veri: &Path, ortam: Option<OsString>) -> PathBuf {
+    if cfg!(windows) && ortam.filter(|d| !d.is_empty()).is_none() {
+        return yerel_veri.join("Kalfa").join("eklenti-verisi");
+    }
+    veri.join("eklenti-verisi")
+}
+
+/// Yerleşik eklentilerin dizinini değiştirir (§13.1). Yalnızca hata ayıklama
+/// ve uçtan uca test derlemesinde okunur.
+pub const YERLESIK_EKLENTI_DEGISKENI: &str = "KALFA_YERLESIK_EKLENTILER";
+
+/// Yerleşik eklentilerin dizini (§13.1): her eklenti `<dizin>/<ad>/` altında
+/// `kalfa.toml` ve `eklenti.wasm`'dır. Kurulu sürümde Tauri'nin kaynak
+/// dizinindeki `eklentiler`; `gelistirme` (hata ayıklama ya da e2e) ise
+/// `KALFA_YERLESIK_EKLENTILER` önceliklidir. Dizin yoksa `None`.
+pub fn yerlesik_eklenti_dizini(
+    kaynak_dizini: Option<&Path>,
+    ortam: Option<OsString>,
+    gelistirme: bool,
+) -> Option<PathBuf> {
+    if gelistirme && let Some(dizin) = ortam.filter(|d| !d.is_empty()) {
+        return Some(PathBuf::from(dizin));
+    }
+    kaynak_dizini
+        .map(|k| k.join("eklentiler"))
+        .filter(|d| d.is_dir())
+}

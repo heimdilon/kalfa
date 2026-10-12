@@ -2,12 +2,14 @@
 //! oturumlar sağlayıcıya, anahtarı çalışırken değiştirilebilen paylaşılan bir
 //! sarmalayıcı üzerinden erişir (1c tasarımı §7.2).
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use async_trait::async_trait;
 use kalfa_core::saglayici::{EvrenSaglayici, Saglayici, SaglayiciAkisi};
 use kalfa_evren::tipler::{ChatRequest, TermsStatus, TermsText};
 use kalfa_evren::{ApiAnahtari, EvrenError, EvrenIstemcisi};
+
+use crate::sozlesme::GunlukSinirDurumu;
 
 /// EVREN'in taban adresini değiştirir (yerel denemeler). Yalnızca hata
 /// ayıklama derlemesinde okunur: sürümde anahtar başka bir adrese gidemez.
@@ -35,6 +37,10 @@ impl SaglayiciUretici for EvrenUretici {
 #[derive(Default)]
 pub struct DegisirSaglayici {
     ic: RwLock<Option<Arc<dyn Saglayici>>>,
+    /// EVREN'in günlük token sınırı doldu (aşama 4 tasarımı §9.5). Sınır hesap
+    /// geneldir: sohbet, denetçi ve eklenti isteklerinden biri ona çarpınca
+    /// saklanır, biri başarılı olunca kalkar.
+    gunluk_sinir: Mutex<Option<GunlukSinirDurumu>>,
 }
 
 impl DegisirSaglayici {
@@ -49,19 +55,43 @@ impl DegisirSaglayici {
             .clone()
             .ok_or(EvrenError::AnahtarGecersiz)
     }
+
+    /// Günlük sınır dolduysa durumu; dolmadıysa `None`.
+    pub fn gunluk_sinir(&self) -> Option<GunlukSinirDurumu> {
+        self.gunluk_sinir
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .clone()
+    }
+
+    /// `akis`, `sohbet` ve `ek_uc` sonucunu izler; sonucu değiştirmez. Akışın
+    /// içindeki hatalar kapsam dışıdır.
+    fn izle<T>(&self, sonuc: Result<T, EvrenError>) -> Result<T, EvrenError> {
+        let mut durum = self.gunluk_sinir.lock().unwrap_or_else(|z| z.into_inner());
+        match &sonuc {
+            Ok(_) => *durum = None,
+            Err(EvrenError::GunlukSinir { sifirlanma }) => {
+                *durum = Some(GunlukSinirDurumu {
+                    sifirlanma: sifirlanma.clone(),
+                });
+            }
+            Err(_) => {}
+        }
+        sonuc
+    }
 }
 
 #[async_trait]
 impl Saglayici for DegisirSaglayici {
     async fn akis(&self, istek: ChatRequest) -> Result<SaglayiciAkisi, EvrenError> {
-        self.simdiki()?.akis(istek).await
+        self.izle(self.simdiki()?.akis(istek).await)
     }
 
     async fn sohbet(
         &self,
         istek: ChatRequest,
     ) -> Result<(kalfa_evren::tipler::ChatResponse, kalfa_evren::YanitMeta), EvrenError> {
-        self.simdiki()?.sohbet(istek).await
+        self.izle(self.simdiki()?.sohbet(istek).await)
     }
 
     async fn sart_metni(&self) -> Result<TermsText, EvrenError> {
@@ -85,6 +115,6 @@ impl Saglayici for DegisirSaglayici {
         uc: kalfa_evren::EkUc,
         govde: &serde_json::Value,
     ) -> Result<kalfa_evren::HamYanit, EvrenError> {
-        self.simdiki()?.ek_uc(uc, govde).await
+        self.izle(self.simdiki()?.ek_uc(uc, govde).await)
     }
 }

@@ -8,10 +8,15 @@ import {
   aracKartDurumu,
   ciktiOnizlemesi,
   gruplara,
+  gunAy,
+  gunlukSinirMetni,
+  kodParcalari,
   kredi,
+  mbMetni,
   satirBasligi,
   satirDurumu,
   sayi,
+  tarih,
   zamanEtiketi,
 } from './bicim';
 import { sonucGovdesi } from './bicim';
@@ -192,5 +197,60 @@ describe('sonucGovdesi (güvenlik analizi Bulgu 5)', () => {
   it('eski kayıtlardaki kaynak satırını ve etiketsiz metni işler', () => {
     expect(sonucGovdesi('[kaynak: dosya:a.rs]\niçerik')).toBe('içerik');
     expect(sonucGovdesi('[hata] olmadı')).toBe('[hata] olmadı');
+  });
+});
+
+describe('eklenti ekranının biçimleri (aşama 4 tasarımı §14)', () => {
+  const IZIN = new Date(2026, 9, 20, 10, 5).getTime();
+
+  it('izin günü "20 Ekim", kurulum tarihi "20 Ekim 2026"', () => {
+    expect(gunAy(IZIN)).toBe('20 Ekim');
+    expect(tarih(IZIN)).toBe('20 Ekim 2026');
+  });
+
+  it("ilk gönderim boyutu Rust'taki metinle aynı: ondalık MB, tek basamak", () => {
+    expect(mbMetni(6_000_000)).toBe('6,0 MB');
+    expect(mbMetni(5_950_000)).toBe('6,0 MB');
+    expect(mbMetni(1_234_567)).toBe('1,2 MB');
+    expect(mbMetni(0)).toBe('0,0 MB');
+    // Tam yarıda Rust gibi çifte yuvarlanır.
+    expect(mbMetni(250_000)).toBe('0,2 MB');
+    expect(mbMetni(750_000)).toBe('0,8 MB');
+  });
+
+  it('ters tırnaklı parçalar kod olur; başka işaret yorumlanmaz', () => {
+    expect(kodParcalari('a `b` c')).toEqual([
+      { metin: 'a ', kod: false },
+      { metin: 'b', kod: true },
+      { metin: ' c', kod: false },
+    ]);
+    expect(kodParcalari('`**/*.md`, `docs/**`')).toEqual([
+      { metin: '**/*.md', kod: true },
+      { metin: ', ', kod: false },
+      { metin: 'docs/**', kod: true },
+    ]);
+    expect(kodParcalari('**kalın** <b>x</b>')).toEqual([
+      { metin: '**kalın** <b>x</b>', kod: false },
+    ]);
+    expect(kodParcalari('')).toEqual([]);
+  });
+
+  it('kapanmayan ters tırnak olduğu gibi kalır, hiçbir karakter düşmez', () => {
+    expect(kodParcalari('a `b')).toEqual([{ metin: 'a `b', kod: false }]);
+    expect(kodParcalari('`x` ve `y')).toEqual([
+      { metin: 'x', kod: true },
+      { metin: ' ve `y', kod: false },
+    ]);
+  });
+
+  it('günlük sınır: sıfırlanma anı yerel saatle, geçersizse yalnızca ilk kısım', () => {
+    const yerel = new Date(2026, 9, 12, 3, 0).toISOString();
+    expect(gunlukSinirMetni({ sifirlanma: yerel })).toBe('Günlük sınır doldu · sıfırlanma 03:00');
+    expect(gunlukSinirMetni({ sifirlanma: new Date(2026, 9, 12, 23, 45).toISOString() })).toBe(
+      'Günlük sınır doldu · sıfırlanma 23:45',
+    );
+    for (const sifirlanma of [null, '', 'yarın', '12', '2026-13-45T25:61:00Z']) {
+      expect(gunlukSinirMetni({ sifirlanma })).toBe('Günlük sınır doldu');
+    }
   });
 });

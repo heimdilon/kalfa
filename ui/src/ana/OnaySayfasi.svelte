@@ -6,7 +6,8 @@
   geri alınabilir dosya değişikliğiyse başlıkta "Bu değişiklikler geri
   alınabilir" yazar; bilgiyi çekirdek verir (aşama 3 tasarımı §5.11). Kabuk
   çağrısında diff yerine komut, dizin, ağ ve yalıtım gösterilir (aşama 2
-  tasarımı §10.2).
+  tasarımı §10.2). Eklentinin bir çalışma alanındaki ilk EVREN gönderiminde
+  diff yerine ilk gönderim kartı gösterilir (aşama 4 tasarımı §8.4).
 -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
@@ -24,6 +25,7 @@
   import { kisayolCumlesi, m } from '../dil/tr';
   import type { CagriId, OnayGirdisi, OnayOgesi, VeriCikisi } from '../ipc/tipler';
   import { geriAlinabilirlikMetni } from './geriAlma';
+  import IlkGonderimKarti from './IlkGonderimKarti.svelte';
   import { kararlariUret, kisaAd, riskliMi, type OnaySecimi } from './onay';
 
   function veriCikisiMetni(v?: VeriCikisi): string {
@@ -70,6 +72,12 @@
 
   const aktifOge = $derived(ogeler[aktif] ?? ogeler[0]);
   const parcalar = $derived(aktifOge?.diff ? diffCozumle(aktifOge.diff) : []);
+  const ilkGonderim = $derived(aktifOge?.eklenti?.ilk_gonderim === true);
+  // İlk gönderimde açıklamanın tamamı ilk gönderim kartındadır; "Ne" satırında
+  // eklentinin aracını adlandıran ilk paragraf yeter.
+  const neMetni = $derived(
+    ilkGonderim ? (aktifOge.aciklama.split('\n\n')[0] ?? aktifOge.aciklama) : aktifOge.aciklama,
+  );
   const tumu = $derived(secilenler.size === ogeler.length);
   /** Seçilen öğelerin hepsi geri alınabilir dosya değişikliği. */
   const hepsiGeriAlinabilir = $derived(
@@ -186,7 +194,10 @@
 
       <div class="onizleme">
         <div class="onizleme-ust">
-          <Icon name={aktifOge.kabuk ? 'square-terminal' : 'file-text'} size={16} />
+          <Icon
+            name={aktifOge.kabuk ? 'square-terminal' : aktifOge.eklenti ? 'puzzle' : 'file-text'}
+            size={16}
+          />
           <div class="yol-blogu">
             <div class="ad"><GorunurMetin metin={kisaAd(aktifOge)} /></div>
             {#if aktifOge.hedefler[0]}<div class="yol">
@@ -246,6 +257,8 @@
               </dd>
             {/if}
           </dl>
+        {:else if ilkGonderim}
+          <IlkGonderimKarti oge={aktifOge} />
         {:else}
           <div class="diff">
             {#each parcalar as p, i (i)}
@@ -261,8 +274,19 @@
     <dl class="bilgiler">
       <div class="bilgi">
         <dt><Icon name="info" size={16} />{m('onay.sayfa.ne')}</dt>
-        <dd><GorunurMetin metin={aktifOge.aciklama} /></dd>
+        <dd><GorunurMetin metin={neMetni} /></dd>
       </div>
+      {#if aktifOge.eklenti}
+        <div class="bilgi">
+          <dt><Icon name="puzzle" size={16} />{m('onay.sayfa.kaynak')}</dt>
+          <dd>
+            {m('onay.sayfa.kaynak_eklenti', {
+              ad: aktifOge.eklenti.ad,
+              surum: aktifOge.eklenti.surum,
+            })}
+          </dd>
+        </div>
+      {/if}
       {#if aktifOge.hedefler.length > 0}
         <div class="bilgi">
           <dt><Icon name="folder" size={16} />{m('onay.sayfa.nerede')}</dt>
@@ -312,7 +336,8 @@
       <p class="yerel"><Icon name="shield-alert" size={16} />{m('onay.sayfa.riskli')}</p>
     {/if}
 
-    {#if ogeler.some((o) => o.yerel_onay)}
+    <!-- Eklentinin yerel onayını ilk gönderim kartı anlatır. -->
+    {#if ogeler.some((o) => o.yerel_onay && !o.eklenti)}
       <p class="yerel"><Icon name="shield-alert" size={16} />{m('onay.kabuk.yerel')}</p>
     {/if}
 

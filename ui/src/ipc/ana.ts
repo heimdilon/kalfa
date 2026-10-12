@@ -3,6 +3,11 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import type {
   AgHostu,
+  AlanHedefi,
+  EklentiSatiri,
+  GunlukSinirDurumu,
+  KurulumSonucu,
+  OturumEklentisi,
   GizliAyarGorunumu,
   CagriId,
   CalismaAlani,
@@ -192,3 +197,35 @@ export const gonderimKarari = (
     gonderilmeyecekler,
     hep_gonderilecekler,
   });
+
+// ── Eklentiler (aşama 4 tasarımı §13, §14) ──────────────────────────────────
+
+export const eklentileriListele = () => invoke<EklentiSatiri[]>('eklentileri_listele');
+
+/** Klasör seçici ve onay yerel penceredir; arayüz yol göndermez. */
+export const eklentiKlasordenKur = () => invoke<KurulumSonucu>('eklenti_klasorden_kur');
+
+/** Yerel pencerede onaylanır; vazgeçilirse `false`. */
+export const eklentiKaldir = (ad: string) => invoke<boolean>('eklenti_kaldir', { ad });
+
+export const eklentiEtkinAyarla = (ad: string, etkin: boolean) =>
+  invoke<void>('eklenti_etkin_ayarla', { ad, etkin });
+
+export const eklentiAlaniAyarla = (ad: string, hedef: AlanHedefi, acik: boolean) =>
+  invoke<void>('eklenti_alani_ayarla', { ad, hedef, acik });
+
+export const gonderimIzniniKaldir = (ad: string, kimlik: string) =>
+  invoke<void>('gonderim_iznini_kaldir', { ad, kimlik });
+
+/** Yerel pencerede onaylanır; vazgeçilirse `false`. */
+export const eklentiVerisiniSil = (ad: string, kimlik: string) =>
+  invoke<boolean>('eklenti_verisini_sil', { ad, kimlik });
+
+export const oturumEklentileri = (oturum: OturumId) =>
+  invoke<OturumEklentisi[]>('oturum_eklentileri', { oturum });
+
+/** Önizlemede bekleyen eklenti isteğinin gövdesi ("Metni göster"). */
+export const eklentiIstegi = (oturum: OturumId, islem: IslemId) =>
+  invoke<string>('eklenti_istegi', { oturum, islem });
+
+export const gunlukSinir = () => invoke<GunlukSinirDurumu | null>('gunluk_sinir');

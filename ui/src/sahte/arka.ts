@@ -6,6 +6,8 @@ import { mockIPC } from '@tauri-apps/api/mocks';
 import { KIPLER } from '../ipc/tipler';
 import type {
   AgHostu,
+  AlanHedefi,
+  EklentiSatiri,
   GizliAyarGorunumu,
   DenetciDurumu,
   DenetimKipi,
@@ -15,13 +17,17 @@ import type {
   GeriAlmaPlani,
   GeriAlmaSonucu,
   GunlukSayfasi,
+  GunlukSinirDurumu,
+  IslemId,
   KanalMesaji,
   Kip,
   KomutHatasi,
+  KurulumSonucu,
   Olay,
   OnarimSonucu,
   OnayOgesi,
   OturumAcilisi,
+  OturumEklentisi,
   OturumId,
   OturumSatiri,
   SartMetni,
@@ -68,6 +74,73 @@ export function onayOgesi(ek: Partial<OnayOgesi> & { cagri: CagriId }): OnayOges
     yerel_onay: false,
     ...ek,
   };
+}
+
+/**
+ * Eklentiler ekranının örnek verisi (aşama 4d): Kalfa'yla gelen `kalfa-rag`
+ * (bir çalışma alanında açık, gönderim izni verilmiş), klasörden kurulmuş bir
+ * eklenti ve yüklenemeyen bir eklenti. Her çağrıda yeni kopya döner.
+ */
+export function ornekEklentiler(): EklentiSatiri[] {
+  return [
+    {
+      ad: 'kalfa-rag',
+      surum: '0.1.0',
+      aciklama: 'Çalışma alanında Türkçe anlamsal arama.',
+      yerlesik: true,
+      durum: { tip: 'Yuklendi' },
+      sha256: '9f2c4e7a1b8d03a65c4f7e2b90d1a3c8e5f6b7a4d2c1908e3f4a5b6c7d8e9f01',
+      kaynak: null,
+      kurulum_ms: null,
+      yetenek:
+        "Bu eklenti `**/*.md`, `**/*.rs` ile eşleşen dosyaları okuyacak ve bu dosyalardan seçtiği parçaları gömme ve yeniden sıralama için EVREN'e gönderecek. Gizli dosyaları okuyamaz. Dosya yazamaz, komut çalıştıramaz, internete doğrudan erişemez. Kendi verisi için çalışma alanı başına en fazla 200 MB yer kullanacak.",
+      araclar: [
+        {
+          ad: 'kalfa_rag__anlamsal_ara',
+          aciklama: 'Çalışma alanındaki dosyalarda anlama göre arar ve kaynaklı sonuç verir.',
+        },
+      ],
+      alanlar: [
+        {
+          kimlik: 'alan-1',
+          yol: 'C:\\projeler\\kalfa-api',
+          acik: true,
+          gonderim_izni_ms: new Date(2026, 9, 20, 10, 5).getTime(),
+          depo_bayt: 6_291_456,
+        },
+      ],
+    },
+    {
+      ad: 'ornek-notlar',
+      surum: '0.2.0',
+      aciklama: 'Not dosyalarını özetler.',
+      yerlesik: false,
+      durum: { tip: 'Yuklendi' },
+      sha256: '1d0e8f7c6b5a49382716f5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d2c1b0a',
+      kaynak: 'C:\\Users\\kullanici\\eklentiler\\ornek-notlar',
+      kurulum_ms: new Date(2026, 9, 18, 14, 30).getTime(),
+      yetenek:
+        'Bu eklenti çalışma alanındaki dosyaları okumayacak ve EVREN\'e veri göndermeyecek. Gizli dosyaları okuyamaz. Dosya yazamaz, komut çalıştıramaz, internete doğrudan erişemez. Kendi verisini saklamayacak.',
+      araclar: [{ ad: 'ornek_notlar__ozetle', aciklama: 'Verilen metni kısaca özetler.' }],
+      alanlar: [],
+    },
+    {
+      ad: 'bozuk-eklenti',
+      surum: '1.0.0',
+      aciklama: 'Kurulumdan sonra bileşeni değişmiş bir eklenti.',
+      yerlesik: false,
+      durum: {
+        tip: 'Yuklenemedi',
+        neden: 'Eklentinin .wasm dosyası kurulumdan sonra değişmiş; eklentiyi yeniden kurun.',
+      },
+      sha256: '',
+      kaynak: 'C:\\Users\\kullanici\\eklentiler\\bozuk-eklenti',
+      kurulum_ms: new Date(2026, 9, 10, 9, 0).getTime(),
+      yetenek: null,
+      araclar: [],
+      alanlar: [],
+    },
+  ];
 }
 
 export class SahteArka {
@@ -146,6 +219,21 @@ export class SahteArka {
   gonderimGunlukleri = new Map<OturumId, GunlukSayfasi>();
   /** `gonderim_ogesi` metinleri; anahtar: `${oturum}:${sira}`. */
   gonderimOgeleri = new Map<string, string>();
+  /** Eklentiler ekranının listesi (aşama 4d); örnek veri `ornekEklentiler()`'dedir. */
+  eklentiler: EklentiSatiri[] = ornekEklentiler();
+  /** `eklenti_klasorden_kur`'un sonucu (klasör seçici ve yerel onay penceresi). */
+  kurulumSonucu: KurulumSonucu = { tip: 'Vazgecildi' };
+  /** `eklenti_kaldir` ve `eklenti_verisini_sil` için yerel onay yanıtı. */
+  eklentiOnayi = true;
+  /**
+   * "Bu oturumdaki izinler" panelinin eklentileri. Varsayılan boştur: panel
+   * ancak bir test ya da senaryo eklenti verirse görünür.
+   */
+  oturumEklentileri: OturumEklentisi[] = [];
+  /** `eklenti_istegi` gövdeleri; anahtar: işlem kimliği. */
+  eklentiIstekleri = new Map<IslemId, string>();
+  /** `gunluk_sinir`'in yanıtı; `null`: sınır dolmadı. */
+  gunlukSinir: GunlukSinirDurumu | null = null;
   /** Komutun yerine geçen davranış (önizlemenin senaryosu kullanır). */
   ozel = new Map<string, (a: Argumanlar) => unknown>();
 
@@ -243,6 +331,39 @@ export class SahteArka {
     const no = this.siradakiNo(oturum);
     this.#no.set(oturum, no + 1);
     return no;
+  }
+
+  #eklenti(ad: unknown): EklentiSatiri | undefined {
+    return this.eklentiler.find((e) => e.ad === ad);
+  }
+
+  /** Kurulan eklenti listeye girer; güncellemenin kapsamı değiştiyse izinler silinir. */
+  #eklentiKuruldu(sonuc: Extract<KurulumSonucu, { tip: 'Kuruldu' }>): void {
+    const mevcut = this.#eklenti(sonuc.ad);
+    if (mevcut) {
+      mevcut.surum = sonuc.surum;
+      mevcut.durum = { tip: 'Yuklendi' };
+      if (sonuc.izinler_silindi) {
+        for (const alan of mevcut.alanlar) alan.gonderim_izni_ms = null;
+      }
+      return;
+    }
+    this.eklentiler = [
+      ...this.eklentiler,
+      {
+        ad: sonuc.ad,
+        surum: sonuc.surum,
+        aciklama: 'Klasörden kurulan eklenti.',
+        yerlesik: false,
+        durum: { tip: 'Yuklendi' },
+        sha256: 'c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00',
+        kaynak: `C:\\Users\\kullanici\\eklentiler\\${sonuc.ad}`,
+        kurulum_ms: Date.now(),
+        yetenek: null,
+        araclar: [],
+        alanlar: [],
+      },
+    ];
   }
 
   #isle(komut: string, a: Argumanlar): unknown {
@@ -452,6 +573,58 @@ export class SahteArka {
       }
       case 'gonderim_karari':
         return null;
+      case 'eklentileri_listele':
+        return structuredClone(this.eklentiler);
+      case 'eklenti_klasorden_kur': {
+        const sonuc = this.kurulumSonucu;
+        if (sonuc.tip === 'Kuruldu') this.#eklentiKuruldu(sonuc);
+        return sonuc;
+      }
+      case 'eklenti_kaldir': {
+        const e = this.eklentiler.find((x) => x.ad === a.ad && !x.yerlesik);
+        if (!this.eklentiOnayi || !e) return false;
+        this.eklentiler = this.eklentiler.filter((x) => x.ad !== a.ad || x.yerlesik);
+        return true;
+      }
+      case 'eklenti_etkin_ayarla': {
+        const e = this.#eklenti(a.ad);
+        if (e) e.durum = { tip: a.etkin ? 'Yuklendi' : 'DevreDisi' };
+        return null;
+      }
+      case 'eklenti_alani_ayarla': {
+        const hedef = a.hedef as AlanHedefi;
+        const acik = Boolean(a.acik);
+        // Kapatmak gönderim iznini de kaldırır (aşama 4 tasarımı §13.3).
+        const alan =
+          hedef.tip === 'Kimlik'
+            ? this.#eklenti(a.ad)?.alanlar.find((x) => x.kimlik === hedef.kimlik)
+            : this.oturumEklentileri.find((x) => x.ad === a.ad);
+        if (alan) {
+          alan.acik = acik;
+          if (!acik) alan.gonderim_izni_ms = null;
+        }
+        return null;
+      }
+      case 'gonderim_iznini_kaldir': {
+        const alan = this.#eklenti(a.ad)?.alanlar.find((x) => x.kimlik === a.kimlik);
+        if (alan) alan.gonderim_izni_ms = null;
+        return null;
+      }
+      case 'eklenti_verisini_sil': {
+        const alan = this.#eklenti(a.ad)?.alanlar.find((x) => x.kimlik === a.kimlik);
+        if (!this.eklentiOnayi || !alan) return false;
+        alan.depo_bayt = 0;
+        return true;
+      }
+      case 'oturum_eklentileri':
+        return structuredClone(this.oturumEklentileri);
+      case 'eklenti_istegi':
+        return (
+          this.eklentiIstekleri.get(a.islem as IslemId) ??
+          '{"model":"qwen3-embedding-8b","input":["fn main() {}"]}'
+        );
+      case 'gunluk_sinir':
+        return this.gunlukSinir;
       default:
         // mesaj_gonder, turu_iptal_et, arac_onayi, model_degistir, paketi_isledim,
         // baglanti_ac, anahtar_penceresini_ac, sart_penceresini_ac

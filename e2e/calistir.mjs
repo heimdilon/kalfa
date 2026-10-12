@@ -13,7 +13,7 @@
 // (`xvfb-run -a npm test`) gerekir. `tauri-driver` iki platformda da PATH'te
 // olmalıdır.
 import { spawnSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,6 +21,9 @@ const e2e = dirname(fileURLToPath(import.meta.url));
 const kok = join(e2e, '..');
 const hedef = join(kok, 'target', 'e2e');
 const uygulama = join(hedef, 'release', process.platform === 'win32' ? 'kalfa.exe' : 'kalfa');
+// Yerleşik eklenti `kalfa-rag` (aşama 4 tasarımı §13.1): kurulu sürümdeki
+// `eklentiler/kalfa-rag/` yerleşimi; uygulama `KALFA_YERLESIK_EKLENTILER`'den okur.
+const yerlesik = join(hedef, 'yerlesik-eklentiler');
 
 const argumanlar = process.argv.slice(2);
 const derleme = !argumanlar.includes('--derleme-yok');
@@ -68,6 +71,15 @@ if (derleme) {
       },
     },
   );
+  calistir(
+    'cargo',
+    ['build', '--release', '--locked', '-p', 'kalfa-rag', '--target', 'wasm32-wasip2'],
+    { cwd: kok, env: { ...process.env, CARGO_TARGET_DIR: hedef } },
+  );
+  const rag = join(yerlesik, 'kalfa-rag');
+  mkdirSync(rag, { recursive: true });
+  copyFileSync(join(hedef, 'wasm32-wasip2', 'release', 'kalfa_rag.wasm'), join(rag, 'eklenti.wasm'));
+  copyFileSync(join(kok, 'crates', 'kalfa-rag', 'kalfa.toml'), join(rag, 'kalfa.toml'));
 }
 
 const testler = secilen.length
@@ -80,5 +92,9 @@ const testler = secilen.length
 calistir(
   process.execPath,
   ['--test', '--test-concurrency=1', '--test-reporter=spec', ...testler],
-  { cwd: e2e, shell: false, env: { ...process.env, KALFA_E2E_UYGULAMA: uygulama } },
+  {
+    cwd: e2e,
+    shell: false,
+    env: { ...process.env, KALFA_E2E_UYGULAMA: uygulama, KALFA_YERLESIK_EKLENTILER: yerlesik },
+  },
 );

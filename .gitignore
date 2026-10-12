@@ -14,3 +14,4 @@ Screenshot*.png
 /crates/kalfa/binaries/
 # Kurucu derlemesinin indirip açtığı Python ve Node
 /crates/kalfa/araclar/
+/crates/kalfa/eklentiler/

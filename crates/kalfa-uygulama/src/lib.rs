@@ -9,6 +9,7 @@ pub mod arayuz;
 pub mod ayarlar;
 pub mod calisma_alanlari;
 pub mod dizin;
+pub mod eklentiler;
 pub mod evren;
 pub mod guvenlik;
 pub mod hata;

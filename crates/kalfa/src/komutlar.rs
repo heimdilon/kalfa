@@ -20,6 +20,9 @@ use kalfa_uygulama::sozlesme::{
     KabulYaniti, OnarimSonucu, OnayGirdisi, OturumAcilisi, OturumSatiri, SartPenceresiDurumu,
     UygulamaDurumu, YalitimCalismaAlani,
 };
+use kalfa_uygulama::sozlesme::{
+    AlanHedefi, EklentiSatiri, GunlukSinirDurumu, KurulumSonucu, OturumEklentisi,
+};
 use tauri::ipc::Channel;
 use tauri::{Builder, Runtime, State};
 
@@ -79,6 +82,16 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         gonderim_ogesi,
         onizleme_ayarla,
         gonderim_karari,
+        eklentileri_listele,
+        eklenti_klasorden_kur,
+        eklenti_kaldir,
+        eklenti_etkin_ayarla,
+        eklenti_alani_ayarla,
+        gonderim_iznini_kaldir,
+        eklenti_verisini_sil,
+        oturum_eklentileri,
+        eklenti_istegi,
+        gunluk_sinir,
         sart_penceresi_durumu,
         anahtari_kaydet,
         sartlari_kabul_et,
@@ -359,6 +372,82 @@ pub async fn gonderim_karari(
 ) -> Sonuc<()> {
     u.gonderim_karari(oturum, islem, gonderilmeyecekler, hep_gonderilecekler)
         .await
+}
+
+// --- Eklentiler (aşama 4 tasarımı §13, §14) ---
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn eklentileri_listele(u: State<'_, Arc<Uygulama>>) -> Sonuc<Vec<EklentiSatiri>> {
+    u.eklentileri_listele().await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn eklenti_klasorden_kur(u: State<'_, Arc<Uygulama>>) -> Sonuc<KurulumSonucu> {
+    u.eklenti_klasorden_kur().await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn eklenti_kaldir(u: State<'_, Arc<Uygulama>>, ad: String) -> Sonuc<bool> {
+    u.eklenti_kaldir(ad).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn eklenti_etkin_ayarla(
+    u: State<'_, Arc<Uygulama>>,
+    ad: String,
+    etkin: bool,
+) -> Sonuc<()> {
+    u.eklenti_etkin_ayarla(ad, etkin).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn eklenti_alani_ayarla(
+    u: State<'_, Arc<Uygulama>>,
+    ad: String,
+    hedef: AlanHedefi,
+    acik: bool,
+) -> Sonuc<()> {
+    u.eklenti_alani_ayarla(ad, hedef, acik).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gonderim_iznini_kaldir(
+    u: State<'_, Arc<Uygulama>>,
+    ad: String,
+    kimlik: String,
+) -> Sonuc<()> {
+    u.gonderim_iznini_kaldir(ad, kimlik).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn eklenti_verisini_sil(
+    u: State<'_, Arc<Uygulama>>,
+    ad: String,
+    kimlik: String,
+) -> Sonuc<bool> {
+    u.eklenti_verisini_sil(ad, kimlik).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn oturum_eklentileri(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+) -> Sonuc<Vec<OturumEklentisi>> {
+    u.oturum_eklentileri(oturum).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn eklenti_istegi(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    islem: IslemId,
+) -> Sonuc<String> {
+    u.eklenti_istegi(oturum, islem).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gunluk_sinir(u: State<'_, Arc<Uygulama>>) -> Sonuc<Option<GunlukSinirDurumu>> {
+    Ok(u.gunluk_sinir())
 }
 
 // --- Şart penceresi ---

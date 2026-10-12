@@ -1,4 +1,7 @@
-<!-- Menü (1c tasarımı §8.1): Oturumlar, Ayarlar (aşama 2 tasarımı §10.4) ve "Anahtarı değiştir". -->
+<!--
+  Menü (1c tasarımı §8.1): Oturumlar, Eklentiler (aşama 4 tasarımı §14), Ayarlar
+  (aşama 2 tasarımı §10.4) ve "Anahtarı değiştir".
+-->
 <script lang="ts">
   import NavItem from '../bilesenler/NavItem.svelte';
   import NavRail from '../bilesenler/NavRail.svelte';
@@ -19,6 +22,13 @@
     onclick={() => durum.oturumlaraDon()}
   >
     {m('menu.oturumlar')}
+  </NavItem>
+  <NavItem
+    icon="puzzle"
+    active={durum.gorunum === 'eklentiler'}
+    onclick={() => durum.eklentileriAc()}
+  >
+    {m('menu.eklentiler')}
   </NavItem>
   <NavItem
     icon="settings"

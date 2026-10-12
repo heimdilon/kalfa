@@ -1194,6 +1194,77 @@ async fn geri_alma_deposu_yalitimda_gorunmez() {
     assert!(cikti.contains("listelenemedi"), "{cikti}");
 }
 
+/// Aşama 4 tasarımı §10, §13.4: eklenti deposu, eklenti kaydı
+/// (`eklentiler.json`) ve kurulu eklentinin `.wasm`'ı uygulamanın veri
+/// dizinindedir; kabuk komutu onları okuyamaz ve kayda yazıp kendine
+/// gönderim izni veremez. Windows'ta depo `%LOCALAPPDATA%\Kalfa\eklenti-verisi`,
+/// kayıt `%APPDATA%\Kalfa`'dadır; burada aynı yerleşim geçici veri dizininde
+/// kurulur.
+#[tokio::test]
+async fn eklenti_deposu_ve_kaydi_yalitimda_gorunmez() {
+    let d = TempDir::new().unwrap();
+    let k = kurgu(d.path());
+    let depo = k
+        .veri()
+        .join("eklenti-verisi")
+        .join("kalfa-rag")
+        .join("0123456789abcdef");
+    std::fs::create_dir_all(&depo).unwrap();
+    let dilim = depo.join("b".repeat(64));
+    std::fs::write(&dilim, "indeks-sir").unwrap();
+    let kayit = k.veri().join("eklentiler.json");
+    std::fs::write(&kayit, "{\"surum\":1,\"kayit-sir\":true}").unwrap();
+    let wasm = k
+        .veri()
+        .join("eklentiler")
+        .join("ornek")
+        .join("eklenti.wasm");
+    std::fs::create_dir_all(wasm.parent().unwrap()).unwrap();
+    std::fs::write(&wasm, "wasm-sir").unwrap();
+    let komut = if cfg!(windows) {
+        let oku = |yol: &Path| {
+            format!(
+                "try {{ Get-Content -Raw -ErrorAction Stop -LiteralPath '{}' }} catch {{ 'okunamadi' }};",
+                yol.display()
+            )
+        };
+        format!(
+            "{} {} {} try {{ Get-ChildItem -Name -ErrorAction Stop -LiteralPath '{}' }} catch {{ 'listelenemedi' }}; try {{ Set-Content -ErrorAction Stop -LiteralPath '{}' -Value 'yazildi' }} catch {{ 'yazilamadi' }}",
+            oku(&dilim),
+            oku(&kayit),
+            oku(&wasm),
+            depo.display(),
+            kayit.display()
+        )
+    } else {
+        format!(
+            "cat '{}' 2>/dev/null || echo okunamadi; cat '{}' 2>/dev/null || echo okunamadi; cat '{}' 2>/dev/null || echo okunamadi; ls '{}' 2>/dev/null || echo listelenemedi; (echo yazildi > '{}') 2>/dev/null || echo yazilamadi",
+            dilim.display(),
+            kayit.display(),
+            wasm.display(),
+            depo.display(),
+            kayit.display()
+        )
+    };
+    let cikti = k.calistir(betik(&komut)).await;
+    for sir in ["indeks-sir", "kayit-sir", "wasm-sir", &"b".repeat(64)] {
+        assert!(!cikti.contains(sir), "{sir} görünmemeli: {cikti}");
+    }
+    assert_eq!(cikti.matches("okunamadi").count(), 3, "{cikti}");
+    assert!(cikti.contains("listelenemedi"), "{cikti}");
+    // Windows'ta yazma reddedilir. Linux'ta bwrap yalıtım dizininin
+    // üstlerini kabın içinde tmpfs'te kurar; yazma oraya gider ve kapla
+    // biter. İki platformda da gerçek kayıt değişmez.
+    if cfg!(windows) {
+        assert!(cikti.contains("yazilamadi"), "{cikti}");
+    }
+    assert_eq!(
+        std::fs::read_to_string(&kayit).unwrap(),
+        "{\"surum\":1,\"kayit-sir\":true}",
+        "kabuk eklenti kaydını değiştirmemeli"
+    );
+}
+
 struct SahteCozucu {
     eslemeler: std::collections::HashMap<(String, u16), Vec<std::net::SocketAddr>>,
 }

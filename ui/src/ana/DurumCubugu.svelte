@@ -2,14 +2,16 @@
   Durum çubuğu (1c tasarımı §8.3): oturumun hâli, bağlantı ve kimlik deposu
   uyarıları; son gözlenen bakiye ve zamanı, token kullanımı (düşünce dökümüyle),
   yönlendirilen model, izin kipi. Bağlam doluluğu gösterilmez. Yalıtım
-  göstergesine tıklanınca Ayarlar açılır (aşama 2 tasarımı §10.3).
+  göstergesine tıklanınca Ayarlar açılır (aşama 2 tasarımı §10.3). EVREN'in
+  günlük token sınırı dolduysa "Günlük sınır doldu" ve sıfırlanma saati
+  görünür (aşama 4 tasarımı §9.5).
 -->
 <script lang="ts">
   import StatusBar from '../bilesenler/StatusBar.svelte';
   import StatusItem from '../bilesenler/StatusItem.svelte';
   import { DENETCI_KIPI_ADI, KIP_ADI, m } from '../dil/tr';
   import type { AnaDurum } from './anaDurum.svelte';
-  import { kredi, saat, sayi } from './bicim';
+  import { gunlukSinirMetni, kredi, saat, sayi } from './bicim';
 
   let { durum }: { durum: AnaDurum } = $props();
 
@@ -56,6 +58,11 @@
     {#if durum.uygulama?.anahtar_deposu === 'Bellekte'}
       <StatusItem icon="key-round" tone="warn" title={m('hata.anahtar_bellekte')}>
         {m('durum.anahtar_bellekte')}
+      </StatusItem>
+    {/if}
+    {#if durum.gunlukSinir}
+      <StatusItem icon="triangle-alert" tone="warn" title={m('durum.gunluk_sinir_ipucu')}>
+        {gunlukSinirMetni(durum.gunlukSinir)}
       </StatusItem>
     {/if}
   {/snippet}

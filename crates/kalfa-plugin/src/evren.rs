@@ -17,16 +17,21 @@ use crate::bag::kalfa::plugin::tipler::Hata;
 use crate::manifest::EvrenUcu;
 use crate::sinir;
 
-/// Bir eklentinin bu çalışma alanında EVREN'e ilk kez veri gönderip
-/// gönderemeyeceği (§8.4). Kalıcı uygulaması 4d'de `eklentiler.json`'la gelir.
+/// Bir eklentinin bir çalışma alanındaki durumu: EVREN'e ilk kez veri gönderip
+/// gönderemeyeceği (§8.4) ve araçlarının modele sunulup sunulmadığı (§13.3).
+/// Uygulamanın kalıcı uygulaması `eklentiler.json`'dadır.
 pub trait GonderimIzni: Send + Sync {
     fn var_mi(&self) -> bool;
     /// İzni kaydeder; kaydedilemezse nedeni döner.
     fn ver(&self) -> Result<(), String>;
+    /// Eklenti bu çalışma alanında açık mı? Her turda sorulur: kapalıyken
+    /// araçları modele sunulmaz ve çağrılırsa çalışmaz.
+    fn acik_mi(&self) -> bool {
+        true
+    }
 }
 
-/// Süreç ömrü kadar geçerli izin.
-// ponytail: izin süreçle biter; kalıcılık 4d'de eklentiler.json ile gelir.
+/// Süreç ömrü kadar geçerli izin; testler ve oturumsuz kullanım için.
 pub struct BellekIzni(AtomicBool);
 
 impl BellekIzni {

@@ -1,6 +1,7 @@
 //! Oturum tablosu (1c tasarımı §5): açık oturumlar, kayıttan açma, köprü,
 //! kapatma. Aynı oturum ikinci kez açılmaz; açık olanın geçmişi döner.
 
+use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -147,7 +148,7 @@ impl Uygulama {
             .ok_or_else(|| {
                 KomutHatasi::gecersiz("Çalışma alanı seçilmemiş. Klasörü yeniden seçin.")
             })?;
-        let baglam = self.baglam(&kok)?;
+        let baglam = self.baglam(&kok).await?;
         std::fs::create_dir_all(&self.oturum_dizini)?;
         let oturum = OturumId::yeni();
         let yol = dizin::kayit_yolu(&self.oturum_dizini, oturum);
@@ -218,7 +219,7 @@ impl Uygulama {
             };
             return self.acilis(oturum, yol, Some(kok), Some(neden)).await;
         }
-        let baglam = self.baglam(&kok)?;
+        let baglam = self.baglam(&kok).await?;
         let mut ayarlar = OturumAyarlari::yeni(durum.model.clone(), &kok);
         ayarlar.geri_alma_dizini = Some(dizin::oturum_geri_alma_dizini(
             &self.geri_alma_dizini,
@@ -413,7 +414,7 @@ impl Uygulama {
             .map_err(|e| KomutHatasi::gecersiz(e.to_string()))
     }
 
-    fn tutamac(&self, oturum: OturumId) -> Result<OturumTutamaci, KomutHatasi> {
+    pub(crate) fn tutamac(&self, oturum: OturumId) -> Result<OturumTutamaci, KomutHatasi> {
         self.ic()
             .oturumlar
             .get(&oturum)
@@ -726,18 +727,28 @@ impl Uygulama {
         let _ = tokio::time::timeout(KAPANIS_SURESI, tutamac.kapanmasini_bekle()).await;
     }
 
-    /// Çalışma alanının araçları ve ortak kilitleriyle oturum bağlamı.
-    pub(crate) fn baglam(&self, kok: &Path) -> Result<OturumBaglami, KomutHatasi> {
+    /// Çalışma alanının araçları, eklenti araçları ve ortak kilitleriyle
+    /// oturum bağlamı. Eklenti araçları yüklenebilen HER eklenti için eklenir,
+    /// etkin ya da açık olmasından bağımsız: kapalı olanlar `sunulur_mu` ile
+    /// gizlenir, böylece anahtar açık oturumda canlı çalışır (aşama 4 tasarımı
+    /// §13.3). Yüklenemeyen eklenti oturumu düşürmez; yalnızca araçsız kalır.
+    pub(crate) async fn baglam(&self, kok: &Path) -> Result<OturumBaglami, KomutHatasi> {
         let siniflandirici = Arc::new(
             Siniflandirici::yeni_ayarla(kok, self.ayarlar.gizli_ayarlari()).map_err(ic_hata)?,
         );
         let alan = AracAlani::ac(siniflandirici.clone())?;
+        let alan_kimligi = CalismaAlaniKaydi::kimlik(kok);
         let guven = Arc::new(AlanGuveni {
             kayit: self.alanlar.clone(),
-            kimlik: CalismaAlaniKaydi::kimlik(kok),
+            kimlik: alan_kimligi.clone(),
         });
+        let kilitler = self.kilitler.al(kok)?;
         let mut araclar = varsayilan_araclar(alan.clone());
         let geri_yukleyici: Arc<dyn GeriYukleyici> = alan.clone();
+        let eklenti_araclari = self
+            .eklentiler
+            .araclar(&alan, &kilitler, &alan_kimligi)
+            .await;
         araclar.push(Arc::new(
             KabukAraci::yeni(
                 alan,
@@ -747,12 +758,20 @@ impl Uygulama {
             )
             .kullanici_ag_listesi(self.ayarlar.ag_listesi()),
         ));
+        // Eklenti araçlarının adı `<önek>__<araç>`'tır, yerleşiklerinkinde `__`
+        // yoktur (§6.5); yine de çift ad oturumu düşürmesin.
+        let mut adlar: HashSet<String> = araclar.iter().map(|a| a.ad().to_string()).collect();
+        araclar.extend(
+            eklenti_araclari
+                .into_iter()
+                .filter(|a| adlar.insert(a.ad().to_string())),
+        );
         let araclar = Arc::new(AracKayitDefteri::yeni(araclar).map_err(ic_hata)?);
         Ok(OturumBaglami {
             saglayici: self.evren.clone(),
             araclar,
             siniflandirici,
-            kilitler: self.kilitler.al(kok)?,
+            kilitler,
             sart_kapisi: self.kapi.clone(),
             geri_yukleyici: Some(geri_yukleyici),
             denetci: self.denetci.clone(),

@@ -79,14 +79,44 @@ fn yalitimsiz_var(ogeler: &[OnayOgesi]) -> bool {
         .any(|o| o.kabuk.as_ref().is_some_and(|k| !k.yalitim.yalitimli_mi()))
 }
 
-/// Yerel onay penceresinin başlığı: yalıtımsız komut varsa onu, yoksa
-/// çalışma alanının hazırlığını (Windows, aşama 2 tasarımı §9.4) söyler.
+/// Eklentinin bu çalışma alanındaki ilk EVREN gönderimi (aşama 4 tasarımı
+/// §8.4): öğe eklentinin tarifini taşır ve yerel onay ister.
+fn eklenti_ogesi_mi(o: &OnayOgesi) -> bool {
+    o.yerel_onay && o.eklenti.as_ref().is_some_and(|t| t.ilk_gonderim)
+}
+
+/// Yerel onay penceresinin başlığı: yalıtımsız komut varsa onu, yalnızca
+/// eklentinin ilk gönderimi varsa onu, yoksa çalışma alanının hazırlığını
+/// (Windows, aşama 2 tasarımı §9.4) söyler.
 pub fn yerel_onay_basligi(ogeler: &[OnayOgesi]) -> &'static str {
     if yalitimsiz_var(ogeler) {
         "Komutu yalıtımsız çalıştır"
+    } else if ogeler.iter().any(eklenti_ogesi_mi) && ogeler.iter().all(|o| o.kabuk.is_none()) {
+        "Eklenti EVREN'e veri gönderecek"
     } else {
         "Çalışma alanını yalıtım için hazırla"
     }
+}
+
+/// Onay kartının Markdown metninden kalın işaretlerini (`**`) kaldırır. Kod
+/// aralığındaki (`` ` ``) `**/*.md` gibi kalıplara dokunmaz.
+fn vurgusuz(metin: &str) -> String {
+    let mut sonuc = String::with_capacity(metin.len());
+    let mut kodda = false;
+    let mut karakterler = metin.chars().peekable();
+    while let Some(c) = karakterler.next() {
+        match c {
+            '`' => {
+                kodda = !kodda;
+                sonuc.push(c);
+            }
+            '*' if !kodda && karakterler.peek() == Some(&'*') => {
+                karakterler.next();
+            }
+            _ => sonuc.push(c),
+        }
+    }
+    sonuc
 }
 
 /// Yerel kutuda gösterilen komutun sınırı; fazlası onay sayfasındadır.
@@ -130,6 +160,13 @@ pub fn yerel_onay_metni(ogeler: &[OnayOgesi]) -> String {
              kaldırınca geri alınır. Projenin betikleri (build.rs, package.json, Makefile) kod \
              olarak çalışır.\n",
         );
+    }
+    // Eklentinin ilk gönderimi: neyi okuyup EVREN'e göndereceği kartın
+    // metnindedir (§8.4). Metin eklentiden gelen bir manifestten türer;
+    // görünmez karakterler işaretlenir.
+    for o in ogeler.iter().filter(|o| eklenti_ogesi_mi(o)) {
+        metin.push_str(&yerel_gosterim(&vurgusuz(&o.aciklama)));
+        metin.push('\n');
     }
     let mut talimat = None;
     for o in ogeler {
@@ -185,6 +222,7 @@ mod tests {
             geri_alinabilir: None,
             veri_cikisi: None,
             kisayol: None,
+            eklenti: None,
         }
     }
 
@@ -248,6 +286,102 @@ mod tests {
         let metin = yerel_onay_metni(std::slice::from_ref(&o));
         assert!(!metin.contains(&"x".repeat(2001)));
         assert!(metin.contains("kısaltıldı"));
+    }
+
+    fn eklenti_oge() -> OnayOgesi {
+        OnayOgesi {
+            cagri: CagriId::yeni(),
+            arac: "kalfa_rag__anlamsal_ara".into(),
+            aciklama: "kalfa-rag eklentisinin `anlamsal_ara` aracını çalıştırmak istiyor.\n\n\
+                **kalfa-rag** bu çalışma alanında ilk kez EVREN'e veri gönderecek.\n\n\
+                Okuyabileceği dosyalar: `**/*.md`, `docs/**` ile eşleşen **412 dosya (6,0 MB)**. \
+                Bu dosyalardan seçtiği parçalar gömme için EVREN'e gidecek. Gizli dosyalar \
+                gönderilmez.\n\nİzin verirseniz bu çalışma alanında bir daha sorulmaz."
+                .into(),
+            hedefler: Vec::new(),
+            diff: None,
+            uyarilar: Vec::new(),
+            muhur: OnayMuhru("m".into()),
+            kabuk: None,
+            yerel_onay: true,
+            onaysiz_degisiklikler: None,
+            geri_alinabilir: None,
+            veri_cikisi: Some(kalfa_core::protokol::VeriCikisi::EklentiCiktisi),
+            kisayol: None,
+            eklenti: Some(kalfa_core::arac::EklentiTarifi {
+                ad: "kalfa-rag".into(),
+                ilk_gonderim: true,
+                ..Default::default()
+            }),
+        }
+    }
+
+    #[test]
+    fn vurgusuz_kalin_isaretini_kaldirir_kod_araligina_dokunmaz() {
+        assert_eq!(
+            vurgusuz("**ad** bu `**/*.md` ile **412 dosya** `a**b`"),
+            "ad bu `**/*.md` ile 412 dosya `a**b`"
+        );
+        assert_eq!(vurgusuz("tek * yıldız ve ** açık"), "tek * yıldız ve  açık");
+    }
+
+    #[test]
+    fn eklentinin_ilk_gonderimi_neyi_gonderecegini_soyler() {
+        let ogeler = [eklenti_oge()];
+        assert_eq!(
+            yerel_onay_basligi(&ogeler),
+            "Eklenti EVREN'e veri gönderecek"
+        );
+        let metin = yerel_onay_metni(&ogeler);
+        assert!(
+            metin.contains("kalfa-rag bu çalışma alanında ilk kez EVREN'e veri gönderecek."),
+            "{metin}"
+        );
+        assert!(
+            metin.contains("`**/*.md`, `docs/**` ile eşleşen 412 dosya (6,0 MB)"),
+            "{metin}"
+        );
+        assert!(metin.contains("bir daha sorulmaz"), "{metin}");
+        assert!(
+            !metin.contains("**kalfa-rag**") && !metin.contains("**412"),
+            "{metin}"
+        );
+        assert!(!metin.contains("yalıtım"), "kabukla ilgisi yok: {metin}");
+    }
+
+    #[test]
+    fn eklenti_metni_gorunmez_karakterleri_isaretler() {
+        let mut o = eklenti_oge();
+        o.aciklama = format!("{}\u{202E}", o.aciklama);
+        let metin = yerel_onay_metni(&[o]);
+        assert!(
+            metin.contains("⟨U+202E⟩") && !metin.contains('\u{202E}'),
+            "{metin}"
+        );
+    }
+
+    #[test]
+    fn eklenti_ve_kabuk_birlikte_kabugun_basligini_alir() {
+        let ogeler = [eklenti_oge(), oge(yalitimli(), true)];
+        assert_eq!(
+            yerel_onay_basligi(&ogeler),
+            "Çalışma alanını yalıtım için hazırla"
+        );
+        let metin = yerel_onay_metni(&ogeler);
+        assert!(metin.contains("ilk kez EVREN'e veri gönderecek"), "{metin}");
+        assert!(metin.contains("Komut: cargo test"), "{metin}");
+        let ogeler = [eklenti_oge(), oge(yalitimsiz(), false)];
+        assert_eq!(yerel_onay_basligi(&ogeler), "Komutu yalıtımsız çalıştır");
+        // İlk gönderimi olmayan eklenti öğesi başlığı değiştirmez.
+        let mut baska = eklenti_oge();
+        baska.eklenti = baska.eklenti.map(|t| kalfa_core::arac::EklentiTarifi {
+            ilk_gonderim: false,
+            ..t
+        });
+        assert_eq!(
+            yerel_onay_basligi(&[baska]),
+            "Çalışma alanını yalıtım için hazırla"
+        );
     }
 
     #[test]

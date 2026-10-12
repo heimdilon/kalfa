@@ -9,12 +9,14 @@ use kalfa_core::aktarim::AktarimAyarlari;
 use kalfa_core::kilit::KilitYoneticisi;
 use kalfa_core::kimlik::OturumId;
 use kalfa_core::sart_kapisi::SartKapisi;
+use kalfa_plugin::EvrenBaglami;
 use kalfa_sandbox::Yalitici;
 
 use crate::anahtar::AnahtarKasasi;
 use crate::arayuz::{Acici, Iletisim, Pencereler, Yukseltici};
 use crate::calisma_alanlari::CalismaAlaniKaydi;
 use crate::dizin;
+use crate::eklentiler::EklentiYoneticisi;
 use crate::evren::{DegisirSaglayici, SaglayiciUretici};
 use crate::oturumlar::{AcikOturum, KapananOturum};
 use crate::sozlesme::{AnahtarNedeni, BaglantiDurumu, SartPenceresiDurumu};
@@ -35,6 +37,11 @@ pub struct Bilesenler {
     pub yalitim_dizini: PathBuf,
     /// Oturumların geri alma verisinin kökü (`dizin::geri_alma_dizini`).
     pub geri_alma_dizini: PathBuf,
+    /// Eklenti depolarının kökü (`dizin::eklenti_verisi_dizini`).
+    pub eklenti_verisi_dizini: PathBuf,
+    /// Yerleşik eklentilerin dizini (`dizin::yerlesik_eklenti_dizini`); yoksa
+    /// yerleşik eklenti gösterilmez.
+    pub yerlesik_eklentiler: Option<PathBuf>,
     /// Kurulu Kalfa'nın getirdiği Python ve Node (`dizin::kalfa_araclari`).
     pub kalfa_araclari: Vec<PathBuf>,
     pub yalitim: YalitimKaynagi,
@@ -67,6 +74,9 @@ pub struct Uygulama {
     pub(crate) denetci: Arc<dyn kalfa_core::denetci::GuvenlikDenetcisi>,
     pub(crate) yalitim_dinleyici: Dinleyici,
     pub(crate) alanlar: Arc<CalismaAlaniKaydi>,
+    /// Eklentiler: `eklentiler.json`, motor, yükleme önbelleği (aşama 4
+    /// tasarımı §13).
+    pub(crate) eklentiler: EklentiYoneticisi,
     ic: Mutex<IcDurum>,
 }
 
@@ -98,6 +108,14 @@ impl Uygulama {
             kalfa_core::denetci::YapilandirilmisSiniflandirici::yeni(evren.clone()),
         );
         let yalitim_dinleyici = Dinleyici::default();
+        // Uygulama başına bir kez: eklentilerin EVREN yolu, oturumların
+        // paylaştığı sağlayıcıyı ve şart kapısını kullanır.
+        let eklentiler = EklentiYoneticisi::yeni(
+            &b.veri_dizini,
+            b.eklenti_verisi_dizini,
+            b.yerlesik_eklentiler,
+            EvrenBaglami::yeni(evren.clone(), kapi.clone()),
+        );
         let yalitici = yalitici_kur(
             b.yalitim,
             &b.yalitim_dizini,
@@ -124,6 +142,7 @@ impl Uygulama {
             denetci,
             yalitim_dinleyici,
             alanlar: Arc::new(CalismaAlaniKaydi::yeni(&b.veri_dizini)),
+            eklentiler,
             veri_dizini: b.veri_dizini,
             ev_dizini: b.ev_dizini,
             geri_alma_dizini: b.geri_alma_dizini,

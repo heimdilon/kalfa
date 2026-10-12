@@ -29,7 +29,7 @@ use crate::gonderim::EklentiKullanimi;
 use crate::izin::{Kip, Siniflandirici};
 use crate::kayit::{KayitOgesi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
-use crate::kimlik::CagriId;
+use crate::kimlik::{CagriId, IslemId};
 use crate::kimlik::{OturumId, TurId};
 use crate::kisayol::Kisayol;
 use crate::kurtarma::{BILINMEYEN_SONUC, KurtarilmisDurum, KurtarmaHatasi, kurtar};
@@ -156,6 +156,10 @@ type AktifTur = Arc<Mutex<Option<(TurId, CancellationToken)>>>;
 
 /// Onay bekleyen öğeler; yerel iletişim kutusu komutu buradan okur.
 type BekleyenOnaylar = Arc<Mutex<HashMap<CagriId, OnayOgesi>>>;
+
+/// Önizlemede karar bekleyen eklenti isteklerinin gövdeleri (aşama 4
+/// tasarımı §9.4). "Metni göster" buradan okur; kayda yazılmaz.
+type BekleyenGovdeler = Arc<Mutex<HashMap<IslemId, Arc<str>>>>;
 
 /// Taşıma kuyruğunda terminal hata için ayrılan kapasite. Bu kapasite toplam
 /// olay/bayt bütçesine dahildir; normal olaylar bu kısmı kullanamaz.
@@ -648,6 +652,7 @@ pub struct OturumTutamaci {
     aktif_tur: AktifTur,
     kapanis: watch::Receiver<bool>,
     bekleyen_onaylar: BekleyenOnaylar,
+    bekleyen_govdeler: BekleyenGovdeler,
 }
 
 impl OturumTutamaci {
@@ -662,6 +667,16 @@ impl OturumTutamaci {
             .lock()
             .unwrap_or_else(|z| z.into_inner())
             .get(&cagri)
+            .cloned()
+    }
+
+    /// Önizlemede karar bekleyen eklenti isteğinin gövdesi ("Metni göster",
+    /// aşama 4 tasarımı §9.4). Karar verildiyse ya da tur bittiyse `None`.
+    pub fn bekleyen_eklenti_govdesi(&self, islem: IslemId) -> Option<Arc<str>> {
+        self.bekleyen_govdeler
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .get(&islem)
             .cloned()
     }
 
@@ -901,6 +916,7 @@ struct Oturum {
     /// yürütülür; sürüm değiştiyse yürütülmez (spec §7.6, Task 9).
     politika: Arc<AtomicU64>,
     bekleyen_onaylar: BekleyenOnaylar,
+    pub(super) bekleyen_govdeler: BekleyenGovdeler,
     kapandi: bool,
     /// Son kabuk onayından beri onay sorulmadan yazılan dosyalar (güvenlik
     /// analizi Bulgu 3). Kayda yazılmaz.
@@ -959,6 +975,7 @@ impl Oturum {
         let (olay_tx, olay_rx) = OlayKanali::yeni(ayarlar.olay_butcesi, aktif_tur.clone());
         let olay_kapanma = olay_tx.kapanma();
         let bekleyen_onaylar = BekleyenOnaylar::default();
+        let bekleyen_govdeler = BekleyenGovdeler::default();
         let tur_denetci_kipi = ayarlar.denetci_kipi;
         let oturum = Self {
             kimlik,
@@ -981,6 +998,7 @@ impl Oturum {
             aktif_tur: aktif_tur.clone(),
             politika: Arc::new(AtomicU64::new(0)),
             bekleyen_onaylar: bekleyen_onaylar.clone(),
+            bekleyen_govdeler: bekleyen_govdeler.clone(),
             kapandi: false,
             onaysiz_yazilanlar: BTreeSet::new(),
             onaysiz_komut: false,
@@ -1000,6 +1018,7 @@ impl Oturum {
                 aktif_tur,
                 kapanis: kapanis_rx,
                 bekleyen_onaylar,
+                bekleyen_govdeler,
             },
             olay_rx,
             kapanis_tx,

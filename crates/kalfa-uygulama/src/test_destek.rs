@@ -286,16 +286,29 @@ pub fn test_uygulamasi(
     saglayici: Arc<SahteSaglayici>,
     kayitli_anahtar: Option<&str>,
 ) -> TestUygulamasi {
+    test_uygulamasi_yerlesikli(dizin, saglayici, kayitli_anahtar, None)
+}
+
+/// `test_uygulamasi`, yerleşik eklentilerin dizini verilerek (aşama 4
+/// tasarımı §13.1): her eklenti `<dizin>/<ad>/` altında `kalfa.toml` ve
+/// `eklenti.wasm`'dır.
+pub fn test_uygulamasi_yerlesikli(
+    dizin: &Path,
+    saglayici: Arc<SahteSaglayici>,
+    kayitli_anahtar: Option<&str>,
+    yerlesik_eklentiler: Option<PathBuf>,
+) -> TestUygulamasi {
     let ayar = dizin.join("yalitim.json");
     if !ayar.exists() {
         std::fs::create_dir_all(dizin).unwrap();
         std::fs::write(&ayar, r#"{"yalitimsiz_izinli": true}"#).unwrap();
     }
-    test_uygulamasi_yalitimla(
+    kur(
         dizin,
         saglayici,
         kayitli_anahtar,
         YalitimKaynagi::Kurucu(Box::new(|_| Arc::new(Yalitimsiz))),
+        yerlesik_eklentiler,
     )
 }
 
@@ -305,6 +318,16 @@ pub fn test_uygulamasi_yalitimla(
     saglayici: Arc<SahteSaglayici>,
     kayitli_anahtar: Option<&str>,
     yalitim: YalitimKaynagi,
+) -> TestUygulamasi {
+    kur(dizin, saglayici, kayitli_anahtar, yalitim, None)
+}
+
+fn kur(
+    dizin: &Path,
+    saglayici: Arc<SahteSaglayici>,
+    kayitli_anahtar: Option<&str>,
+    yalitim: YalitimKaynagi,
+    yerlesik_eklentiler: Option<PathBuf>,
 ) -> TestUygulamasi {
     let depo = Arc::new(BellekDeposu::default());
     if let Some(anahtar) = kayitli_anahtar {
@@ -327,6 +350,8 @@ pub fn test_uygulamasi_yalitimla(
         aktarim: AktarimAyarlari::default(),
         yalitim_dizini: dizin.join("yalitim"),
         geri_alma_dizini: dizin.join("geri-alma"),
+        eklenti_verisi_dizini: dizin.join("eklenti-verisi"),
+        yerlesik_eklentiler,
         kalfa_araclari: Vec::new(),
         ev_dizini: dizin.join("ev"),
         yalitim,

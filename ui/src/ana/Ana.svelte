@@ -1,13 +1,14 @@
 <!--
   Ana pencere (1c tasarımı §8.1): menü, oturum listesi, konuşma ve en altta
-  durum çubuğu. Onay sayfası konuşmanın üstünde açılır. Menüden Ayarlar
-  seçilince liste ve konuşmanın yerine Ayarlar gelir.
+  durum çubuğu. Onay sayfası konuşmanın üstünde açılır. Menüden Ayarlar ya da
+  Eklentiler seçilince liste ve konuşmanın yerine o ekran gelir.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
   import { AnaDurum } from './anaDurum.svelte';
   import Ayarlar from './Ayarlar.svelte';
   import DurumCubugu from './DurumCubugu.svelte';
+  import Eklentiler from './Eklentiler.svelte';
   import Konusma from './Konusma.svelte';
   import GeriAlmaSayfasi from './GeriAlmaSayfasi.svelte';
   import GonderimGunlugu from './GonderimGunlugu.svelte';
@@ -49,6 +50,8 @@
     <Menu {durum} />
     {#if durum.gorunum === 'ayarlar'}
       <Ayarlar {durum} />
+    {:else if durum.gorunum === 'eklentiler'}
+      <Eklentiler {durum} />
     {:else}
       <OturumListesi {durum} />
       <Konusma {durum} />

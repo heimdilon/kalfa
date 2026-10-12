@@ -1,23 +1,22 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-10-12; G5 kapandı. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-10-12; G5 kapandı, #52 birleşti. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
-## Güncel devam noktası — 2026-10-12 11:30 TSİ
+## Güncel devam noktası — 2026-10-12 12:00 TSİ
 
 Aşama 1–3 tamamlandı. Aşama 4'te tasarım #49, çalışma zamanı #50
-(`d1aa225`) ve EVREN yolu #51 (`4807265`) ana dala birleşti. **4c ve 4d
-uygulandı, fakat #52/#53 henüz birleşmedi; aşama 4 tamamlandı sayılmaz.**
+(`d1aa225`), EVREN yolu #51 (`4807265`) ve RAG #52 (`7ada5fa`) ana dala
+birleşti. **4d (#53) henüz birleşmedi; aşama 4 tamamlandı sayılmaz.**
 
 | İş | Yayınlanmış baş / taban | Durum |
 |---|---|---|
-| Ana dal | `kalfa-asama-1`, `4807265` | 4a ve 4b birleşmiş kod |
-| [#52 — 4c](https://github.com/heimdilon/kalfa-arsiv/pull/52) | `4c/plan`, `f64a413` → `kalfa-asama-1` | Taslak; [CI 147](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38145248319) dört işiyle yeşil; G5 kapandı, sonuç kaydı yeni baş |
-| [#53 — 4d](https://github.com/heimdilon/kalfa-arsiv/pull/53) | `4d/plan`, `9980516` → `4c/plan` | Taslak; [CI 148](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38145500135) dört işiyle yeşil; inceleme düzeltmesi doğrulandı |
+| Ana dal | `kalfa-asama-1`, `7ada5fa` | 4a, 4b ve 4c birleşmiş kod |
+| [#52 — 4c](https://github.com/heimdilon/kalfa-arsiv/pull/52) | `ffdf65b` → `7ada5fa` | 12 Ekim squash birleşti; G5 kapandı, [CI 149](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38222907378) yeşildi |
+| [#53 — 4d](https://github.com/heimdilon/kalfa-arsiv/pull/53) | `4d/plan` → `kalfa-asama-1` | Taslak; yeni ana dala taşındı (`9980516` → `e5ad382` ve bu belge kaydı); yeni CI ve ayrı squash onayı bekliyor |
 
-Aktif 4c worktree'si `C:\Users\kullanici\kalfa-4a-uygula`, 4d worktree'si
-`C:\Users\kullanici\kalfa-4d`'dir. Ana klasörün kodu `4807265`'tedir;
-buradaki güncel belge, açık PR'ların durumunu da anlatır. Ana klasördeki
+Aktif 4d worktree'si `C:\Users\kullanici\kalfa-4d`'dir; 4c worktree'si
+`C:\Users\kullanici\kalfa-4a-uygula` ölçüm verisi için korunur. Ana klasördeki
 ilgisiz `tasks.png`'ye dokunulmaz.
 
 **Ölçüm kararları:** G4/G6/G8 ve G5'in aday/dosya, talimat dili, boyut,
@@ -42,9 +41,8 @@ test**, 0 hata/uyarı, paket denetimi temiz. Bu arayüz düzeltmesinde gerçek
 yalıtım/e2e yeniden koşmadı; Claude'un `017aacd` kaydı Windows AppContainer
 uyumluluk 24/24 ve e2e 38/38, WSL yalıtım 26, uyumluluk 16/16 ve e2e 38/38'dir.
 
-**Sıradaki iş:** G5 sonucu ve biriken belge farkları #52'ye tek push'la
-gönderilir; yeni başın CI'ı yeşil olunca #52 kullanıcının açık squash
-onayını bekler. Canlı EVREN çağrısı gerekmez.
+**Sıradaki iş:** #53'ün yeni başının CI'ı yeşil olunca kullanıcının
+ayrı, açık squash onayı. Canlı EVREN çağrısı gerekmez.
 
 **CI bütçesi:** Kullanıcının 11 Ekim bildirimi **2719/3000 dakika**, kalan
 **281 dakika (%9,37)**; bu hesap kullanım uç noktasından doğrulanmış bir
@@ -54,9 +52,8 @@ farkları sonraki yetkili işte ilgili dalda toplanır. CI kapsamı ve iki
 platform gerekliliği korunur. G5'in yerel koşusu GitHub dakikası tüketmez;
 sonuç push'u, ana dala merge ve #53 taban değişimi CI tetikleyebilir.
 
-**Birleştirme sırası:** G5 (tamam) ve güncel CI → #52 için açık squash
-onayı → #53'ü yeni ana dala taşıma → yeni CI → #53 için ayrı açık onay.
-G5 sonucu merge/rebase/force push yapmadı.
+**Birleştirme sırası:** G5, #52 squash ve #53'ün taşınması tamam →
+#53'ün yeni CI'ı → #53 için ayrı açık onay.
 
 **Korunacaklar:** 4c'nin eski ve yeni indeksleri, kesinti öncesi kopyası,
 320 parça ölçüm makbuzu ve doğrulama logları; 4d logları; mevcut WSL

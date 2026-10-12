@@ -180,6 +180,12 @@ impl Arac for EklentiAraci {
         false
     }
 
+    /// Eklenti bu çalışma alanında kapatıldıysa, devre dışıysa ya da
+    /// kaldırıldıysa araç sunulmaz (§13.3).
+    fn sunulur_mu(&self) -> bool {
+        self.izin.acik_mi()
+    }
+
     async fn hazirla(&self, _argumanlar: &Value) -> Result<Hazirlik, AracHatasi> {
         let m = &self.eklenti.manifest;
         let mut tarif = self.tarif();

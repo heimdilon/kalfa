@@ -514,6 +514,7 @@ impl Oturum {
                 geri_alinabilir: self.onay_geri_alinabilirligi(&p.hazirlik),
                 veri_cikisi: p.hazirlik.veri_cikisi,
                 kisayol: teklifler.get(&p.cagri).cloned(),
+                eklenti: p.hazirlik.eklenti.clone(),
             })
             .collect();
         // Yerel iletişim kutusu komutu çekirdekten okur, webview'dan değil
@@ -916,8 +917,9 @@ impl Oturum {
         loop {
             // İptal gelmişse bekleyen eklenti istekleri bırakılır; araç
             // `GonderimYaniti::Iptal` alıp çıkar.
-            if iptal_nedeni.is_some() {
+            if iptal_nedeni.is_some() && !eklenti_bekleyen.is_empty() {
                 eklenti_bekleyen.clear();
+                self.bekleyen_govdeleri_temizle();
             }
             if (isler.is_empty() && denetim_isleri.is_empty())
                 || (iptal_nedeni.is_some() && isler.is_empty())
@@ -995,6 +997,7 @@ impl Oturum {
                 }
             }
         }
+        self.bekleyen_govdeleri_temizle();
         // Döngü bitmeden kanalda kalan ağ isteği kayda girer; bitmiş bir araç
         // için artık gönderim izni sorulmaz.
         while let Ok(istek) = ortam_rx.try_recv() {
@@ -1393,6 +1396,10 @@ impl Oturum {
                 neden: OnizlemeNedeni::Eklenti,
             })
             .await;
+            self.bekleyen_govdeler
+                .lock()
+                .unwrap_or_else(|z| z.into_inner())
+                .insert(islem, talep.govde.clone());
             bekleyen.insert(
                 islem,
                 EklentiBekleyen {
@@ -1408,6 +1415,14 @@ impl Oturum {
             .or_default()
             .say(talep.ozet.bayt);
         let _ = yanit.send(GonderimYaniti::Gonder);
+    }
+
+    /// "Metni göster" için tutulan gövdeler; karar bekleyen kalmayınca.
+    fn bekleyen_govdeleri_temizle(&self) {
+        self.bekleyen_govdeler
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .clear();
     }
 
     /// Kullanıcının önizleme kararı (§9.4). "Gönderme" kaydedilir ve araç
@@ -1429,6 +1444,10 @@ impl Oturum {
         else {
             return;
         };
+        self.bekleyen_govdeler
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .remove(&islem);
         if self.iptal.is_cancelled() {
             let _ = yanit.send(GonderimYaniti::Iptal);
             return;

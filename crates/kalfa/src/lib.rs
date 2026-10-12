@@ -135,6 +135,17 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
         &platform_yerel_veri,
         std::env::var_os(VERI_DIZINI_DEGISKENI),
     );
+    let eklenti_verisi = kalfa_uygulama::dizin::eklenti_verisi_dizini(
+        &veri,
+        &platform_yerel_veri,
+        std::env::var_os(VERI_DIZINI_DEGISKENI),
+    );
+    let yerlesik_eklentiler = kalfa_uygulama::dizin::yerlesik_eklenti_dizini(
+        app.path().resource_dir().ok().as_deref(),
+        std::env::var_os(kalfa_uygulama::dizin::YERLESIK_EKLENTI_DEGISKENI),
+        // Uçtan uca derleme sürüm profilindedir; değişkeni o da okur.
+        cfg!(any(debug_assertions, feature = "e2e")),
+    );
     let kalici: Option<Box<dyn AnahtarDeposu>> =
         if std::env::var(ANAHTAR_DEPOSU_DEGISKENI).as_deref() == Ok("bellek") {
             None
@@ -160,6 +171,8 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
         ev_dizini,
         yalitim_dizini: yalitim,
         geri_alma_dizini: geri_alma,
+        eklenti_verisi_dizini: eklenti_verisi,
+        yerlesik_eklentiler,
         // Kurulu sürümde Program Files'taki `araclar\`; e2e derlemesi
         // `KALFA_ARAC_ZINCIRI` ile başka bir kök verebilir.
         kalfa_araclari: std::env::current_exe()

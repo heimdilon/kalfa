@@ -231,3 +231,111 @@ pub struct DenetciDurumu {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ayar_hatasi: Option<String>,
 }
+
+// --- Eklentiler (aşama 4 tasarımı §13, §14) ---
+
+/// Eklentiler ekranının bir satırı.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EklentiSatiri {
+    pub ad: String,
+    /// Kayıttaki ya da manifestteki sürüm.
+    pub surum: String,
+    pub aciklama: String,
+    /// Kalfa'yla gelen eklenti (`kalfa-rag`): kaldırılamaz, güncellenemez.
+    pub yerlesik: bool,
+    pub durum: EklentiDurumu,
+    /// `.wasm`'ın SHA-256'sı (onaltılık).
+    pub sha256: String,
+    /// Klasörden kurulanın kaynak klasörü; yerleşikte `None`.
+    pub kaynak: Option<String>,
+    /// Kurulum zamanı (Unix ms); yerleşikte `None`.
+    pub kurulum_ms: Option<u64>,
+    /// Manifestten üretilen yetenek cümlesi (§6.4); manifest okunamadıysa
+    /// `None`.
+    pub yetenek: Option<String>,
+    pub araclar: Vec<EklentiAraci>,
+    /// Eklentinin kayıtta adı geçen çalışma alanları.
+    pub alanlar: Vec<EklentiAlani>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "tip")]
+pub enum EklentiDurumu {
+    /// Etkin ve yüklü.
+    Yuklendi,
+    /// Kullanıcı devre dışı bıraktı; hiçbir çalışma alanında sunulmaz.
+    DevreDisi,
+    /// Manifest ya da bileşen yüklenemedi; `neden` kullanıcıya gösterilir.
+    Yuklenemedi { neden: String },
+}
+
+/// Modelin gördüğü araç (§6.5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EklentiAraci {
+    /// Modelin gördüğü ad: `kalfa_rag__anlamsal_ara`.
+    pub ad: String,
+    pub aciklama: String,
+}
+
+/// Bir eklentinin bir çalışma alanındaki durumu (§13.3, §14).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EklentiAlani {
+    /// Çalışma alanı kimliği (`CalismaAlaniKaydi::kimlik`).
+    pub kimlik: String,
+    /// Gösterim için; arayüz geri göndermez.
+    pub yol: String,
+    pub acik: bool,
+    /// EVREN'e gönderim izninin verildiği zaman (Unix ms).
+    pub gonderim_izni_ms: Option<u64>,
+    /// Eklentinin bu çalışma alanındaki deposunun boyutu (bayt).
+    pub depo_bayt: u64,
+}
+
+/// "Klasörden kur"un sonucu (§13.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "tip")]
+pub enum KurulumSonucu {
+    Kuruldu {
+        ad: String,
+        surum: String,
+        /// Aynı adlı eklentinin yerine geçti.
+        guncelleme: bool,
+        /// Güncelleme gönderim kapsamını değiştirdi; izinler silindi.
+        izinler_silindi: bool,
+    },
+    /// Klasör seçilmedi ya da yerel pencerede vazgeçildi.
+    Vazgecildi,
+    /// Klasör eklenti değil ya da yüklenemedi; ileti kullanıcıya gösterilir.
+    Basarisiz { mesaj: String },
+}
+
+/// Eklentinin açılıp kapatılacağı çalışma alanı. Arayüz yol göndermez:
+/// ya açık bir oturumun alanı ya da kayıttaki kimlik.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "tip")]
+pub enum AlanHedefi {
+    Oturum { oturum: OturumId },
+    Kimlik { kimlik: String },
+}
+
+/// Oturum görünümündeki "Bu oturumdaki izinler" panelinin eklenti satırı
+/// (§14).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OturumEklentisi {
+    pub ad: String,
+    pub yerlesik: bool,
+    /// Eklenti bu çalışma alanında açık.
+    pub acik: bool,
+    /// Eklenti devre dışı ya da yüklenemedi: anahtar değiştirilemez.
+    pub kullanilamaz: bool,
+    /// EVREN'e gönderim izninin verildiği zaman (Unix ms).
+    pub gonderim_izni_ms: Option<u64>,
+}
+
+/// EVREN'in günlük token sınırı doldu (aşama 4c, §9.5). Sınır hesap
+/// geneldir; bir istek başarılı olunca kalkar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct GunlukSinirDurumu {
+    /// Sınırın sıfırlanacağı an (RFC 3339), EVREN söylediyse.
+    pub sifirlanma: Option<String>,
+}

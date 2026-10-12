@@ -55,6 +55,20 @@ copyFileSync(
   join(kok, 'target', 'release', 'kalfa-kopru.exe'),
   join(ikililer, `kalfa-kopru-${hedef}.exe`),
 );
+// Yerleşik eklenti `kalfa-rag` (aşama 4 tasarımı §13.1, §17.3): sürüm
+// profiliyle derlenir; kurucu `$INSTDIR\eklentiler\kalfa-rag\`'a koyar.
+calistir(
+  'cargo',
+  ['build', '-p', 'kalfa-rag', '--target', 'wasm32-wasip2', '--release', '--locked'],
+  kok,
+);
+const rag = join(kalfa, 'eklentiler', 'kalfa-rag');
+mkdirSync(rag, { recursive: true });
+copyFileSync(
+  join(kok, 'target', 'wasm32-wasip2', 'release', 'kalfa_rag.wasm'),
+  join(rag, 'eklenti.wasm'),
+);
+copyFileSync(join(kok, 'crates', 'kalfa-rag', 'kalfa.toml'), join(rag, 'kalfa.toml'));
 // Python ve Node sabit sürüm ve SHA-256 ile `araclar/`'a açılır; kurucu onları
 // `$INSTDIR\araclar\`'a koyar. Python'un yalıtımda çalışması Kalfa'nın
 // sitecustomize.py'sini ister (A16).

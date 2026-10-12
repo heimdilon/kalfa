@@ -1,7 +1,9 @@
 <!--
   Konuşma sütunu (1c tasarımı §8.1, §9.3): başlık, uyarı şeritleri, geçmiş ve
   canlı olaylar, Composer. Yukarı kaydırınca eski turlar sayfa sayfa eklenir;
-  kullanıcı en alttayken yeni içerik görünür kalır.
+  kullanıcı en alttayken yeni içerik görünür kalır. "Bu oturumdaki izinler"
+  paneli oturumun kısayollarını ve çalışma alanındaki eklentileri listeler;
+  eklentiyi buradan da açıp kapatabilirsiniz (aşama 4 tasarımı §14).
 -->
 <script lang="ts">
   import { tick } from 'svelte';
@@ -12,10 +14,12 @@
   import IconButton from '../bilesenler/IconButton.svelte';
   import IconTile from '../bilesenler/IconTile.svelte';
   import { KIP_ADI, MODEL_PROFILI_ADI, kisayolCumlesi, m } from '../dil/tr';
-  import { KIPLER, type Kip } from '../ipc/tipler';
+  import { komutHatasi } from '../ipc/hata';
+  import * as ipc from '../ipc/ana';
+  import { KIPLER, type Kip, type OturumEklentisi, type OturumId } from '../ipc/tipler';
   import { AltaYapisma, kaydirmaNiyetiMi } from './altaYapisma';
   import type { AnaDurum } from './anaDurum.svelte';
-  import { satirBasligi } from './bicim';
+  import { gunAy, satirBasligi } from './bicim';
   import KonusmaOgesi from './KonusmaOgesi.svelte';
 
   let { durum }: { durum: AnaDurum } = $props();
@@ -81,6 +85,45 @@
       for (const o of olaylar) kutu.removeEventListener(o, niyet);
     };
   });
+
+  // "Bu oturumdaki izinler" panelindeki eklentiler (aşama 4 tasarımı §14).
+  // Oturum kimliği düz metindir: ekran her olayda yenilenir ama kimlik
+  // değişmedikçe aşağıdaki etki yeniden çalışmaz.
+  let eklentiler = $state<OturumEklentisi[]>([]);
+  /** Başlıktaki sayı verilmiş izinleri sayar: kapalı eklenti izin değildir. */
+  const acikEklenti = $derived(eklentiler.filter((e) => e.acik).length);
+  const eklentiOturumu = $derived(
+    ekran && !ekran.salt_okunur && !ekran.kapandi ? ekran.oturum : null,
+  );
+
+  async function eklentileriYukle(oturum: OturumId) {
+    try {
+      const liste = await ipc.oturumEklentileri(oturum);
+      if (eklentiOturumu === oturum) eklentiler = liste;
+    } catch (hata) {
+      durum.hata = komutHatasi(hata).mesaj;
+    }
+  }
+
+  async function eklentiAyarla(oturum: OturumId, eklenti: OturumEklentisi, acik: boolean) {
+    try {
+      await ipc.eklentiAlaniAyarla(eklenti.ad, { tip: 'Oturum', oturum }, acik);
+    } catch (hata) {
+      durum.hata = komutHatasi(hata).mesaj;
+    }
+    await eklentileriYukle(oturum);
+  }
+
+  // Oturum seçilince ve açılınca; Eklentiler ekranından dönünce bileşen yeniden kurulur.
+  $effect(() => {
+    const oturum = eklentiOturumu;
+    eklentiler = [];
+    if (oturum) void eklentileriYukle(oturum);
+  });
+
+  function izinlerAcildi(e: Event & { currentTarget: HTMLDetailsElement }) {
+    if (e.currentTarget.open && eklentiOturumu) void eklentileriYukle(eklentiOturumu);
+  }
 
   function kaydirildi() {
     if (!akis) return;
@@ -148,26 +191,59 @@
       </div>
     {/if}
 
-    {#if ekran.kisayollar.length > 0}
-      <details class="izinler">
+    {#if ekran.kisayollar.length > 0 || eklentiler.length > 0}
+      <details class="izinler" ontoggle={izinlerAcildi}>
         <summary>
           <Icon name="key-round" size={14} />
-          {m('kisayol.liste', { sayi: ekran.kisayollar.length })}
+          {m('kisayol.liste', { sayi: ekran.kisayollar.length + acikEklenti })}
         </summary>
-        <p class="izin-aciklama">{m('kisayol.aciklama')}</p>
-        <ul>
-          {#each ekran.kisayollar as k (k.kimlik)}
-            <li>
-              <span>{kisayolCumlesi(k.teklif)}</span>
-              <IconButton
-                icon="x"
-                size="sm"
-                label={m('kisayol.kaldir')}
-                onclick={() => durum.kisayoluKaldir(ekran.oturum, k.kimlik)}
-              />
-            </li>
-          {/each}
-        </ul>
+        {#if ekran.kisayollar.length > 0}
+          <p class="izin-aciklama">{m('kisayol.aciklama')}</p>
+          <ul>
+            {#each ekran.kisayollar as k (k.kimlik)}
+              <li>
+                <span class="metin">{kisayolCumlesi(k.teklif)}</span>
+                <IconButton
+                  icon="x"
+                  size="sm"
+                  label={m('kisayol.kaldir')}
+                  onclick={() => durum.kisayoluKaldir(ekran.oturum, k.kimlik)}
+                />
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if eklentiler.length > 0}
+          <p class="izin-aciklama">{m('oturum.eklenti.aciklama')}</p>
+          <ul aria-label={m('oturum.eklentiler')}>
+            {#each eklentiler as e (`${e.yerlesik}:${e.ad}`)}
+              <li>
+                <div class="eklenti" role="group" aria-label={e.ad}>
+                  <span class="eklenti-adi">{e.ad}</span>
+                  <Checkbox
+                    label={m('eklentiler.alan_acik')}
+                    checked={e.acik}
+                    disabled={e.kullanilamaz}
+                    onchange={(acik) => void eklentiAyarla(ekran.oturum, e, acik)}
+                  />
+                  {#if e.kullanilamaz}
+                    <span class="eklenti-notu kullanilamaz">
+                      {m('oturum.eklenti.kullanilamaz')}
+                    </span>
+                  {/if}
+                  <span class="eklenti-notu">
+                    <span>{m('eklentiler.gonderim')}</span>
+                    <span>
+                      {e.gonderim_izni_ms === null
+                        ? m('eklentiler.izin_yok')
+                        : m('eklentiler.izin_var', { tarih: gunAy(e.gonderim_izni_ms) })}
+                    </span>
+                  </span>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {/if}
       </details>
     {/if}
 
@@ -276,9 +352,29 @@
     align-items: center;
     gap: 8px;
   }
-  .izinler li span {
+  .izinler li .metin {
     flex: 1;
     color: var(--text-body);
+  }
+  .eklenti {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 16px;
+    padding: 2px 0;
+  }
+  .eklenti-adi {
+    font-family: var(--font-mono);
+    color: var(--text-body);
+  }
+  .eklenti-notu {
+    display: inline-flex;
+    gap: 6px;
+    color: var(--text-muted);
+  }
+  .eklenti-notu.kullanilamaz {
+    color: var(--status-warn);
   }
   .ust {
     display: flex;
