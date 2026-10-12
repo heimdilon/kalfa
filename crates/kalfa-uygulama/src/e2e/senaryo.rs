@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::stream;
-use kalfa_evren::tipler::{FunctionCall, ToolCall};
+use kalfa_evren::tipler::{FunctionCall, ToolCall, Usage};
 use kalfa_evren::{AkisKanali, AkisOlayi};
 use serde::Deserialize;
 use tokio::sync::mpsc;
@@ -141,6 +141,16 @@ async fn uret(
         g.gonder(AkisOlayi::AracCagrilari(cagrilar)).await?;
         "tool_calls"
     };
+    // Tamamlanan yanıt geçerli kullanım bildirir; bütçe bilinmeyen tüketimi
+    // sormaz (5b tasarımı §6). Kesilen akışlar bu olayı üretmez.
+    g.gonder(AkisOlayi::Kullanim(Usage {
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 15,
+        completion_tokens_details: None,
+        evren: None,
+    }))
+    .await?;
     g.gonder(AkisOlayi::Bitti {
         neden: neden.into(),
     })

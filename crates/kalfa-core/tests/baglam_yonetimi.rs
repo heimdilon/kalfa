@@ -146,6 +146,8 @@ async fn esigin_altinda_ozetleme_istegi_yok() {
 fn kullanimla(yanit: SahteYanit, istem: u64) -> SahteYanit {
     match yanit {
         SahteYanit::Akis(mut olaylar) => {
+            // Sahte yanıtın varsayılan kullanımının yerine geçer: son kullanım olayı sayılır.
+            olaylar.retain(|o| !matches!(o, Ok(AkisOlayi::Kullanim(_))));
             olaylar.insert(
                 0,
                 Ok(AkisOlayi::Kullanim(Usage {
@@ -168,10 +170,14 @@ async fn kullanim_orani_varsayilan_esigi_tetikler() {
     let (mut ayar, _) = ayarlar(dizin.path());
     ayar.sinirlar.baglam_esigi = 64_000;
     ayar.sinirlar.baglam_hedefi = 32_000;
-    // İlk yanıt, birkaç yüz baytlık istemin 10 milyon token tuttuğunu söyler.
+    // Bu test 5a eşiğini sınar. 10 milyonluk yanıt varsayılan 5 milyon token
+    // bütçesini aşar; bütçe kararı araya girmesin diye sınır yükseltilir.
+    ayar.butce.token = 100_000_000;
+    // İlk iki yanıt, birkaç yüz baytlık istemin 10 milyon token tuttuğunu söyler;
+    // oran ikinci yanıtta da yüksek kalır ki eşik üçüncü istekten önce aşılsın.
     let s = SahteSaglayici::yeni(vec![
         kullanimla(oku_cagrisi("a.txt"), 10_000_000),
-        oku_cagrisi("b.txt"),
+        kullanimla(oku_cagrisi("b.txt"), 10_000_000),
         SahteYanit::metin("tamam"),
     ]);
     s.sohbet_ekle(SahteSohbet::Metin("özet".into()));
@@ -522,6 +528,9 @@ async fn durdurucu_hatada_baslamis_istekler_kaydedilir() {
     let (mut ayar, yol) = ayarlar(dizin.path());
     ayar.sinirlar.baglam_esigi = 64_000;
     ayar.sinirlar.baglam_hedefi = 32_000;
+    // Bu test 5a'nın durdurucu hatasını sınar; üçüncü yanıtın 10 milyon
+    // token'ı varsayılan bütçeyi aşar, bu yüzden sınır yükseltilir.
+    ayar.butce.token = 100_000_000;
     // Eşik ancak üçüncü yanıtın kullanımıyla aşılır.
     let s = SahteSaglayici::yeni(vec![
         oku_cagrisi("a.txt"),

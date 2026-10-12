@@ -9,7 +9,8 @@ use kalfa_evren::tipler::{ChatMessage, ChatRequest, ToolCall};
 use kalfa_evren::{AkisOlayi, YanitMeta};
 
 use super::{Etki, Oturum};
-use crate::gonderim::{GonderilenOge, IstekAsamasi, IstekSonucu};
+use crate::butce::{ButceIslemId, hata_kullanimi};
+use crate::gonderim::{GonderilenOge, GunlukToken, IstekAsamasi, IstekSonucu};
 use crate::kayit::KayitOgesi;
 use crate::protokol::{BitisNedeni, Olay};
 use crate::saglayici::SaglayiciAkisi;
@@ -31,13 +32,18 @@ impl Oturum {
     pub(super) async fn model_turu(&mut self) -> Result<ModelCevabi, BitisNedeni> {
         self.baglami_yonet(false).await?;
         let istek = self.istek_olustur();
-        let SaglayiciAkisi {
-            olaylar: mut akis, ..
-        } = self.akis_ac(istek).await?;
+        let (
+            SaglayiciAkisi {
+                olaylar: mut akis, ..
+            },
+            islem,
+        ) = self.akis_ac(istek).await?;
         let mut metin = String::new();
         let mut dusunce = String::new();
         let mut cagrilar = Vec::new();
         let mut butce = YanitButcesi::default();
+        // Akışın son kullanım olayı; bütçede tek sonlandırmada sayılır (5b §6).
+        let mut butce_kullanimi: Option<GunlukToken> = None;
 
         let sonuc = loop {
             tokio::select! {
@@ -48,6 +54,11 @@ impl Oturum {
                     let Some(komut) = self.komut_geldi(komut).await else { break Err(BitisNedeni::Iptal) };
                     if self.genel_komut(komut).await == Etki::Iptal {
                         break Err(BitisNedeni::Iptal);
+                    }
+                }
+                talep = self.butce_talep_alici.recv() => {
+                    if let Some(talep) = talep {
+                        self.butce_talebi_geldi(talep).await;
                     }
                 }
                 olay = akis.next() => {
@@ -70,6 +81,15 @@ impl Oturum {
                     }
                     Some(Ok(AkisOlayi::AracCagrilari(v))) => cagrilar.extend(v),
                     Some(Ok(AkisOlayi::Kullanim(u))) => {
+                        // Son geçerli kullanım sayılır (5b tasarımı §6); eksik ya da
+                        // çelişkili bir olay önceki geçerli kullanımı değiştirmez.
+                        if let Some((istem, tamamlama)) = u.butce_kullanimi() {
+                            butce_kullanimi = Some(GunlukToken {
+                                istem,
+                                tamamlama,
+                                dusunce: u.reasoning_tokens(),
+                            });
+                        }
                         let (istem, tamamlama, dusunce) =
                             (u.prompt_tokens, u.completion_tokens, u.reasoning_tokens());
                         self.oran = super::baglam::Oran::yeni(istem, self.son_istek_bayti);
@@ -102,6 +122,8 @@ impl Oturum {
         };
         // İptalde akış bırakılır; bağlantı kapanır.
         drop(akis);
+        // Deneme tek kez sonlanır: kullanımı yoksa bilinmeyen (5b tasarımı §6).
+        self.butce_bitir(islem, butce_kullanimi).await;
 
         match sonuc {
             Ok(()) => {
@@ -128,7 +150,7 @@ impl Oturum {
     pub(super) async fn akis_ac(
         &mut self,
         mut istek: ChatRequest,
-    ) -> Result<SaglayiciAkisi, BitisNedeni> {
+    ) -> Result<(SaglayiciAkisi, ButceIslemId), BitisNedeni> {
         let mut hiz_denendi = false;
         let mut asim_denendi = false;
         loop {
@@ -140,16 +162,34 @@ impl Oturum {
             let onceki_araclar = self.son_arac_tanimlari.clone();
             self.son_istek_bayti = self.baglam_bayti();
             let yeni = self.gonderim_oncesi_hazirla().await;
-            match self
+            // Ağdan hemen önce bütçe izni (5b tasarımı §4.1). Reddedilen deneme
+            // ağa çıkmaz: hazırlanan sistem istemi ve araç tanımları gönderilmiş sayılmaz.
+            let islem = match self.butce_izni_ver("ana").await {
+                Ok(islem) => islem,
+                Err(neden) => {
+                    self.son_sistem_istemi = onceki_sistem;
+                    self.son_arac_tanimlari = onceki_araclar;
+                    return Err(neden);
+                }
+            };
+            let (istek_nesli, sonuc) = match self
                 .iptal_edilebilir(async move {
                     // Nesli future ilk kez gerçekten çalışmaya başladığında
                     // yakala; önceden snapshot alıp komut beklerken eskimesin.
                     let istek_nesli = kapi.durum().nesil;
                     (istek_nesli, saglayici.akis(deneme).await)
                 })
-                .await?
+                .await
             {
-                (_, Ok(akis)) => {
+                Ok(cikti) => cikti,
+                Err(neden) => {
+                    // Ağa çıkıldıktan sonra iptal: sonuç bilinmiyor (5b tasarımı §2).
+                    self.butce_bitir(islem, None).await;
+                    return Err(neden);
+                }
+            };
+            match sonuc {
+                Ok(akis) => {
                     self.istek_kaydet(
                         "ana",
                         &akis.meta,
@@ -157,13 +197,14 @@ impl Oturum {
                         yeni,
                         onceki,
                         IstekSonucu::Basarili,
+                        Some(islem),
                     )
                     .await;
                     self.gonderilen = self.mesajlar.len();
                     self.bekleyen_ozetler.clear();
-                    return Ok(akis);
+                    return Ok((akis, islem));
                 }
-                (istek_nesli, Err(e)) => {
+                Err(e) => {
                     let asama = match &e {
                         kalfa_evren::EvrenError::Ag {
                             govde_gitti: false, ..
@@ -177,8 +218,10 @@ impl Oturum {
                         onceki,
                         asama,
                         e.to_string(),
+                        Some(islem),
                     )
                     .await;
+                    self.butce_bitir(islem, hata_kullanimi(&e)).await;
                     if asama != IstekAsamasi::Baglanti {
                         self.gonderilen = self.mesajlar.len();
                         self.bekleyen_ozetler.clear();
@@ -222,6 +265,7 @@ impl Oturum {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn istek_kaydet(
         &mut self,
         amac: &str,
@@ -230,6 +274,7 @@ impl Oturum {
         yeni: Vec<GonderilenOge>,
         onceki: u32,
         sonuc: IstekSonucu,
+        butce_islem: Option<ButceIslemId>,
     ) {
         let oge = KayitOgesi::Istek {
             amac: amac.to_string(),
@@ -240,7 +285,7 @@ impl Oturum {
             yeni,
             onceki,
             sonuc,
-            butce_islem: None,
+            butce_islem,
         };
         self.kaydet(oge).await;
         self.tur_ozeti.istek();
@@ -256,6 +301,7 @@ impl Oturum {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn istek_kaydet_hata(
         &mut self,
         amac: &str,
@@ -264,6 +310,7 @@ impl Oturum {
         onceki: u32,
         asama: IstekAsamasi,
         mesaj: String,
+        butce_islem: Option<ButceIslemId>,
     ) {
         let oge = KayitOgesi::Istek {
             amac: amac.to_string(),
@@ -274,7 +321,7 @@ impl Oturum {
             yeni,
             onceki,
             sonuc: IstekSonucu::Hata { asama, mesaj },
-            butce_islem: None,
+            butce_islem,
         };
         self.kaydet(oge).await;
         self.tur_ozeti.istek();
@@ -382,6 +429,12 @@ impl Oturum {
                     let Some(komut) = self.komut_geldi(komut).await else { return Err(BitisNedeni::Iptal) };
                     if self.genel_komut(komut).await == Etki::Iptal {
                         return Err(BitisNedeni::Iptal);
+                    }
+                }
+                // Bekleyişte gelen bütçe talebi kapıdan geçer ya da kuyruğa girer (5b §7).
+                talep = self.butce_talep_alici.recv() => {
+                    if let Some(talep) = talep {
+                        self.butce_talebi_geldi(talep).await;
                     }
                 }
                 cikti = &mut gelecek => return Ok(cikti),

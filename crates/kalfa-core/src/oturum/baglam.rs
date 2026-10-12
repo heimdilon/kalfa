@@ -372,6 +372,7 @@ impl Oturum {
                     Vec::new(),
                     1,
                     IstekSonucu::Basarili,
+                    None,
                 )
                 .await;
                 if let Some(u) = &yanit.usage {
@@ -400,8 +401,16 @@ impl Oturum {
                     } => IstekAsamasi::Baglanti,
                     _ => IstekAsamasi::Yanit,
                 };
-                self.istek_kaydet_hata("özetleme", model, Vec::new(), 1, asama, e.to_string())
-                    .await;
+                self.istek_kaydet_hata(
+                    "özetleme",
+                    model,
+                    Vec::new(),
+                    1,
+                    asama,
+                    e.to_string(),
+                    None,
+                )
+                .await;
                 None
             }
         }

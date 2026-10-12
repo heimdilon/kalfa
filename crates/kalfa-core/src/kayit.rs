@@ -239,9 +239,13 @@ pub enum KayitOgesi {
         yontem: OzetYontemi,
     },
     /// Oturumun bütçe ayarı: yeni ya da kayıttan açılan oturumun istek ve
-    /// token sınırları (5b tasarımı §8).
+    /// token sınırları (5b tasarımı §8). 5b öncesi kayıtta bilinen en az
+    /// tüketim `devir`'de aynı kayıtla yazılır; ayar ile devir arasında
+    /// çökme olamaz.
     ButceAyarlandi {
         sinirlar: ButceSinirlari,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        devir: Option<ButceDevri>,
     },
     /// Bir ağ denemesinin başlangıç izni (5b tasarımı §4). Ağa çıkmadan önce
     /// kalıcı yazılır; sonuçsuz kalırsa kurtarmada bitişi yazılır.
@@ -260,10 +264,6 @@ pub enum KayitOgesi {
     ButceDevamKarari {
         sinirlar: ButceSinirlari,
         onaylanan_bilinmeyen: u64,
-    },
-    /// 5b öncesi kayıttan çıkarılan en az tüketim tabanı (5b tasarımı §8).
-    ButceDevralindi {
-        devir: ButceDevri,
     },
 }
 

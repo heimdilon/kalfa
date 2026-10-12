@@ -4,7 +4,7 @@ use futures_util::StreamExt;
 use kalfa_core::arac::{Arac, AracHatasi};
 use kalfa_core::saglayici::{EvrenSaglayici, Saglayici};
 use kalfa_core::test_destek::{SahteArac, SahteSaglayici, SahteYanit};
-use kalfa_evren::tipler::{ChatMessage, ChatRequest};
+use kalfa_evren::tipler::{ChatMessage, ChatRequest, Usage};
 use kalfa_evren::{AkisOlayi, ApiAnahtari, EvrenError, EvrenIstemcisi};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -28,6 +28,14 @@ async fn sahte_saglayici_senaryoyu_sirayla_verir() {
         olaylar,
         vec![
             Ok(AkisOlayi::Metin("a".into())),
+            // Başarılı sahte yanıt geçerli kullanım bildirir (5b tasarımı §6).
+            Ok(AkisOlayi::Kullanim(Usage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+                completion_tokens_details: None,
+                evren: None,
+            })),
             Ok(AkisOlayi::Bitti {
                 neden: "stop".into()
             })

@@ -7,6 +7,7 @@ use std::fmt;
 
 use kalfa_evren::EvrenError;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{mpsc, oneshot};
 
 use crate::gonderim::{GunlukToken, IstekSonucu};
 use crate::kayit::KayitOgesi;
@@ -85,8 +86,6 @@ pub enum ButceHatasi {
     EskiKarar,
     #[error("Bütçe ayarı kayıtta birden fazla var.")]
     CiftAyar,
-    #[error("Eski kayıt devri kayıtta birden fazla var.")]
-    CiftDevir,
     #[error("Bütçe kaydı, bütçe ayarından önce geliyor.")]
     AyarsizKayit,
     #[error("Bütçe engeli nedeniyle yeni istek başlatılamaz.")]
@@ -116,8 +115,6 @@ pub struct ButceDurumu {
     onaylanan_bilinmeyen: u64,
     aktif: BTreeSet<ButceIslemId>,
     biten: BTreeSet<ButceIslemId>,
-    /// `ButceDevralindi` kaydı en fazla bir kez uygulanır.
-    devir_var: bool,
 }
 
 impl ButceDurumu {
@@ -133,7 +130,6 @@ impl ButceDurumu {
             onaylanan_bilinmeyen: 0,
             aktif: BTreeSet::new(),
             biten: BTreeSet::new(),
-            devir_var: false,
         })
     }
 
@@ -241,13 +237,27 @@ impl ButceDurumu {
             }
             if let Some(d) = durum.as_mut() {
                 d.oynat(oge)?;
-            } else if let KayitOgesi::ButceAyarlandi { sinirlar } = oge {
-                durum = Some(Self::yeni(*sinirlar)?);
+            } else if let KayitOgesi::ButceAyarlandi { sinirlar, devir } = oge {
+                let mut yeni = Self::yeni(*sinirlar)?;
+                if let Some(devir) = devir {
+                    yeni.devral(*devir);
+                }
+                durum = Some(yeni);
             } else {
                 return Err(ButceHatasi::AyarsizKayit);
             }
         }
         Ok(durum)
+    }
+
+    /// 5b öncesi kaydın bilinen tabanı; belirsizse ilk yeni istekten önce
+    /// sorulsun diye bir bilinmeyen sayılır.
+    fn devral(&mut self, devir: ButceDevri) {
+        self.baslatilan = self.baslatilan.saturating_add(devir.istek);
+        self.token = self.token.saturating_add(devir.token);
+        if devir.belirsiz {
+            self.bilinmeyen = self.bilinmeyen.saturating_add(1);
+        }
     }
 
     /// Kimlik üretimi tükenmişse (sayaç taşması) `None`.
@@ -290,18 +300,6 @@ impl ButceDurumu {
                 self.onaylanan_bilinmeyen = *onaylanan_bilinmeyen;
                 Ok(())
             }
-            KayitOgesi::ButceDevralindi { devir } => {
-                if self.devir_var {
-                    return Err(ButceHatasi::CiftDevir);
-                }
-                self.devir_var = true;
-                self.baslatilan = self.baslatilan.saturating_add(devir.istek);
-                self.token = self.token.saturating_add(devir.token);
-                if devir.belirsiz {
-                    self.bilinmeyen = self.bilinmeyen.saturating_add(1);
-                }
-                Ok(())
-            }
             _ => Ok(()),
         }
     }
@@ -315,7 +313,6 @@ fn butce_kaydi_mi(oge: &KayitOgesi) -> bool {
             | KayitOgesi::ButceIstegiBasladi { .. }
             | KayitOgesi::ButceIstegiBitti { .. }
             | KayitOgesi::ButceDevamKarari { .. }
-            | KayitOgesi::ButceDevralindi { .. }
     )
 }
 
@@ -359,6 +356,44 @@ pub fn eski_kayit_devri<'a>(ogeler: impl IntoIterator<Item = &'a KayitOgesi>) ->
         istek,
         token,
         belirsiz: true,
+    }
+}
+
+/// Bütçe talep kanalının kapasitesi (5b tasarımı §4.1).
+const TALEP_KAPASITESI: usize = 16;
+
+/// Denetçi, özetleyici ya da eklentinin oturumdan istediği tek izin. `yanit`
+/// `None` ile dönerse izin yoktur ve çağıran ağa çıkmaz.
+pub struct ButceTalebi {
+    pub amac: String,
+    pub yanit: oneshot::Sender<Option<ButceIslemId>>,
+}
+
+/// Oturuma bağlı izin istemcisi (5b tasarımı §4.1). Her oturumun kendi kanalı
+/// vardır; iki oturum birbirinin sayacını tüketmez.
+#[derive(Clone)]
+pub struct ButceTalepci(mpsc::Sender<ButceTalebi>);
+
+impl ButceTalepci {
+    /// Oturumun talep kanalı: gönderici istemcide, alıcı oturum görevindedir.
+    pub(crate) fn kanal() -> (Self, mpsc::Receiver<ButceTalebi>) {
+        let (gonderici, alici) = mpsc::channel(TALEP_KAPASITESI);
+        (Self(gonderici), alici)
+    }
+
+    /// İzin ister ve bekler. `None`: izin yok (tur durduruldu ya da oturum
+    /// kapandı); çağıran ağa çıkmamalıdır. Bekleyiş bu future düşerek bırakılırsa
+    /// oturum izni teslim edemez ya da kapatır; ağa çıkılmaz.
+    pub async fn izin(&self, amac: &str) -> Option<ButceIslemId> {
+        let (yanit, alici) = oneshot::channel();
+        self.0
+            .send(ButceTalebi {
+                amac: amac.to_string(),
+                yanit,
+            })
+            .await
+            .ok()?;
+        alici.await.ok().flatten()
     }
 }
 
@@ -414,6 +449,7 @@ mod testler {
     fn ayar(istek: u64, token: u64) -> KayitOgesi {
         KayitOgesi::ButceAyarlandi {
             sinirlar: sinir(istek, token),
+            devir: None,
         }
     }
 
@@ -778,13 +814,6 @@ mod testler {
 
     #[test]
     fn kayit_hatalari_tipli_doner() {
-        let devir = KayitOgesi::ButceDevralindi {
-            devir: ButceDevri {
-                istek: 0,
-                token: 0,
-                belirsiz: false,
-            },
-        };
         let karar = KayitOgesi::ButceDevamKarari {
             sinirlar: sinir(20, 100),
             onaylanan_bilinmeyen: 0,
@@ -796,10 +825,6 @@ mod testler {
         assert_eq!(
             ButceDurumu::kayittan(&[ayar(10, 100), ayar(10, 100)]),
             Err(ButceHatasi::CiftAyar)
-        );
-        assert_eq!(
-            ButceDurumu::kayittan(&[ayar(10, 100), devir.clone(), devir]),
-            Err(ButceHatasi::CiftDevir)
         );
         assert_eq!(
             ButceDurumu::kayittan(&[ayar(10, 100), bitis(1, None)]),
@@ -847,14 +872,14 @@ mod testler {
 
     #[test]
     fn belirsiz_devir_bilinmeyeni_sorar_ve_siradaki_kimligi_surdurur() {
-        let devir = KayitOgesi::ButceDevralindi {
-            devir: ButceDevri {
+        let kayit = vec![KayitOgesi::ButceAyarlandi {
+            sinirlar: sinir(10, 2000),
+            devir: Some(ButceDevri {
                 istek: 3,
                 token: 900,
                 belirsiz: true,
-            },
-        };
-        let kayit = vec![ayar(10, 2000), devir];
+            }),
+        }];
         let mut d = ButceDurumu::kayittan(&kayit).unwrap().unwrap();
         assert_eq!(d.engel(), Some(ButceEngeli::Bilinmeyen));
         assert_eq!(d.siradaki(), Err(ButceEngeli::Bilinmeyen));
@@ -919,12 +944,13 @@ mod testler {
                 sinirlar: sinir(20, 100),
                 onaylanan_bilinmeyen: 1,
             },
-            KayitOgesi::ButceDevralindi {
-                devir: ButceDevri {
+            KayitOgesi::ButceAyarlandi {
+                sinirlar: sinir(10, 100),
+                devir: Some(ButceDevri {
                     istek: 1,
                     token: 2,
                     belirsiz: true,
-                },
+                }),
             },
         ];
         for oge in ogeler {
@@ -952,5 +978,34 @@ mod testler {
         let json = serde_json::to_string(&yeni).unwrap();
         assert!(json.contains(r#""butce_islem":7"#), "{json}");
         assert_eq!(serde_json::from_str::<KayitOgesi>(&json).unwrap(), yeni);
+    }
+
+    #[tokio::test]
+    async fn izin_oturum_kapaninca_none_doner() {
+        let (talepci, alici) = ButceTalepci::kanal();
+        drop(alici);
+        assert_eq!(talepci.izin("ana").await, None);
+    }
+
+    #[tokio::test]
+    async fn izin_verilen_kimligi_dondurur() {
+        let (talepci, mut alici) = ButceTalepci::kanal();
+        let izin = tokio::spawn(async move { talepci.izin("denetci").await });
+        let talep = alici.recv().await.expect("talep gelmeli");
+        assert_eq!(talep.amac, "denetci");
+        talep
+            .yanit
+            .send(Some(ButceIslemId(4)))
+            .expect("çağıran bekliyor");
+        assert_eq!(izin.await.expect("görev bitmeli"), Some(ButceIslemId(4)));
+    }
+
+    #[tokio::test]
+    async fn izin_cevap_gelmeden_dusurulurse_none_doner() {
+        let (talepci, mut alici) = ButceTalepci::kanal();
+        let izin = tokio::spawn(async move { talepci.izin("ozet").await });
+        let talep = alici.recv().await.expect("talep gelmeli");
+        drop(talep.yanit);
+        assert_eq!(izin.await.expect("görev bitmeli"), None);
     }
 }

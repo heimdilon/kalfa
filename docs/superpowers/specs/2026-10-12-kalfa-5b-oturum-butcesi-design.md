@@ -178,11 +178,10 @@ Yeni bütçe kayıtları:
 
 | Kayıt | Alanlar / anlam |
 |---|---|
-| `ButceAyarlandi` | `sinirlar`; yeni oturumun başlangıç limitleri |
+| `ButceAyarlandi` | `sinirlar`, isteğe bağlı `devir`; başlangıç limitleri ve 5b öncesi kaydın bilinen en az istek/token tabanı ile belirsizliği (tek kayıt) |
 | `ButceIstegiBasladi` | `islem`, `amac`; kalıcı başlangıç izni |
 | `ButceIstegiBitti` | `islem`, `kullanim: Option<GunlukToken>`; tek sonlandırma |
-| `ButceDevamKarari` | `islem`, `sinirlar`, `onaylanan_bilinmeyen`; kalıcı kullanıcı kararı |
-| `ButceDevralindi` | Eski kaydın bilinen en az istek/token tabanı ve belirsizliği |
+| `ButceDevamKarari` | `sinirlar`, `onaylanan_bilinmeyen`; kalıcı kullanıcı kararı (kart, gözlenen başlatılan/bilinmeyen sayılarıyla eşlenir) |
 
 Yeni bütçe muhasebesinde yalnız bütçe kayıtları sayılır. Eski `Kullanim`
 satırlarıyla yeniden toplanmaz. Gönderim günlüğü yeni satırların tokenını
@@ -252,8 +251,8 @@ yenilemez. Bilinmeyenin kabulü de kayıttan geri gelir.
 satırlarından bilinen en az deneme/token sayısı çıkarılır. `Gonderilmedi`
 sayılmaz. Eski denetçi/özet tekrarları ve eklenti kullanımı tam
 belirlenemediği için geçmiş **tam sayılmış** gösterilmez; ilk yeni
-istekten önce bu belirsizlik kullanıcıya sunulur. `ButceDevralindi`
-geçişi bir kez yazılır, tekrar kurtarmada eski ve yeni sayaçlar çift
+istekten önce bu belirsizlik kullanıcıya sunulur. Devir, `ButceAyarlandi`'nın `devir` alanında
+bir kez yazılır, tekrar kurtarmada eski ve yeni sayaçlar çift
 toplanmaz. Bozuk kimlik/çift sonuç/karar geri çekilmesi hata verir.
 
 Şema 1'de kalır; yeni sürümün eski kaydı açması test edilir. Eski Kalfa

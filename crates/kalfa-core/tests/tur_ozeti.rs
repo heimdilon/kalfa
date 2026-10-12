@@ -152,12 +152,14 @@ async fn tur_ozeti_dosyalari_komutlari_ve_istekleri_tasir() {
     assert_eq!(ozet.komutlar.len(), 1);
     assert_eq!(ozet.komutlar[0].komut, "test");
     assert_eq!(ozet.komutlar[0].durum, AracDurumu::Basarili);
+    // İki araç yanıtı sahte başarılı yanıtın varsayılan 10/5 kullanımını taşır;
+    // son yanıt açık 100/20 kullanımdır.
     assert_eq!(
         ozet.istekler,
         IstekOzeti {
             sayi: 3,
-            istem: 100,
-            tamamlama: 20,
+            istem: 120,
+            tamamlama: 30,
             dusunce: 0,
         }
     );

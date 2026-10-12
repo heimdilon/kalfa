@@ -11,6 +11,7 @@ use kalfa_core::arac::{
     Arac, AracCiktisi, AracHatasi, AracOrtami, EklentiTarifi, GonderimTalebi, GonderimYaniti,
     Hazirlik,
 };
+use kalfa_core::butce::ButceSinirlari;
 use kalfa_core::gonderim::{
     EKLENTI_BAYT_SINIRI, EKLENTI_ISTEK_SINIRI, EklentiIstekOzeti, EklentiKullanimi, GunlukToken,
     IstekSonucu, gunluk_uret,
@@ -774,6 +775,15 @@ async fn kurtarmada_sayac_kayittan_yeniden_kurulur() {
     .unwrap();
     let mut surucu = Surucu::yeni(tutamac, olaylar);
     surucu.gonder(selam()).await;
+    // 5b öncesi eklenti istekleri bilinmeyen tüketimdir; ilk model isteğinden
+    // önce karar gerekir. Kayıttaki 5000 istek varsayılan 200 sınırını aştığı için
+    // istek sınırı yükseltilir.
+    surucu
+        .butce_devam_et(Some(ButceSinirlari {
+            istek: 10_000,
+            token: 5_000_000,
+        }))
+        .await;
 
     assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
     assert_eq!(arac.bitti(), 0, "sınır dolmuş oturumda istek ağa çıkmaz");
@@ -815,6 +825,13 @@ async fn kurtarmada_gonderilmeyen_istek_sayilmaz() {
     .unwrap();
     let mut surucu = Surucu::yeni(tutamac, olaylar);
     surucu.gonder(selam()).await;
+    // 5b öncesi kayıttaki bilinmeyen eklenti tüketimi için ilk istekten önce karar.
+    surucu
+        .butce_devam_et(Some(ButceSinirlari {
+            istek: 10_000,
+            token: 5_000_000,
+        }))
+        .await;
 
     assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
     assert_eq!(arac.bitti(), 1, "5000. istek hâlâ sınırın içinde");

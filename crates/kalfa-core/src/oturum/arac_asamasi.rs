@@ -964,6 +964,13 @@ impl Oturum {
                         None => iptal_nedeni = Some(BitisNedeni::Iptal),
                     }
                 }
+                // Araçların bütçe talebi (5b tasarımı §7): tur iptal edildiyse
+                // `butce_talebi_geldi` izin vermez.
+                talep = self.butce_talep_alici.recv() => {
+                    if let Some(talep) = talep {
+                        self.butce_talebi_geldi(talep).await;
+                    }
+                }
                 Some((p, sonuc)) = isler.next(), if !isler.is_empty() => {
                     if let Some(sayac) = arac_sayaclari.remove(&p.cagri) {
                         let bayt = sayac.swap(0, Ordering::SeqCst);
@@ -1051,6 +1058,7 @@ impl Oturum {
                     yeni,
                     0,
                     crate::gonderim::IstekSonucu::Basarili,
+                    None,
                 )
                 .await;
             }
@@ -1062,6 +1070,7 @@ impl Oturum {
                     0,
                     crate::gonderim::IstekAsamasi::Yanit,
                     neden.clone(),
+                    None,
                 )
                 .await;
             }
