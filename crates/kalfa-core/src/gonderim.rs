@@ -266,6 +266,7 @@ pub fn oge_metni(kayitlar: &[Zarf<KayitOgesi>], sira: u64) -> Option<String> {
         KayitOgesi::SistemIstemi { metin } => Some(metin.clone()),
         KayitOgesi::AracTanimlari { tanimlar } => serde_json::to_string_pretty(tanimlar).ok(),
         KayitOgesi::KalfaNotu { metin } => Some(metin.clone()),
+        KayitOgesi::BaglamOzeti { icerik, .. } => Some(icerik.clone()),
         _ => None,
     }
 }
