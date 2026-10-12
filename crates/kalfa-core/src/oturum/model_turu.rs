@@ -127,9 +127,10 @@ impl Oturum {
 
     pub(super) async fn akis_ac(
         &mut self,
-        istek: ChatRequest,
+        mut istek: ChatRequest,
     ) -> Result<SaglayiciAkisi, BitisNedeni> {
         let mut hiz_denendi = false;
+        let mut asim_denendi = false;
         loop {
             let saglayici = self.baglam.saglayici.clone();
             let deneme = istek.clone();
@@ -201,6 +202,15 @@ impl Oturum {
                             ))
                             .await;
                             self.iptal_edilebilir(tokio::time::sleep(sure)).await?;
+                        }
+                        hata @ kalfa_evren::EvrenError::BaglamAsimi { .. } => {
+                            // 5a tasarımı §11: bir kez sıkı özetleme, sonra yeniden.
+                            if asim_denendi || !self.baglami_yonet(true).await? {
+                                self.hata(hata.to_string()).await;
+                                return Err(BitisNedeni::Hata);
+                            }
+                            asim_denendi = true;
+                            istek = self.istek_olustur();
                         }
                         _ => {
                             self.hata(e.to_string()).await;

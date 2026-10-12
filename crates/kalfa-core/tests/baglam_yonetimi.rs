@@ -348,3 +348,75 @@ async fn gunluk_ve_kurtarma_ozeti_tasir() {
     let ozet_icerigi = icerik(arac_mesajlari(son)[0]).to_string();
     assert_eq!(oge_metni(&kayitlar, ozet_sira), Some(ozet_icerigi));
 }
+
+fn asim() -> SahteYanit {
+    SahteYanit::Hata(EvrenError::BaglamAsimi {
+        mesaj: "pencere aşıldı".into(),
+    })
+}
+
+const ASIM_ILETISI: &str = "Bağlam modelin penceresini aşıyor";
+
+#[tokio::test]
+async fn baglam_asiminda_siki_ozetleyip_bir_kez_yeniden_dener() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (mut ayar, _) = ayarlar(dizin.path());
+    ayar.sinirlar = Default::default();
+    let s = SahteSaglayici::yeni(vec![
+        oku_cagrisi("a.txt"),
+        oku_cagrisi("b.txt"),
+        asim(),
+        SahteYanit::metin("tamam"),
+    ]);
+    s.sohbet_ekle(SahteSohbet::Metin("özet a".into()));
+    s.sohbet_ekle(SahteSohbet::Metin("özet b".into()));
+    let (d, neden) = tur(&s, ayar).await;
+    assert_eq!(neden, BitisNedeni::Normal);
+    let istekler = s.istekler();
+    assert_eq!(istekler.len(), 4);
+    // Varsayılan eşikte üçüncü istekten önce özetleme yoktu; aşımdan sonra
+    // korunan çıktılar dahil ikisi de özetlendi.
+    assert_eq!(s.sohbet_istekleri().len(), 2);
+    for m in arac_mesajlari(&istekler[3].messages) {
+        assert!(
+            icerik(m).starts_with("<arac_sonucu kaynak=\"özet:"),
+            "{}",
+            icerik(m)
+        );
+    }
+    assert_eq!(ozetlendi(&d), Some((2, 0)));
+}
+
+#[tokio::test]
+async fn ikinci_asimda_tur_hatayla_biter() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (mut ayar, _) = ayarlar(dizin.path());
+    ayar.sinirlar = Default::default();
+    let s = SahteSaglayici::yeni(vec![oku_cagrisi("a.txt"), asim(), asim()]);
+    s.sohbet_ekle(SahteSohbet::Metin("özet".into()));
+    let (d, neden) = tur(&s, ayar).await;
+    assert_eq!(neden, BitisNedeni::Hata);
+    assert_eq!(s.istekler().len(), 3);
+    assert_eq!(s.sohbet_istekleri().len(), 1);
+    assert!(
+        d.hatalar().iter().any(|h| h.starts_with(ASIM_ILETISI)),
+        "{:?}",
+        d.hatalar()
+    );
+}
+
+#[tokio::test]
+async fn aday_yoksa_asim_hemen_hata() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (ayar, _) = ayarlar(dizin.path());
+    let s = SahteSaglayici::yeni(vec![asim()]);
+    let (d, neden) = tur(&s, ayar).await;
+    assert_eq!(neden, BitisNedeni::Hata);
+    assert_eq!(s.istekler().len(), 1);
+    assert!(s.sohbet_istekleri().is_empty());
+    assert!(
+        d.hatalar().iter().any(|h| h.starts_with(ASIM_ILETISI)),
+        "{:?}",
+        d.hatalar()
+    );
+}
