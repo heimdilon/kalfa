@@ -30,9 +30,10 @@ use kalfa_evren::tipler::{ChatMessage, ToolDef};
 use serde::{Deserialize, Serialize};
 
 use crate::arac::DosyaDegisiklikleri;
+use crate::butce::{ButceDevri, ButceIslemId, ButceSinirlari};
 use crate::denetci::DenetimSonucu;
 use crate::geri_alma::{DosyaYedegi, GeriAlmaSonucu};
-use crate::gonderim::{EklentiIstekOzeti, GonderilenOge, IstekSonucu};
+use crate::gonderim::{EklentiIstekOzeti, GonderilenOge, GunlukToken, IstekSonucu};
 use crate::izin::Kip;
 use crate::kimlik::{CagriId, TurId};
 use crate::muhur::OnayMuhru;
@@ -128,6 +129,9 @@ pub enum KayitOgesi {
         onceki: u32,
         #[serde(default)]
         sonuc: IstekSonucu,
+        /// Denemenin bütçe işlemi (5b tasarımı §6); eski kayıtlarda yoktur.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        butce_islem: Option<ButceIslemId>,
     },
     /// Eklentinin EVREN isteği (aşama 4 tasarımı §9.3); başarısızı ve
     /// gönderilmeyeni de yazılır. Günlükte amacı `eklenti:<ad>`'dır. Sohbet
@@ -141,6 +145,9 @@ pub enum KayitOgesi {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         yonlendirilen_model: Option<String>,
         sonuc: IstekSonucu,
+        /// Denemenin bütçe işlemi (5b tasarımı §6); eski kayıtlarda yoktur.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        butce_islem: Option<ButceIslemId>,
     },
     /// Akış açıldıktan sonra kopan istek (aşama 3b).
     IstekKoptu {
@@ -230,6 +237,33 @@ pub enum KayitOgesi {
         kaynak: String,
         icerik: String,
         yontem: OzetYontemi,
+    },
+    /// Oturumun bütçe ayarı: yeni ya da kayıttan açılan oturumun istek ve
+    /// token sınırları (5b tasarımı §8).
+    ButceAyarlandi {
+        sinirlar: ButceSinirlari,
+    },
+    /// Bir ağ denemesinin başlangıç izni (5b tasarımı §4). Ağa çıkmadan önce
+    /// kalıcı yazılır; sonuçsuz kalırsa kurtarmada bitişi yazılır.
+    ButceIstegiBasladi {
+        islem: ButceIslemId,
+        amac: String,
+    },
+    /// Denemenin tek sonlandırması. `kullanim: None` bilinmeyen tüketimdir;
+    /// alan her zaman yazılır ki `None` ile eksik alan ayrılabilsin.
+    ButceIstegiBitti {
+        islem: ButceIslemId,
+        kullanim: Option<GunlukToken>,
+    },
+    /// Kullanıcının bilinmeyen tüketimi kabul edip sınırları değiştirdiği
+    /// kalıcı karar (5b tasarımı §7).
+    ButceDevamKarari {
+        sinirlar: ButceSinirlari,
+        onaylanan_bilinmeyen: u64,
+    },
+    /// 5b öncesi kayıttan çıkarılan en az tüketim tabanı (5b tasarımı §8).
+    ButceDevralindi {
+        devir: ButceDevri,
     },
 }
 

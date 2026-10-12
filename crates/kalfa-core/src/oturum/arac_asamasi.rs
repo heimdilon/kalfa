@@ -1484,6 +1484,7 @@ impl Oturum {
             kredi: None,
             yonlendirilen_model: None,
             sonuc: IstekSonucu::Gonderilmedi { neden },
+            butce_islem: None,
         })
         .await;
         self.yay(Olay::IstekBilgisi {
@@ -1513,6 +1514,7 @@ impl Oturum {
             kredi: meta.kredi.clone(),
             yonlendirilen_model: meta.yonlendirilen_model.clone(),
             sonuc,
+            butce_islem: None,
         })
         .await;
         self.tur_ozeti.istek();

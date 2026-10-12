@@ -258,6 +258,7 @@ fn eklenti_kaydi(sonuc: IstekSonucu, bayt: u64) -> KayitOgesi {
         kredi: None,
         yonlendirilen_model: None,
         sonuc,
+        butce_islem: None,
     }
 }
 
@@ -978,6 +979,7 @@ fn gunluk_eklenti_satiri_sohbet_kullanimini_almaz() {
                 yeni: Vec::new(),
                 onceki: 0,
                 sonuc: IstekSonucu::Basarili,
+                butce_islem: None,
             },
         ),
         z(

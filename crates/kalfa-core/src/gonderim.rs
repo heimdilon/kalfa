@@ -159,6 +159,7 @@ pub fn gunluk_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GunlukSatiri> {
                 yeni,
                 onceki,
                 sonuc,
+                ..
             } => {
                 let zaman = kredi.as_ref().map(|k| k.zaman_ms);
                 satirlar.push(GunlukSatiri {

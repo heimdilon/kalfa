@@ -51,6 +51,7 @@ fn satir_istek_ve_kullanimi_birlestirir() {
                 }],
                 onceki: 0,
                 sonuc: IstekSonucu::Basarili,
+                butce_islem: None,
             },
         ),
         zarf(
@@ -99,6 +100,7 @@ fn kopan_istek_satiri_hata_gosterir() {
                 yeni: vec![],
                 onceki: 0,
                 sonuc: IstekSonucu::Basarili,
+                butce_islem: None,
             },
         ),
         zarf(
@@ -199,6 +201,7 @@ fn oge_metni_kayittan() {
                 yeni: vec![],
                 onceki: 0,
                 sonuc: IstekSonucu::Basarili,
+                butce_islem: None,
             },
         ),
     ];

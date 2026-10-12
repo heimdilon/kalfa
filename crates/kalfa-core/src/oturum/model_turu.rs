@@ -240,6 +240,7 @@ impl Oturum {
             yeni,
             onceki,
             sonuc,
+            butce_islem: None,
         };
         self.kaydet(oge).await;
         self.tur_ozeti.istek();
@@ -273,6 +274,7 @@ impl Oturum {
             yeni,
             onceki,
             sonuc: IstekSonucu::Hata { asama, mesaj },
+            butce_islem: None,
         };
         self.kaydet(oge).await;
         self.tur_ozeti.istek();
