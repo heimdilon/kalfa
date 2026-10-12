@@ -1,9 +1,9 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-10-12; aşama 4 tamamlandı, depo herkese açık oldu. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-10-12; aşama 5a tamamlandı, depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
-## Güncel devam noktası — 2026-10-12 13:00 TSİ
+## Güncel devam noktası — 2026-10-12 18:44 TSİ
 
 Aşama 1–3 tamamlandı. Aşama 4'te tasarım #49, çalışma zamanı #50
 (`d1aa225`), EVREN yolu #51 (`4807265`), RAG #52 (`7ada5fa`) ve eklenti
@@ -11,11 +11,12 @@ arayüzü/dağıtımı #53 (`98e7c0d`) ana dala birleşti. **Aşama 4 tamamland�
 
 | İş | Yayınlanmış baş / taban | Durum |
 |---|---|---|
-| Ana dal | `main` | 4a–4d birleşmiş kod |
+| Ana dal | `main`, `3133248` | Aşama 4 ve 5a birleşmiş kod |
+| [#2 — 5a](https://github.com/heimdilon/kalfa/pull/2) | `9dfdde5` → `3133248` | 12 Ekim squash birleşti; [CI](https://github.com/heimdilon/kalfa/actions/runs/38264533087) dört işiyle yeşil |
 | [#52 — 4c](https://github.com/heimdilon/kalfa-arsiv/pull/52) | `ffdf65b` → `7ada5fa` | 12 Ekim squash birleşti; G5 kapandı, [CI 149](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38222907378) yeşildi |
 | [#53 — 4d](https://github.com/heimdilon/kalfa-arsiv/pull/53) | `a51abd0` → `98e7c0d` | 12 Ekim squash birleşti; yeni ana dala taşındıktan sonra [CI 153](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38226258768) yeşildi |
 
-Bu belgedeki commit kimlikleri ve PR/CI numaraları arşiv deposuna aittir;
+Arşiv deposuna bağlanan kayıtlardaki commit kimlikleri ve PR/CI numaraları arşive aittir;
 açık depoda geçmiş yeniden yazıldığı için kimlikler farklıdır. Aşama 4
 worktree'leri ve WSL kopyaları 12 Ekim'de kaldırıldı. Ana klasördeki
 ilgisiz `tasks.png`'ye dokunulmaz.
@@ -50,7 +51,7 @@ temiz; CI yeşil. Kullanıcının onayıyla squash birleşti
 ([#1](https://github.com/heimdilon/kalfa/pull/1), `1738b8e`). Canlı EVREN
 koşusu yapılmadı.
 
-**5a — Bağlam yönetimi (12 Ekim, PR bekliyor):**
+**5a — Bağlam yönetimi (12 Ekim, tamamlandı):**
 [Tasarım](superpowers/specs/2026-10-12-kalfa-5a-baglam-yonetimi-design.md),
 [plan](superpowers/plans/2026-10-12-kalfa-5a-baglam-yonetimi.md). Bağlamın
 tahmini istem tokenı 64 bini (ya da modelin ölçülen penceresinin %80'ini)
@@ -64,19 +65,41 @@ aşınca en eski araç çıktıları tek tek `qwen3.8-flash-next` ile özetlenir
 istekle ölçüldü (262 144 / 524 288 / 1 048 576). Son incelemeden sonra özet,
 çıktının `[güvenlik]`/`[denetçi]` satırlarını korur; günlük sınır, ağ yok,
 anahtar ya da ikinci 429 gibi geçici hatalarda özetleme durur ve özgün
-çıktılar kalır. Windows **1123 + 175**, WSL **1066 + 175** test, 19
-atlanan; iki platformda clippy (düz ve e2e)/fmt temiz; arayüz 393 test, 0
+çıktılar kalır. Son PR başında Windows **1124 + 175**, Linux **1067 + 175**
+test, 19 atlanan; iki platformda üç clippy/fmt temiz; arayüz 393 test, 0
 hata/uyarı, build temiz. Canlı özet testi (`baglam_canli`) koşmadı; ayrı
 onay ister.
 
 Codex incelemesi (`f9ee299`): durdurucu bir hata gelince başlamış özetleme
 istekleri artık bırakılmıyor, beklenip günlüğe yazılıyor; Windows
-`kalfa-core` 434 test, clippy/fmt temiz.
+`kalfa-core` 434 test, clippy/fmt temiz. WSL Ubuntu 24.04 (`kalfatest`)
+workspace 1067/0/19, düz ve e2e clippy/fmt temiz; son regresyon geçti.
 
-**Sıradaki iş:** [#2](https://github.com/heimdilon/kalfa/pull/2) için
-`f9ee299`'un Linux doğrulaması ve CI; ikisi yeşilse kullanıcının açık squash
-onayı (`--match-head-commit`). Birleşince Linux doğrulama kopyası silinir.
-Ardından 5b oturum bütçesi (üst belge §6.8) ve Linux paketleri.
+[#2](https://github.com/heimdilon/kalfa/pull/2), kullanıcının Linux ve PR CI'ı
+yeşil olduğunda birleştirme onayıyla, doğrulanan `9dfdde5` başına sabitlenerek
+squash birleşti (`3133248`, 18:08 TSİ). Birleşen ağaç CI'da doğrulanan
+ağaçla birebir aynı. 5a'nın Linux doğrulama kopyası ve yardımcı dosyaları
+kaldırıldı; loglar yerelde korundu. Kullanıcının tercihiyle `5a/tasarim`
+yerel ve uzak dalları korunur.
+
+Birleşme sonrası [ana dal CI'ı](https://github.com/heimdilon/kalfa/actions/runs/38268030807)
+da `3133248`'de dört işiyle yeşil.
+
+**5b — Oturum bütçesi (12 Ekim, tasarım incelemesi):**
+[Tasarım](superpowers/specs/2026-10-12-kalfa-5b-oturum-butcesi-design.md),
+[plan](superpowers/plans/2026-10-12-kalfa-5b-oturum-butcesi.md). Ana model,
+denetçi, özetleme ve eklentilerin her üretim denemesi aynı oturum kapısından
+geçer; iç 429 tekrarları ayrı sayılır. Kullanıcı kararı: tüketim bildirilmiyorsa
+yeni istekten önce durup sor. Başlatma izni/karar kalıcı yazılır; sahipli izin
+bırakıldığında tüketim kaybolmaz. Bekleyen eklenti çağrısı yeniden yürütülmez.
+Önerilen varsayılanlar 100 istek/1 000 000 bilinen token; henüz kesinleşmedi.
+Token eşiği önceden kesin harcama tavanı değildir. Kabul modeli Rust 1.98.1
+ile Windows ve WSL'de **11/11** geçti; ürün async/JSONL/IPC entegrasyonu
+henüz uygulanmadı. [Ön doğrulama](superpowers/bulgular/2026-10-12-kalfa-5b-butce-on-dogrulama.md).
+
+**Sıradaki tek iş:** 5b tasarım/plan incelemesi ve önerilen varsayılanların
+kesinleştirilmesi; sonra planlı uygulama devri. Linux paketleri sonraki
+adaydır; canlı `baglam_canli` deneyi ayrı onay bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

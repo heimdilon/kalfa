@@ -5,7 +5,9 @@
 konuşulup onaylandı. Belgenin kendi verdiği kararlar §2.2'dedir; kullanıcı
 itiraz ederse değişir. Uygulandı
 ([plan](../plans/2026-10-12-kalfa-5a-baglam-yonetimi.md)); planın
-"Tasarımdan farklar"ı bu belgeye işlendi.
+"Tasarımdan farklar"ı bu belgeye işlendi. 12 Ekim'de
+[#2](https://github.com/heimdilon/kalfa/pull/2), doğrulanan `9dfdde5` başından
+`3133248` olarak squash birleşti; 5a tamamlandı (§18).
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §6.5 (bağlam yönetimi), §6.6 (kayıt ve kurtarma), §6.8 (sınırlar), §7.1
 (tehdit modeli), §11.10 (gönderim önizlemesi). Bu belgede `§` işaretleri bu
@@ -344,3 +346,24 @@ Tek plan: `docs/superpowers/plans/2026-10-12-kalfa-5a-baglam-yonetimi.md`.
 Sıra: `kalfa-evren` hata ve kayıtlar → pencere tablosu ve tahmin → aday
 seçimi → özetleme çağrısı → kayıt ve kurtarma → gönderim günlüğü → aşım
 yeniden denemesi → arayüz notu.
+
+## 18. Kapanış ve doğrulama — 12 Ekim 2026
+
+Son düzeltme (`f9ee299`), durdurucu hatada yeni özetleme isteklerini
+başlatmayı keser; başlamış istekleri bekleyip günlüğe yazar. Regresyon
+`durdurucu_hatada_baslamis_istekler_kaydedilir` Windows ve Linux'ta geçti.
+`f9ee299` ile PR başı `9dfdde5` arasında yalnız geliştirme durumu belgesi
+değişti.
+
+- WSL Ubuntu 24.04 (`kalfatest`): workspace 1067 geçti, 0 düştü, 19 atlandı;
+  düz ve e2e clippy, fmt temiz.
+- Son başın [PR CI'ı](https://github.com/heimdilon/kalfa/actions/runs/38264533087):
+  Windows 1124 + 175, Linux 1067 + 175 test; iki platformda üç clippy,
+  arayüz ve biçim işleri başarılı. Arayüz 393 test, 0 hata/uyarı, build temiz.
+- Kullanıcının koşullu birleştirme onayıyla `3133248` squash birleşti;
+  birleşen ağaç doğrulanan başın ağacıyla birebir aynı.
+- Linux doğrulama kopyası ve yardımcı dosyaları kaldırıldı, loglar yerelde
+  korundu. `5a/tasarim` dalları kullanıcının tercihiyle korunur.
+
+Canlı özet testi koşmadı; §16'daki açık noktalar sürer. Sıradaki ürün işi
+5b oturum bütçesinin tasarımı ve planıdır (üst belge §6.8).
