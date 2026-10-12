@@ -352,6 +352,18 @@ export class Kalfa {
     await d.click();
   }
 
+  /**
+   * Bütçe kararı kartında "Bütçeyle devam et" (5b): kullanımı bilinmeyen bir
+   * istekten (ör. iptal edilen akış) sonra yeni istekten önce karar gerekir.
+   */
+  async butceyleDevam() {
+    const d = await this.b.$(
+      '//section[contains(., "Bütçe kararı")]//button[normalize-space()="Bütçeyle devam et"]',
+    );
+    await d.waitForClickable({ timeout: 15000 });
+    await d.click();
+  }
+
   async yeniOturum() {
     await this.ikonDugmesi('Yeni oturum');
     await (await this.composer()).waitForEnabled({ timeout: 15000 });

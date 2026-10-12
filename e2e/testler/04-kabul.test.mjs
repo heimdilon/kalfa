@@ -166,6 +166,8 @@ describe('kabul kapısı: aynı oturumda', () => {
     // Yeni sayfa son oturumu kayıttan açar; kayıt kilidi bırakılmıştır.
     assert.equal(await k.turSonuBekle(1), 'Iptal');
     assert.deepEqual(bitenler(k, oturum), { sayi: 1, son: 'Iptal' });
+    // İptal edilen akışın kullanımı bilinmez: yeni istekten önce bütçe kararı (5b).
+    await k.butceyleDevam();
     await k.gonder('devam');
     await k.metniBekle('Yanıt: devam');
     assert.equal(await k.turSonuBekle(2), 'Normal');
