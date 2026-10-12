@@ -1,7 +1,7 @@
 # Kalfa 5b — Oturum bütçesi: Uygulama planı
 
-**Durum:** Claude incelemesi ve kullanıcı kararları işlendi (12 Ekim).
-Ürün kodunu uygulama yetkisi değildir; uygulama AGENTS'taki planlı devirle başlar.
+**Durum:** Uygulandı (13 Ekim, dal `5b/uygulama`); sonuç ve sapmalar
+tasarım §4.1 ve §11'de.
 **Taban:** `3133248`; [tasarım](../specs/2026-10-12-kalfa-5b-oturum-butcesi-design.md).
 **Hedef:** Her üretim denemesinin oturum bütçesinden izin alması, kullanımın
 istek kimliğiyle sayılması, limit/eksik kullanımda kullanıcı kararının

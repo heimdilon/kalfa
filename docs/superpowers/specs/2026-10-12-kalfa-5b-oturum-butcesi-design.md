@@ -1,8 +1,7 @@
 # Kalfa 5b — Oturum bütçesi: Tasarım
 
 **Tarih:** 2026-10-12.
-**Durum:** Claude incelemesi ve kullanıcı kararları işlendi (12 Ekim);
-ürün uygulaması henüz yapılmadı.
+**Durum:** Uygulandı (13 Ekim, dal `5b/uygulama`); sonuç §11.
 **Taban:** `main`, `3133248` (5a tamamlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §6.8.
 **Plan:** [5b uygulama planı](../plans/2026-10-12-kalfa-5b-oturum-butcesi.md).
@@ -288,3 +287,33 @@ Bu sonuç sayaç/kabul modelinindir. Asenkron kanal, kalıcı JSONL, gerçek
 sağlayıcı, eski kayıt göçü, Tauri ve arayüz entegrasyonu uygulanmış veya
 derlenmiş sayılmaz. Plan bunları ayrı testlerle zorunlu kılar. Canlı EVREN
 ölçümü yapılmadı; önerilen varsayılanlar ürün ölçümü değildir.
+
+## 11. Uygulama sonucu (13 Ekim)
+
+Plan, kullanıcının talimatıyla Haiku 5.5 alt ajanlarına dalgalar hâlinde
+uygulatıldı; Claude her çıktıyı inceledi, birleştirdi ve iki platformda
+doğruladı. §4.1'deki sadeleştirmelere ek olarak:
+
+- Denetçi ve özetleyici her denemenin bitişini sonraki izin talebinden
+  önce aynı kanaldan gönderir (`ButceMesaji::Bitis`). Bitişi yalnız dönüşte
+  yazmak, iç tekrar kart beklerken ilk denemeyi aktif bırakıp kartı hiç
+  çıkarmıyordu (kilitlenme).
+- Eklenti bütçesi `GonderimYaniti`'ni değiştirmez: host, önizlemeden sonra
+  `AracOrtami::butce_izni` ile aynı çağrıda bekler; ret eklentiye iptal
+  olarak gider.
+- 5b öncesi kaydın tabanı ayrı `ButceDevralindi` yerine `ButceAyarlandi`'nın
+  `devir` alanındadır: ayar ve devir arasında çökme olamaz.
+- Kurtarılan oturumda engel varsa kart açılışta gösterilir. Kullanıcının
+  iptal ettiği akışın kullanımı bilinmediğinden (§2) sonraki istekten önce
+  karar istenir; iki eski e2e senaryosu bu adımla güncellendi.
+- Tur özeti her denemenin kullanımını `butce_bitir`'de bir kez toplar;
+  birleştirmeden sonra denetçi/özetin çift sayımı bir regresyon testiyle
+  (önce 40/20, sonra 30/15) düzeltildi.
+
+Doğrulama (`7db70c7`): Windows workspace ve e2e özellikli Rust testleri
+toplam 1 396 geçti / 0 düştü / 19 canlı test atlandı; Linux (Ubuntu 24.04,
+`kalfatest`) workspace 1 150 / 0 / 19 ve e2e özellikli 189; Linux yalıtım
+26, uyumluluk 16; iki platformda üç clippy ve fmt temiz; arayüz 420 test,
+0 hata/uyarı, paket denetimi temiz; uçtan uca Windows **41/41**, Linux
+**41/41**. Canlı EVREN koşusu yapılmadı; reddedilen isteğe kredi
+tutulmadığı varsayımı canlı doğrulanmadı.

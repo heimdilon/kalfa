@@ -1,6 +1,6 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-10-12; aşama 5a tamamlandı, depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-10-13; aşama 5b uygulandı (PR bekliyor), depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
 ## Güncel devam noktası — 2026-10-12 18:44 TSİ
@@ -105,9 +105,19 @@ soruya çevirirdi. Reddedilen isteğe kredi tutulmadığı canlı doğrulanmadı
 ile Windows ve WSL'de **11/11** geçti; ürün async/JSONL/IPC entegrasyonu
 henüz uygulanmadı. [Ön doğrulama](superpowers/bulgular/2026-10-12-kalfa-5b-butce-on-dogrulama.md).
 
-**Sıradaki tek iş:** 5b planının uygulama devri (AGENTS planlı iş akışı,
-PR [#3](https://github.com/heimdilon/kalfa/pull/3) dalında); tasarım
-incelemesi ve varsayılanlar tamam. Linux paketleri sonraki
+**5b uygulaması (13 Ekim):** Plan, kullanıcının talimatıyla Haiku 5.5
+alt ajanlarıyla dalgalar hâlinde uygulandı; Claude inceledi, birleştirdi ve
+doğruladı (dal `5b/uygulama`, `7db70c7`). Ana istek, denetçi, özetleme ve
+eklenti her denemede oturum kapısından geçer; başlangıç ve karar kalıcı
+yazılır; kullanımı bilinmeyen ya da sınırı dolan oturumda bütçe kartı
+"Bütçeyle devam et / Turu durdur" sorar; kurtarma sayaçları sıfırlamaz;
+Ayarlar'da yeni oturum varsayılanı. Windows Rust 1 396 / 0 / 19, Linux
+1 150 + 189, Linux yalıtım 26 ve uyumluluk 16, iki platformda clippy/fmt
+temiz, arayüz 420, e2e Windows ve Linux 41/41. Sapmalar tasarım §4.1 ve
+§11'de. Not: kullanıcının iptal ettiği akıştan sonra (kullanımı bilinmez)
+bir sonraki istekten önce bütçe kararı istenir.
+
+**Sıradaki tek iş:** 5b PR'ının CI'ı ve kullanıcının birleştirme onayı. Linux paketleri sonraki
 adaydır; canlı `baglam_canli` deneyi ayrı onay bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
