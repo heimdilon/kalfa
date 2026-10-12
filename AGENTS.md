@@ -184,7 +184,7 @@ Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni ister.
 
 ### Sürekli tümleştirme (CI)
 
-`.github/workflows/ci.yml`, `kalfa-asama-1`'e her push'ta ve her PR'da koşar.
+`.github/workflows/ci.yml`, `main`'e her push'ta ve her PR'da koşar.
 
 - **Kapsam:** Yukarıdaki varsayılan komutlar: `cargo fmt`, arayüz
   (`check`, `test`, `build`), üç clippy (düz, `e2e` özellikli ve eklentilerin
@@ -251,8 +251,9 @@ Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni ister.
 
 ## İş akışı
 
-- **Dallar:** Varsayılan dal `kalfa-asama-1`'dir. Her iş ayrı bir dalda ve PR
-  ile yürür (`heimdilon/kalfa`, özel depo).
+- **Dallar:** Varsayılan dal `main`'dir. Her iş ayrı bir dalda ve PR
+  ile yürür (`heimdilon/kalfa`, açık depo). PR #1–#53 ve eski CI kayıtları
+  özel arşivdedir (`heimdilon/kalfa-arsiv`).
 - **Planlı işler:**
   1. Claude planı yazar ve PR'ı açar. Planın kodu önceden iki platformda
      doğrulanmıştır.

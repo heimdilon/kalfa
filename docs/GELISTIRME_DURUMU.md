@@ -1,22 +1,23 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-10-12; G5 kapandı, #52 birleşti. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-10-12; aşama 4 tamamlandı, depo herkese açık oldu. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
-## Güncel devam noktası — 2026-10-12 12:00 TSİ
+## Güncel devam noktası — 2026-10-12 13:00 TSİ
 
 Aşama 1–3 tamamlandı. Aşama 4'te tasarım #49, çalışma zamanı #50
-(`d1aa225`), EVREN yolu #51 (`4807265`) ve RAG #52 (`7ada5fa`) ana dala
-birleşti. **4d (#53) henüz birleşmedi; aşama 4 tamamlandı sayılmaz.**
+(`d1aa225`), EVREN yolu #51 (`4807265`), RAG #52 (`7ada5fa`) ve eklenti
+arayüzü/dağıtımı #53 (`98e7c0d`) ana dala birleşti. **Aşama 4 tamamlandı.**
 
 | İş | Yayınlanmış baş / taban | Durum |
 |---|---|---|
-| Ana dal | `kalfa-asama-1`, `7ada5fa` | 4a, 4b ve 4c birleşmiş kod |
+| Ana dal | `main` | 4a–4d birleşmiş kod |
 | [#52 — 4c](https://github.com/heimdilon/kalfa-arsiv/pull/52) | `ffdf65b` → `7ada5fa` | 12 Ekim squash birleşti; G5 kapandı, [CI 149](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38222907378) yeşildi |
-| [#53 — 4d](https://github.com/heimdilon/kalfa-arsiv/pull/53) | `4d/plan` → `kalfa-asama-1` | Taslak; yeni ana dala taşındı (`9980516` → `e5ad382` ve bu belge kaydı); yeni CI ve ayrı squash onayı bekliyor |
+| [#53 — 4d](https://github.com/heimdilon/kalfa-arsiv/pull/53) | `a51abd0` → `98e7c0d` | 12 Ekim squash birleşti; yeni ana dala taşındıktan sonra [CI 153](https://github.com/heimdilon/kalfa-arsiv/actions/runs/38226258768) yeşildi |
 
-Aktif 4d worktree'si `C:\Users\kullanici\kalfa-4d`'dir; 4c worktree'si
-`C:\Users\kullanici\kalfa-4a-uygula` ölçüm verisi için korunur. Ana klasördeki
+Bu belgedeki commit kimlikleri ve PR/CI numaraları arşiv deposuna aittir;
+açık depoda geçmiş yeniden yazıldığı için kimlikler farklıdır. Aşama 4
+worktree'leri ve WSL kopyaları 12 Ekim'de kaldırıldı. Ana klasördeki
 ilgisiz `tasks.png`'ye dokunulmaz.
 
 **Ölçüm kararları:** G4/G6/G8 ve G5'in aday/dosya, talimat dili, boyut,
@@ -41,29 +42,28 @@ test**, 0 hata/uyarı, paket denetimi temiz. Bu arayüz düzeltmesinde gerçek
 yalıtım/e2e yeniden koşmadı; Claude'un `017aacd` kaydı Windows AppContainer
 uyumluluk 24/24 ve e2e 38/38, WSL yalıtım 26, uyumluluk 16/16 ve e2e 38/38'dir.
 
-**Sıradaki iş:** #53'ün yeni başının CI'ı yeşil olunca kullanıcının
-ayrı, açık squash onayı. Canlı EVREN çağrısı gerekmez.
+**Sıradaki iş:** 429'da toplu gömme isteğini küçültme (`rag/toplu-daralma`)
+iki platformda yerelde doğrulandı; açık depoda PR olarak CI ve kullanıcının
+squash onayını bekler. Ardından aşama 5 adayları: bağlam yönetimi (üst belge
+§6.5) ve oturum bütçesi (§6.8); sonra Linux paketleri.
 
-**CI bütçesi:** Kullanıcının 11 Ekim bildirimi **2719/3000 dakika**, kalan
-**281 dakika (%9,37)**; bu hesap kullanım uç noktasından doğrulanmış bir
-ölçüm değildir. Değişiklikler yerelde doğrulanıp toplu gönderilir. Bu
-belge/hafıza işi için commit/push ve yeni CI başlatılmadı; yerel belge
-farkları sonraki yetkili işte ilgili dalda toplanır. CI kapsamı ve iki
-platform gerekliliği korunur. G5'in yerel koşusu GitHub dakikası tüketmez;
-sonuç push'u, ana dala merge ve #53 taban değişimi CI tetikleyebilir.
+**Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
+oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
+özel arşivdedir (`heimdilon/kalfa-arsiv`), belgelerdeki eski PR/CI
+bağlantıları oraya gider. Özel depoda GitHub Actions dakikası dolmuştu;
+açık depoda standart çalıştırıcılar ücretsizdir. CI kapsamı ve iki platform
+şartı değişmedi.
 
-**Birleştirme sırası:** G5, #52 squash ve #53'ün taşınması tamam →
-#53'ün yeni CI'ı → #53 için ayrı açık onay.
+**Birleştirme:** #52 ve #53 kullanıcının ayrı açık onaylarıyla,
+doğrulanan başlara sabitlenerek squash birleşti; birleşen ağaçlar CI'da
+doğrulanan ağaçlarla birebir aynıdır.
 
-**Korunacaklar:** 4c'nin eski ve yeni indeksleri, kesinti öncesi kopyası,
-320 parça ölçüm makbuzu ve doğrulama logları; 4d logları; mevcut WSL
-`/home/kalfatest/kalfa-4d` ve ortak `/home/kalfatest/kalfa-4b-target`.
-WSL kaynağı `017aacd`'de temizdir; yeniden doğrulamada yeni baş bundle ile
-taşınır. Eski ajan worktree'leri bu belge işiyle silinmez.
+**Korunan veri:** 4c indeksleri (ilk indeks, kesinti öncesi kopya,
+değerlendirme), G5 makbuz ve logları ile 4d'nin Windows ve WSL inceleme
+logları `C:\Users\kullanici\kalfa-yedek\asama-4-veri-20261012`'dedir.
 
-**Sonraki iyileştirme adayı:** İlk indekslemede dakikalık 429 tekrarları
-30 dakika ilerlemedi. Yanıt gövdesi alınmadığı için uyarlamalı toplu istek
-değişikliği kararlaştırılmadı. Linux paketlemesi depoda henüz yoktur.
+**Sonraki iyileştirme adayları:** Sonuçları dosyaya göre tekilleştirmek
+(G5'te +2 sorgu); Linux paketlemesi (depoda henüz yok).
 
 Ayrıntılı yerel handoff: `C:\Users\kullanici\kalfa-yedek\HANDOFF-asama-4.md`;
 [PR handoff'u](https://github.com/heimdilon/kalfa-arsiv/pull/52#issuecomment-6078860023).
