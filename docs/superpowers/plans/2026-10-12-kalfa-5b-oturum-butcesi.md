@@ -82,11 +82,13 @@ Doğrulama: `cargo test -p kalfa-core --locked`, ilgili clippy/fmt.
 
 1. Gömme/sıralama ham fixture'larını salt okunur kullanın. Bilinen fixture
    toplamını hesaplayın; vektör veya ham yanıtları yeni belgede çoğaltmayın.
-2. Sohbet kullanımında mevcut `Usage` sayısal alanlarını koruyun; alan
-   varlığını custom `Deserialize` ile özel ham tipe (`Option<u64>`)
-   taşıyıp bütçe için `Option<u64>` geçerli toplam üretin. Serileştirilen
-   EVREN JSON'una yeni metadata alanı eklenmez. Rust test kurucuları yeni
-   alan-varlığı bilgisini açıkça kurar. Boş kullanım 0'a dönüştürülemez.
+2. `Usage` tipi ve serde türetimleri değişmez. Bütçe kullanımı tutarlılık
+   kuralıyla çıkarılır: yalnız `prompt_tokens > 0` ve taşmasız
+   `total_tokens == prompt_tokens + completion_tokens` ise geçerlidir;
+   değilse `None`. Kayıtlı bütün gerçek EVREN sohbet/gömme/sıralama
+   yanıtları bu kuralı sağlar; `serde(default)` ile 0'a dönen eksik ya da
+   boş kullanım kuralı sağlamaz, böylece custom `Deserialize` gerekmez
+   (Claude sadeleştirmesi, 12 Ekim). Boş kullanım 0'a dönüştürülemez.
 3. Gömme/sıralama için aynı doğrulama kurallarıyla küçük kullanım çözücü
    yazın: istem + varsa tamamlama; yalnız toplam; boş/negatif/taşmış/
    çelişkili alanlar. Yeni bağımlılık yoktur. Hatalı yanıtın mevcut hata

@@ -115,6 +115,29 @@ kaydının kalıcı yazımı → sayaç geçişi → izin cevabı → sağlayıc
 Kayıt yazımı başarısızsa cevap izin değildir. Başlatma kaydından sonra
 çökme veya kanal kapanması olursa kayıt muhafazakâr biçimde sayılır.
 
+### 4.1 Uygulama sadeleştirmesi (Claude, 12 Ekim)
+
+Yukarıdaki sahipli `ButceIzni`, izin başına `oneshot` sonuç alıcısı ve
+`Drop` bitişi yerine mevcut kod yolları kullanılır; kabul sırası, kalıcı
+başlangıç ve tek sonlandırma kuralları aynen geçerlidir.
+
+- **Ana istek:** `Oturum` zaten sıralı çalıştığı için `akis_ac` kapıyı
+  doğrudan (kanalsız) geçer: `siradaki()` → `ButceIstegiBasladi` kalıcı →
+  `baslat` → sağlayıcı.
+- **Denetçi ve özetleme:** her `sohbet` denemesinden önce oturuma bağlı
+  `ButceTalepci` (sınırlı `mpsc`) ile `ButceTalebi { amac, yanit:
+  oneshot::Sender<Option<ButceIslemId>> }` gönderilir; `None` izin yok
+  demektir ve deneme yapılmaz. Denemelerin kimlik/kullanım/meta/sonuçları
+  yardımcının dönüş değerinde `Oturum`'a gelir; `Oturum` bitirir ve
+  `Istek` satırını `butce_islem` ile yazar.
+- **Eklenti:** mevcut `OrtamIstegi::Gonderim` cevabı `GonderimYaniti::Gonder
+  { islem }` bütçe izni verilince gönderilir; kapı kapalıyken cevap
+  bekletilir (önizleme beklemesi gibi). `IstekBitti` aynı kimliği ve
+  kullanımı taşır.
+- **Sızıntı süpürmesi:** tur biterken (iptal dahil) sonuçlanmamış kimlikler
+  `ButceIstegiBitti { kullanim: None }` ile kalıcı kapatılır. Bırakılmış bir
+  gelecek bu yolla bilinmeyen sayılır; kayıp sonuç olmaz.
+
 ## 5. Sayaçlar ve eşzamanlılık
 
 `ButceSinirlari { istek, token }`; `ButceDurumu` şu bilgileri tutar:
