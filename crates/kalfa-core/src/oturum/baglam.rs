@@ -499,7 +499,7 @@ impl Oturum {
                         dusunce,
                     })
                     .await;
-                    self.tur_ozeti.kullanim(istem, tamamlama, dusunce);
+                    // Tur özeti bu denemeyi `butce_bitir`'de bir kez sayar (5b §6).
                 }
                 yanit
                     .choices

@@ -269,3 +269,27 @@ async fn zaman_asimli_deneme_kullanimsiz_kaydedilir() {
     assert_eq!(yanit.denemeler[0].kullanim, None);
     assert!(matches!(yanit.denemeler[0].sonuc, IstekSonucu::Hata { .. }));
 }
+
+/// Tur özeti her denemenin kullanımını bir kez toplar: iki ana istek ve bir
+/// denetçi isteği, her biri 10/5, toplam 30/15 (denetçi iki kez sayılmaz).
+#[tokio::test]
+async fn tur_ozeti_denetci_kullanimini_bir_kez_sayar() {
+    let s = sinir_bir_istek_kalir_saglayici();
+    s.sohbet_ekle(guvenli());
+    let mut d = test_oturumu(
+        test_baglami(s.clone(), vec![oku()], sanal_siniflandirici()),
+        ayarlar(10),
+    );
+    d.gonder(mesaj()).await;
+    let zarf = d.bekle(|o| matches!(o, Olay::TurOzeti { .. })).await;
+    let Olay::TurOzeti { ozet } = zarf.yuk else {
+        unreachable!()
+    };
+    assert_eq!(s.sohbet_istekleri().len(), 1, "tek denetim isteği");
+    assert_eq!(
+        (ozet.istekler.istem, ozet.istekler.tamamlama),
+        (30, 15),
+        "{:?}",
+        ozet.istekler
+    );
+}
