@@ -4,11 +4,12 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use kalfa_core::gonderim::{IstekAsamasi, IstekSonucu};
+use kalfa_core::gonderim::{GunlukToken, IstekAsamasi, IstekSonucu};
 use kalfa_core::saglayici::Saglayici;
 use kalfa_core::sart_kapisi::{KapiGorunumu, SartKapisi};
-use kalfa_evren::tipler::ModelInfo;
+use kalfa_evren::tipler::{ModelInfo, Usage};
 use kalfa_evren::{EkUc, EvrenError, HamYanit};
+use serde::Deserialize;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
@@ -279,6 +280,26 @@ pub(crate) fn kayit_hatasi(hata: &EvrenError) -> IstekSonucu {
     }
 }
 
+/// Ham EVREN yanıtının `usage` nesnesinden bütçe kullanımı. Gövde JSON değilse,
+/// `usage` yoksa ya da nesne değilse, ya da `Usage::butce_kullanimi` kullanımı
+/// bilinmez diyorsa `None` döner; bu 0 anlamına gelmez.
+// 5b Görev 5'te host bitişine bağlanır.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn ham_kullanim(govde: &str) -> Option<GunlukToken> {
+    /// Yanıtın yalnız `usage` alanı okunur; geri kalanı yok sayılır.
+    #[derive(Deserialize)]
+    struct Zarf {
+        usage: Option<Usage>,
+    }
+    let usage = serde_json::from_str::<Zarf>(govde).ok()?.usage?;
+    let (istem, tamamlama) = usage.butce_kullanimi()?;
+    Some(GunlukToken {
+        istem,
+        tamamlama,
+        dusunce: usage.reasoning_tokens(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -455,5 +476,72 @@ mod tests {
             kabul(EkUc::Siralama, govde).ozet,
             kabul(EkUc::Siralama, ters).ozet
         );
+    }
+
+    const GOMME_KAYDI: &str =
+        include_str!("../../kalfa-evren/tests/kayitlar/embeddings_qwen3_1024.json");
+    const SIRALAMA_KAYDI: &str = include_str!("../../kalfa-evren/tests/kayitlar/rerank_qwen3.json");
+    const SOHBET_YANITI: &str =
+        include_str!("../../../research/evren-probe/fixtures/chat_tool_calls_blocking.json");
+
+    #[test]
+    fn ham_kullanim_gomme_ve_siralama_kayitlari() {
+        assert_eq!(
+            ham_kullanim(GOMME_KAYDI),
+            Some(GunlukToken {
+                istem: 5,
+                tamamlama: 0,
+                dusunce: 0
+            })
+        );
+        assert_eq!(
+            ham_kullanim(SIRALAMA_KAYDI),
+            Some(GunlukToken {
+                istem: 279,
+                tamamlama: 0,
+                dusunce: 0
+            })
+        );
+    }
+
+    #[test]
+    fn ham_kullanim_gomme_ve_siralama_toplami() {
+        let toplam: u64 = [GOMME_KAYDI, SIRALAMA_KAYDI]
+            .iter()
+            .copied()
+            .filter_map(ham_kullanim)
+            .map(|t| t.istem)
+            .sum();
+        assert_eq!(toplam, 284);
+    }
+
+    #[test]
+    fn ham_kullanim_sohbette_dusunceyi_ayri_tutar() {
+        assert_eq!(
+            ham_kullanim(SOHBET_YANITI),
+            Some(GunlukToken {
+                istem: 186,
+                tamamlama: 78,
+                dusunce: 32
+            })
+        );
+    }
+
+    #[test]
+    fn ham_kullanim_gecersiz_govdelerde_none() {
+        // Bozuk JSON, nesne olmayan gövde, eksik, boş, dizi ya da sayı usage,
+        // çelişkili toplam.
+        for govde in [
+            "{",
+            "[1]",
+            r#"{"data":[]}"#,
+            r#"{"usage":null}"#,
+            r#"{"usage":{}}"#,
+            r#"{"usage":[5,5]}"#,
+            r#"{"usage":5}"#,
+            r#"{"usage":{"prompt_tokens":5,"total_tokens":6}}"#,
+        ] {
+            assert_eq!(ham_kullanim(govde), None, "{govde}");
+        }
     }
 }
