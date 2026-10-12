@@ -14,6 +14,7 @@ use kalfa_core::denetci::{
     DENETCI_MODELI, DenetimGirdisi, DenetimSonucu, GuvenlikDenetcisi, YapilandirilmisSiniflandirici,
 };
 use kalfa_core::saglayici::{EvrenSaglayici, Saglayici};
+use kalfa_core::test_destek::sinirsiz_butce_talepci;
 use kalfa_evren::tipler::{ChatMessage, ChatRequest};
 use kalfa_evren::{ApiAnahtari, EvrenIstemcisi, VARSAYILAN_TABAN};
 
@@ -37,10 +38,13 @@ async fn canli_denetci_zararsiz_ve_telkinli_icerik() {
     for (ad, icerik) in [("zararsız", ZARARSIZ), ("telkinli", TELKINLI)] {
         let bas = Instant::now();
         let y = denetci
-            .denetle(&DenetimGirdisi {
-                kaynak: "dosya:ornek.txt".into(),
-                icerik: icerik.into(),
-            })
+            .denetle(
+                &DenetimGirdisi {
+                    kaynak: "dosya:ornek.txt".into(),
+                    icerik: icerik.into(),
+                },
+                &sinirsiz_butce_talepci(),
+            )
             .await;
         let sure = bas.elapsed();
         let k = y.kullanim.as_ref();

@@ -992,8 +992,10 @@ impl Oturum {
                     if let Some(girdi) = denetlenecek {
                         self.yay(Olay::DenetimBasladi { cagri: s.cagri }).await;
                         let denetci = self.baglam.denetci.clone();
+                        // Denetçinin her ağ denemesi bu oturumun bütçesinden izin ister (5b §4.1).
+                        let butce = self.butce_talepci();
                         denetim_isleri.push(async move {
-                            let yanit = denetci.denetle(&girdi).await;
+                            let yanit = denetci.denetle(&girdi, &butce).await;
                             (s.cagri, girdi, yanit)
                         });
                     }
@@ -1040,41 +1042,43 @@ impl Oturum {
         if let Some(b) = bekleyen_sonuclar.iter_mut().find(|b| b.cagri == cagri) {
             b.denetim = Some(yanit.sonuc.clone());
         }
-        // Denetçinin isteği gönderim günlüğüne kendi amacıyla girer (Görev 6).
-        // Yanıt meta'sı yoksa istek EVREN'den yanıt almadan bitti; gövdenin
-        // gidip gitmediği bilinmediği için güvenli taraf `Yanit`tır.
+        // Her ağ denemesi kendi `Istek` satırıdır (5b tasarımı §6); iç tekrar gizlenmez.
+        // Bitişi denetçi denemeden hemen sonra oturuma bildirdi (§4.1), burada tekrar
+        // bitirilmez.
         let yeni = vec![crate::gonderim::GonderilenOge {
             kaynak: girdi.kaynak.clone(),
             sira: None,
             bayt: girdi.icerik.len() as u64,
         }];
         let model = Some(crate::denetci::DENETCI_MODELI.to_string());
-        match (&yanit.meta, &yanit.sonuc) {
-            (Some(meta), _) => {
-                self.istek_kaydet(
-                    "denetci",
-                    meta,
-                    model,
-                    yeni,
-                    0,
-                    crate::gonderim::IstekSonucu::Basarili,
-                    None,
-                )
-                .await;
+        for deneme in &yanit.denemeler {
+            match (&deneme.meta, &deneme.sonuc) {
+                (Some(meta), _) => {
+                    self.istek_kaydet(
+                        "denetci",
+                        meta,
+                        model.clone(),
+                        yeni.clone(),
+                        0,
+                        deneme.sonuc.clone(),
+                        Some(deneme.islem),
+                    )
+                    .await;
+                }
+                (None, IstekSonucu::Hata { asama, mesaj }) => {
+                    self.istek_kaydet_hata(
+                        "denetci",
+                        model.clone(),
+                        yeni.clone(),
+                        0,
+                        *asama,
+                        mesaj.clone(),
+                        Some(deneme.islem),
+                    )
+                    .await;
+                }
+                (None, _) => {}
             }
-            (None, DenetimSonucu::Bilinmiyor { neden }) => {
-                self.istek_kaydet_hata(
-                    "denetci",
-                    model,
-                    yeni,
-                    0,
-                    crate::gonderim::IstekAsamasi::Yanit,
-                    neden.clone(),
-                    None,
-                )
-                .await;
-            }
-            (None, _) => {}
         }
         if let Some(u) = &yanit.kullanim {
             let (istem, tamamlama, dusunce) =

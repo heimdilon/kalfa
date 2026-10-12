@@ -7,11 +7,12 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use futures_util::stream;
+use kalfa_evren::EvrenError;
 use kalfa_evren::tipler::{ChatMessage, ChatRequest, ChatResponse, Role};
-use kalfa_evren::{EvrenError, YanitMeta};
 
 use super::Oturum;
 use super::arac_asamasi::kaynak_kacisla;
+use crate::butce::{ButceDenemesi, ButceTalepci, hata_kullanimi, sureli, yanit_kullanimi};
 use crate::gonderim::{IstekAsamasi, IstekSonucu};
 use crate::kayit::{KayitOgesi, OZET_ONEKI, OzetYontemi};
 use crate::protokol::{BitisNedeni, Olay};
@@ -209,26 +210,104 @@ pub fn yer_tutucu(ozgun_bayt: usize) -> String {
 const ESZAMANLI_OZET: usize = 4;
 const OZET_ZAMAN_ASIMI: Duration = Duration::from_secs(30);
 
-type OzetSonucu = Result<(ChatResponse, YanitMeta), EvrenError>;
+/// Bir özetleme çağrısının mantıksal sonucu. `IzinYok`: oturum bütçesi izin
+/// vermedi; ağa çıkılmadı ve çıktı olduğu gibi kalır (yer tutucu konmaz).
+enum OzetSonucu {
+    Basarili(ChatResponse),
+    Hata(EvrenError),
+    IzinYok,
+}
 
-/// Özetleme isteği; 429'da bir kez yeniden dener, 30 sn'de zaman aşımına
-/// uğrar (§7).
-async fn ozetle(saglayici: Arc<dyn Saglayici>, istek: ChatRequest) -> OzetSonucu {
-    let calis = async {
-        match saglayici.sohbet(istek.clone()).await {
-            Err(EvrenError::HizSiniri { tekrar_dene }) => {
-                let bekle = tekrar_dene
-                    .unwrap_or(Duration::from_millis(500))
-                    .min(Duration::from_secs(5));
-                tokio::time::sleep(bekle).await;
-                saglayici.sohbet(istek).await
+/// Özetleme isteği; hız sınırında bir kez yeniden dener, 30 sn'de zaman aşımına
+/// uğrar (§7). Her ağ denemesi kendi izni ve tek bitişini alır; dönen denemeler
+/// kayda yazılır (5b tasarımı §4.1, §6).
+async fn ozetle(
+    saglayici: Arc<dyn Saglayici>,
+    istek: ChatRequest,
+    butce: ButceTalepci,
+) -> (OzetSonucu, Vec<ButceDenemesi>) {
+    let mut kalan = OZET_ZAMAN_ASIMI;
+    let mut denemeler = Vec::new();
+    let sonuc = match dene(
+        &saglayici,
+        istek.clone(),
+        &butce,
+        &mut kalan,
+        &mut denemeler,
+    )
+    .await
+    {
+        None => return (OzetSonucu::IzinYok, denemeler),
+        Some(Err(EvrenError::HizSiniri { tekrar_dene })) => {
+            let bekle = tekrar_dene
+                .unwrap_or(Duration::from_millis(500))
+                .min(Duration::from_secs(5));
+            if sureli(&mut kalan, tokio::time::sleep(bekle))
+                .await
+                .is_none()
+            {
+                Err(zaman_asimi_hatasi())
+            } else {
+                match dene(&saglayici, istek, &butce, &mut kalan, &mut denemeler).await {
+                    None => return (OzetSonucu::IzinYok, denemeler),
+                    Some(sonuc) => sonuc,
+                }
             }
-            sonuc => sonuc,
         }
+        Some(sonuc) => sonuc,
     };
-    tokio::time::timeout(OZET_ZAMAN_ASIMI, calis)
+    let sonuc = match sonuc {
+        Ok(yanit) => OzetSonucu::Basarili(yanit),
+        Err(hata) => OzetSonucu::Hata(hata),
+    };
+    (sonuc, denemeler)
+}
+
+/// Tek özetleme denemesi (5b tasarımı §4.1): izin, kalan süreyle sınırlı çağrı,
+/// denemenin tek bitişi ve kaydı. İzin yoksa `None`; ağa çıkılmaz.
+async fn dene(
+    saglayici: &Arc<dyn Saglayici>,
+    istek: ChatRequest,
+    butce: &ButceTalepci,
+    kalan: &mut Duration,
+    denemeler: &mut Vec<ButceDenemesi>,
+) -> Option<Result<ChatResponse, EvrenError>> {
+    let islem = butce.izin("özetleme").await?;
+    let cagri = sureli(kalan, saglayici.sohbet(istek))
         .await
-        .unwrap_or_else(|_| Err(EvrenError::ag_yanit("zaman aşımı (30 sn)")))
+        .unwrap_or_else(|| Err(zaman_asimi_hatasi()));
+    let (kullanim, meta, kayit) = match &cagri {
+        Ok((yanit, meta)) => (
+            yanit_kullanimi(yanit.usage.as_ref()),
+            Some(meta.clone()),
+            IstekSonucu::Basarili,
+        ),
+        Err(e) => (
+            hata_kullanimi(e),
+            None,
+            IstekSonucu::Hata {
+                asama: match e {
+                    EvrenError::Ag {
+                        govde_gitti: false, ..
+                    } => IstekAsamasi::Baglanti,
+                    _ => IstekAsamasi::Yanit,
+                },
+                mesaj: e.to_string(),
+            },
+        ),
+    };
+    butce.bitir(islem, kullanim).await;
+    denemeler.push(ButceDenemesi {
+        islem,
+        kullanim,
+        meta,
+        sonuc: kayit,
+    });
+    Some(cagri.map(|(yanit, _)| yanit))
+}
+
+fn zaman_asimi_hatasi() -> EvrenError {
+    EvrenError::ag_yanit("zaman aşımı (30 sn)")
 }
 
 impl Oturum {
@@ -279,44 +358,56 @@ impl Oturum {
             })
             .collect();
         let saglayici = self.baglam.saglayici.clone();
+        let butce = self.butce_talepci();
         // Durunca yeni istek başlamaz; başlamış olanlar beklenir ve kayda
         // yazılır, çünkü EVREN'e ulaşmış ve kredi harcamış olabilirler.
         let durdu = Arc::new(AtomicBool::new(false));
         let durdu_akista = durdu.clone();
         let mut sonuclar = stream::iter(istekler.into_iter().map(move |(i, istek)| {
             let saglayici = saglayici.clone();
+            let butce = butce.clone();
             let durdu = durdu_akista.clone();
             async move {
                 if durdu.load(Ordering::SeqCst) {
                     return (i, None);
                 }
-                (i, Some(ozetle(saglayici, istek).await))
+                (i, Some(ozetle(saglayici, istek, butce).await))
             }
         }))
         .buffer_unordered(ESZAMANLI_OZET);
 
         let (mut adet, mut yer_tutucu_sayisi) = (0u32, 0u32);
         while let Some((i, sonuc)) = self.iptal_edilebilir(sonuclar.next()).await? {
-            let Some(sonuc) = sonuc else {
+            let Some((sonuc, denemeler)) = sonuc else {
                 continue;
             };
             // Ana isteğin de alacağı hatalarda (şart, ağ yok, günlük sınır,
             // anahtar, hız sınırı) özetleme durur; kalan çıktılar olduğu gibi
             // kalır, geçici bir hata bağlamı kalıcı olarak silmez (§7, §13).
-            let durdur = matches!(
-                sonuc,
-                Err(EvrenError::SartKabulGerekli { .. }
-                    | EvrenError::GunlukSinir { .. }
-                    | EvrenError::AnahtarGecersiz
-                    | EvrenError::HizSiniri { .. }
-                    | EvrenError::Ag {
-                        govde_gitti: false,
-                        ..
-                    })
-            );
-            let ozet = self.ozet_istegini_kaydet(sonuc).await;
+            // İzin yoksa da durulur: kalan adaylar başlatılmaz (5b tasarımı §4.1).
+            let durdur = match &sonuc {
+                OzetSonucu::Hata(e) => matches!(
+                    e,
+                    EvrenError::SartKabulGerekli { .. }
+                        | EvrenError::GunlukSinir { .. }
+                        | EvrenError::AnahtarGecersiz
+                        | EvrenError::HizSiniri { .. }
+                        | EvrenError::Ag {
+                            govde_gitti: false,
+                            ..
+                        }
+                ),
+                OzetSonucu::IzinYok => true,
+                OzetSonucu::Basarili(_) => false,
+            };
+            let izin_yok = matches!(sonuc, OzetSonucu::IzinYok);
+            let ozet = self.ozet_istegini_kaydet(sonuc, denemeler).await;
             if durdur {
                 durdu.store(true, Ordering::SeqCst);
+            }
+            // İzin yoksa çıktı olduğu gibi kalır; yer tutucu konmaz (5b tasarımı §4.1).
+            if izin_yok {
+                continue;
             }
             // Durduktan sonra başarısızlık yer tutucuya dönmez; çıktı kalır.
             if ozet.is_none() && durdu.load(Ordering::SeqCst) {
@@ -359,22 +450,46 @@ impl Oturum {
         Ok(true)
     }
 
-    /// Özetleme isteğini günlüğe ve kullanımı kayda yazar (§9); özet metnini
-    /// döndürür. Boş yanıt ve hata `None`'dır.
-    async fn ozet_istegini_kaydet(&mut self, sonuc: OzetSonucu) -> Option<String> {
+    /// Özetleme denemelerini günlüğe yazar (§9): her ağ denemesi kendi `Istek`
+    /// satırıdır ve bütçe işlemine bağlanır. Başarılı yanıtın kullanımı ayrıca
+    /// kaydedilir. Özet metnini döndürür; hata, boş yanıt ve izin yokluğu `None`.
+    async fn ozet_istegini_kaydet(
+        &mut self,
+        sonuc: OzetSonucu,
+        denemeler: Vec<ButceDenemesi>,
+    ) -> Option<String> {
         let model = Some(OZETLEYICI_MODELI.to_string());
+        for deneme in &denemeler {
+            match (&deneme.meta, &deneme.sonuc) {
+                (Some(meta), _) => {
+                    self.istek_kaydet(
+                        "özetleme",
+                        meta,
+                        model.clone(),
+                        Vec::new(),
+                        1,
+                        deneme.sonuc.clone(),
+                        Some(deneme.islem),
+                    )
+                    .await;
+                }
+                (None, IstekSonucu::Hata { asama, mesaj }) => {
+                    self.istek_kaydet_hata(
+                        "özetleme",
+                        model.clone(),
+                        Vec::new(),
+                        1,
+                        *asama,
+                        mesaj.clone(),
+                        Some(deneme.islem),
+                    )
+                    .await;
+                }
+                (None, _) => {}
+            }
+        }
         match sonuc {
-            Ok((yanit, meta)) => {
-                self.istek_kaydet(
-                    "özetleme",
-                    &meta,
-                    model,
-                    Vec::new(),
-                    1,
-                    IstekSonucu::Basarili,
-                    None,
-                )
-                .await;
+            OzetSonucu::Basarili(yanit) => {
                 if let Some(u) = &yanit.usage {
                     let (istem, tamamlama, dusunce) =
                         (u.prompt_tokens, u.completion_tokens, u.reasoning_tokens());
@@ -394,25 +509,7 @@ impl Oturum {
                     .map(|m| m.trim().to_string())
                     .filter(|m| !m.is_empty())
             }
-            Err(e) => {
-                let asama = match e {
-                    EvrenError::Ag {
-                        govde_gitti: false, ..
-                    } => IstekAsamasi::Baglanti,
-                    _ => IstekAsamasi::Yanit,
-                };
-                self.istek_kaydet_hata(
-                    "özetleme",
-                    model,
-                    Vec::new(),
-                    1,
-                    asama,
-                    e.to_string(),
-                    None,
-                )
-                .await;
-                None
-            }
+            OzetSonucu::Hata(_) | OzetSonucu::IzinYok => None,
         }
     }
 
