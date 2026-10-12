@@ -12,6 +12,9 @@ use crate::parca::{self, Parca};
 /// Toplu gömme isteğinin sınırları.
 pub const TOPLU_PARCA: usize = 256;
 pub const TOPLU_BAYT: usize = 1024 * 1024;
+/// Hız sınırından sonra yarıya inen parça sınırının alt ucu. Parça en çok
+/// 2400 karakter olduğundan küçük sınırda bayt sınırına ulaşılmaz.
+const EN_AZ_TOPLU: usize = 16;
 /// Bundan büyük dosyalar indekslenmez.
 pub const AZAMI_DOSYA: u64 = 256 * 1024;
 /// "Racy clean" penceresi: değişme zamanı son indekslemeye bu kadar yakın
@@ -84,6 +87,12 @@ pub fn guncelle(o: &dyn Ortam) -> Result<IndeksDurumu, Hata> {
     let mut tamamlanan = 0u64;
     let mut guncellenen = 0u64;
     'toplu: while !kuyruk.is_empty() {
+        // Dakikalık pencere bir toplu isteğin altına düşünce aynı büyüklükteki
+        // istek hep reddedilir; sınır 429'da yarıya iner, başarıda iki katına
+        // çıkar ve sonraki çağrılar için `meta`'da kalır.
+        let parca_siniri = calisan.toplu_sinir.map_or(TOPLU_PARCA, |s| {
+            (s as usize).clamp(EN_AZ_TOPLU, TOPLU_PARCA)
+        });
         let konumlar = ozet_konumlari(&calisan);
         let mut grup = Vec::new();
         let mut yeni_metinler: Vec<String> = Vec::new();
@@ -92,7 +101,7 @@ pub fn guncelle(o: &dyn Ortam) -> Result<IndeksDurumu, Hata> {
         while let Some(okunan) = kuyruk.front() {
             let (yeni_say, bayt) = yeni_olcu(okunan, &konumlar);
             if !grup.is_empty()
-                && (yeni_metinler.len() + yeni_say > TOPLU_PARCA || yeni_bayt + bayt > TOPLU_BAYT)
+                && (yeni_metinler.len() + yeni_say > parca_siniri || yeni_bayt + bayt > TOPLU_BAYT)
             {
                 break;
             }
@@ -104,7 +113,7 @@ pub fn guncelle(o: &dyn Ortam) -> Result<IndeksDurumu, Hata> {
             for h in &okunan.parcalar {
                 if !konumlar.contains_key(&h.ozet) {
                     let bayt = metin_bayti(&h.parca.metin);
-                    if say == TOPLU_PARCA || yeni_bayt + bayt > TOPLU_BAYT {
+                    if say == parca_siniri || yeni_bayt + bayt > TOPLU_BAYT {
                         break;
                     }
                     say += 1;
@@ -159,6 +168,7 @@ pub fn guncelle(o: &dyn Ortam) -> Result<IndeksDurumu, Hata> {
             Ok(v) => v,
             Err(Hata::SinirAsildi(m)) => {
                 eksik = Some(format!("EVREN sınırı: {m}"));
+                calisan.toplu_sinir = Some((parca_siniri / 2).max(EN_AZ_TOPLU) as u32);
                 break 'toplu;
             }
             Err(e) => return Err(e),
@@ -177,6 +187,9 @@ pub fn guncelle(o: &dyn Ortam) -> Result<IndeksDurumu, Hata> {
         )? {
             break 'toplu;
         }
+        calisan.toplu_sinir = Some(parca_siniri * 2)
+            .filter(|&s| s < TOPLU_PARCA)
+            .map(|s| s as u32);
         guncellenen += sayi;
         tamamlanan += sayi;
     }
@@ -185,6 +198,7 @@ pub fn guncelle(o: &dyn Ortam) -> Result<IndeksDurumu, Hata> {
     // artık temizliğinden kalan silinecekler) tek meta yazmasıyla kaydedilir.
     if calisan.dosyalar != disk.dosyalar
         || calisan.bekleyen != disk.bekleyen
+        || calisan.toplu_sinir != disk.toplu_sinir
         || bozuk_vardi
         || !disk.silinecekler.is_empty()
     {
@@ -818,6 +832,44 @@ mod testler {
     }
 
     #[test]
+    fn hiz_sinirindan_sonra_toplu_istek_kuculur_ve_basariyla_buyur() {
+        let o = cok_parcali_dosya();
+        *o.gomme_hatasi.borrow_mut() = Some((1, Hata::SinirAsildi("429".into())));
+        assert!(calistir(&o).eksik.is_some());
+        assert_eq!(meta_oku(&o).toplu_sinir, Some(128));
+        // Aynı sınır yeniden çarparsa yarıya iner.
+        *o.gomme_hatasi.borrow_mut() = Some((2, Hata::SinirAsildi("429".into())));
+        assert!(calistir(&o).eksik.is_some());
+        assert_eq!(meta_oku(&o).toplu_sinir, Some(64));
+        *o.gomme_hatasi.borrow_mut() = None;
+        let durum = calistir(&o);
+        assert_eq!(durum.indeksli, 1);
+        // 64 başarılı → 128; 128 başarılı → 256; kalan 107 tek istekte.
+        assert_eq!(
+            o.gommeler.borrow().iter().map(Vec::len).collect::<Vec<_>>(),
+            [256, 128, 64, 128, 107]
+        );
+        assert_eq!(meta_oku(&o).toplu_sinir, None);
+        tutarli(&o);
+        yetim_yok(&o);
+    }
+
+    #[test]
+    fn toplu_istek_alt_sinirin_altina_inmez() {
+        let o = cok_parcali_dosya();
+        for _ in 0..6 {
+            let n = o.gommeler.borrow().len() + 1;
+            *o.gomme_hatasi.borrow_mut() = Some((n, Hata::SinirAsildi("429".into())));
+            calistir(&o);
+        }
+        assert_eq!(
+            o.gommeler.borrow().iter().map(Vec::len).collect::<Vec<_>>(),
+            [256, 128, 64, 32, 16, 16]
+        );
+        assert_eq!(meta_oku(&o).toplu_sinir, Some(16));
+    }
+
+    #[test]
     fn yarim_dosyanin_her_yazma_adiminda_kesilme_ve_kota() {
         for n in 1..=4 {
             for hata in [
@@ -907,6 +959,7 @@ mod testler {
         let ham = Meta::yeni().kodla();
         assert!(!String::from_utf8_lossy(&ham).contains("bekleyen"));
         assert_eq!(Meta::coz(&ham), Some(Meta::yeni()));
+        assert!(!String::from_utf8_lossy(&ham).contains("toplu_sinir"));
     }
 
     #[test]
@@ -1073,8 +1126,10 @@ mod testler {
         let son = calistir(&o);
         assert_eq!(son.indeksli, 3);
         assert!(son.eksik.is_none());
-        // İlk çağrının 2. isteği (başarısız) + ikinci çağrının 2 isteği.
-        assert_eq!(o.gommeler.borrow().len(), 4);
+        // İlk çağrının 2. isteği (başarısız) + ikinci çağrının 3 isteği:
+        // sınır 128'e indiği için b iki isteğe bölünür, c tam sınırla gider.
+        assert_eq!(o.gommeler.borrow().len(), 5);
+        assert_eq!(o.gommeler.borrow()[2].len(), 128);
         tutarli(&o);
         yetim_yok(&o);
     }

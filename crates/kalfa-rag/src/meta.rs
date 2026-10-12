@@ -41,6 +41,10 @@ pub struct Meta {
     /// Metin tutulmaz; sonraki çağrı yeniden okuduğu parçaları özetle eşler.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub bekleyen: BTreeMap<String, DosyaKaydi>,
+    /// Hız sınırından sonra küçültülmüş toplu istek parça sınırı; `None` tam
+    /// sınırdır. Eski indekslerde bu alan yoktur.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toplu_sinir: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
