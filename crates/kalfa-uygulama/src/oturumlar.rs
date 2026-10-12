@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use kalfa_core::aktarim::{KrediTutamaci, Paketleyici};
 use kalfa_core::arac::AracKayitDefteri;
+use kalfa_core::butce::{ButceDurumu, ButceGorunumu};
 use kalfa_core::gecmis::{self, DurumOzeti, GecmisSayfasi};
 use kalfa_core::geri_alma::GeriYukleyici;
 use kalfa_core::gonderim::{GunlukSayfasi, gunluk_sayfasi, gunluk_uret, oge_metni};
@@ -18,7 +19,7 @@ use kalfa_core::kimlik::{CagriId, IslemId, OturumId, TurId};
 use kalfa_core::kurtarma::kurtar;
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::oturum::{self, OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci};
-use kalfa_core::protokol::{Komut, OnayKarari, OnayOgesi};
+use kalfa_core::protokol::{ButceKarari, Komut, OnayKarari, OnayOgesi};
 use kalfa_tools::{CalismaAlani as AracAlani, KabukAraci, varsayilan_araclar};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
@@ -158,6 +159,9 @@ impl Uygulama {
             &self.geri_alma_dizini,
             oturum,
         ));
+        // Yeni oturum, ayardaki varsayılan bütçeyle başlar (5b tasarımı §9).
+        ayarlar.butce = self.ayarlar.oturum_butcesi();
+        let butce = ButceDurumu::yeni(ayarlar.butce).map_err(ic_hata)?.gorunum();
         let (tutamac, alici) = oturum::baslat_kimlikle(oturum, ayarlar, baglam)?;
         let acik = AcikOturum {
             tutamac,
@@ -186,6 +190,7 @@ impl Uygulama {
                 ..DurumOzeti::default()
             },
             salt_okunur: None,
+            butce: Some(butce),
         })
     }
 
@@ -195,7 +200,7 @@ impl Uygulama {
     pub async fn oturum_ac(&self, oturum: OturumId) -> Result<OturumAcilisi, KomutHatasi> {
         self.kapanmayi_bekle(oturum).await;
         if let Some((yol, kok)) = self.acik_oturum(oturum) {
-            return self.acilis(oturum, yol, Some(kok), None).await;
+            return self.acilis(oturum, yol, Some(kok), None, None).await;
         }
         let yol = dizin::kayit_yolu(&self.oturum_dizini, oturum);
         let okunacak = yol.clone();
@@ -204,6 +209,8 @@ impl Uygulama {
             .map_err(ic_hata)?
             .map_err(KomutHatasi::kayit)?;
         let durum = kurtar(&kayitlar).map_err(ic_hata)?;
+        // Kayıttan açılan oturum kendi kayıtlı limitleriyle sürer (5b tasarımı §9).
+        let butce = durum.butce;
         if durum.oturum != oturum {
             return Err(KomutHatasi::gecersiz(
                 "Kayıt dosyasının adı içindeki oturum kimliğiyle uyuşmuyor.",
@@ -211,16 +218,18 @@ impl Uygulama {
         }
         let Some(kok) = durum.calisma_alani.clone() else {
             let neden = SaltOkunurNedeni::CalismaAlaniKayitsiz;
-            return self.acilis(oturum, yol, None, Some(neden)).await;
+            return self.acilis(oturum, yol, None, Some(neden), None).await;
         };
         if !kok.is_dir() {
             let neden = SaltOkunurNedeni::CalismaAlaniYok {
                 yol: kok.display().to_string(),
             };
-            return self.acilis(oturum, yol, Some(kok), Some(neden)).await;
+            return self.acilis(oturum, yol, Some(kok), Some(neden), None).await;
         }
         let baglam = self.baglam(&kok).await?;
         let mut ayarlar = OturumAyarlari::yeni(durum.model.clone(), &kok);
+        // Yalnızca bütçe kaydı olmayan (5b öncesi) oturum bu varsayılanı devralır.
+        ayarlar.butce = self.ayarlar.oturum_butcesi();
         ayarlar.geri_alma_dizini = Some(dizin::oturum_geri_alma_dizini(
             &self.geri_alma_dizini,
             oturum,
@@ -231,7 +240,7 @@ impl Uygulama {
                 // Aynı oturumu eşzamanlı bir çağrı (ör. çift tıklama) açtıysa
                 // kayıt kilidi onda; açılmış oturumun geçmişi döner.
                 if let Some((yol, kok)) = self.acik_oturum(oturum) {
-                    return self.acilis(oturum, yol, Some(kok), None).await;
+                    return self.acilis(oturum, yol, Some(kok), None, None).await;
                 }
                 return Err(e.into());
             }
@@ -250,7 +259,7 @@ impl Uygulama {
             Self::eklenemeyen_oturumu_kapat(acik).await;
             return Err(KomutHatasi::gecersiz(ALAN_KALDIRILIYOR));
         }
-        self.acilis(oturum, yol, Some(kok), None).await
+        self.acilis(oturum, yol, Some(kok), None, butce).await
     }
 
     fn acik_oturum(&self, oturum: OturumId) -> Option<(PathBuf, PathBuf)> {
@@ -267,6 +276,7 @@ impl Uygulama {
         yol: PathBuf,
         kok: Option<PathBuf>,
         salt_okunur: Option<SaltOkunurNedeni>,
+        butce: Option<ButceGorunumu>,
     ) -> Result<OturumAcilisi, KomutHatasi> {
         let (ilk_sayfa, ozet) = tokio::task::spawn_blocking(move || -> io::Result<_> {
             let kayitlar = OturumKaydi::oku(&yol)?;
@@ -285,6 +295,7 @@ impl Uygulama {
             gecmis: ilk_sayfa,
             ozet,
             salt_okunur,
+            butce,
         })
     }
 
@@ -369,6 +380,20 @@ impl Uygulama {
                 gonderilmeyecekler,
                 hep_gonderilecekler,
             })
+            .await?;
+        Ok(())
+    }
+
+    /// Bütçe kartındaki kullanıcı kararını ana pencereden oturuma iletir (5b
+    /// tasarımı §7). Oturum kimliği yoksa ya da oturum kapanmışsa reddedilir; karar
+    /// geçerliliğini çekirdek (gözlenen sayaçlar, aktif istek) denetler.
+    pub async fn butce_karari(
+        &self,
+        oturum: OturumId,
+        karar: ButceKarari,
+    ) -> Result<(), KomutHatasi> {
+        self.tutamac(oturum)?
+            .gonder(Komut::ButceKarari { karar })
             .await?;
         Ok(())
     }

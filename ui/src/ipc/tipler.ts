@@ -280,7 +280,46 @@ export type Olay =
   | { tip: 'DenetimAtlandi'; cagri: CagriId }
   | { tip: 'Kisayollar'; liste: Kisayol[] }
   /** Eski araç çıktıları özetlendi (5a tasarımı §12); geçmişte gösterilmez. */
-  | { tip: 'BaglamOzetlendi'; adet: number; yer_tutucu: number; once: number; sonra: number };
+  | { tip: 'BaglamOzetlendi'; adet: number; yer_tutucu: number; once: number; sonra: number }
+  /** Bütçe sayaçlarının güncel görünümü (5b tasarımı §9). */
+  | { tip: 'ButceDurumu'; durum: ButceGorunumu }
+  /** Bütçe engeli: yeni istek kullanıcının kararını bekliyor (5b tasarımı §7). */
+  | { tip: 'ButceKarariGerekli'; durum: ButceGorunumu };
+
+/** Bütçe sınırlarının nedeni (Rust `ButceEngeli`). */
+export type ButceEngeli = 'bilinmeyen' | 'token' | 'istek';
+
+/** İstek ve bilinen token sınırları; ikisi de 1 ile 2^53-1 arasında tam sayı. */
+export interface ButceSinirlari {
+  istek: number;
+  token: number;
+}
+
+/** Oturum bütçesinin görünümü (5b tasarımı §5, §9). */
+export interface ButceGorunumu {
+  sinirlar: ButceSinirlari;
+  /** Başlatma izni verilen denemeler. */
+  baslatilan: number;
+  /** Kullanımı bilinen denemelerin token toplamı. */
+  bilinen_token: number;
+  /** Kullanımı bilinmeyen tamamlanmış denemeler. */
+  bilinmeyen: number;
+  /** Kullanıcının kabul ettiği bilinmeyen sayısı. */
+  onaylanan_bilinmeyen: number;
+  /** Sonuçlanmamış (aktif) deneme sayısı. */
+  aktif: number;
+  engel: ButceEngeli | null;
+}
+
+/** Bütçe kartındaki kullanıcı kararı (5b tasarımı §7). `gozlenen_*` kartın sayaçlarıdır. */
+export type ButceKarari =
+  | {
+      tip: 'DevamEt';
+      sinirlar: ButceSinirlari;
+      gozlenen_baslatilan: number;
+      gozlenen_bilinmeyen: number;
+    }
+  | { tip: 'Durdur' };
 
 export type OnizlemeNedeni = 'Onizleme' | 'Denetim' | 'Eklenti';
 
@@ -480,6 +519,8 @@ export interface OturumAcilisi {
   gecmis: GecmisSayfasi;
   ozet: DurumOzeti;
   salt_okunur: SaltOkunurNedeni | null;
+  /** Bütçe görünümü; salt okunur oturumda ve açık oturumda `null` (5b tasarımı §9). */
+  butce: ButceGorunumu | null;
 }
 
 export interface OnayGirdisi {

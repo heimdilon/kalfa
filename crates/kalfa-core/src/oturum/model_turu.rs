@@ -99,7 +99,6 @@ impl Oturum {
                             dusunce,
                         })
                         .await;
-                        self.tur_ozeti.kullanim(istem, tamamlama, dusunce);
                         self.yay(Olay::TokenKullanimi {
                             istem,
                             tamamlama,

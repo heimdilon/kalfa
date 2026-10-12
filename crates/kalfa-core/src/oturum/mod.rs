@@ -998,6 +998,7 @@ pub fn devam_et(
             oturum.butce_eski_kayit_devret(devir).await;
         }
         oturum.butce_sonuclanmamislari_kapat().await;
+        oturum.butce_acilis_kartini_goster().await;
         oturum.calis().await;
         let _ = kapanis.send(true);
     });
@@ -1668,7 +1669,8 @@ impl Oturum {
     }
 
     /// Denemenin tek sonlandırması (5b tasarımı §6). Kayıt yazılamazsa sayaç
-    /// değişmez; sayaç kuralı bozulduysa bu oturumda yeni izin verilmez.
+    /// değişmez; sayaç kuralı bozulduysa bu oturumda yeni izin verilmez. Tur
+    /// özeti denemenin kullanımını yalnız başarılı bitişte, bir kez toplar.
     async fn butce_bitir(&mut self, islem: ButceIslemId, kullanim: Option<GunlukToken>) {
         let bitis = KayitOgesi::ButceIstegiBitti { islem, kullanim };
         if !self.kaydet_kalici(bitis).await {
@@ -1680,6 +1682,9 @@ impl Oturum {
             .map(|durum| durum.bitir(islem, kullanim))
         {
             Some(Ok(())) => {
+                if let Some(k) = kullanim {
+                    self.tur_ozeti.kullanim(k.istem, k.tamamlama, k.dusunce);
+                }
                 self.butce_durumunu_yay().await;
                 self.butce_karti_guncelle().await;
             }
@@ -1715,6 +1720,33 @@ impl Oturum {
         if durum.engel.is_none() || durum.aktif > 0 || self.butce_karti == Some(durum) {
             return;
         }
+        self.butce_karti = Some(durum);
+        self.yay(Olay::ButceKarariGerekli { durum }).await;
+    }
+
+    /// Kurtarılan oturumda engel varsa karar kartı açılışta verilir: kullanıcı ilk
+    /// yeni istekten önce karar verir (5b tasarımı §8). Kart kayıttan türetilir;
+    /// yeniden bağlanan arayüz bunu aynı olaydan görür.
+    async fn butce_acilis_kartini_goster(&mut self) {
+        if self.butce_hatasi.is_some() {
+            return;
+        }
+        let Some(durum) = self.butce.as_ref().map(ButceDurumu::gorunum) else {
+            return;
+        };
+        if durum.engel.is_none() || durum.aktif > 0 {
+            return;
+        }
+        self.butce_karti = Some(durum);
+        self.yay(Olay::ButceKarariGerekli { durum }).await;
+    }
+
+    /// Kartın güncel sayaçlarla yeniden yayımı; karar reddedildiğinde kart açık
+    /// kalır ve arayüz onu yeniden gösterir.
+    async fn butce_karti_yeniden_yay(&mut self) {
+        let Some(durum) = self.butce.as_ref().map(ButceDurumu::gorunum) else {
+            return;
+        };
         self.butce_karti = Some(durum);
         self.yay(Olay::ButceKarariGerekli { durum }).await;
     }
@@ -1856,8 +1888,10 @@ impl Oturum {
                 let onaylanan_bilinmeyen = match dogrulama {
                     Ok(bilinmeyen) => bilinmeyen,
                     Err(hata) => {
-                        // Kart açık kalır; karar doğru gözlemle yeniden verilebilir.
+                        // Kart açık kalır ve güncel sayaçlarla yeniden yayılır; karar
+                        // doğru gözlemle yeniden verilebilir.
                         self.hata(hata.to_string()).await;
+                        self.butce_karti_yeniden_yay().await;
                         return Etki::Devam;
                     }
                 };
@@ -1891,7 +1925,10 @@ impl Oturum {
             return;
         }
         match ButceDurumu::kayittan([&ayar]) {
-            Ok(Some(durum)) => self.butce = Some(durum),
+            Ok(Some(durum)) => {
+                self.butce = Some(durum);
+                self.butce_durumunu_yay().await;
+            }
             _ => {
                 self.butce_bozuldu("Eski kayıt bütçesi kurulamadı.".to_string())
                     .await

@@ -19,6 +19,7 @@
   import * as ipc from '../ipc/ana';
   import type { YalitimCalismaAlani } from '../ipc/tipler';
   import type { AnaDurum } from './anaDurum.svelte';
+  import ButceAyari from './ButceAyari.svelte';
   import GuvenlikAyarlari from './GuvenlikAyarlari.svelte';
   import { boyutMetni } from './geriAlma';
 
@@ -227,6 +228,8 @@
     {/if}
 
     <GuvenlikAyarlari {durum} />
+
+    <ButceAyari {durum} />
 
     <Card title={m('ayarlar.geri_alma')} icon="rotate-ccw">
       <p class="aciklama">{m('ayarlar.geri_alma.aciklama')}</p>

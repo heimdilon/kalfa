@@ -5,6 +5,7 @@ import type {
   AktarimDurmaNedeni,
   AracDurumu,
   BitisNedeni,
+  ButceGorunumu,
   CagriId,
   DenetimSonucu,
   DurumOzeti,
@@ -91,6 +92,12 @@ export type EkranOgesi =
       ogeler: OnizlemeOgesi[];
       neden: OnizlemeNedeni;
       durum: 'Bekliyor' | 'Yanitlandi' | 'Gecersiz';
+    })
+  /** Bütçe kararı kartı (5b tasarımı §7): neden, tüketim ve iki sonlu sınır. */
+  | (Ortak & {
+      tip: 'ButceKarari';
+      gorunum: ButceGorunumu;
+      durum: 'Bekliyor' | 'Yanitlandi' | 'Gecersiz';
     });
 
 /** Açık geri alma sayfası: son gelen plan ve mührü (aşama 3 tasarımı §5.6). */
@@ -128,6 +135,8 @@ export interface OturumEkrani {
   istek_sayaci: number;
   /** "Bu oturumda izin ver" kısayolları (aşama 3 tasarımı §9.1); kayda yazılmaz. */
   kisayollar: Kisayol[];
+  /** Son bütçe görünümü (sayaçlar ve limitler); açılışta ya da olayla gelir (5b §9). */
+  butce: ButceGorunumu | null;
 }
 
 /** Araç kartındaki denetim rozetinin durumu (3c Görev 8). */
@@ -144,6 +153,8 @@ export type Girdi =
   /** Gönderim kararı arka uca ulaşmadı; kart yeniden karar bekler. */
   | { tip: 'OnizlemeGonderilemedi'; islem: IslemId }
   | { tip: 'OnizlemeDegisti'; acik: boolean }
+  /** Bütçe kararı kabul edildi (komut IPC'den döndü); kart yanıtlanır (5b §7). */
+  | { tip: 'ButceYanitlandi' }
   /** Geri alma sayfası karar verilmeden kapandı. */
   | { tip: 'GeriAlmaKapandi' };
 
@@ -221,6 +232,7 @@ export function acilistanEkran(acilis: OturumAcilisi): OturumEkrani {
     geri_alma: null,
     istek_sayaci: 0,
     kisayollar: [],
+    butce: acilis.butce,
   };
 }
 
@@ -260,9 +272,7 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
         }
         return o;
       });
-      const bekleyenOnayVar = d.ogeler.some(
-        (o) => (o.tip === 'OnayIstegi' || o.tip === 'GonderimOnizlemesi') && o.durum === 'Bekliyor',
-      );
+      const bekleyenOnayVar = bekleyenKararVar(d);
       if (eslesenIstekGuncellendi && d.anlik === 'OnayBekliyor' && !bekleyenOnayVar) {
         d.anlik = 'Calisiyor';
       }
@@ -278,9 +288,7 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
         }
         return o;
       });
-      const bekleyenOnayVar = d.ogeler.some(
-        (o) => (o.tip === 'OnayIstegi' || o.tip === 'GonderimOnizlemesi') && o.durum === 'Bekliyor',
-      );
+      const bekleyenOnayVar = bekleyenKararVar(d);
       if (eslesenIstekGuncellendi && d.anlik === 'OnayBekliyor' && !bekleyenOnayVar) {
         d.anlik = 'Calisiyor';
       }
@@ -305,6 +313,11 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
       return { ...durum, ozet: { ...durum.ozet, model: girdi.model } };
     case 'KipDegisti':
       return { ...durum, ozet: { ...durum.ozet, kip: girdi.kip } };
+    case 'ButceYanitlandi': {
+      const d = kopya(durum);
+      butceKartiCoz(d);
+      return d;
+    }
     case 'GeriAlmaKapandi':
       return { ...durum, geri_alma: null };
   }
@@ -466,6 +479,31 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
       });
       d.anlik = 'OnayBekliyor';
       return;
+    case 'ButceDurumu':
+      d.butce = yuk.durum;
+      // Engelsiz sayaç, bekleyen kartın kararının kabul edildiğini gösterir.
+      if (yuk.durum.engel === null) butceKartiCoz(d);
+      return;
+    case 'ButceKarariGerekli': {
+      akisiKapat(d);
+      d.butce = yuk.durum;
+      // Açık bir kart varsa yeni sayaçlarla güncellenir; yoksa yenisi eklenir.
+      const son = d.ogeler.findLast((o) => o.tip === 'ButceKarari');
+      if (son?.tip === 'ButceKarari' && son.durum === 'Bekliyor') {
+        d.ogeler = d.ogeler.map((o) => (o === son ? { ...son, gorunum: yuk.durum } : o));
+      } else {
+        d.ogeler.push({
+          tip: 'ButceKarari',
+          anahtar: `c-${z.sira}`,
+          sira: z.sira,
+          tur: z.tur,
+          gorunum: yuk.durum,
+          durum: 'Bekliyor',
+        });
+      }
+      d.anlik = 'OnayBekliyor';
+      return;
+    }
     case 'GuvenlikUyarisi':
       d.ogeler.push({
         tip: 'GuvenlikUyarisi',
@@ -595,11 +633,34 @@ function denetimiIsle(d: OturumEkrani, cagri: CagriId, rozet: DenetimRozeti) {
   if (o?.tip === 'AracCagrisi') d.ogeler[i] = { ...o, denetim: rozet };
 }
 
+/** Karar bekleyen onay, önizleme ya da bütçe kartı var mı. */
+function bekleyenKararVar(d: OturumEkrani): boolean {
+  return d.ogeler.some(
+    (o) =>
+      (o.tip === 'OnayIstegi' || o.tip === 'GonderimOnizlemesi' || o.tip === 'ButceKarari') &&
+      o.durum === 'Bekliyor',
+  );
+}
+
+/**
+ * Bütçe kararı verildi: bekleyen kart yanıtlanır. Tur sürüyorsa akış devam eder,
+ * sürmüyorsa oturum boşta kalır (karar, turdan bağımsız da verilebilir).
+ */
+function butceKartiCoz(d: OturumEkrani) {
+  d.ogeler = d.ogeler.map((o) =>
+    o.tip === 'ButceKarari' && o.durum === 'Bekliyor' ? { ...o, durum: 'Yanitlandi' } : o,
+  );
+  if (d.anlik === 'OnayBekliyor' && !bekleyenKararVar(d)) {
+    d.anlik = d.aktif_tur === null ? 'Bos' : 'Calisiyor';
+  }
+}
+
 /** Tur bittiğinde karar bekleyen kartlar artık karar almaz. */
 function bekleyenleriKapat(d: OturumEkrani) {
   d.ogeler = d.ogeler.map((o) => {
     if (o.tip === 'OnayIstegi' && o.durum === 'Bekliyor') return { ...o, durum: 'Gecersiz' };
     if (o.tip === 'GonderimOnizlemesi' && o.durum === 'Bekliyor') return { ...o, durum: 'Gecersiz' };
+    if (o.tip === 'ButceKarari' && o.durum === 'Bekliyor') return { ...o, durum: 'Gecersiz' };
     if (o.tip === 'SartIstegi' && o.durum === 'Bekliyor') return { ...o, durum: 'Cozuldu' };
     return o;
   });

@@ -118,6 +118,22 @@ fn geri_alma_komutlari_yalnizca_ana_pencerede() {
     }
 }
 
+/// Bütçe komutları yalnızca ana pencereye açıktır (5b tasarımı §7, §9).
+#[test]
+fn butce_komutlari_yalnizca_ana_pencerede() {
+    let app = uygulama();
+    let ana = pencere(&app, "ana");
+    let sartlar = pencere(&app, "sartlar");
+    for komut in ["oturum_butcesi", "oturum_butcesini_ayarla", "butce_karari"] {
+        assert!(ANA_PENCERE_KOMUTLARI.contains(&komut), "{komut}");
+        assert!(izinli(&ana, komut), "ana pencere {komut} çağıramadı");
+        assert!(
+            !izinli(&sartlar, komut),
+            "şart penceresi {komut} çağırabildi"
+        );
+    }
+}
+
 #[test]
 fn cekirdek_ve_eklenti_komutlari_kapali() {
     let app = uygulama();
