@@ -235,6 +235,21 @@ export function sayi(n: number): string {
   return TAM_SAYI.format(n);
 }
 
+/** Bağlam özetinin notu (5a tasarımı §12). */
+export function baglamNotu(o: {
+  adet: number;
+  yer_tutucu: number;
+  once: number;
+  sonra: number;
+}): string {
+  const metin = m('baglam.ozetlendi', {
+    toplam: o.adet + o.yer_tutucu,
+    once: sayi(o.once),
+    sonra: sayi(o.sonra),
+  });
+  return o.yer_tutucu > 0 ? `${metin} ${m('baglam.yer_tutucu', { adet: o.yer_tutucu })}` : metin;
+}
+
 /** EVREN'in ondalık metni; çözülemezse olduğu gibi. */
 export function kredi(ondalik: string): string {
   const n = Number(ondalik);

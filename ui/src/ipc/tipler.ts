@@ -278,7 +278,9 @@ export type Olay =
   /** Denetçi sonucu (aşama 3c). */
   | { tip: 'DenetimSonucu'; cagri: CagriId; sonuc: DenetimSonucu }
   | { tip: 'DenetimAtlandi'; cagri: CagriId }
-  | { tip: 'Kisayollar'; liste: Kisayol[] };
+  | { tip: 'Kisayollar'; liste: Kisayol[] }
+  /** Eski araç çıktıları özetlendi (5a tasarımı §12); geçmişte gösterilmez. */
+  | { tip: 'BaglamOzetlendi'; adet: number; yer_tutucu: number; once: number; sonra: number };
 
 export type OnizlemeNedeni = 'Onizleme' | 'Denetim' | 'Eklenti';
 

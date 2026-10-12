@@ -75,6 +75,13 @@ export type EkranOgesi =
       yarim: boolean;
     })
   | (Ortak & { tip: 'KalfaNotu'; metin: string })
+  | (Ortak & {
+      tip: 'BaglamOzetlendi';
+      adet: number;
+      yer_tutucu: number;
+      once: number;
+      sonra: number;
+    })
   /** `geri_alindi`: sonradan bu tur geri alındı (aşama 3 tasarımı §5.11). */
   | (Ortak & { tip: 'TurOzeti'; ozet: TurOzeti; geri_alindi: boolean })
   /** Gönderim önizlemesi (aşama 3b). */
@@ -379,6 +386,18 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
       return;
     case 'Kisayollar':
       d.kisayollar = yuk.liste;
+      return;
+    case 'BaglamOzetlendi':
+      d.ogeler.push({
+        tip: 'BaglamOzetlendi',
+        anahtar: `c-${z.sira}`,
+        sira: z.sira,
+        tur: z.tur,
+        adet: yuk.adet,
+        yer_tutucu: yuk.yer_tutucu,
+        once: yuk.once,
+        sonra: yuk.sonra,
+      });
       return;
     case 'AracCiktisiParcasi': {
       const i = d.ogeler.findLastIndex((o) => o.tip === 'AracCagrisi' && o.cagri === yuk.cagri);

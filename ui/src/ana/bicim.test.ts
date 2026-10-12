@@ -4,6 +4,7 @@ import { onayOgesi } from '../sahte/arka';
 import {
   aracBasligi,
   aracHedefi,
+  baglamNotu,
   kabukOzeti,
   aracKartDurumu,
   ciktiOnizlemesi,
@@ -252,5 +253,19 @@ describe('eklenti ekranının biçimleri (aşama 4 tasarımı §14)', () => {
     for (const sifirlanma of [null, '', 'yarın', '12', '2026-13-45T25:61:00Z']) {
       expect(gunlukSinirMetni({ sifirlanma })).toBe('Günlük sınır doldu');
     }
+  });
+});
+
+describe('baglamNotu', () => {
+  it('özet sayısını ve token tahminini yazar', () => {
+    expect(baglamNotu({ adet: 6, yer_tutucu: 0, once: 71234, sonra: 29010 })).toBe(
+      'Eski 6 araç çıktısı özetlendi (≈71.234 → ≈29.010 token).',
+    );
+  });
+
+  it('özetlenemeyenleri ayrıca söyler', () => {
+    expect(baglamNotu({ adet: 4, yer_tutucu: 2, once: 80000, sonra: 30000 })).toBe(
+      'Eski 6 araç çıktısı özetlendi (≈80.000 → ≈30.000 token). 2 tanesi özetlenemedi ve kaldırıldı.',
+    );
   });
 });

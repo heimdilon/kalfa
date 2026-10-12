@@ -18,6 +18,7 @@
     aracBasligi,
     aracHedefi,
     aracKartDurumu,
+    baglamNotu,
     ciktiOnizlemesi,
     kabukOzeti,
     sonucGovdesi,
@@ -153,6 +154,10 @@
 {:else if oge.tip === 'KalfaNotu'}
   <div class="bilgi-satiri">
     <span>{m('geri_alma.not', { metin: oge.metin })}</span>
+  </div>
+{:else if oge.tip === 'BaglamOzetlendi'}
+  <div class="bilgi-satiri">
+    <span>{baglamNotu(oge)}</span>
   </div>
 {:else if oge.tip === 'AktarimDurdu'}
   <Card tone="danger" icon="triangle-alert" title={m('aktarim.baslik')}>
