@@ -61,10 +61,13 @@ aşınca en eski araç çıktıları tek tek `qwen3.8-flash-next` ile özetlenir
 `context_length_exceeded`'ı `EvrenError::BaglamAsimi` oldu; bir kez sıkı
 özetlemeyle yeniden denenir. Kurtarma artık yalnız ana istekleri sayar
 (denetçi isteği gönderim sayacını bozuyordu). Pencereler üç küçük canlı
-istekle ölçüldü (262 144 / 524 288 / 1 048 576). Windows **1118 + 175**, WSL
-**1061 + 175** test, 19 atlanan; iki platformda clippy (düz ve e2e)/fmt
-temiz; arayüz 393 test, 0 hata/uyarı, build temiz. Canlı özet testi
-(`baglam_canli`) koşmadı; ayrı onay ister.
+istekle ölçüldü (262 144 / 524 288 / 1 048 576). Son incelemeden sonra özet,
+çıktının `[güvenlik]`/`[denetçi]` satırlarını korur; günlük sınır, ağ yok,
+anahtar ya da ikinci 429 gibi geçici hatalarda özetleme durur ve özgün
+çıktılar kalır. Windows **1123 + 175**, WSL **1066 + 175** test, 19
+atlanan; iki platformda clippy (düz ve e2e)/fmt temiz; arayüz 393 test, 0
+hata/uyarı, build temiz. Canlı özet testi (`baglam_canli`) koşmadı; ayrı
+onay ister.
 
 **Sıradaki iş:** 5a PR'ı, CI ve kullanıcının squash onayı. Ardından 5b
 oturum bütçesi (üst belge §6.8) ve Linux paketleri.
