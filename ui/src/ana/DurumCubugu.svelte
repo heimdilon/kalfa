@@ -17,6 +17,7 @@
 
   const ekran = $derived(durum.aktif);
   const ozet = $derived(ekran?.ozet ?? null);
+  const butce = $derived(ekran?.butce ?? null);
 </script>
 
 <StatusBar label={m('durum.ad')}>
@@ -85,6 +86,21 @@
       >
         {m('durum.token', { sayi: sayi(ozet.istem + ozet.tamamlama) })}
       </StatusItem>
+      {#if butce}
+        <StatusItem icon="coins" title={m('durum.butce_ipucu')}>
+          {m('durum.butce', {
+            istek: sayi(butce.baslatilan),
+            istek_siniri: sayi(butce.sinirlar.istek),
+            token: sayi(butce.bilinen_token),
+            token_siniri: sayi(butce.sinirlar.token),
+          })}
+        </StatusItem>
+        {#if butce.bilinmeyen > 0}
+          <StatusItem icon="triangle-alert" tone="warn">
+            {m('durum.butce_bilinmeyen', { sayi: sayi(butce.bilinmeyen) })}
+          </StatusItem>
+        {/if}
+      {/if}
       {#if ozet.yonlendirilen_model}
         <StatusItem icon="cpu" title={m('durum.model_ipucu')}>{ozet.yonlendirilen_model}</StatusItem>
       {/if}

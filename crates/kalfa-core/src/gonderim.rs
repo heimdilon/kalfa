@@ -1,8 +1,11 @@
 //! Gönderim günlüğü: gönderilen öğeler, istek sonucu ve günlük türetimi (spec §6).
 
+use std::collections::HashMap;
+
 use kalfa_evren::EkUc;
 use serde::{Deserialize, Serialize};
 
+use crate::butce::ButceIslemId;
 use crate::kayit::KayitOgesi;
 use crate::kimlik::TurId;
 use crate::protokol::Zarf;
@@ -145,8 +148,26 @@ pub struct GunlukSayfasi {
 }
 
 /// Kayıtlardan gönderim günlüğü satırlarını üretir.
+///
+/// Bütçe kaydı olan (`butce_islem`'li) satırın tokenı yalnızca kendi denemesinin
+/// `ButceIstegiBitti` kaydından gelir (5b tasarımı §6); komşu bir bitişi ya da
+/// `Kullanim` kaydını almaz. Bütçesiz eski sohbet satırına, eski kayıt gibi,
+/// izleyen `Kullanim` kaydı iliştirilir.
 pub fn gunluk_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GunlukSatiri> {
+    let butce_bitisleri: HashMap<ButceIslemId, Option<GunlukToken>> = kayitlar
+        .iter()
+        .filter_map(|zarf| match &zarf.yuk {
+            KayitOgesi::ButceIstegiBitti { islem, kullanim } => Some((*islem, *kullanim)),
+            _ => None,
+        })
+        .collect();
+    let butce_tokeni = |islem: Option<ButceIslemId>| {
+        islem.and_then(|islem| butce_bitisleri.get(&islem).copied().flatten())
+    };
+
     let mut satirlar: Vec<GunlukSatiri> = Vec::new();
+    // Son satır bütçesiz bir sohbet satırıysa eski `Kullanim` ona iliştirilir.
+    let mut eski_sohbet_satiri = false;
 
     for zarf in kayitlar {
         match &zarf.yuk {
@@ -159,7 +180,7 @@ pub fn gunluk_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GunlukSatiri> {
                 yeni,
                 onceki,
                 sonuc,
-                ..
+                butce_islem,
             } => {
                 let zaman = kredi.as_ref().map(|k| k.zaman_ms);
                 satirlar.push(GunlukSatiri {
@@ -170,12 +191,13 @@ pub fn gunluk_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GunlukSatiri> {
                     model: model.clone(),
                     yonlendirilen_model: yonlendirilen_model.clone(),
                     istek_id: istek_id.clone(),
-                    token: None,
+                    token: butce_tokeni(*butce_islem),
                     sonuc: sonuc.clone(),
                     yeni: yeni.clone(),
                     onceki: *onceki,
                     eklenti: None,
                 });
+                eski_sohbet_satiri = butce_islem.is_none();
             }
             KayitOgesi::EklentiIstegi {
                 istek,
@@ -183,25 +205,29 @@ pub fn gunluk_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GunlukSatiri> {
                 kredi,
                 yonlendirilen_model,
                 sonuc,
+                butce_islem,
                 ..
-            } => satirlar.push(GunlukSatiri {
-                sira: zarf.sira,
-                tur: zarf.tur,
-                zaman: kredi.as_ref().map(|k| k.zaman_ms),
-                amac: format!("eklenti:{}", istek.eklenti),
-                model: Some(istek.model.clone()),
-                yonlendirilen_model: yonlendirilen_model.clone(),
-                istek_id: istek_id.clone(),
-                token: None,
-                sonuc: sonuc.clone(),
-                yeni: vec![GonderilenOge {
-                    kaynak: format!("eklenti:{}:{}", istek.eklenti, istek.uc.etiket()),
-                    sira: None,
-                    bayt: istek.bayt,
-                }],
-                onceki: 0,
-                eklenti: Some(istek.clone()),
-            }),
+            } => {
+                satirlar.push(GunlukSatiri {
+                    sira: zarf.sira,
+                    tur: zarf.tur,
+                    zaman: kredi.as_ref().map(|k| k.zaman_ms),
+                    amac: format!("eklenti:{}", istek.eklenti),
+                    model: Some(istek.model.clone()),
+                    yonlendirilen_model: yonlendirilen_model.clone(),
+                    istek_id: istek_id.clone(),
+                    token: butce_tokeni(*butce_islem),
+                    sonuc: sonuc.clone(),
+                    yeni: vec![GonderilenOge {
+                        kaynak: format!("eklenti:{}:{}", istek.eklenti, istek.uc.etiket()),
+                        sira: None,
+                        bayt: istek.bayt,
+                    }],
+                    onceki: 0,
+                    eklenti: Some(istek.clone()),
+                });
+                eski_sohbet_satiri = false;
+            }
             // Sonucu ve token kullanımı yalnızca sohbet satırına iliştirilir;
             // eklenti satırı sohbet isteği değildir.
             KayitOgesi::IstekKoptu { mesaj } => {
@@ -217,7 +243,7 @@ pub fn gunluk_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GunlukSatiri> {
                 tamamlama,
                 dusunce,
             } => {
-                if let Some(son) = satirlar.last_mut().filter(|s| s.eklenti.is_none()) {
+                if eski_sohbet_satiri && let Some(son) = satirlar.last_mut() {
                     son.token = Some(GunlukToken {
                         istem: *istem,
                         tamamlama: *tamamlama,

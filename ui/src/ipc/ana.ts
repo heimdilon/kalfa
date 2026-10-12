@@ -4,6 +4,8 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import type {
   AgHostu,
   AlanHedefi,
+  ButceKarari,
+  ButceSinirlari,
   EklentiSatiri,
   GunlukSinirDurumu,
   KurulumSonucu,
@@ -197,6 +199,19 @@ export const gonderimKarari = (
     gonderilmeyecekler,
     hep_gonderilecekler,
   });
+
+// ── Oturum bütçesi (5b tasarımı §7, §9) ─────────────────────────────────────
+
+/** Yeni oturumların bütçe varsayılanı (Ayarlar). */
+export const oturumButcesi = () => invoke<ButceSinirlari>('oturum_butcesi');
+
+/** Yeni oturumların bütçe varsayılanını değiştirir; Rust da doğrular. Açık oturumları etkilemez. */
+export const oturumButcesiniAyarla = (istek: number, token: number) =>
+  invoke<ButceSinirlari>('oturum_butcesini_ayarla', { istek, token });
+
+/** Bütçe kartındaki kullanıcı kararı; sonuç `ButceDurumu` olayıyla gelir. */
+export const butceKarari = (oturum: OturumId, karar: ButceKarari) =>
+  invoke<void>('butce_karari', { oturum, karar });
 
 // ── Eklentiler (aşama 4 tasarımı §13, §14) ──────────────────────────────────
 

@@ -50,6 +50,9 @@ pub enum Adim {
     /// iptal edilince durur. Düşünce paneli kapalıyken çizilmez: arayüz
     /// yeniden işlemeye başlayınca biriken megabaytları çizmekle uğraşmaz.
     Sel { parca_bayt: usize },
+    /// Yanıt kullanım bildirmez (5b tasarımı §2): bütçe bu denemeyi bilinmeyen
+    /// sayar ve yeni istekten önce soru sordurur.
+    KullanimYok,
 }
 
 /// Damgalı parçaların zamanlaması.
@@ -107,8 +110,10 @@ async fn uret(
 ) -> Result<(), ()> {
     let g = Gonderici(tx);
     let mut cagrilar = Vec::new();
+    let mut kullanimsiz = false;
     for adim in adimlar {
         match adim {
+            Adim::KullanimYok => kullanimsiz = true,
             Adim::Metin { metin } => g.gonder(AkisOlayi::Metin(metin)).await?,
             Adim::Dusunce { metin } => g.gonder(AkisOlayi::Dusunce(metin)).await?,
             Adim::Arac { ad, argumanlar } => cagrilar.push(ToolCall {
@@ -142,15 +147,18 @@ async fn uret(
         "tool_calls"
     };
     // Tamamlanan yanıt geçerli kullanım bildirir; bütçe bilinmeyen tüketimi
-    // sormaz (5b tasarımı §6). Kesilen akışlar bu olayı üretmez.
-    g.gonder(AkisOlayi::Kullanim(Usage {
-        prompt_tokens: 10,
-        completion_tokens: 5,
-        total_tokens: 15,
-        completion_tokens_details: None,
-        evren: None,
-    }))
-    .await?;
+    // sormaz (5b tasarımı §6). Kesilen akışlar bu olayı üretmez. `KullanimYok`
+    // adımı kullanımı bilerek bildirmez (bilinmeyen tüketim senaryosu).
+    if !kullanimsiz {
+        g.gonder(AkisOlayi::Kullanim(Usage {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+            completion_tokens_details: None,
+            evren: None,
+        }))
+        .await?;
+    }
     g.gonder(AkisOlayi::Bitti {
         neden: neden.into(),
     })
