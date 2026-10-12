@@ -50,11 +50,24 @@ temiz; CI yeşil. Kullanıcının onayıyla squash birleşti
 ([#1](https://github.com/heimdilon/kalfa/pull/1), `1738b8e`). Canlı EVREN
 koşusu yapılmadı.
 
-**Sıradaki iş — 5a bağlam yönetimi:** Tasarım yazıldı
-([5a tasarımı](superpowers/specs/2026-10-12-kalfa-5a-baglam-yonetimi-design.md));
-kullanıcının belge onayını, ardından uygulama planını bekler. Bağlam
-pencereleri 12 Ekim'de üç küçük canlı istekle ölçüldü (262 144 / 524 288 /
-1 048 576 token). Sonra 5b oturum bütçesi (§6.8) ve Linux paketleri.
+**5a — Bağlam yönetimi (12 Ekim, PR bekliyor):**
+[Tasarım](superpowers/specs/2026-10-12-kalfa-5a-baglam-yonetimi-design.md),
+[plan](superpowers/plans/2026-10-12-kalfa-5a-baglam-yonetimi.md). Bağlamın
+tahmini istem tokenı 64 bini (ya da modelin ölçülen penceresinin %80'ini)
+aşınca en eski araç çıktıları tek tek `qwen3.8-flash-next` ile özetlenir;
+özet araç rolünde, aynı `tool_call_id` ve `özet:` etiketiyle kalır,
+`BaglamOzeti` olarak kayda girer ve kurtarmada aynı bağlamı verir.
+Özetleyici başarısız olursa yer tutucu konur. EVREN'in
+`context_length_exceeded`'ı `EvrenError::BaglamAsimi` oldu; bir kez sıkı
+özetlemeyle yeniden denenir. Kurtarma artık yalnız ana istekleri sayar
+(denetçi isteği gönderim sayacını bozuyordu). Pencereler üç küçük canlı
+istekle ölçüldü (262 144 / 524 288 / 1 048 576). Windows **1118 + 175**, WSL
+**1061 + 175** test, 19 atlanan; iki platformda clippy (düz ve e2e)/fmt
+temiz; arayüz 393 test, 0 hata/uyarı, build temiz. Canlı özet testi
+(`baglam_canli`) koşmadı; ayrı onay ister.
+
+**Sıradaki iş:** 5a PR'ı, CI ve kullanıcının squash onayı. Ardından 5b
+oturum bütçesi (üst belge §6.8) ve Linux paketleri.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

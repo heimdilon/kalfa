@@ -3,7 +3,9 @@
 **Tarih:** 2026-10-12
 **Durum:** Amaç, ölçüm, yaklaşım ve önizleme kararı (§2.1) kullanıcıyla
 konuşulup onaylandı. Belgenin kendi verdiği kararlar §2.2'dedir; kullanıcı
-itiraz ederse değişir.
+itiraz ederse değişir. Uygulandı
+([plan](../plans/2026-10-12-kalfa-5a-baglam-yonetimi.md)); planın
+"Tasarımdan farklar"ı bu belgeye işlendi.
 **Üst belge:** [Kalfa tasarım belgesi](2026-09-21-kalfa-design.md), özellikle
 §6.5 (bağlam yönetimi), §6.6 (kayıt ve kurtarma), §6.8 (sınırlar), §7.1
 (tehdit modeli), §11.10 (gönderim önizlemesi). Bu belgede `§` işaretleri bu
@@ -127,6 +129,7 @@ gibi sistem mesajı + araç tanımlarının JSON'u + bütün mesajların içerik
 düşünce ve araç çağrısı baytlarıdır. Son başarılı ana istekte gözlenen
 `prompt_tokens` `P`, o istekteki bayt `B₀` ise oran `r = P / B₀`; kullanım
 yoksa `r = 1/3`. Tahmin `T = r × B`. Oran yalnız ana isteklerden güncellenir.
+Kurtarılan oturumun oranı 1/3'ten başlar; ilk ana istek ölçer.
 
 **Eşikler (`Sinirlar`'a yeni alanlar):**
 
@@ -218,6 +221,9 @@ ağ geçidi reddeder (§11).
   içerikten ürettiği metindir. Kullanıcı onu gönderim günlüğünde görür.
 - Gönderilmeyi bekleyen özetler bir kümede tutulur (indeks); kurtarmada son
   sayılan ana `Istek`'ten sonraki `BaglamOzeti` kayıtlarından yeniden kurulur.
+- Kurtarma `gonderilen`'i yalnız `amac: "ana"` isteklerinden kurar ve `özet:`
+  öğelerini saymaz. Denetçi ve özetleme istekleri sohbet taşımaz; 5a'dan
+  önce kurtarma denetçinin `Istek` kaydını da sayıyordu.
 
 ## 10. Kayıt ve kurtarma
 
@@ -247,11 +253,13 @@ KayitOgesi::BaglamOzeti {
 ## 11. Bağlam aşımı
 
 - `kalfa-evren`: `hata_esle`'de `code == "context_length_exceeded"` →
-  yeni `EvrenError::BaglamAsimi { mesaj }`. Kullanıcıya görünen metni
-  Türkçedir ve sunucunun mesajını kırpılmış olarak ekler.
-- Ana istek `BaglamAsimi` alırsa oturum `korunan_arac_ciktisi = 0` ile bir
-  kez özetleme yapar ve isteği yeniden dener. Aday kuralı 2 (yalnız
-  gönderilmiş içerik) bu durumda da geçerlidir.
+  yeni `EvrenError::BaglamAsimi { mesaj }`. Hatanın metni aşağıdaki
+  kullanıcı iletisidir; sunucunun iletisi kırpılarak `mesaj`'da kalır.
+- Ana istek `BaglamAsimi` alırsa oturum bir kez sıkı özetleme yapar ve
+  isteği yeniden dener. Sıkı modda son çıktılar korunmaz ve hedef 0'dır:
+  aşım tahminin yanıldığını gösterir, bu yüzden bütün gönderilmiş adaylar
+  özetlenir. Aday kuralı 2 (yalnız gönderilmiş içerik) bu durumda da
+  geçerlidir.
 - Aday yoksa ya da ikinci istek de aşarsa tur `Hata` ile biter:
   "Bağlam modelin penceresini aşıyor. Yeni bir oturum açın ya da daha büyük
   pencereli bir model seçin."
@@ -265,6 +273,8 @@ KayitOgesi::BaglamOzeti {
 - Sohbet akışında tek satırlık Kalfa notu: "Eski 6 araç çıktısı özetlendi
   (≈71 bin → ≈29 bin token)." Yer tutucu varsa: "… 2 çıktı özetlenemedi,
   kaldırıldı." Metinler `ui/src/dil/tr.ts`'tedir.
+- Not yalnız canlıdır: `Hata` olayı gibi geçmiş görünümünde yer almaz;
+  geçmiş özgün araç çıktısını gösterir.
 - Başka ekran ya da ayar eklenmez.
 
 ## 13. Hata durumları
