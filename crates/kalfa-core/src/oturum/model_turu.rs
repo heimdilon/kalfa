@@ -29,6 +29,7 @@ impl Oturum {
     }
 
     pub(super) async fn model_turu(&mut self) -> Result<ModelCevabi, BitisNedeni> {
+        self.baglami_yonet(false).await?;
         let istek = self.istek_olustur();
         let SaglayiciAkisi {
             olaylar: mut akis, ..
@@ -71,6 +72,7 @@ impl Oturum {
                     Some(Ok(AkisOlayi::Kullanim(u))) => {
                         let (istem, tamamlama, dusunce) =
                             (u.prompt_tokens, u.completion_tokens, u.reasoning_tokens());
+                        self.oran = super::baglam::Oran::yeni(istem, self.son_istek_bayti);
                         self.kaydet(KayitOgesi::Kullanim {
                             istem,
                             tamamlama,
@@ -125,9 +127,10 @@ impl Oturum {
 
     pub(super) async fn akis_ac(
         &mut self,
-        istek: ChatRequest,
+        mut istek: ChatRequest,
     ) -> Result<SaglayiciAkisi, BitisNedeni> {
         let mut hiz_denendi = false;
+        let mut asim_denendi = false;
         loop {
             let saglayici = self.baglam.saglayici.clone();
             let deneme = istek.clone();
@@ -135,6 +138,7 @@ impl Oturum {
             let onceki = self.gonderilen as u32;
             let onceki_sistem = self.son_sistem_istemi.clone();
             let onceki_araclar = self.son_arac_tanimlari.clone();
+            self.son_istek_bayti = self.baglam_bayti();
             let yeni = self.gonderim_oncesi_hazirla().await;
             match self
                 .iptal_edilebilir(async move {
@@ -156,6 +160,7 @@ impl Oturum {
                     )
                     .await;
                     self.gonderilen = self.mesajlar.len();
+                    self.bekleyen_ozetler.clear();
                     return Ok(akis);
                 }
                 (istek_nesli, Err(e)) => {
@@ -176,6 +181,7 @@ impl Oturum {
                     .await;
                     if asama != IstekAsamasi::Baglanti {
                         self.gonderilen = self.mesajlar.len();
+                        self.bekleyen_ozetler.clear();
                     } else {
                         self.son_sistem_istemi = onceki_sistem;
                         self.son_arac_tanimlari = onceki_araclar;
@@ -196,6 +202,15 @@ impl Oturum {
                             ))
                             .await;
                             self.iptal_edilebilir(tokio::time::sleep(sure)).await?;
+                        }
+                        hata @ kalfa_evren::EvrenError::BaglamAsimi { .. } => {
+                            // 5a tasarımı §11: bir kez sıkı özetleme, sonra yeniden.
+                            if asim_denendi || !self.baglami_yonet(true).await? {
+                                self.hata(hata.to_string()).await;
+                                return Err(BitisNedeni::Hata);
+                            }
+                            asim_denendi = true;
+                            istek = self.istek_olustur();
                         }
                         _ => {
                             self.hata(e.to_string()).await;
@@ -317,6 +332,20 @@ impl Oturum {
             });
         }
 
+        // Gönderilmemiş özetler (5a tasarımı §9): daha önce gönderilmiş
+        // mesajların yerine geçen içerik.
+        for &i in &self.bekleyen_ozetler {
+            if let (Some(m), Some((sira, kaynak))) =
+                (self.mesajlar.get(i), self.mesaj_bilgileri.get(i))
+            {
+                ogeler.push(GonderilenOge {
+                    kaynak: kaynak.clone().unwrap_or_default(),
+                    sira: *sira,
+                    bayt: super::baglam::mesaj_bayti(m),
+                });
+            }
+        }
+
         // 3. Mesajlar
         for i in self.gonderilen..self.mesajlar.len() {
             let mesaj = &self.mesajlar[i];
@@ -330,15 +359,7 @@ impl Oturum {
                     kalfa_evren::tipler::Role::Tool => "kalfa:sonuç".to_string(),
                     kalfa_evren::tipler::Role::System => "kalfa:sistem".to_string(),
                 });
-            let mut bayt = mesaj.content.as_deref().map_or(0, |s| s.len() as u64);
-            if let Some(ref dusunce) = mesaj.reasoning {
-                bayt += dusunce.len() as u64;
-            }
-            if let Some(ref cagrilar) = mesaj.tool_calls {
-                for tc in cagrilar {
-                    bayt += tc.function.name.len() as u64 + tc.function.arguments.len() as u64;
-                }
-            }
+            let bayt = super::baglam::mesaj_bayti(mesaj);
             ogeler.push(GonderilenOge { kaynak, sira, bayt });
         }
         ogeler

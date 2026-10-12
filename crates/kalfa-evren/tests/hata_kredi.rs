@@ -195,3 +195,24 @@ fn buyuk_hata_govdesi_dogrudan_cagrida_da_cozulmez() {
         kalfa_evren::EvrenError::YanitSiniri
     );
 }
+
+/// 12 Ekim 2026 ölçümü (5a tasarımı §4): üç sohbet modelinin ham yanıtı.
+#[test]
+fn baglam_asimi_tipli_hata_olur() {
+    for (ad, pencere) in [
+        ("error_chat_context_length_glm.json", "524288"),
+        ("error_chat_context_length_deepseek.json", "1048576"),
+        ("error_chat_context_length_qwen.json", "262144"),
+    ] {
+        let h = hata_esle(400, None, &ortak::kayit_bayt(ad));
+        match &h {
+            EvrenError::BaglamAsimi { mesaj } => assert!(mesaj.contains(pencere), "{ad}: {mesaj}"),
+            diger => panic!("{ad}: {diger:?}"),
+        }
+        assert_eq!(
+            h.to_string(),
+            "Bağlam modelin penceresini aşıyor. Yeni bir oturum açın ya da daha büyük \
+             pencereli bir model seçin."
+        );
+    }
+}

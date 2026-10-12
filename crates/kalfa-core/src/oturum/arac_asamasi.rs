@@ -1836,7 +1836,7 @@ fn model_icerigi_sinirla(c: &AracCiktisi, azami: usize, sinir: &str) -> String {
 
 /// `kaynak` modelin verdiği yolu ya da arama desenini taşıyabilir; etiketten
 /// çıkamasın.
-fn kaynak_kacisla(kaynak: &str) -> String {
+pub(super) fn kaynak_kacisla(kaynak: &str) -> String {
     kaynak
         .replace('&', "&amp;")
         .replace('"', "&quot;")

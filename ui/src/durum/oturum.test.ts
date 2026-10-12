@@ -661,3 +661,15 @@ describe('güvenlik denetçisinin rozeti (aşama 3c, Görev 8)', () => {
     expect(rozet(eski)).toBeNull();
   });
 });
+
+describe('bağlam özeti', () => {
+  it('not olarak eklenir', () => {
+    const d = uygula(acilis(), {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'BaglamOzetlendi', adet: 2, yer_tutucu: 0, once: 70000, sonra: 30000 }),
+    });
+    expect(d.ogeler).toMatchObject([
+      { tip: 'BaglamOzetlendi', adet: 2, yer_tutucu: 0, once: 70000, sonra: 30000 },
+    ]);
+  });
+});

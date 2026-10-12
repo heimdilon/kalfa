@@ -3,7 +3,7 @@
 //! Sonucu bilinmeyen yan etkili işlem **asla** yeniden çalıştırılmaz: yalnızca
 //! "sonucu bilinmiyor" olarak modele ve kullanıcıya bildirilir.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
 use kalfa_evren::tipler::{ChatMessage, Role, ToolDef};
@@ -12,7 +12,7 @@ use crate::denetci::DenetimSonucu;
 use crate::geri_alma::GeriAlmaDizini;
 use crate::gonderim::{EklentiKullanimi, IstekAsamasi, IstekSonucu};
 use crate::izin::Kip;
-use crate::kayit::KayitOgesi;
+use crate::kayit::{KayitOgesi, OZET_ONEKI};
 use crate::kimlik::{CagriId, OturumId};
 use crate::protokol::Zarf;
 
@@ -62,6 +62,9 @@ pub struct KurtarilmisDurum {
     /// Eklentilerin oturumdaki EVREN kullanımı (aşama 4 tasarımı §9.5),
     /// kayıttaki `EklentiIstegi` öğelerinden. Sınırın sayacı buradan sürer.
     pub eklenti_kullanimi: HashMap<String, EklentiKullanimi>,
+    /// Özetlenmiş ama henüz bir ana istekle gönderilmemiş mesajların
+    /// indeksleri (5a tasarımı §9); sonraki ana istekte günlüğe girer.
+    pub bekleyen_ozetler: BTreeSet<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -70,6 +73,8 @@ pub enum KurtarmaHatasi {
     Bos,
     #[error("Oturum kaydı bir açılış kaydıyla başlamıyor.")]
     AcilisYok,
+    #[error("Oturum kaydındaki {sira} sıralı bağlam özeti bir araç mesajına bağlanamıyor.")]
+    BozukOzet { sira: u64 },
 }
 
 pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, KurtarmaHatasi> {
@@ -95,6 +100,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
     let mut onizleme_acik = false;
     let mut denetimler = HashMap::new();
     let mut eklenti_kullanimi: HashMap<String, EklentiKullanimi> = HashMap::new();
+    let mut bekleyen_ozetler = BTreeSet::new();
 
     for zarf in kayitlar {
         match &zarf.yuk {
@@ -107,6 +113,22 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
                 mesajlar.push(ChatMessage::user(metin.clone()));
                 mesaj_bilgileri.push((Some(zarf.sira), Some("kalfa:not".to_string())));
             }
+            // Özet, eşleşen araç mesajının yerine geçer (5a tasarımı §10).
+            KayitOgesi::BaglamOzeti {
+                mesaj_sira,
+                kaynak,
+                icerik,
+                ..
+            } => {
+                let i = mesaj_bilgileri
+                    .iter()
+                    .position(|(s, _)| *s == Some(*mesaj_sira))
+                    .filter(|&i| mesajlar[i].role == Role::Tool)
+                    .ok_or(KurtarmaHatasi::BozukOzet { sira: zarf.sira })?;
+                mesajlar[i].content = Some(icerik.clone());
+                mesaj_bilgileri[i] = (Some(zarf.sira), Some(kaynak.clone()));
+                bekleyen_ozetler.insert(i);
+            }
             KayitOgesi::SistemIstemi { metin } => {
                 bekleyen_sistem_istemi = Some((Some(zarf.sira), metin.clone()));
             }
@@ -116,12 +138,15 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
             KayitOgesi::OnizlemeDegisti { acik } => {
                 onizleme_acik = *acik;
             }
+            // Yalnız ana istek sohbeti taşır; denetçi ve özetleme istekleri
+            // gönderilen mesaj sayısını değiştirmez (5a tasarımı §9).
             KayitOgesi::Istek {
+                amac,
                 onceki,
                 yeni,
                 sonuc,
                 ..
-            } => {
+            } if amac == "ana" => {
                 let sayilacak = matches!(
                     sonuc,
                     IstekSonucu::Basarili
@@ -131,6 +156,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
                         }
                 );
                 if sayilacak {
+                    bekleyen_ozetler.clear();
                     if let Some(s) = bekleyen_sistem_istemi.take() {
                         son_sistem_istemi = Some(s);
                     }
@@ -141,6 +167,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
                         let yeni_mesaj_sayisi = yeni
                             .iter()
                             .filter(|o| o.kaynak != "kalfa:sistem" && o.kaynak != "kalfa:araçlar")
+                            .filter(|o| !o.kaynak.starts_with(OZET_ONEKI))
                             .count();
                         gonderilen = *onceki as usize + yeni_mesaj_sayisi;
                     } else {
@@ -237,5 +264,6 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
         denetimler,
         geri_alma: GeriAlmaDizini::kayittan(kayitlar),
         eklenti_kullanimi,
+        bekleyen_ozetler,
     })
 }

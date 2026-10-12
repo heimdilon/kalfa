@@ -63,6 +63,19 @@ impl From<Komut> for KayitKomutu {
     }
 }
 
+/// Bağlam yönetiminin özetlediği mesajın kaynak öneki (5a tasarımı §8). Bu
+/// önekli mesaj yeniden özetlenmez; kurtarma onu gönderilen mesaj saymaz.
+pub const OZET_ONEKI: &str = "özet:";
+
+/// Bağlam özetinin nasıl üretildiği (5a tasarımı §10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OzetYontemi {
+    /// Özetleyici modelin özeti.
+    Ozet,
+    /// Özetleyici başarısız oldu; çıktının yerine Kalfa'nın yer tutucusu kondu.
+    YerTutucu,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "tip")]
 pub enum KayitOgesi {
@@ -208,6 +221,15 @@ pub enum KayitOgesi {
         sonuc: DenetimSonucu,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         istek_id: Option<String>,
+    },
+    /// Bağlam yönetiminin özeti (5a tasarımı §10): `mesaj_sira`'daki araç
+    /// mesajının modele giden içeriği ve kaynağı bununla değişir. Özgün mesaj
+    /// kayıtta kalır; geçmiş onu gösterir.
+    BaglamOzeti {
+        mesaj_sira: u64,
+        kaynak: String,
+        icerik: String,
+        yontem: OzetYontemi,
     },
 }
 

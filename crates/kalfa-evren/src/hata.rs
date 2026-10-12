@@ -29,6 +29,12 @@ pub enum EvrenError {
         sifirlanma_eki(.sifirlanma)
     )]
     GunlukSinir { sifirlanma: Option<String> },
+    /// Bağlam modelin penceresini aşıyor (`400 context_length_exceeded`, 5a
+    /// tasarımı §11). Sunucunun iletisi kırpılarak `mesaj`'da kalır.
+    #[error(
+        "Bağlam modelin penceresini aşıyor. Yeni bir oturum açın ya da daha büyük pencereli bir model seçin."
+    )]
+    BaglamAsimi { mesaj: String },
     #[error("Yanıt akışı yarıda kaldı; model yanıtı tamamlanmadı.")]
     AkisYarimKaldi,
     #[error("Sağlayıcı yanıtı boyut, olay veya araç çağrısı sınırını aştı; yanıt durduruldu.")]
@@ -98,6 +104,11 @@ pub fn hata_esle(durum: u16, retry_after: Option<&str>, govde: &[u8]) -> EvrenEr
                 .and_then(|e| e.resets_at)
                 .and_then(|z| z.as_str().map(str::to_owned))
                 .filter(|z| zaman_damgasi_mi(z)),
+        };
+    }
+    if kod.as_deref() == Some("context_length_exceeded") {
+        return EvrenError::BaglamAsimi {
+            mesaj: kirp(&mesaj),
         };
     }
     if durum == 429 {

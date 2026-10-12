@@ -214,6 +214,8 @@ export const tr = {
   'geri_alma.dokunulmadi': '{sayi} dosyaya dokunulmadı.',
   'geri_alma.yarim': 'Geri alma yarım kaldı; turu yeniden geri alabilirsiniz.',
   'geri_alma.not': 'Modele bildirildi: {metin}',
+  'baglam.ozetlendi': 'Eski {toplam} araç çıktısı özetlendi (≈{once} → ≈{sonra} token).',
+  'baglam.yer_tutucu': '{adet} tanesi özetlenemedi ve kaldırıldı.',
   'geri_alma.sayfa.baslik': 'Turu geri al',
   'geri_alma.sayfa.alt':
     'Kalfa bu turun dosya değişikliklerini geri alacak. Sonradan değişen dosyalara dokunulmaz.',

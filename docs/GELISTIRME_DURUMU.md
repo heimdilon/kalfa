@@ -42,10 +42,41 @@ test**, 0 hata/uyarı, paket denetimi temiz. Bu arayüz düzeltmesinde gerçek
 yalıtım/e2e yeniden koşmadı; Claude'un `017aacd` kaydı Windows AppContainer
 uyumluluk 24/24 ve e2e 38/38, WSL yalıtım 26, uyumluluk 16/16 ve e2e 38/38'dir.
 
-**Sıradaki iş:** 429'da toplu gömme isteğini küçültme (`rag/toplu-daralma`)
-iki platformda yerelde doğrulandı; açık depoda PR olarak CI ve kullanıcının
-squash onayını bekler. Ardından aşama 5 adayları: bağlam yönetimi (üst belge
-§6.5) ve oturum bütçesi (§6.8); sonra Linux paketleri.
+**429'da toplu istek küçültme (12 Ekim):** Gömme isteği hız sınırına
+çarpınca `kalfa-rag` toplu parça sınırını yarıya indirir (256 → en az 16),
+her başarılı istekte iki katına çıkarır; sınır `meta`'da isteğe bağlı
+`toplu_sinir` alanında kalır. Windows 1092, WSL 1035 test; üç clippy/fmt
+temiz; CI yeşil. Kullanıcının onayıyla squash birleşti
+([#1](https://github.com/heimdilon/kalfa/pull/1), `1738b8e`). Canlı EVREN
+koşusu yapılmadı.
+
+**5a — Bağlam yönetimi (12 Ekim, PR bekliyor):**
+[Tasarım](superpowers/specs/2026-10-12-kalfa-5a-baglam-yonetimi-design.md),
+[plan](superpowers/plans/2026-10-12-kalfa-5a-baglam-yonetimi.md). Bağlamın
+tahmini istem tokenı 64 bini (ya da modelin ölçülen penceresinin %80'ini)
+aşınca en eski araç çıktıları tek tek `qwen3.8-flash-next` ile özetlenir;
+özet araç rolünde, aynı `tool_call_id` ve `özet:` etiketiyle kalır,
+`BaglamOzeti` olarak kayda girer ve kurtarmada aynı bağlamı verir.
+Özetleyici başarısız olursa yer tutucu konur. EVREN'in
+`context_length_exceeded`'ı `EvrenError::BaglamAsimi` oldu; bir kez sıkı
+özetlemeyle yeniden denenir. Kurtarma artık yalnız ana istekleri sayar
+(denetçi isteği gönderim sayacını bozuyordu). Pencereler üç küçük canlı
+istekle ölçüldü (262 144 / 524 288 / 1 048 576). Son incelemeden sonra özet,
+çıktının `[güvenlik]`/`[denetçi]` satırlarını korur; günlük sınır, ağ yok,
+anahtar ya da ikinci 429 gibi geçici hatalarda özetleme durur ve özgün
+çıktılar kalır. Windows **1123 + 175**, WSL **1066 + 175** test, 19
+atlanan; iki platformda clippy (düz ve e2e)/fmt temiz; arayüz 393 test, 0
+hata/uyarı, build temiz. Canlı özet testi (`baglam_canli`) koşmadı; ayrı
+onay ister.
+
+Codex incelemesi (`f9ee299`): durdurucu bir hata gelince başlamış özetleme
+istekleri artık bırakılmıyor, beklenip günlüğe yazılıyor; Windows
+`kalfa-core` 434 test, clippy/fmt temiz.
+
+**Sıradaki iş:** [#2](https://github.com/heimdilon/kalfa/pull/2) için
+`f9ee299`'un Linux doğrulaması ve CI; ikisi yeşilse kullanıcının açık squash
+onayı (`--match-head-commit`). Birleşince Linux doğrulama kopyası silinir.
+Ardından 5b oturum bütçesi (üst belge §6.8) ve Linux paketleri.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
