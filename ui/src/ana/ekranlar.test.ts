@@ -659,5 +659,55 @@ describe('tur özeti ve geri alma (aşama 3 tasarımı §5.11)', () => {
       await fireEvent.keyDown(sagTutamac, { key: 'ArrowLeft' });
     }
     expect(document.querySelector('.sag-oran-50')).toBeTruthy();
+
+    // Pointer sürüklemesi blur veya pointercancel ile temizlenir.
+    await fireEvent.pointerDown(solTutamac, { pointerId: 1 });
+    expect(solTutamac.classList.contains('etkin')).toBe(true);
+    await fireEvent.blur(window);
+    expect(solTutamac.classList.contains('etkin')).toBe(false);
+  });
+
+  it('değişiklikler bölmesi tamamlanan tur diffini gösterir ve yanıtlanan onayları dışlar', async () => {
+    const { arka } = await ciz();
+    onayIstegi(arka);
+    await fireEvent.click(screen.getByRole('button', { name: 'İnceleme bölmesini aç' }));
+    const bolme = screen.getByRole('complementary', { name: 'Değişiklikler' });
+    expect(within(bolme).getAllByText('C:\\projeler\\kalfa\\src\\main.rs').length).toBeGreaterThan(0);
+
+    // Onay isteği yanıtlandığında bekleyen öneri sağ bölmeden kalkar; tamamlanan tur özeti diff ile görünür.
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    const sayfa = screen.getByRole('dialog');
+    await fireEvent.click(within(sayfa).getByRole('button', { name: 'Reddet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(within(bolme).queryByText('C:\\projeler\\kalfa\\src\\main.rs')).toBeNull();
+
+    arka.olaylar('o1', [
+      {
+        tip: 'TurOzeti',
+        ozet: {
+          ...ozet,
+          dosyalar: [{ ...ozet.dosyalar[0], diff: DIFF }],
+        },
+      },
+    ]);
+    await waitFor(() => expect(within(bolme).getAllByText('src/a.rs').length).toBeGreaterThan(0));
+    expect(within(bolme).getByText('yeni();')).toBeTruthy();
+  });
+
+  it('aynı klasör adını paylaşan projeler üst dizinle ayırt edilir', async () => {
+    await ciz((a) => {
+      a.oturumEkle(
+        { oturum: 'o2', calisma_alani: 'C:\\bir\\uygulama' },
+        { baslik: 'Birinci iş', calisma_alani: 'C:\\bir\\uygulama' },
+      );
+      a.oturumEkle(
+        { oturum: 'o3', calisma_alani: 'C:\\iki\\uygulama' },
+        { baslik: 'İkinci iş', calisma_alani: 'C:\\iki\\uygulama' },
+      );
+    });
+    const liste = screen.getByRole('complementary', { name: 'Oturumlar' });
+    expect(within(liste).getByText('C:\\bir\\uygulama')).toBeTruthy();
+    expect(within(liste).getByText('C:\\iki\\uygulama')).toBeTruthy();
   });
 });
+

@@ -141,7 +141,17 @@ export class AnaDurum {
     const oturum = this.secili;
     if (!oturum) return;
     const oldu = await this.#dene(() => ipc.modelDegistir(oturum, model));
-    if (oldu !== undefined) this.#uygula(oturum, { tip: 'ModelDegisti', model });
+    if (oldu !== undefined) {
+      this.#uygula(oturum, { tip: 'ModelDegisti', model });
+      const secenek = this.uygulama?.modeller.find((m) => m.kimlik === model);
+      const mevcutEfor =
+        this.ekranlar.get(oturum)?.ozet.efor ?? this.uygulama?.varsayilan_efor ?? 'orta';
+      const eforlar = secenek?.eforlar ?? [];
+      if (eforlar.length > 0 && !eforlar.includes(mevcutEfor)) {
+        const yeniEfor = eforlar.includes('orta') ? 'orta' : eforlar[0];
+        this.#uygula(oturum, { tip: 'EforDegisti', efor: yeniEfor });
+      }
+    }
   }
 
   async eforSec(efor: DusunceEforu): Promise<void> {
@@ -154,7 +164,10 @@ export class AnaDurum {
   async modelleriYenile(): Promise<void> {
     const liste = await this.#dene(() => ipc.modelleriYenile());
     if (liste && this.uygulama) {
-      this.uygulama = { ...this.uygulama, modeller: liste };
+      const varsayilan_model = liste.some((m) => m.kimlik === this.uygulama!.varsayilan_model)
+        ? this.uygulama.varsayilan_model
+        : (liste[0]?.kimlik ?? this.uygulama.varsayilan_model);
+      this.uygulama = { ...this.uygulama, modeller: liste, varsayilan_model };
     }
   }
 

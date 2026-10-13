@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import Composer from './Composer.svelte';
+import Message from './Message.svelte';
 import SessionRow from './SessionRow.svelte';
 import ThoughtPanel from './ThoughtPanel.svelte';
 import ToolCallCard from './ToolCallCard.svelte';
@@ -55,10 +56,10 @@ describe('Composer (1c tasarımı §8.1, §9.5)', () => {
     expect(onsend).not.toHaveBeenCalled();
   });
 
-  it('düşünce eforu balonu açılır, kaydırıcıyla efor seçilir ve modeller yenilenir', async () => {
+  it('düşünce eforu balonu açılır, kaydırıcıyla efor seçilir ve mesaj gönderilince kapanır', async () => {
     const oneforchange = vi.fn();
     const onmodelyenile = vi.fn();
-    ciz({ efor: 'orta', oneforchange, onmodelyenile });
+    const { alan } = ciz({ efor: 'orta', oneforchange, onmodelyenile });
     const tetik = screen.getByRole('button', { name: 'Düşünce eforu' });
     expect(tetik.textContent).toContain('Orta');
     await fireEvent.click(tetik);
@@ -67,24 +68,39 @@ describe('Composer (1c tasarımı §8.1, §9.5)', () => {
     expect(oneforchange).toHaveBeenCalledWith('yuksek');
     await fireEvent.click(screen.getByRole('button', { name: 'Modelleri yenile' }));
     expect(onmodelyenile).toHaveBeenCalledOnce();
+
+    await fireEvent.input(alan, { target: { value: 'merhaba' } });
+    await fireEvent.keyDown(alan, { key: 'Enter' });
+    expect(screen.queryByRole('dialog', { name: 'Düşünce eforu ve model' })).toBeNull();
   });
 });
 
 describe('sohbet ve gezinme bileşenleri', () => {
-  it('ThoughtPanel kapalı başlar, düğmeyle açılır; akışta canlı açık görünür', async () => {
+  it('ThoughtPanel kapalı başlar, akışta tıklamaları yok sayar ve akış bitince kapanır', async () => {
     const { rerender } = render(ThoughtPanel, {
       props: { children: metin('iç düşünce'), akista: true },
     });
-    const dugme = screen.getByRole('button', { name: /Düşünce/ });
+    const dugme = screen.getByRole<HTMLButtonElement>('button', { name: /Düşünce/ });
     expect(dugme.getAttribute('aria-expanded')).toBe('true');
+    expect(dugme.disabled).toBe(true);
     expect(screen.getByText('Düşünüyor…')).toBeTruthy();
     expect(screen.getByText('iç düşünce').textContent).toBe('iç düşünce');
+    await fireEvent.click(dugme);
 
     await rerender({ children: metin('iç düşünce'), akista: false });
     expect(dugme.getAttribute('aria-expanded')).toBe('false');
+    expect(dugme.disabled).toBe(false);
     expect(screen.queryByText('iç düşünce')).toBeNull();
     await fireEvent.click(dugme);
     expect(screen.getByText('iç düşünce').textContent).toBe('iç düşünce');
+  });
+
+  it('Message kullanıcı mesajında yazar başlığını erişilebilirlik ağacında korur', () => {
+    render(Message, {
+      props: { author: 'user', children: metin('Merhaba Kalfa') },
+    });
+    const baslik = screen.getByText('Siz').closest('header');
+    expect(baslik?.classList.contains('gizli-erisilebilir')).toBe(true);
   });
 
   it('ToolCallCard durumu ekran okuyucuya adıyla okunur', () => {
@@ -99,3 +115,4 @@ describe('sohbet ve gezinme bileşenleri', () => {
     expect(screen.getAllByRole('button', { name: /Onay bekliyor/ })).toHaveLength(1);
   });
 });
+

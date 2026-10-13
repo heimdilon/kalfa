@@ -48,6 +48,7 @@
 
   function surukleBaslat(taraf: 'sol' | 'sag', e: PointerEvent) {
     e.preventDefault();
+    (e.currentTarget as HTMLElement | null)?.setPointerCapture?.(e.pointerId);
     suruklenen = taraf;
   }
 
@@ -124,7 +125,7 @@
       geriAlinabilir: boolean;
     }[] = [];
     for (const oge of ekran.ogeler) {
-      if (oge.tip === 'OnayIstegi') {
+      if (oge.tip === 'OnayIstegi' && oge.durum === 'Bekliyor') {
         for (const o of oge.ogeler) {
           if (o.hedefler[0] || o.diff) {
             liste.push({
@@ -139,11 +140,15 @@
         }
       } else if (oge.tip === 'TurOzeti' && !oge.geri_alindi) {
         for (const d of oge.ozet.dosyalar) {
+          const planDiff =
+            ekran.geri_alma?.tur === oge.ozet.tur
+              ? (ekran.geri_alma.plan.ogeler.find((p) => p.yol === d.yol)?.diff ?? null)
+              : null;
           liste.push({
             yol: d.yol,
             eklenen: d.eklenen,
             silinen: d.silinen,
-            diff: null,
+            diff: d.diff ?? planDiff ?? null,
             tur: oge.ozet.tur,
             geriAlinabilir: d.geri_alinabilir.tip === 'Evet',
           });
@@ -161,7 +166,12 @@
   );
 </script>
 
-<svelte:window onpointermove={surukleHareket} onpointerup={surukleBitir} />
+<svelte:window
+  onpointermove={surukleHareket}
+  onpointerup={surukleBitir}
+  onpointercancel={surukleBitir}
+  onblur={surukleBitir}
+/>
 
 <div class={['ana', { surukleniyor: suruklenen !== null }]}>
   <div bind:this={govdeKutu} class="govde">
@@ -179,6 +189,7 @@
         aria-label={m('konusma.bolme_boyutlandir')}
         class={['bolme-tutamaci', 'sol-tutamac', { etkin: suruklenen === 'sol' }]}
         onpointerdown={(e) => surukleBaslat('sol', e)}
+        onlostpointercapture={surukleBitir}
         onkeydown={(e) => tutamacTus('sol', e)}
       ></button>
 
@@ -190,6 +201,7 @@
           aria-label={m('konusma.bolme_boyutlandir')}
           class={['bolme-tutamaci', 'sag-tutamac', { etkin: suruklenen === 'sag' }]}
           onpointerdown={(e) => surukleBaslat('sag', e)}
+          onlostpointercapture={surukleBitir}
           onkeydown={(e) => tutamacTus('sag', e)}
         ></button>
 

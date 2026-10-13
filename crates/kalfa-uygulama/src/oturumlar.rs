@@ -50,6 +50,8 @@ pub(crate) struct AcikOturum {
     /// `oturumu_dinle` çağrılana kadar burada durur.
     alici: Option<OlayAlici>,
     kopru: Option<(JoinHandle<()>, KrediTutamaci)>,
+    model: String,
+    efor: DusunceEforu,
     kip: Kip,
     kip_kilidi: Arc<AsyncMutex<()>>,
     yol: PathBuf,
@@ -99,7 +101,7 @@ impl Uygulama {
             baglanti: ic.baglanti,
             anahtar_deposu: self.kasa.tur(),
             modeller: ic.modeller.clone(),
-            varsayilan_model: modeller::VARSAYILAN_MODEL.to_string(),
+            varsayilan_model: modeller::varsayilan_model(&ic.modeller),
             varsayilan_efor: modeller::VARSAYILAN_EFOR,
             son_oturum: ic.son_oturum,
             yalitim: self.yalitici.durum(),
@@ -157,9 +159,12 @@ impl Uygulama {
         calisma_alani: u64,
         model: String,
     ) -> Result<OturumAcilisi, KomutHatasi> {
-        let gecerli = {
+        let (gecerli, efor) = {
             let ic = self.ic();
-            modeller::model_gecerli_mi(&ic.modeller, &model)
+            (
+                modeller::model_gecerli_mi(&ic.modeller, &model),
+                modeller::uygun_efor(&ic.modeller, &model, modeller::VARSAYILAN_EFOR),
+            )
         };
         if !gecerli {
             return Err(KomutHatasi::gecersiz(format!("Bilinmeyen model: {model}")));
@@ -177,6 +182,7 @@ impl Uygulama {
         let oturum = OturumId::yeni();
         let yol = dizin::kayit_yolu(&self.oturum_dizini, oturum);
         let mut ayarlar = OturumAyarlari::yeni(model.clone(), &kok);
+        ayarlar.efor = Some(efor);
         ayarlar.kayit_yolu = Some(yol.clone());
         ayarlar.geri_alma_dizini = Some(dizin::oturum_geri_alma_dizini(
             &self.geri_alma_dizini,
@@ -190,6 +196,8 @@ impl Uygulama {
             tutamac,
             alici: Some(alici),
             kopru: None,
+            model: model.clone(),
+            efor,
             kip: Kip::Siki,
             kip_kilidi: Arc::new(AsyncMutex::new(())),
             yol,
@@ -209,6 +217,7 @@ impl Uygulama {
             },
             ozet: DurumOzeti {
                 model: Some(model),
+                efor: Some(efor),
                 kip: Some(Kip::Siki),
                 ..DurumOzeti::default()
             },
@@ -253,6 +262,15 @@ impl Uygulama {
         }
         let baglam = self.baglam(&kok).await?;
         let mut ayarlar = OturumAyarlari::yeni(durum.model.clone(), &kok);
+        let baslangic_efor = {
+            let ic = self.ic();
+            modeller::uygun_efor(
+                &ic.modeller,
+                &durum.model,
+                durum.efor.unwrap_or(modeller::VARSAYILAN_EFOR),
+            )
+        };
+        ayarlar.efor = Some(baslangic_efor);
         // Yalnızca bütçe kaydı olmayan (5b öncesi) oturum bu varsayılanı devralır.
         ayarlar.butce = self.ayarlar.oturum_butcesi();
         ayarlar.geri_alma_dizini = Some(dizin::oturum_geri_alma_dizini(
@@ -274,6 +292,8 @@ impl Uygulama {
             tutamac,
             alici: Some(alici),
             kopru: None,
+            model: kurtarilan.model.clone(),
+            efor: kurtarilan.efor.unwrap_or(baslangic_efor),
             kip: kurtarilan.kip,
             kip_kilidi: Arc::new(AsyncMutex::new(())),
             yol: yol.clone(),
@@ -538,16 +558,26 @@ impl Uygulama {
     }
 
     pub async fn model_degistir(&self, oturum: OturumId, model: String) -> Result<(), KomutHatasi> {
-        let gecerli = {
-            let ic = self.ic();
-            modeller::model_gecerli_mi(&ic.modeller, &model)
+        let (tutamac, yeni_efor) = {
+            let mut kilit = self.ic();
+            let ic = &mut *kilit;
+            if !modeller::model_gecerli_mi(&ic.modeller, &model) {
+                return Err(KomutHatasi::gecersiz(format!("Bilinmeyen model: {model}")));
+            }
+            let acik = ic
+                .oturumlar
+                .get_mut(&oturum)
+                .ok_or_else(KomutHatasi::oturum_yok)?;
+            let uygun = modeller::uygun_efor(&ic.modeller, &model, acik.efor);
+            let degisti = (uygun != acik.efor).then_some(uygun);
+            acik.model = model.clone();
+            acik.efor = uygun;
+            (acik.tutamac.clone(), degisti)
         };
-        if !gecerli {
-            return Err(KomutHatasi::gecersiz(format!("Bilinmeyen model: {model}")));
+        tutamac.gonder(Komut::ModelDegistir { model }).await?;
+        if let Some(efor) = yeni_efor {
+            tutamac.gonder(Komut::EforDegistir { efor }).await?;
         }
-        self.tutamac(oturum)?
-            .gonder(Komut::ModelDegistir { model })
-            .await?;
         Ok(())
     }
 
@@ -556,9 +586,22 @@ impl Uygulama {
         oturum: OturumId,
         efor: DusunceEforu,
     ) -> Result<(), KomutHatasi> {
-        self.tutamac(oturum)?
-            .gonder(Komut::EforDegistir { efor })
-            .await?;
+        let tutamac = {
+            let mut kilit = self.ic();
+            let ic = &mut *kilit;
+            let acik = ic
+                .oturumlar
+                .get_mut(&oturum)
+                .ok_or_else(KomutHatasi::oturum_yok)?;
+            if modeller::uygun_efor(&ic.modeller, &acik.model, efor) != efor {
+                return Err(KomutHatasi::gecersiz(format!(
+                    "Seçili model bu efor düzeyini desteklemiyor: {efor:?}"
+                )));
+            }
+            acik.efor = efor;
+            acik.tutamac.clone()
+        };
+        tutamac.gonder(Komut::EforDegistir { efor }).await?;
         Ok(())
     }
 

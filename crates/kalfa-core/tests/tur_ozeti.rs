@@ -138,6 +138,7 @@ async fn tur_ozeti_dosyalari_komutlari_ve_istekleri_tasir() {
                 silinen: 0,
                 sonucu_bilinmiyor: false,
                 geri_alinabilir: GeriAlinabilirlik::Evet,
+                diff: Some("+sahte yaz".into()),
             },
             DosyaOzeti {
                 yol: y("b.txt"),
@@ -146,6 +147,7 @@ async fn tur_ozeti_dosyalari_komutlari_ve_istekleri_tasir() {
                 silinen: 0,
                 sonucu_bilinmiyor: false,
                 geri_alinabilir: GeriAlinabilirlik::Evet,
+                diff: Some("+sahte yaz".into()),
             },
         ]
     );
@@ -295,6 +297,7 @@ fn veri_silinen_turun_ozeti_gecmiste_geri_alinamaz() {
             silinen: 1,
             sonucu_bilinmiyor: false,
             geri_alinabilir: GeriAlinabilirlik::Evet,
+            diff: None,
         }],
         komutlar: Vec::new(),
         istekler: IstekOzeti::default(),

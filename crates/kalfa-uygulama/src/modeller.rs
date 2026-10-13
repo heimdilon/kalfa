@@ -74,6 +74,34 @@ pub fn bilinen_model_mi(model: &str) -> bool {
     MODELLER.iter().any(|(kimlik, _)| *kimlik == model)
 }
 
+pub fn varsayilan_model(liste: &[ModelSecenegi]) -> String {
+    if liste.iter().any(|m| m.kimlik == VARSAYILAN_MODEL) {
+        VARSAYILAN_MODEL.to_string()
+    } else {
+        liste
+            .first()
+            .map(|m| m.kimlik.clone())
+            .unwrap_or_else(|| VARSAYILAN_MODEL.to_string())
+    }
+}
+
 pub fn model_gecerli_mi(liste: &[ModelSecenegi], model: &str) -> bool {
-    liste.iter().any(|m| m.kimlik == model) || bilinen_model_mi(model)
+    if liste.is_empty() {
+        bilinen_model_mi(model)
+    } else {
+        liste.iter().any(|m| m.kimlik == model)
+    }
+}
+
+pub fn uygun_efor(liste: &[ModelSecenegi], model: &str, mevcut: DusunceEforu) -> DusunceEforu {
+    let Some(secenek) = liste.iter().find(|m| m.kimlik == model) else {
+        return mevcut;
+    };
+    if secenek.eforlar.contains(&mevcut) {
+        mevcut
+    } else if secenek.eforlar.contains(&VARSAYILAN_EFOR) {
+        VARSAYILAN_EFOR
+    } else {
+        secenek.eforlar.first().copied().unwrap_or(VARSAYILAN_EFOR)
+    }
 }

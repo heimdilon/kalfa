@@ -44,6 +44,8 @@ pub struct DosyaOzeti {
     /// Yazan çağrının sonucu bilinmiyor (Kalfa yazma sırasında kapandı).
     pub sonucu_bilinmiyor: bool,
     pub geri_alinabilir: GeriAlinabilirlik,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -94,6 +96,7 @@ pub struct YazilanDosya {
     pub eklenen: u32,
     pub silinen: u32,
     pub geri_alinabilir: GeriAlinabilirlik,
+    pub diff: Option<String>,
 }
 
 #[derive(Debug)]
@@ -190,6 +193,17 @@ impl TurBiriktirici {
                         if o.geri_alinabilir == GeriAlinabilirlik::Evet {
                             o.geri_alinabilir = d.geri_alinabilir;
                         }
+                        if let Some(yeni_diff) = &d.diff {
+                            match &mut o.diff {
+                                Some(mevcut) => {
+                                    if !mevcut.ends_with('\n') {
+                                        mevcut.push('\n');
+                                    }
+                                    mevcut.push_str(yeni_diff);
+                                }
+                                None => o.diff = Some(yeni_diff.clone()),
+                            }
+                        }
                     }
                     None => dosyalar.push(DosyaOzeti {
                         yol: d.yol.clone(),
@@ -202,6 +216,7 @@ impl TurBiriktirici {
                         silinen: d.silinen,
                         sonucu_bilinmiyor: bilinmiyor,
                         geri_alinabilir: d.geri_alinabilir,
+                        diff: d.diff.clone(),
                     }),
                 }
             }

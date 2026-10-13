@@ -117,7 +117,7 @@ impl OturumAyarlari {
     pub fn yeni(model: impl Into<String>, calisma_alani: &Path) -> Self {
         Self {
             model: model.into(),
-            efor: None,
+            efor: Some(DusunceEforu::Orta),
             kip: Kip::Siki,
             calisma_alani: Some(calisma_alani.to_path_buf()),
             sinirlar: Sinirlar::default(),

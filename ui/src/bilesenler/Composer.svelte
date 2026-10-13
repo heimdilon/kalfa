@@ -66,6 +66,7 @@
 
   function gonder() {
     if (!gonderilebilir) return;
+    eforAcik = false;
     const metin = value;
     value = '';
     onsend?.(metin);
@@ -78,6 +79,11 @@
     } else if (e.key === 'Escape' && eforAcik) {
       eforAcik = false;
     }
+  }
+
+  function modelSec(yeni: string) {
+    if (disabled || running) return;
+    if (yeni !== model) onmodelchange?.(yeni);
   }
 
   function eforSec(yeni: DusunceEforu) {
@@ -135,10 +141,10 @@
       <div bind:this={eforKutu} class="efor-sarmal">
         <button
           type="button"
-          class={['efor-tetik', { acik: eforAcik }]}
+          class={['efor-tetik', { acik: eforAcik && !disabled && !running }]}
           disabled={disabled || running}
           aria-label={m('composer.efor')}
-          aria-expanded={eforAcik}
+          aria-expanded={eforAcik && !disabled && !running}
           onclick={() => (eforAcik = !eforAcik)}
         >
           <span class="efor-model">{model || seciliModel?.label || 'auto'}</span>
@@ -146,7 +152,7 @@
           <Icon name="chevron-down" size={13} />
         </button>
 
-        {#if eforAcik}
+        {#if eforAcik && !disabled && !running}
           <div class="efor-balon" role="dialog" aria-label={m('composer.efor_baslik')}>
             <div class="balon-ust">
               <div class="balon-basliklar">
@@ -163,6 +169,7 @@
                   <IconButton
                     icon="rotate-ccw"
                     size="sm"
+                    disabled={disabled || running}
                     label={m('composer.yenile')}
                     onclick={() => onmodelyenile()}
                   />
@@ -175,8 +182,9 @@
                 {#each models as s (s.value)}
                   <button
                     type="button"
+                    disabled={disabled || running}
                     class={['model-chip', { secili: s.value === model }]}
-                    onclick={() => onmodelchange?.(s.value)}
+                    onclick={() => modelSec(s.value)}
                   >
                     <span>{s.value}</span>
                     {#if s.label && s.label !== s.value}
@@ -194,6 +202,7 @@
                   <button
                     type="button"
                     role="radio"
+                    disabled={disabled || running}
                     aria-checked={k === efor}
                     aria-label={m(EFOR_ADI[k])}
                     class={['durak', { etkin: i <= eforIndeksi, secili: k === efor }]}
@@ -206,6 +215,7 @@
               <input
                 type="range"
                 class="kaydirici-girdi"
+                disabled={disabled || running}
                 aria-label={m('composer.efor')}
                 min={0}
                 max={Math.max(0, aktifEforlar.length - 1)}
@@ -219,6 +229,7 @@
               {#each aktifEforlar as k (k)}
                 <button
                   type="button"
+                  disabled={disabled || running}
                   class={['efor-etiket', { secili: k === efor }]}
                   onclick={() => eforSec(k)}
                 >

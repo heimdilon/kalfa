@@ -154,6 +154,7 @@ export interface DosyaOzeti {
   silinen: number;
   sonucu_bilinmiyor: boolean;
   geri_alinabilir: GeriAlinabilirlik;
+  diff?: string | null;
 }
 
 export type DegisiklikTuru = 'Eklendi' | 'Degisti' | 'Silindi';

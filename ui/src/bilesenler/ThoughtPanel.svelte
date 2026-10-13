@@ -24,14 +24,20 @@
 
   const kimlik = $props.id();
   const gorunur = $derived(open || akista);
+
+  function degistir() {
+    if (akista) return;
+    open = !open;
+  }
 </script>
 
 <section class={['dusunce', { akista, acik: gorunur }, sinif]}>
   <button
     type="button"
+    disabled={akista}
     aria-expanded={gorunur}
     aria-controls={`${kimlik}-ic`}
-    onclick={() => (open = !open)}
+    onclick={degistir}
   >
     <span class="ok"><Icon name={gorunur ? 'chevron-down' : 'chevron-right'} size={15} /></span>
     {#if akista}
@@ -73,7 +79,10 @@
     text-align: left;
     color: inherit;
   }
-  button:hover {
+  button:disabled {
+    cursor: default;
+  }
+  button:hover:not(:disabled) {
     background: var(--surface-raised);
   }
   .ok {

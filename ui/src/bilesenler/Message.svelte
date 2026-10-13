@@ -22,7 +22,7 @@
 
 <article class={['mesaj', { kullanici }, sinif]}>
   <div class="govde">
-    <header class={{ 'gizli-erisilebilir': !kullanici && !time }}>
+    <header class={{ 'gizli-erisilebilir': kullanici || !time }}>
       <span class="ad">{name ?? (kullanici ? m('mesaj.kullanici') : m('mesaj.kalfa'))}</span>
       {#if time}<span class="zaman">{time}</span>{/if}
     </header>
@@ -55,9 +55,6 @@
     align-items: baseline;
     gap: 10px;
     margin-bottom: 4px;
-  }
-  .kullanici header {
-    display: none;
   }
   .ad {
     font: var(--fw-semibold) var(--text-small) / 1 var(--font-sans);

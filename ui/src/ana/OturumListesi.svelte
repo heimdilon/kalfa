@@ -79,7 +79,15 @@
         });
       }
     }
-    return [...harita.entries()].map(([anahtar, deger]) => ({ anahtar, ...deger }));
+    const ham = [...harita.entries()].map(([anahtar, deger]) => ({ anahtar, ...deger }));
+    const adSayisi = new Map<string, number>();
+    for (const p of ham) {
+      adSayisi.set(p.ad, (adSayisi.get(p.ad) ?? 0) + 1);
+    }
+    return ham.map((p) => ({
+      ...p,
+      altYol: (adSayisi.get(p.ad) ?? 0) > 1 ? p.yol : null,
+    }));
   });
 
   function projeAcKapat(anahtar: string) {
@@ -126,11 +134,17 @@
           <button
             type="button"
             class="proje-baslik"
+            title={p.yol ?? undefined}
             aria-expanded={!kapali}
             onclick={() => projeAcKapat(p.anahtar)}
           >
             <Icon name={kapali ? 'chevron-right' : 'folder-open'} size={14} />
-            <span class="proje-adi">{p.ad}</span>
+            <span class="proje-metin">
+              <span class="proje-adi">{p.ad}</span>
+              {#if p.altYol}
+                <span class="proje-yol">{p.altYol}</span>
+              {/if}
+            </span>
             <span class="proje-sayi">{p.ogeler.length}</span>
           </button>
 
@@ -254,9 +268,22 @@
     background: var(--surface-raised);
     color: var(--text-title);
   }
-  .proje-adi {
+  .proje-metin {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .proje-adi {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .proje-yol {
+    font: var(--type-meta);
+    color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

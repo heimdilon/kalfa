@@ -54,9 +54,10 @@ impl Uygulama {
         self.evren.ayarla(saglayici);
         match self.kapi.ilk_durum().await {
             Ok(IlkDurum::KabulEdilmis) => {
-                self.modelleri_guncelle().await;
                 self.ic().sart_penceresi = SartPenceresiDurumu::Tamam;
                 self.pencereler.ana_ac();
+                let u = self.clone();
+                tokio::spawn(async move { u.modelleri_guncelle().await });
             }
             Ok(IlkDurum::KabulGerekli(_)) => {}
             Ok(IlkDurum::Reddedildi) => {
@@ -147,7 +148,6 @@ impl Uygulama {
         self.ic().baglanti = BaglantiDurumu::Var;
         let sonraki = match self.kapi.ilk_durum().await? {
             IlkDurum::KabulEdilmis => {
-                self.modelleri_guncelle().await;
                 self.sart_tamam();
                 SartPenceresiDurumu::Tamam
             }
@@ -167,11 +167,13 @@ impl Uygulama {
     /// "Kabul ediyorum". Sürüm gösterilenle aynı değilse kabul gönderilmez,
     /// güncel metin döner (1c tasarımı §7.3). Aynı anda verilen ret kabulü
     /// geçersiz kılar; pencere kilitli görünüme geçer.
-    pub async fn sartlari_kabul_et(&self, surum: u32) -> Result<KabulYaniti, KomutHatasi> {
+    pub async fn sartlari_kabul_et(
+        self: &Arc<Self>,
+        surum: u32,
+    ) -> Result<KabulYaniti, KomutHatasi> {
         let _komut = PencereKomutu::yeni(self);
         match self.kapi.kabul_et(surum).await? {
             KabulSonucu::Kabul => {
-                self.modelleri_guncelle().await;
                 self.sart_tamam();
                 Ok(KabulYaniti::Kabul)
             }
@@ -190,7 +192,6 @@ impl Uygulama {
             // yapılmaz.
             KabulSonucu::Bosta => match self.kapi.durum().son_karar {
                 Some(SartKarari::Kabul { .. }) => {
-                    self.modelleri_guncelle().await;
                     self.sart_tamam();
                     Ok(KabulYaniti::Kabul)
                 }
@@ -212,13 +213,12 @@ impl Uygulama {
 
     /// Kilitli görünümdeki "Metni yeniden göster"; pencerenin yeni durumunu
     /// döner.
-    pub async fn sart_metnini_goster(&self) -> Result<SartPenceresiDurumu, KomutHatasi> {
+    pub async fn sart_metnini_goster(self: &Arc<Self>) -> Result<SartPenceresiDurumu, KomutHatasi> {
         let _komut = PencereKomutu::yeni(self);
         let nesil = self.kapi.durum().nesil;
         let durum = match self.kapi.gerekli(nesil).await? {
             GerekliSonucu::OnayGerekli { metin, .. } => SartPenceresiDurumu::SartGerekli { metin },
             GerekliSonucu::KabulEdildi { .. } => {
-                self.modelleri_guncelle().await;
                 self.sart_tamam();
                 SartPenceresiDurumu::Tamam
             }
@@ -228,10 +228,12 @@ impl Uygulama {
         Ok(durum)
     }
 
-    fn sart_tamam(&self) {
+    fn sart_tamam(self: &Arc<Self>) {
         self.ic().sart_penceresi = SartPenceresiDurumu::Tamam;
         self.pencereler.ana_ac();
         self.pencereler.sartlar_kapat();
+        let u = self.clone();
+        tokio::spawn(async move { u.modelleri_guncelle().await });
     }
 
     /// Ana penceredeki "Anahtarı değiştir". Şart onayı bekleniyorsa önce şart
