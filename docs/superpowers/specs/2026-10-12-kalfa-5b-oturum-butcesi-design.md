@@ -317,3 +317,12 @@ toplam 1 396 geçti / 0 düştü / 19 canlı test atlandı; Linux (Ubuntu 24.04,
 0 hata/uyarı, paket denetimi temiz; uçtan uca Windows **41/41**, Linux
 **41/41**. Canlı EVREN koşusu yapılmadı; reddedilen isteğe kredi
 tutulmadığı varsayımı canlı doğrulanmadı.
+
+PR incelemesi (Codex, 13 Ekim) sonrasında dört düzeltme yapıldı, her biri
+önce düşen bir regresyon testiyle: tur sonu süpürmesi kanalda bekleyen
+bitişleri önce işler (iptal, biten denemeyi bilinmeyene çevirmez); salt
+okunur açılış kayıtlı bütçeyi verir; eski kayıt devri her `Istek`'in yalnız
+son `Kullanim`'ını sayar; kayıttan oynatılan devam kararı canlı yolla aynı
+sınır kuralını uygular. Kullanım alanı varlığı (§6, `Usage` değişmez), kart
+kimliği (§7, sayaç durumu kimliktir) ve yardımcı `Istek` satırının çökme
+penceresi (5b öncesiyle aynı; bütçe doğru kalır) gerekçesiyle değiştirilmedi.

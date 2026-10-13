@@ -175,6 +175,7 @@ pub struct SahteSaglayici {
     ek_gecikme: Mutex<Option<Duration>>,
     ek_hatalari: Mutex<BTreeMap<usize, EvrenError>>,
     modeller: Mutex<Result<Vec<ModelInfo>, EvrenError>>,
+    sohbet_kancasi: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl SahteSaglayici {
@@ -195,7 +196,13 @@ impl SahteSaglayici {
             ek_gecikme: Mutex::new(None),
             ek_hatalari: Mutex::new(BTreeMap::new()),
             modeller: Mutex::new(Ok(sahte_modeller())),
+            sohbet_kancasi: Mutex::new(None),
         })
+    }
+
+    /// Her `sohbet()` çağrısı yanıttan önce bunu çalıştırır (ör. turu iptal etmek).
+    pub fn sohbet_kancasi(&self, kanca: impl Fn() + Send + Sync + 'static) {
+        *self.sohbet_kancasi.lock().unwrap() = Some(Arc::new(kanca));
     }
 
     /// Eklenti uçlarına gelen istekler, geliş sırasıyla (sahte EVREN'in
@@ -297,6 +304,10 @@ impl Saglayici for SahteSaglayici {
             .unwrap()
             .pop_front()
             .expect("sahte sohbet senaryosunda yanıt kalmadı");
+        let kanca = self.sohbet_kancasi.lock().unwrap().clone();
+        if let Some(kanca) = kanca {
+            kanca();
+        }
         let meta = YanitMeta {
             istek_id: Some(format!("sahte-sohbet-{sira}")),
             yonlendirilen_model: Some(model.clone()),

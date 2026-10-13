@@ -199,11 +199,16 @@ impl ButceDurumu {
         if gozlenen_baslatilan != self.baslatilan || gozlenen_bilinmeyen != self.bilinmeyen {
             return Err(ButceHatasi::EskiKarar);
         }
-        if !sinirlar.gecerli() || sinirlar.istek <= self.baslatilan || sinirlar.token <= self.token
-        {
+        if !self.yeni_sinir_gecerli(sinirlar) {
             return Err(ButceHatasi::GecersizSinir);
         }
         Ok(())
+    }
+
+    /// Devam sınırı geçerli ve iki tüketimi de aşıyor olmalıdır; canlı karar ve
+    /// kayıttan oynatma aynı kuralı uygular.
+    fn yeni_sinir_gecerli(&self, sinirlar: ButceSinirlari) -> bool {
+        sinirlar.gecerli() && sinirlar.istek > self.baslatilan && sinirlar.token > self.token
     }
 
     /// Doğrulanmış ve kalıcı yazılmış kararı uygular. Sayaçlar sıfırlanmaz.
@@ -296,7 +301,7 @@ impl ButceDurumu {
                 if *onaylanan_bilinmeyen != self.bilinmeyen {
                     return Err(ButceHatasi::EskiKarar);
                 }
-                if !sinirlar.gecerli() {
+                if !self.yeni_sinir_gecerli(*sinirlar) {
                     return Err(ButceHatasi::GecersizSinir);
                 }
                 self.sinirlar = *sinirlar;
@@ -329,14 +334,20 @@ pub struct ButceDevri {
 
 /// 5b öncesi kayıttaki `Istek` ve gönderilmiş `EklentiIstegi` satırlarından
 /// bilinen en az deneme ve token sayısını çıkarır. Her deneme bir istektir;
-/// token yalnız `Kullanim` satırlarının toplamıdır. Eski kayıtta tekrar ve
-/// eklenti tokenı tam belirlenemediği için bir istek varsa belirsizdir.
+/// token, her `Istek`'i izleyen son `Kullanim` satırlarının toplamıdır (akış
+/// birikimli kullanımı birden çok kez yazabilir; eski gönderim günlüğü de
+/// sonuncuyu alır). Eski kayıtta tekrar ve eklenti tokenı tam belirlenemediği
+/// için bir istek varsa belirsizdir.
 pub fn eski_kayit_devri<'a>(ogeler: impl IntoIterator<Item = &'a KayitOgesi>) -> ButceDevri {
     let mut istek: u64 = 0;
     let mut token: u64 = 0;
+    let mut son_kullanim: u64 = 0;
     for oge in ogeler {
         match oge {
-            KayitOgesi::Istek { .. } => istek = istek.saturating_add(1),
+            KayitOgesi::Istek { .. } => {
+                istek = istek.saturating_add(1);
+                token = token.saturating_add(std::mem::take(&mut son_kullanim));
+            }
             KayitOgesi::EklentiIstegi { sonuc, .. }
                 if !matches!(sonuc, IstekSonucu::Gonderilmedi { .. }) =>
             {
@@ -344,10 +355,11 @@ pub fn eski_kayit_devri<'a>(ogeler: impl IntoIterator<Item = &'a KayitOgesi>) ->
             }
             KayitOgesi::Kullanim {
                 istem, tamamlama, ..
-            } => token = token.saturating_add(istem.saturating_add(*tamamlama)),
+            } => son_kullanim = istem.saturating_add(*tamamlama),
             _ => {}
         }
     }
+    let token = token.saturating_add(son_kullanim);
     if istek == 0 {
         return ButceDevri {
             istek: 0,
@@ -917,6 +929,16 @@ mod testler {
             ButceDurumu::kayittan(&kayit),
             Err(ButceHatasi::GecersizSinir)
         );
+        // Canlı yolun üretemeyeceği karar (sınır tüketimi aşmıyor) de reddedilir.
+        let tuketimi_asmayan = KayitOgesi::ButceDevamKarari {
+            sinirlar: sinir(1, 100),
+            onaylanan_bilinmeyen: 1,
+        };
+        let kayit = vec![ayar(10, 100), basla(1), bitis(1, None), tuketimi_asmayan];
+        assert_eq!(
+            ButceDurumu::kayittan(&kayit),
+            Err(ButceHatasi::GecersizSinir)
+        );
         let dogru_karar = KayitOgesi::ButceDevamKarari {
             sinirlar: sinir(20, 100),
             onaylanan_bilinmeyen: 1,
@@ -948,17 +970,24 @@ mod testler {
 
     #[test]
     fn eski_kayit_devri_gonderilen_denemeleri_ve_tokeni_toplar() {
+        // Bir isteğin birden çok (birikimli) `Kullanim`'ından yalnız sonuncusu
+        // sayılır; eski gönderim günlüğü de sonuncuyu iliştirirdi.
         let kayit = vec![
             istek_satiri(None),
+            KayitOgesi::Kullanim {
+                istem: 10,
+                tamamlama: 5,
+                dusunce: 2,
+            },
             istek_satiri(None),
             eklenti_satiri(IstekSonucu::Gonderilmedi {
                 neden: "önizleme".into(),
             }),
             eklenti_satiri(IstekSonucu::Basarili),
             KayitOgesi::Kullanim {
-                istem: 10,
-                tamamlama: 5,
-                dusunce: 2,
+                istem: 3,
+                tamamlama: 0,
+                dusunce: 0,
             },
             KayitOgesi::Kullanim {
                 istem: 4,

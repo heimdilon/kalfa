@@ -185,6 +185,26 @@ async fn genel_ayar_degisince_kayitli_oturumun_limiti_degismez() {
     assert_eq!(o.t.uygulama.oturum_butcesi(), sinir(9, 9000));
 }
 
+/// Çalışma alanı silinmiş oturum salt okunur açılır; kayıtlı sayaçlar yine görünür.
+#[tokio::test]
+async fn salt_okunur_acilis_kayitli_butceyi_verir() {
+    let o = ortam(vec![SahteYanit::metin("merhaba")]).await;
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .mesaj_gonder(oturum, "selam".into())
+        .await
+        .unwrap();
+    olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+    o.t.uygulama.oturumu_kapat(oturum).await.unwrap();
+    std::fs::remove_dir_all(o.alan.path()).unwrap();
+
+    let acilis = o.t.uygulama.oturum_ac(oturum).await.unwrap();
+    assert!(acilis.salt_okunur.is_some());
+    let butce = acilis.butce.expect("salt okunur oturumun kayıtlı bütçesi");
+    assert_eq!((butce.baslatilan, butce.bilinen_token), (1, 15));
+}
+
 #[tokio::test]
 async fn butce_karari_bilinmeyen_oturumda_reddedilir() {
     let o = ortam(vec![]).await;

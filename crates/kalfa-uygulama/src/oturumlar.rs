@@ -218,13 +218,15 @@ impl Uygulama {
         }
         let Some(kok) = durum.calisma_alani.clone() else {
             let neden = SaltOkunurNedeni::CalismaAlaniKayitsiz;
-            return self.acilis(oturum, yol, None, Some(neden), None).await;
+            return self.acilis(oturum, yol, None, Some(neden), butce).await;
         };
         if !kok.is_dir() {
             let neden = SaltOkunurNedeni::CalismaAlaniYok {
                 yol: kok.display().to_string(),
             };
-            return self.acilis(oturum, yol, Some(kok), Some(neden), None).await;
+            return self
+                .acilis(oturum, yol, Some(kok), Some(neden), butce)
+                .await;
         }
         let baglam = self.baglam(&kok).await?;
         let mut ayarlar = OturumAyarlari::yeni(durum.model.clone(), &kok);

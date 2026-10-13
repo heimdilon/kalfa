@@ -293,3 +293,48 @@ async fn tur_ozeti_denetci_kullanimini_bir_kez_sayar() {
         ozet.istekler
     );
 }
+
+/// İptal, biten denetçi denemesinin bitişi kuyruktayken gelirse (429 sonrası
+/// tekrar beklenirken) bitiş tur sonu süpürmesinden önce işlenir: bilinen 0
+/// token bilinmeyene dönmez.
+#[tokio::test]
+async fn iptalden_once_kuyruktaki_denetci_bitisi_bilinen_kapanir() {
+    let dizin = tempfile::tempdir().unwrap();
+    let kayit_yolu = dizin.path().join("oturum.jsonl");
+    let s = sinir_bir_istek_kalir_saglayici();
+    s.sohbet_ekle(hiz_siniri());
+    let mut ayar = ayarlar(10);
+    ayar.kayit_yolu = Some(kayit_yolu.clone());
+    let mut d = test_oturumu(
+        test_baglami(s.clone(), vec![oku()], sanal_siniflandirici()),
+        ayar,
+    );
+    let tutamac = d.tutamac.clone();
+    s.sohbet_kancasi(move || {
+        tutamac.iptal_et();
+    });
+    d.gonder(mesaj()).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);
+    assert_eq!(s.sohbet_istekleri().len(), 1);
+    d.kapat().await;
+
+    let kayitlar = OturumKaydi::oku(&kayit_yolu).unwrap();
+    let denetci: Vec<ButceIslemId> = kayitlar
+        .iter()
+        .filter_map(|z| match &z.yuk {
+            KayitOgesi::ButceIstegiBasladi { islem, amac } if amac == "denetçi" => Some(*islem),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(denetci.len(), 1);
+    let bitisler: Vec<Option<GunlukToken>> = kayitlar
+        .iter()
+        .filter_map(|z| match &z.yuk {
+            KayitOgesi::ButceIstegiBitti { islem, kullanim } if *islem == denetci[0] => {
+                Some(*kullanim)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bitisler, vec![Some(GunlukToken::default())]);
+}

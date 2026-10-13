@@ -1939,6 +1939,16 @@ impl Oturum {
     /// Sonuçlanmamış denemeleri bilinmeyen olarak kalıcı kapatır (5b tasarımı
     /// §4.1, §8). Kurtarmada ve tur sonunda kullanılır.
     async fn butce_sonuclanmamislari_kapat(&mut self) {
+        // İptal, kanalda bekleyen bitişlerden önce seçilmiş olabilir: biten
+        // denemeler önce kendi kullanımıyla kapanır, geç talepler izinsiz döner.
+        while let Ok(mesaj) = self.butce_talep_alici.try_recv() {
+            match mesaj {
+                ButceMesaji::Talep(talep) => {
+                    let _ = talep.yanit.send(None);
+                }
+                ButceMesaji::Bitis { islem, kullanim } => self.deneme_bitti(islem, kullanim).await,
+            }
+        }
         let acik = self
             .butce
             .as_ref()
