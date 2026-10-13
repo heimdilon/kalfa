@@ -193,6 +193,12 @@ Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni ister.
 - **Kapsam dışı:** Yalıtım testleri (bwrap, seccomp, AppContainer) ve uçtan
   uca testler. Bunlar yukarıdaki gibi yerelde koşturulur; yeşil CI onların
   yerini tutmaz.
+- **Linux paketleri:** `.github/workflows/linux-paket.yml`, paket dosyalarına
+  dokunan PR'larda, `v*` etiketinde ve elle koşar: Debian 12 kabında `.deb`
+  ve `.rpm` derler (glibc 2.36 tabanı), `SHA256SUMS` üretir, paketleri
+  Debian 12, Ubuntu 24.04 ve Fedora kaplarında kurup kaldırır. Etikette
+  taslak sürüm oluşturur; yayımlamayı kullanıcı yapar. AppArmor kabulü
+  kapta yapılamaz (`kurucu/linux/kabul.sh`, VM).
 - **Windows testleri** `.github/scripts/windows-testleri.ps1` ile, yönetici
   olmayan geçici bir `kalfatest` kullanıcısıyla, tek iş parçacığıyla
   (`--test-threads=1`) ve geçici dizin `C:\kalfatest-tmp` iken koşar. Testler

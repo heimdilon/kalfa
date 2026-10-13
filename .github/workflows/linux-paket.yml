@@ -1,0 +1,165 @@
+# Linux sürüm paketleri (Linux paket tasarımı §6): paketler Debian 12 kabında
+# derlenir (glibc 2.36; Debian 12, Pardus 23, Ubuntu 24.04+ ve güncel Fedora
+# açar), sonra her dağıtımın kabında kurulur, kitaplıkları çözülür ve
+# kaldırılır. AppArmor kabulü kapta yapılamaz; VM'de `kurucu/linux/kabul.sh`
+# ile yapılır. `v*` etiketi gelince paketler ve SHA256SUMS taslak sürüme
+# eklenir; sürümü kullanıcı yayımlar.
+name: Linux paketleri
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/linux-paket.yml
+      - crates/kalfa/tauri.conf.json
+      - crates/kalfa/tauri.linux-paket.conf.json
+      - crates/kalfa/kurucu/derle-linux.mjs
+      - crates/kalfa/kurucu/linux/**
+      - crates/kalfa/icons/**
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: linux-paket-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  derle:
+    name: Derle (Debian 12)
+    runs-on: ubuntu-24.04
+    container: debian:12
+    timeout-minutes: 90
+    steps:
+      - name: Derleme bağımlılıkları
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git \
+            build-essential pkg-config libwebkit2gtk-4.1-dev bubblewrap
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      # Etiket paketin sürümüyle aynı olmalı; yoksa taslak sürüm başka bir
+      # derlemeyi o sürümün adıyla dağıtırdı.
+      - name: Etiketi paket sürümüyle karşılaştır
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          surum=$(node -p "require('./crates/kalfa/tauri.conf.json').version")
+          [ "$GITHUB_REF_NAME" = "v$surum" ] || {
+            echo "Etiket $GITHUB_REF_NAME, paket sürümü $surum ile uyuşmuyor." >&2
+            exit 1
+          }
+      - name: Rust araç zincirini kur (rust-toolchain.toml)
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --default-toolchain none --profile minimal
+          "$HOME/.cargo/bin/rustup" toolchain install
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Arayüz bağımlılıkları
+        working-directory: ui
+        run: npm ci
+      - name: Paketleri derle
+        run: node crates/kalfa/kurucu/derle-linux.mjs
+      # Debian 12'nin glibc'si 2.36'dır; daha yeni bir sembol paketi orada açılmaz.
+      - name: glibc tabanını denetle
+        run: |
+          en_yeni=$(objdump -T target/release/kalfa | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)
+          echo "kalfa en yeni glibc sembolü: $en_yeni"
+          [ "$(printf '%s\nGLIBC_2.36\n' "$en_yeni" | sort -V | tail -1)" = GLIBC_2.36 ]
+      - name: SHA256SUMS
+        run: |
+          mkdir paketler
+          cp target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm paketler/
+          cd paketler
+          sha256sum -- *.deb *.rpm > SHA256SUMS
+          cat SHA256SUMS
+      # .deb'deki bwrap kopyası dağıtım güncellemesiyle değişmez; sürümü
+      # sürüm notunda yazılır (Linux paket tasarımı §5).
+      - name: Sürüm notu
+        run: |
+          bwrap_surum=$(dpkg-query -W -f '${Version}' bubblewrap)
+          {
+            echo "Linux paketleri (Debian 12 tabanı, glibc 2.36). Doğrulama için SHA256SUMS."
+            echo
+            echo ".deb, Kalfa'ya özel bwrap kopyası olarak Debian 12'nin bubblewrap $bwrap_surum paketinin değiştirilmemiş ikilisini taşır."
+          } > paketler/NOTLAR.md
+          cat paketler/NOTLAR.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-paketleri
+          path: paketler/
+          if-no-files-found: error
+
+  sina:
+    name: Kur ve kaldır (${{ matrix.ad }})
+    needs: derle
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.kap }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { ad: debian-12, kap: "debian:12", tur: deb }
+          - { ad: ubuntu-24.04, kap: "ubuntu:24.04", tur: deb }
+          - { ad: fedora-44, kap: "fedora:44", tur: rpm }
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: linux-paketleri
+          path: paketler
+      - name: Özetleri doğrula
+        working-directory: paketler
+        run: sha256sum -c SHA256SUMS
+      - name: Kur (.deb)
+        if: matrix.tur == 'deb'
+        run: |
+          apt-get update
+          apt-get install -y ./paketler/*.deb
+      - name: Kur (.rpm)
+        if: matrix.tur == 'rpm'
+        run: dnf install -y ./paketler/*.rpm
+      - name: Kurulu dosyalar ve kitaplıklar
+        run: |
+          test -x /usr/bin/kalfa
+          test -x /usr/bin/kalfa-kopru
+          test -f /usr/lib/Kalfa/eklentiler/kalfa-rag/eklenti.wasm
+          if ldd /usr/bin/kalfa | grep 'not found'; then exit 1; fi
+          if [ "${{ matrix.tur }}" = deb ]; then
+            /usr/lib/kalfa/bwrap --version
+            test -f /usr/share/kalfa/apparmor/kalfa-bwrap
+          else
+            test -x /usr/bin/bwrap
+          fi
+      - name: Kaldır
+        run: |
+          if [ "${{ matrix.tur }}" = deb ]; then apt-get remove -y kalfa; else dnf remove -y kalfa; fi
+          test ! -e /usr/bin/kalfa
+          test ! -e /usr/lib/kalfa/bwrap
+
+  yayimla:
+    name: Taslak sürüm
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: sina
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: linux-paketleri
+          path: paketler
+      - name: Paketleri taslak sürüme ekle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+            --title "Kalfa $GITHUB_REF_NAME" --notes-file paketler/NOTLAR.md \
+            paketler/*.deb paketler/*.rpm paketler/SHA256SUMS
