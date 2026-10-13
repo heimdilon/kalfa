@@ -1,0 +1,28 @@
+{
+  "bundle": {
+    "targets": ["deb", "rpm"],
+    "externalBin": ["binaries/kalfa-kopru"],
+    "resources": {
+      "eklentiler/": "eklentiler/"
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libcap2", "libselinux1"],
+        "recommends": ["python3", "nodejs", "git"],
+        "section": "devel",
+        "files": {
+          "/usr/lib/kalfa/bwrap": "binaries/bwrap",
+          "/usr/share/kalfa/apparmor/kalfa-bwrap": "kurucu/linux/kalfa-bwrap",
+          "/usr/share/doc/kalfa/bubblewrap/copyright": "binaries/bubblewrap-copyright",
+          "/usr/share/doc/kalfa/bubblewrap/KAYNAK": "binaries/bubblewrap-KAYNAK"
+        },
+        "postInstallScript": "kurucu/linux/postinst",
+        "postRemoveScript": "kurucu/linux/postrm"
+      },
+      "rpm": {
+        "depends": ["bubblewrap"],
+        "recommends": ["python3", "nodejs", "git"]
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+#!/bin/sh
+# Kalfa .deb kurulum sonrası: AppArmor'un ayrıcalıksız kullanıcı ad alanını
+# kısıtladığı sistemlerde (Ubuntu 23.10+) Kalfa'nın bwrap profilini kurar.
+set -e
+profil=/etc/apparmor.d/kalfa-bwrap
+kaynak=/usr/share/kalfa/apparmor/kalfa-bwrap
+if [ "$1" = configure ] \
+  && [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] \
+  && command -v apparmor_parser >/dev/null 2>&1; then
+  install -m 0644 "$kaynak" "$profil"
+  if [ -d /sys/kernel/security/apparmor ]; then
+    apparmor_parser -r -W "$profil" \
+      || echo "kalfa: AppArmor profili yüklenemedi; 'sudo apparmor_parser -r $profil' ile yeniden deneyin." >&2
+  fi
+fi
+exit 0

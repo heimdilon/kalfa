@@ -25,7 +25,13 @@ use crate::{
 use bwrap::{Kurulum, Sistem};
 
 /// bwrap yalnızca sistem yollarından kabul edilir; `PATH`'ten aranmaz (§8.1).
-const BWRAP_YOLLARI: &[&str] = &["/usr/bin/bwrap", "/usr/local/bin/bwrap"];
+/// Önce .deb paketinin kendi kopyası: AppArmor profili yalnız ona ad alanı
+/// izni verir (Linux paket tasarımı).
+const BWRAP_YOLLARI: &[&str] = &[
+    "/usr/lib/kalfa/bwrap",
+    "/usr/bin/bwrap",
+    "/usr/local/bin/bwrap",
+];
 /// Süreç sayısı sınırını yalıtımın içinde koyar (§6.3): sınır bwrap'a
 /// dışarıda verilseydi kullanıcının bütün süreçleri sayılırdı.
 const PRLIMIT: &str = "/usr/bin/prlimit";

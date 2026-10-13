@@ -1,0 +1,12 @@
+# Kalfa'nın kendi bubblewrap kopyasına ayrıcalıksız kullanıcı ad alanı izni
+# verir (Linux paket tasarımı). Sistemin /usr/bin/bwrap'ı etkilenmez. Kaptaki
+# komutların yeni kullanıcı ad alanı açması Kalfa'nın seccomp filtresiyle
+# kapalıdır.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile kalfa-bwrap /usr/lib/kalfa/bwrap flags=(unconfined) {
+  userns,
+
+  include if exists <local/kalfa-bwrap>
+}
