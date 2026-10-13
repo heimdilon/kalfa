@@ -48,3 +48,32 @@ durumu geri kurmayı dener. Ardından uygulamanın yalıtım durumu, **Onar** ve
 Windows kaldırıcı sınanır. Kaldırıcı hata verirse, yine yönetici PowerShell'de
 `./geri-al.ps1` çalıştırılır; betik kurulu ya da kurtarma yardımcısını bulur.
 Çalışma alanı izinleri Ayarlar'dan geri alınır.
+
+## Linux paketleri
+
+Linux'ta `ui/` dizininde `npm ci` çalıştırıldıktan sonra
+`node crates/kalfa/kurucu/derle-linux.mjs` çalıştırın. Komut `kalfa-kopru`'yu
+ve `kalfa-rag`'ı sürüm kipinde derler, derleme makinesinin `bubblewrap`
+paketindeki `bwrap`'ı ve lisans bilgisini `binaries/`'e kopyalar, arayüzü
+derler ve `tauri.linux-paket.conf.json` ile `.deb` ve `.rpm` üretir. Sonuç
+`target/release/bundle/{deb,rpm}/` altındadır. Derleme makinesinde
+`bubblewrap` kurulu olmalıdır. Paketler derlendikleri dağıtımın glibc'sini
+ister; desteklenen en eski dağıtımda derleyin
+([Linux paket tasarımı](../../../docs/superpowers/specs/2026-10-13-kalfa-linux-paketleri-design.md) §6).
+
+`.deb`, Kalfa'nın kendi bwrap kopyasını `/usr/lib/kalfa/bwrap`'a koyar.
+AppArmor'un ayrıcalıksız kullanıcı ad alanını kısıtladığı sistemlerde
+(Ubuntu 23.10+) `postinst` `kalfa-bwrap` profilini `/etc/apparmor.d/`'ye
+kurar ve yükler. Profil yalnız bu kopyaya ad alanı izni verir; kopyanın
+başlattığı süreçler yeteneksiz bir alt profilde çalışır. Sistemin
+`/usr/bin/bwrap`'ı etkilenmez. Profili onarmak için
+`sudo dpkg-reconfigure kalfa`. Kaldırma profili de kaldırır; kullanıcı
+verisi (`~/.local/share/dev.kalfa.masaustu`) kalır. `.rpm` sistemin
+`bubblewrap` paketine bağlıdır ve profil taşımaz. Python, Node ve git
+sistemden gelir; paketler onları yalnız önerir.
+
+Elle kabul denemesi Ubuntu 24.04 masaüstü VM'inde, sudo yetkili sıradan
+kullanıcıyla yapılır: `sh crates/kalfa/kurucu/linux/kabul.sh ./Kalfa_<sürüm>_amd64.deb`.
+Betik kurulumu, profilleri, kopyanın yeteneksiz çocuğunu, sistem bwrap'ının
+etkilenmediğini, yeniden kurulumu ve kaldırmayı sınar; uygulamadaki yalıtım
+durumu elle denetlenir. Geri alma komutları betiğin başındadır.

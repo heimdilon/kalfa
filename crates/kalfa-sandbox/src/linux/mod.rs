@@ -45,21 +45,22 @@ pub const TALIMAT_BWRAP_YOK: &str = "Komutları yalıtmak için `bubblewrap` pak
 (`sudo apt install bubblewrap` ya da dağıtımınızın paket yöneticisiyle), sonra Ayarlar'da \
 \"Yeniden dene\"yi seçin. O zamana kadar Kalfa komut çalıştırmaz.";
 pub const TALIMAT_AD_ALANI: &str = "Sistem, ayrıcalıksız kullanıcı ad alanlarını kısıtlıyor \
-(Ubuntu 24.04 ve sonrasında AppArmor). Kalfa'nın paketi bunu kendi AppArmor profiliyle \
-çözecek. O zamana kadar bwrap için bir profil ekleyebilirsiniz: /etc/apparmor.d/bwrap \
-dosyasına `abi <abi/4.0>, include <tunables/global> profile bwrap /usr/bin/bwrap \
-flags=(unconfined) { userns, }` yazın, `sudo systemctl reload apparmor` çalıştırın ve \
-Ayarlar'da \"Yeniden dene\"yi seçin. Sistem genelindeki kısıtı kapatmanızı önermiyoruz: \
-bütün sistemi etkiler. O zamana kadar Kalfa komut çalıştırmaz.";
+(Ubuntu 24.04 ve sonrasında AppArmor). Kalfa'nın .deb paketi bunu yalnız kendi bwrap \
+kopyası için kurduğu bir AppArmor profiliyle çözer. Kalfa'yı .deb paketiyle kurduysanız \
+profili `sudo dpkg-reconfigure kalfa` ile yeniden kurun; başka yolla kurduysanız .deb \
+paketini kullanın. Sonra Ayarlar'da \"Yeniden dene\"yi seçin. Sistem genelindeki kısıtı \
+kapatmanızı ya da /usr/bin/bwrap'a sınırsız bir profil eklemenizi önermiyoruz: bütün \
+sistemi etkiler. O zamana kadar Kalfa komut çalıştırmaz.";
 
 /// BT için gereksinim paragrafı (aşama 2 tasarımı §9.8).
 pub const GEREKSINIM: &str = "Kalfa, yapay zekânın önerdiği komutları kullanıcının kendi \
 hesabıyla, bubblewrap (bwrap) ve seccomp ile yalıtır: ayrıcalıksız kullanıcı ad alanlarında, \
 çalışma alanı dışı salt okunur ya da görünmez, ağ varsayılan olarak kapalı. Gerekenler: \
-/usr/bin/bwrap ya da /usr/local/bin/bwrap (bubblewrap paketi) ve ayrıcalıksız kullanıcı ad \
-alanları. Ubuntu 24.04 ve sonrasında AppArmor bunları kısıtlar \
-(kernel.apparmor_restrict_unprivileged_userns); bwrap için `userns` izni veren bir AppArmor \
-profili gerekir. Kalfa açılışta kısa bir bwrap denemesiyle yalıtımı doğrular.";
+/usr/lib/kalfa/bwrap (.deb paketinin kopyası), /usr/bin/bwrap ya da /usr/local/bin/bwrap \
+(bubblewrap paketi) ve ayrıcalıksız kullanıcı ad alanları. Ubuntu 24.04 ve sonrasında \
+AppArmor bunları kısıtlar (kernel.apparmor_restrict_unprivileged_userns); .deb paketi \
+yalnız kendi kopyası için, başlattığı süreçleri yeteneksiz bırakan bir AppArmor profili \
+(kalfa-bwrap) kurar. Kalfa açılışta kısa bir bwrap denemesiyle yalıtımı doğrular.";
 
 /// Dağıtımın adı ve çekirdek sürümü (§9.8).
 pub fn sistem_surumu() -> String {
@@ -732,6 +733,15 @@ mod tests {
             arka_uc: ARKA_UC.into(),
             surum: "0.9.0".into(),
         }
+    }
+
+    /// Paketin kopyası önce denenir; talimat sistem bwrap'ına sınırsız profil
+    /// önermez (Linux paket tasarımı §5).
+    #[test]
+    fn paket_bwrap_kopyasi_once_ve_talimat_sinirsiz_profil_onermez() {
+        assert_eq!(BWRAP_YOLLARI.first(), Some(&"/usr/lib/kalfa/bwrap"));
+        assert!(TALIMAT_AD_ALANI.contains("dpkg-reconfigure kalfa"));
+        assert!(!TALIMAT_AD_ALANI.contains("unconfined"));
     }
 
     #[test]

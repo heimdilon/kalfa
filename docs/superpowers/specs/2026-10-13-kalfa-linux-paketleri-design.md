@@ -1,7 +1,7 @@
 # Kalfa — Linux paketleri: Tasarım
 
 **Tarih:** 2026-10-13.
-**Durum:** Taslak; ön doğrulama §9.
+**Durum:** Uygulandı (dal `linux-paket/tasarim`); VM kabulü bekliyor (§9).
 **Taban:** `main`, `4241994` (5b tamamlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §12.1 (Dağıtım), risk 9;
 [aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §8.3.
@@ -127,10 +127,12 @@ sahipli paket dizinindedir; `PATH` kuralı (§8.1) korunur. Paket dışı
 kurulumda davranış değişmez.
 
 **Algılama iletisi:** `TALIMAT_AD_ALANI`, `.deb` kurulumunda profilin
-kurulmuş olması gerektiğini ve onarım için `sudo dpkg-reconfigure kalfa`
-ya da paketin yeniden kurulmasını söyler. Paket dışı kurulum için elle profil
-talimatı kalır, ancak sistem bwrap'ı yerine kullanıcıyı paket kurmaya
-yönlendirir.
+`sudo dpkg-reconfigure kalfa` ile yeniden kurulabileceğini, paket dışı
+kurulumda `.deb`'in kullanılmasını söyler. Eski ileti `/usr/bin/bwrap`'a
+`unconfined` + `userns` profili yazmayı öneriyordu; §5'teki gerekçeyle
+kaldırıldı. İleti sistem genelindeki kısıtı kapatmayı ve sistem bwrap'ına
+sınırsız profili önermez. `GEREKSINIM` (BT paragrafı) paket kopyasını ve
+profili anar.
 
 ## 6. Derleme tabanı
 
@@ -165,8 +167,9 @@ paketinden gelir. Ön doğrulama Ubuntu 24.04'te paket mekaniğini ölçer
 - **VM (Ubuntu 24.04 masaüstü, kullanıcı kurar):** `apt install ./kalfa*.deb`;
   `aa-status`'ta `kalfa-bwrap` ve `kalfa-bwrap-cocuk`; sistem bwrap'ının
   hâlâ reddedildiği (`bwrap --unshare-user … true` başarısız), Kalfa
-  kopyasının çalıştığı ve kaptaki sürecin `CapEff`'inin 0, yetenek isteyen
-  bir işlemin (`unshare -r`, `--cap-add`) reddedildiği;
+  kopyasının çalıştığı; kopya `--uid 0 --cap-add ALL` ile çağrılsa da kapta
+  yetenek isteyen işlemin (`unshare -n`) reddedildiği (yalnız `unconfined`
+  bir profil buna izin verirdi);
   uygulamanın yalıtım durumu `Hazir`; ağsız ve ağlı yalıtımlı komut;
   yükseltme (aynı paketi yeniden kur); `apt remove` sonrası profilin
   `aa-status`'tan ve `/etc/apparmor.d/`'den gittiği, `~/.local/share`'in
@@ -177,7 +180,34 @@ paketinden gelir. Ön doğrulama Ubuntu 24.04'te paket mekaniğini ölçer
 
 ## 9. Ön doğrulama
 
-(ön doğrulama sonuçları buraya)
+WSL Ubuntu 24.04 (`kalfatest`), commit `7b1ec30`, paket kurulmadan:
+
+- `derle-linux.mjs` iki paketi üretti: `Kalfa_0.1.0_amd64.deb` (18,7 MB) ve
+  `Kalfa-0.1.0-1.x86_64.rpm` (18,7 MB).
+- `.deb` denetimi: `Depends: libcap2, libselinux1, libwebkit2gtk-4.1-0,
+  libgtk-3-0`, `Recommends: python3, nodejs, git`; §4'teki bütün yollar
+  doğru, sahip `0/0`; `/usr/lib/kalfa/bwrap`, `/usr/bin/kalfa` ve
+  `/usr/bin/kalfa-kopru` `0755`; `postinst`/`postrm` çalıştırılabilir.
+- Açılan paketteki bwrap `bubblewrap 0.9.0` (`0.9.0-1ubuntu0.3`) ve
+  `--unshare-user --unshare-pid --unshare-net` denemesi çalıştı.
+- Profil (`06ffdd2`'deki kısıtlı çocuklu biçim) `apparmor_parser -Q -K -T`
+  ile geçerli.
+- `/usr/bin/kalfa` `GLIBC_2.39` istiyor: §6'daki taban gereği doğrulandı.
+- Kalfa'nın bwrap çağrısı `--cap-add` kullanmaz; çocuk profilin yetenek
+  reddi Kalfa'nın komutlarını etkilemez.
+
+Sınanmadı: gerçek AppArmor altında kurulum ve kaldırma (VM, kullanıcı
+kurar; `kurucu/linux/kabul.sh`), `.rpm` içeriği ve kurulumu (WSL'de `rpm`
+yok).
+
+## 9.1 Uygulama
+
+Paket mekaniği ön doğrulamada kodun kendisiyle sınandığı ve değişiklik
+küçük olduğu için ayrı uygulama planı yazılmadı; tasarım, uygulama ve
+kabul betiği aynı PR'dadır. Değişenler: `tauri.linux-paket.conf.json`,
+`kurucu/derle-linux.mjs`, `kurucu/linux/{kalfa-bwrap,postinst,postrm,kabul.sh}`,
+`kalfa-sandbox::linux` (`BWRAP_YOLLARI`, `TALIMAT_AD_ALANI`, `GEREKSINIM`
+ve birim testi), `kurucu/README.md`, `.gitattributes` (betikler LF).
 
 ## 10. Kapsam dışı
 
