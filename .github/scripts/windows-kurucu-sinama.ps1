@@ -12,8 +12,8 @@ $kurucu = (Resolve-Path -LiteralPath $KurucuYolu).Path
 $kok = Join-Path $env:ProgramFiles 'Kalfa'
 $kayitYolu = Join-Path $env:ProgramData 'Kalfa\yalitim\kurulum.json'
 
-# Kökte yalıtımın yetenek SID'ine verilmiş, mirassız listeleme izni var mı.
-function Kok-Izni-Var([string]$Yol) {
+# Kökte yalıtımın yetenek SID'ine verilmiş mirassız izin kuralları.
+function Yetenek-Kurallari([string]$Yol) {
     @((Get-Acl -LiteralPath $Yol).Access | Where-Object {
         $sid = try {
             $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
@@ -23,6 +23,15 @@ function Kok-Izni-Var([string]$Yol) {
         $sid -like 'S-1-15-3-1024-*' -and
             $_.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
             -not $_.IsInherited
+    })
+}
+
+# Kurulumun yazması gereken izin (kabul.ps1 ile aynı): yayılmayan ve en az
+# listeleme/okuma/geçiş haklarını (0x1000A1) taşıyan kural.
+function Kok-Izni-Tam([string]$Yol) {
+    @(Yetenek-Kurallari $Yol | Where-Object {
+        $_.InheritanceFlags -eq [Security.AccessControl.InheritanceFlags]::None -and
+            (([int]$_.FileSystemRights -band 0x1000A1) -eq 0x1000A1)
     }).Count -gt 0
 }
 
@@ -49,7 +58,7 @@ $kokler = @((Get-Content -LiteralPath $kayitYolu -Raw | ConvertFrom-Json).kok_iz
     Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 if ($kokler.Count -eq 0) { throw 'Kurulum kaydında kök izni yok.' }
 foreach ($k in $kokler) {
-    if (-not (Kok-Izni-Var $k)) { throw "Kök listeleme izni eksik: $k" }
+    if (-not (Kok-Izni-Tam $k)) { throw "Kök listeleme izni eksik ya da hatalı: $k" }
 }
 Write-Host "Yalıtım kök izinleri tamam: $($kokler -join ', ')"
 
@@ -58,9 +67,15 @@ Write-Host '== Sessiz kaldırma'
 $kaldirici = Join-Path $kok 'uninstall.exe'
 $p = Start-Process -FilePath $kaldirici -ArgumentList '/S', "_?=$kok" -Wait -PassThru
 if ($p.ExitCode -ne 0) { throw "Kaldırıcı başarısız (çıkış kodu $($p.ExitCode))." }
-if (Test-Path -LiteralPath (Join-Path $kok 'kalfa.exe')) { throw 'kalfa.exe kaldırılmadı.' }
+# `_?=` ile çalışan kaldırıcı yalnız kendini bırakır; kurulan her dosya gitmeli.
+foreach ($d in $dosyalar) {
+    if (Test-Path -LiteralPath (Join-Path $kok $d)) { throw "Kaldırılmayan dosya: $d" }
+}
+foreach ($d in 'araclar', 'eklentiler') {
+    if (Test-Path -LiteralPath (Join-Path $kok $d)) { throw "Kaldırılmayan dizin: $d" }
+}
 if (Test-Path -LiteralPath $kayitYolu) { throw 'Yalıtımın kurulum kaydı kaldırılmadı.' }
 foreach ($k in $kokler) {
-    if (Kok-Izni-Var $k) { throw "Kök listeleme izni geri alınmadı: $k" }
+    if ((Yetenek-Kurallari $k).Count -gt 0) { throw "Kök izni geri alınmadı: $k" }
 }
 Write-Host 'Kaldırma tamam: dosyalar, kurulum kaydı ve kök izinleri gitti.'
