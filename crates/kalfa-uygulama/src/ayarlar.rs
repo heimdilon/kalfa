@@ -6,18 +6,21 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
+use kalfa_core::butce::ButceSinirlari;
 use kalfa_core::denetci::DenetimKipi;
 use kalfa_core::izin::{
     AZAMI_KALIP, GizliAyarlari, KalipHatasi, VARSAYILAN_GIZLI_KALIPLAR, kalip_dogrula,
 };
 use kalfa_sandbox::vekil::{HostKaynagi, HostKurali, ag_hostu_coz};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::hata::KomutHatasi;
 use crate::sozlesme::{AgHostu, DenetciDurumu, GizliAyarGorunumu};
 use crate::uygulama::Uygulama;
 
 const DOSYA_ADI: &str = "ayarlar.json";
+
+const BUTCE_GECERSIZ: &str = "Oturum bütçesi geçersiz. İstek ve token sınırları 1 ile 9007199254740991 arasında bir tam sayı olmalı.";
 
 const DUSURME_ONAYI: &str = "Denetçi kipini düşürmek, dış kaynaklı araç sonuçlarının \
 (dosya içeriği, komut çıktısı, arama sonuçları) modele daha az denetimle gitmesi demektir. \
@@ -46,6 +49,19 @@ struct Dosya {
     /// Ağlı komutların kullanıcı listesi (3d, §8.3).
     #[serde(default)]
     ag_izin_listesi: Vec<AgHostu>,
+    /// Yeni oturumların bütçe varsayılanı (5b tasarımı §9).
+    #[serde(default, deserialize_with = "butce_oku")]
+    oturum_butcesi: ButceSinirlari,
+}
+
+/// Bozuk ya da geçersiz bütçe (tür hatası, sıfır, sınır üstü) yalnızca kendisini
+/// düşürür: varsayılan kullanılır, dosyanın diğer ayarları okunmaya devam eder.
+fn butce_oku<'de, D: Deserializer<'de>>(d: D) -> Result<ButceSinirlari, D::Error> {
+    let ham = serde_json::Value::deserialize(d)?;
+    Ok(serde_json::from_value::<ButceSinirlari>(ham)
+        .ok()
+        .filter(ButceSinirlari::gecerli)
+        .unwrap_or_default())
 }
 
 pub struct Ayarlar {
@@ -187,6 +203,10 @@ impl Ayarlar {
         self.kilit().ag_izin_listesi.clone()
     }
 
+    pub fn oturum_butcesi(&self) -> ButceSinirlari {
+        self.kilit().oturum_butcesi
+    }
+
     fn kilit(&self) -> std::sync::MutexGuard<'_, Dosya> {
         self.dosya.lock().unwrap_or_else(|z| z.into_inner())
     }
@@ -262,6 +282,25 @@ impl Uygulama {
         }
         self.ayarlar.degistir(|d| d.denetci_kipi = kip)?;
         Ok(self.ayarlar.denetci_durumu())
+    }
+
+    /// Yeni oturumların bütçe varsayılanı (5b tasarımı §9). Açık ve kurtarılan
+    /// oturumların kayıtlı limitleri bu değerden etkilenmez.
+    pub fn oturum_butcesi(&self) -> ButceSinirlari {
+        self.ayarlar.oturum_butcesi()
+    }
+
+    /// Yeni oturumların bütçe varsayılanını değiştirir; sınırlar burada doğrulanır
+    /// ve dosyaya yazılır. Geçersiz değerde dosya ve bellek değişmez.
+    pub fn oturum_butcesini_ayarla(
+        &self,
+        istek: u64,
+        token: u64,
+    ) -> Result<ButceSinirlari, KomutHatasi> {
+        let sinirlar = ButceSinirlari::yeni(istek, token)
+            .ok_or_else(|| KomutHatasi::gecersiz(BUTCE_GECERSIZ))?;
+        self.ayarlar.degistir(|d| d.oturum_butcesi = sinirlar)?;
+        Ok(sinirlar)
     }
 
     pub fn gizli_ayarlari(&self) -> GizliAyarGorunumu {

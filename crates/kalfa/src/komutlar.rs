@@ -7,11 +7,13 @@
 use std::sync::Arc;
 
 use kalfa_core::aktarim::KanalMesaji;
+use kalfa_core::butce::ButceSinirlari;
 use kalfa_core::denetci::DenetimKipi;
 use kalfa_core::gecmis::GecmisSayfasi;
 use kalfa_core::izin::Kip;
 use kalfa_core::kimlik::{CagriId, IslemId, OturumId, TurId};
 use kalfa_core::muhur::OnayMuhru;
+use kalfa_core::protokol::ButceKarari;
 use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::hata::KomutHatasi;
@@ -82,6 +84,9 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         gonderim_ogesi,
         onizleme_ayarla,
         gonderim_karari,
+        oturum_butcesi,
+        oturum_butcesini_ayarla,
+        butce_karari,
         eklentileri_listele,
         eklenti_klasorden_kur,
         eklenti_kaldir,
@@ -372,6 +377,34 @@ pub async fn gonderim_karari(
 ) -> Sonuc<()> {
     u.gonderim_karari(oturum, islem, gonderilmeyecekler, hep_gonderilecekler)
         .await
+}
+
+// --- Oturum bütçesi (5b tasarımı §7, §9) ---
+
+/// Yeni oturumların bütçe varsayılanı (Ayarlar).
+#[tauri::command(rename_all = "snake_case")]
+pub async fn oturum_butcesi(u: State<'_, Arc<Uygulama>>) -> Sonuc<ButceSinirlari> {
+    Ok(u.oturum_butcesi())
+}
+
+/// Yeni oturumların bütçe varsayılanını değiştirir; açık oturumları etkilemez.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn oturum_butcesini_ayarla(
+    u: State<'_, Arc<Uygulama>>,
+    istek: u64,
+    token: u64,
+) -> Sonuc<ButceSinirlari> {
+    u.oturum_butcesini_ayarla(istek, token)
+}
+
+/// Bütçe kartındaki kullanıcı kararı (5b tasarımı §7).
+#[tauri::command(rename_all = "snake_case")]
+pub async fn butce_karari(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    karar: ButceKarari,
+) -> Sonuc<()> {
+    u.butce_karari(oturum, karar).await
 }
 
 // --- Eklentiler (aşama 4 tasarımı §13, §14) ---

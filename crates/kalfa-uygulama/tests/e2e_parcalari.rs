@@ -35,9 +35,15 @@ fn saglayici(ayarlar: &E2eAyarlari) -> Arc<dyn Saglayici> {
     SahteUretici::yeni(ayarlar).uret("evren_llm_e2e").unwrap()
 }
 
+/// Akışın içerik olayları. Kullanım olayı bu testlerin konusu değildir; onu
+/// `e2e_yanit_gecerli_kullanim_bildirir` sınar.
 async fn olaylar(s: &dyn Saglayici, mesajlar: Vec<ChatMessage>) -> Vec<AkisOlayi> {
     let akis = s.akis(ChatRequest::new("glm-5.3", mesajlar)).await.unwrap();
-    akis.olaylar.map(|o| o.unwrap()).collect().await
+    akis.olaylar
+        .map(|o| o.unwrap())
+        .filter(|o| std::future::ready(!matches!(o, AkisOlayi::Kullanim(_))))
+        .collect()
+        .await
 }
 
 fn metin(olay: &AkisOlayi) -> &str {
@@ -111,6 +117,33 @@ async fn sahte_iletisim_ayarlardaki_cevabi_verir() {
     let hayir = SahteIletisim::yeni(&E2eAyarlari::default());
     assert_eq!(hayir.klasor_sec("x", None).await, None);
     assert!(!hayir.onayla("b", "m", "Evet", "Hayır").await);
+}
+
+/// Tamamlanan sahte yanıt, bütçede sayılabilir bir kullanım bildirir (5b
+/// tasarımı §6); aksi halde e2e oturumu bilinmeyen tüketimde kart bekler.
+#[tokio::test]
+async fn e2e_yanit_gecerli_kullanim_bildirir() {
+    let s = saglayici(&ayarlar(json!({"sart": "kabul"})));
+    let akis = s
+        .akis(ChatRequest::new(
+            "glm-5.3",
+            vec![ChatMessage::user("merhaba")],
+        ))
+        .await
+        .unwrap();
+    let tum: Vec<AkisOlayi> = akis.olaylar.map(|o| o.unwrap()).collect().await;
+    let kullanimlar: Vec<_> = tum
+        .iter()
+        .filter_map(|o| match o {
+            AkisOlayi::Kullanim(u) => Some(u),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(kullanimlar.len(), 1);
+    assert!(
+        kullanimlar[0].butce_kullanimi().is_some(),
+        "tamamlanan sahte yanıt bütçede sayılabilir kullanım bildirmeli"
+    );
 }
 
 #[tokio::test]

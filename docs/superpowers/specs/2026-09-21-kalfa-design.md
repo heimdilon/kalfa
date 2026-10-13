@@ -572,6 +572,12 @@ Ayrıntılar [aşama 3 tasarımında](2026-09-28-kalfa-3-gorunurluk-design.md)
 - Varsayılan değerler uygulama planında belirlenir ve ölçümle ayarlanır;
   kullanıcı değiştirebilir.
 
+5b'nin ayrıntıları [oturum bütçesi tasarım taslağında](2026-10-12-kalfa-5b-oturum-butcesi-design.md)
+ve [planında](../plans/2026-10-12-kalfa-5b-oturum-butcesi.md) yer alır.
+Kullanım bildirilmeyen istekte yeni denemeden önce kullanıcıya sorulur.
+İstek limiti başlatmadan önce; bilinen token eşiği yanıt geldikten sonra
+uygulanır. Token eşiği kesin harcama tavanı olarak sunulmaz.
+
 ---
 
 ## 7. Güvenlik modeli
@@ -1684,7 +1690,8 @@ teslim edilir:
 
 5. **Bağlam ve bütçe:** **5a** bağlam yönetimi (§6.5,
    [tasarımı](2026-10-12-kalfa-5a-baglam-yonetimi-design.md)) · **5b**
-   oturum bütçesi (§6.8).
+   oturum bütçesi (§6.8,
+   [tasarım taslağı](2026-10-12-kalfa-5b-oturum-butcesi-design.md)).
 
 MCP (v1.1) bunlardan sonra gelir.
 

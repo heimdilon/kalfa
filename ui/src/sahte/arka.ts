@@ -234,6 +234,8 @@ export class SahteArka {
   eklentiIstekleri = new Map<IslemId, string>();
   /** `gunluk_sinir`'in yanıtı; `null`: sınır dolmadı. */
   gunlukSinir: GunlukSinirDurumu | null = null;
+  /** `oturum_butcesi`'nin yanıtı: yeni oturumların bütçe varsayılanı (5b §9). */
+  butceVarsayilani: { istek: number; token: number } = { istek: 200, token: 5_000_000 };
   /** Komutun yerine geçen davranış (önizlemenin senaryosu kullanır). */
   ozel = new Map<string, (a: Argumanlar) => unknown>();
 
@@ -259,6 +261,7 @@ export class SahteArka {
       gecmis: { ogeler: [], daha_eski_var: false },
       ozet: bosOzet(),
       salt_okunur: null,
+      butce: null,
       ...acilis,
     };
     this.#oturumlar.set(tam.oturum, {
@@ -287,6 +290,7 @@ export class SahteArka {
         gecmis: { ogeler: [], daha_eski_var: false },
         ozet: bosOzet(),
         salt_okunur: null,
+        butce: null,
       },
       satir,
       eskiSayfa: { ogeler: [], daha_eski_var: false },
@@ -436,9 +440,26 @@ export class SahteArka {
           oturum: yeni,
           calisma_alani: this.klasor?.yol ?? null,
           ozet: bosOzet(a.model as string),
+          butce: {
+            sinirlar: this.butceVarsayilani,
+            baslatilan: 0,
+            bilinen_token: 0,
+            bilinmeyen: 0,
+            onaylanan_bilinmeyen: 0,
+            aktif: 0,
+            engel: null,
+          },
         });
         return this.#oturumlar.get(yeni)?.acilis;
       }
+      case 'oturum_butcesi':
+        return this.butceVarsayilani;
+      case 'oturum_butcesini_ayarla': {
+        this.butceVarsayilani = { istek: a.istek as number, token: a.token as number };
+        return this.butceVarsayilani;
+      }
+      case 'butce_karari':
+        return undefined;
       case 'oturum_ac': {
         const o = this.#oturumlar.get(oturum);
         if (!o) throw { kod: 'OturumYok', mesaj: 'Bu oturumun kaydı bulunamadı.' };

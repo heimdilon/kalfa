@@ -18,9 +18,10 @@ use crate::arac::{
     Arac, AracCiktisi, AracHatasi, AracOrtami, CiktiGonderici, CiktiParcasi, DosyaDegisiklikleri,
     GonderimTalebi, GonderimYaniti, Hazirlik, OrtamIstegi,
 };
+use crate::butce::ButceIslemId;
 use crate::denetci::{DenetimGirdisi, DenetimKipi, DenetimSonucu};
 use crate::geri_alma::{DIFF_SINIRI, DosyaYedegi, GeriAlinamazNedeni, OncekiHal, diff_sayilari};
-use crate::gonderim::{EklentiIstekOzeti, IstekSonucu};
+use crate::gonderim::{EklentiIstekOzeti, GunlukToken, IstekSonucu};
 use crate::gorunum::{GORUNMEZ_UYARISI, gorunmez_var_mi};
 use crate::izin::{
     AYNI_ADIM_UYARISI, GERI_ALINAMAZ_UYARISI, Islem, Karar, Kip, Siniflandirici,
@@ -887,7 +888,7 @@ impl Oturum {
             let iptal = self.iptal.child_token();
             let cikti = CiktiGonderici::yeni(p.cagri, cikti_tx.clone());
             arac_sayaclari.insert(p.cagri, cikti.atlanan_sayaci());
-            let ortam = AracOrtami::yeni(cikti, p.cagri, ortam_tx.clone());
+            let ortam = AracOrtami::yeni(cikti, p.cagri, ortam_tx.clone(), self.butce_talepci());
             isler.push(async move {
                 let sonuc = tek_calistir(
                     &p,
@@ -964,6 +965,13 @@ impl Oturum {
                         None => iptal_nedeni = Some(BitisNedeni::Iptal),
                     }
                 }
+                // Araçların bütçe talebi (5b tasarımı §7): tur iptal edildiyse
+                // `butce_talebi_geldi` izin vermez.
+                talep = self.butce_talep_alici.recv() => {
+                    if let Some(talep) = talep {
+                        self.butce_talebi_geldi(talep).await;
+                    }
+                }
                 Some((p, sonuc)) = isler.next(), if !isler.is_empty() => {
                     if let Some(sayac) = arac_sayaclari.remove(&p.cagri) {
                         let bayt = sayac.swap(0, Ordering::SeqCst);
@@ -985,8 +993,10 @@ impl Oturum {
                     if let Some(girdi) = denetlenecek {
                         self.yay(Olay::DenetimBasladi { cagri: s.cagri }).await;
                         let denetci = self.baglam.denetci.clone();
+                        // Denetçinin her ağ denemesi bu oturumun bütçesinden izin ister (5b §4.1).
+                        let butce = self.butce_talepci();
                         denetim_isleri.push(async move {
-                            let yanit = denetci.denetle(&girdi).await;
+                            let yanit = denetci.denetle(&girdi, &butce).await;
                             (s.cagri, girdi, yanit)
                         });
                     }
@@ -1010,8 +1020,10 @@ impl Oturum {
                     ozet,
                     meta,
                     sonuc,
+                    butce_islem,
+                    kullanim,
                 } => {
-                    self.eklenti_istek_bitti_isle(cagri, ozet, meta, sonuc)
+                    self.eklenti_istek_bitti_isle(cagri, ozet, meta, sonuc, butce_islem, kullanim)
                         .await
                 }
             }
@@ -1033,39 +1045,43 @@ impl Oturum {
         if let Some(b) = bekleyen_sonuclar.iter_mut().find(|b| b.cagri == cagri) {
             b.denetim = Some(yanit.sonuc.clone());
         }
-        // Denetçinin isteği gönderim günlüğüne kendi amacıyla girer (Görev 6).
-        // Yanıt meta'sı yoksa istek EVREN'den yanıt almadan bitti; gövdenin
-        // gidip gitmediği bilinmediği için güvenli taraf `Yanit`tır.
+        // Her ağ denemesi kendi `Istek` satırıdır (5b tasarımı §6); iç tekrar gizlenmez.
+        // Bitişi denetçi denemeden hemen sonra oturuma bildirdi (§4.1), burada tekrar
+        // bitirilmez.
         let yeni = vec![crate::gonderim::GonderilenOge {
             kaynak: girdi.kaynak.clone(),
             sira: None,
             bayt: girdi.icerik.len() as u64,
         }];
         let model = Some(crate::denetci::DENETCI_MODELI.to_string());
-        match (&yanit.meta, &yanit.sonuc) {
-            (Some(meta), _) => {
-                self.istek_kaydet(
-                    "denetci",
-                    meta,
-                    model,
-                    yeni,
-                    0,
-                    crate::gonderim::IstekSonucu::Basarili,
-                )
-                .await;
+        for deneme in &yanit.denemeler {
+            match (&deneme.meta, &deneme.sonuc) {
+                (Some(meta), _) => {
+                    self.istek_kaydet(
+                        "denetci",
+                        meta,
+                        model.clone(),
+                        yeni.clone(),
+                        0,
+                        deneme.sonuc.clone(),
+                        Some(deneme.islem),
+                    )
+                    .await;
+                }
+                (None, IstekSonucu::Hata { asama, mesaj }) => {
+                    self.istek_kaydet_hata(
+                        "denetci",
+                        model.clone(),
+                        yeni.clone(),
+                        0,
+                        *asama,
+                        mesaj.clone(),
+                        Some(deneme.islem),
+                    )
+                    .await;
+                }
+                (None, _) => {}
             }
-            (None, DenetimSonucu::Bilinmiyor { neden }) => {
-                self.istek_kaydet_hata(
-                    "denetci",
-                    model,
-                    yeni,
-                    0,
-                    crate::gonderim::IstekAsamasi::Yanit,
-                    neden.clone(),
-                )
-                .await;
-            }
-            (None, _) => {}
         }
         if let Some(u) = &yanit.kullanim {
             let (istem, tamamlama, dusunce) =
@@ -1076,7 +1092,7 @@ impl Oturum {
                 dusunce,
             })
             .await;
-            self.tur_ozeti.kullanim(istem, tamamlama, dusunce);
+            // Tur özeti bu denemeyi `butce_bitir`'de bir kez sayar (5b §6).
         }
         self.kaydet(KayitOgesi::Denetim {
             cagri,
@@ -1350,8 +1366,10 @@ impl Oturum {
                 ozet,
                 meta,
                 sonuc,
+                butce_islem,
+                kullanim,
             } => {
-                self.eklenti_istek_bitti_isle(cagri, ozet, meta, sonuc)
+                self.eklenti_istek_bitti_isle(cagri, ozet, meta, sonuc, butce_islem, kullanim)
                     .await
             }
         }
@@ -1484,6 +1502,7 @@ impl Oturum {
             kredi: None,
             yonlendirilen_model: None,
             sonuc: IstekSonucu::Gonderilmedi { neden },
+            butce_islem: None,
         })
         .await;
         self.yay(Olay::IstekBilgisi {
@@ -1503,6 +1522,8 @@ impl Oturum {
         ozet: EklentiIstekOzeti,
         meta: YanitMeta,
         sonuc: IstekSonucu,
+        butce_islem: Option<ButceIslemId>,
+        kullanim: Option<GunlukToken>,
     ) {
         let amac = format!("eklenti:{}", ozet.eklenti);
         let basarili = sonuc == IstekSonucu::Basarili;
@@ -1513,8 +1534,13 @@ impl Oturum {
             kredi: meta.kredi.clone(),
             yonlendirilen_model: meta.yonlendirilen_model.clone(),
             sonuc,
+            butce_islem,
         })
         .await;
+        // Bütçe izni olan deneme kayıttan sonra tek kez bitirilir (5b tasarımı §6).
+        if let Some(islem) = butce_islem {
+            self.butce_bitir(islem, kullanim).await;
+        }
         self.tur_ozeti.istek();
         self.yay(Olay::IstekBilgisi {
             istek_id: meta.istek_id.clone(),

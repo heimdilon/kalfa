@@ -197,3 +197,81 @@ fn max_tokens_govdeye_yazilir() {
     let json = serde_json::to_string(&req).unwrap();
     assert!(json.contains(r#""max_tokens":2048"#));
 }
+
+/// `tests/kayitlar/` altındaki gerçek bir kaydın `usage` nesnesi.
+fn kayit_kullanimi(ad: &str) -> Usage {
+    let v: serde_json::Value = serde_json::from_slice(&ortak::kayit_bayt(ad)).unwrap();
+    serde_json::from_value(v["usage"].clone()).unwrap_or_else(|e| panic!("{ad} usage: {e}"))
+}
+
+/// Akış fixture'ının son `usage` nesnesi (SSE `data:` satırlarından).
+fn akis_son_kullanimi(ad: &str) -> Usage {
+    ortak::fixture_metin(ad)
+        .lines()
+        .filter_map(|satir| satir.strip_prefix("data: "))
+        .filter(|veri| *veri != "[DONE]")
+        .map(|veri| serde_json::from_str::<ChatChunk>(veri).unwrap_or_else(|e| panic!("{ad}: {e}")))
+        .filter_map(|parca| parca.usage)
+        .next_back()
+        .expect("akışta usage olmalı")
+}
+
+fn kullanim(json: &str) -> Usage {
+    serde_json::from_str(json).unwrap_or_else(|e| panic!("usage çözülemedi: {e}"))
+}
+
+#[test]
+fn butce_kullanimi_sohbet_yanitlari() {
+    let u = yanit("chat_tool_calls_blocking.json").usage.expect("usage");
+    assert_eq!(u.butce_kullanimi(), Some((186, 78)));
+    assert_eq!(u.reasoning_tokens(), 32, "düşünce tamamlamanın dökümü");
+    assert_eq!(
+        akis_son_kullanimi("chat_tool_calls_stream.sse").butce_kullanimi(),
+        Some((169, 67))
+    );
+}
+
+#[test]
+fn butce_kullanimi_gomme_ve_siralama_kayitlari() {
+    assert_eq!(
+        kayit_kullanimi("embeddings_qwen3_1024.json").butce_kullanimi(),
+        Some((5, 0))
+    );
+    assert_eq!(
+        kayit_kullanimi("rerank_qwen3.json").butce_kullanimi(),
+        Some((279, 0))
+    );
+}
+
+#[test]
+fn butce_kullanimi_eksik_veya_tutarsiz_alan_bilinmeyendir() {
+    assert_eq!(kullanim("{}").butce_kullanimi(), None);
+    assert_eq!(kullanim(r#"{"prompt_tokens":5}"#).butce_kullanimi(), None);
+    assert_eq!(
+        kullanim(r#"{"prompt_tokens":0,"total_tokens":0}"#).butce_kullanimi(),
+        None
+    );
+    assert_eq!(
+        kullanim(r#"{"prompt_tokens":5,"completion_tokens":2,"total_tokens":9}"#).butce_kullanimi(),
+        None
+    );
+    // Taşan toplam 0'a sarılır; bu eşleşme kabul edilmez.
+    let tasan = format!(
+        r#"{{"prompt_tokens":{},"completion_tokens":1,"total_tokens":0}}"#,
+        u64::MAX
+    );
+    assert_eq!(kullanim(&tasan).butce_kullanimi(), None);
+}
+
+#[test]
+fn negatif_kullanim_serde_de_reddedilir() {
+    assert!(serde_json::from_str::<Usage>(r#"{"prompt_tokens":-1,"total_tokens":-1}"#).is_err());
+}
+
+#[test]
+fn dusunce_tokenlari_tamamlamaya_eklenmez() {
+    let u = kullanim(
+        r#"{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30,"completion_tokens_details":{"reasoning_tokens":15}}"#,
+    );
+    assert_eq!(u.butce_kullanimi(), Some((10, 20)));
+}

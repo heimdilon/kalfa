@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use kalfa_core::butce::{AZAMI_SINIR, ButceSinirlari};
 use kalfa_core::kimlik::OturumId;
 use kalfa_core::oturum::{self, OturumAyarlari};
 use kalfa_core::protokol::{Komut, Olay};
@@ -20,6 +21,11 @@ impl Uygulama {
         let oturum = OturumId::yeni();
         let mut ayarlar = OturumAyarlari::yeni(modeller::VARSAYILAN_MODEL, &kok);
         ayarlar.kayit_yolu = Some(dizin::kayit_yolu(&self.oturum_dizini, oturum));
+        // Uzun kayıt varsayılan oturum bütçesini aşar; ölçüm kart beklememeli.
+        ayarlar.butce = ButceSinirlari {
+            istek: AZAMI_SINIR,
+            token: AZAMI_SINIR,
+        };
         let (tutamac, mut alici) = oturum::baslat_kimlikle(oturum, ayarlar, baglam)?;
         for i in 1..=tur {
             // Oturum listesindeki başlık ilk mesajdır; kayıtlar böyle ayrılır.

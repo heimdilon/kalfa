@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use kalfa_evren::tipler::{ChatMessage, Role, ToolDef};
 
+use crate::butce::{ButceDurumu, ButceGorunumu, ButceHatasi};
 use crate::denetci::DenetimSonucu;
 use crate::geri_alma::GeriAlmaDizini;
 use crate::gonderim::{EklentiKullanimi, IstekAsamasi, IstekSonucu};
@@ -65,6 +66,8 @@ pub struct KurtarilmisDurum {
     /// Özetlenmiş ama henüz bir ana istekle gönderilmemiş mesajların
     /// indeksleri (5a tasarımı §9); sonraki ana istekte günlüğe girer.
     pub bekleyen_ozetler: BTreeSet<usize>,
+    /// Kayıttan hesaplanan son bütçe görünümü; 5b öncesi kayıtta yok (5b §8).
+    pub butce: Option<ButceGorunumu>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -75,6 +78,8 @@ pub enum KurtarmaHatasi {
     AcilisYok,
     #[error("Oturum kaydındaki {sira} sıralı bağlam özeti bir araç mesajına bağlanamıyor.")]
     BozukOzet { sira: u64 },
+    #[error("Oturum bütçe kaydı bozuk: {0}")]
+    Butce(#[from] ButceHatasi),
 }
 
 pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, KurtarmaHatasi> {
@@ -221,6 +226,18 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
         kip = Kip::Siki;
     }
 
+    // Sonuçsuz başlangıç açılışta bilinmeyen olarak kapanır; görünüm o hâli
+    // gösterir (5b tasarımı §8). 5b öncesi kayıtta görünüm yoktur.
+    let butce = match ButceDurumu::kayittan(kayitlar.iter().map(|z| &z.yuk))? {
+        Some(mut durum) => {
+            for islem in durum.sonuclanmamis() {
+                durum.bitir(islem, None)?;
+            }
+            Some(durum.gorunum())
+        }
+        None => None,
+    };
+
     // Her araç çağrısının bir yanıtı olmalı; yoksa bağlam geçersizdir.
     let yanitlanan: HashSet<&str> = mesajlar
         .iter()
@@ -265,5 +282,6 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
         geri_alma: GeriAlmaDizini::kayittan(kayitlar),
         eklenti_kullanimi,
         bekleyen_ozetler,
+        butce,
     })
 }

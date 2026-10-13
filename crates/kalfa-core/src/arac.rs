@@ -13,7 +13,8 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::gonderim::{EklentiIstekOzeti, IstekSonucu};
+use crate::butce::{ButceIslemId, ButceTalepci};
+use crate::gonderim::{EklentiIstekOzeti, GunlukToken, IstekSonucu};
 use crate::izin::Kip;
 use crate::kabuk::KabukTarifi;
 use crate::kimlik::CagriId;
@@ -422,21 +423,27 @@ pub enum OrtamIstegi {
         yanit: oneshot::Sender<GonderimYaniti>,
     },
     /// `Gonder` cevabından sonra ağa çıkan isteğin sonucu; oturum kayda
-    /// yazar (`KayitOgesi::EklentiIstegi`).
+    /// yazar (`KayitOgesi::EklentiIstegi`). Bütçe izni verildiyse `butce_islem`
+    /// ve bilinen `kullanim` ile bitirilir (5b tasarımı §6).
     IstekBitti {
         cagri: CagriId,
         ozet: EklentiIstekOzeti,
         meta: YanitMeta,
         sonuc: IstekSonucu,
+        butce_islem: Option<ButceIslemId>,
+        kullanim: Option<GunlukToken>,
     },
 }
 
 /// Aracın oturumla konuştuğu kanal (aşama 4 tasarımı §8.7): canlı çıktı,
-/// EVREN isteğinin izni ve kaydı. Yerleşik araçlar yalnızca çıktıyı kullanır.
+/// EVREN isteğinin izni, bütçe izni ve kaydı. Yerleşik araçlar yalnızca çıktıyı
+/// kullanır.
 #[derive(Debug, Clone)]
 pub struct AracOrtami {
     cikti: CiktiGonderici,
-    ic: Option<(CagriId, mpsc::Sender<OrtamIstegi>)>,
+    /// Oturumlu ortamın çağrı kimliği, kanalı ve bütçe talepçisi. Talepçi
+    /// zorunludur: ürün oturumunda bütçe sessizce atlanamaz.
+    ic: Option<(CagriId, mpsc::Sender<OrtamIstegi>, ButceTalepci)>,
 }
 
 impl AracOrtami {
@@ -454,10 +461,15 @@ impl AracOrtami {
         Self { cikti, ic: None }
     }
 
-    pub fn yeni(cikti: CiktiGonderici, cagri: CagriId, tx: mpsc::Sender<OrtamIstegi>) -> Self {
+    pub fn yeni(
+        cikti: CiktiGonderici,
+        cagri: CagriId,
+        tx: mpsc::Sender<OrtamIstegi>,
+        butce: ButceTalepci,
+    ) -> Self {
         Self {
             cikti,
-            ic: Some((cagri, tx)),
+            ic: Some((cagri, tx, butce)),
         }
     }
 
@@ -467,7 +479,7 @@ impl AracOrtami {
 
     /// Talebi oturuma iletir ve cevabı bekler. Oturum kapandıysa `Iptal`.
     pub async fn gonderim_izni(&self, talep: GonderimTalebi) -> GonderimYaniti {
-        let Some((cagri, tx)) = &self.ic else {
+        let Some((cagri, tx, _)) = &self.ic else {
             return GonderimYaniti::Gonder;
         };
         let (yanit, alici) = oneshot::channel();
@@ -482,9 +494,28 @@ impl AracOrtami {
         alici.await.unwrap_or(GonderimYaniti::Iptal)
     }
 
-    /// Ağa çıkan isteğin sonucunu oturuma bildirir.
-    pub async fn istek_bitti(&self, ozet: EklentiIstekOzeti, meta: YanitMeta, sonuc: IstekSonucu) {
-        let Some((cagri, tx)) = &self.ic else {
+    /// Ağdan hemen önce bütçe izni (5b tasarımı §4.1). Oturumsuz ortamda bütçe
+    /// yoktur (`Ok(None)`). Oturumlu ortamda izin verilirse `Ok(Some(islem))`;
+    /// izin yoksa `Err(())` ve çağıran ağa çıkmaz.
+    // Hata nedeni yoktur: çağıran için tek bilgi "ağa çıkılmaz"dır (5b §4.1).
+    #[allow(clippy::result_unit_err)]
+    pub async fn butce_izni(&self, amac: &str) -> Result<Option<ButceIslemId>, ()> {
+        let Some((_, _, butce)) = &self.ic else {
+            return Ok(None);
+        };
+        butce.izin(amac).await.map(Some).ok_or(())
+    }
+
+    /// Ağa çıkan isteğin sonucunu ve varsa bütçe bitişini oturuma bildirir.
+    pub async fn istek_bitti(
+        &self,
+        ozet: EklentiIstekOzeti,
+        meta: YanitMeta,
+        sonuc: IstekSonucu,
+        butce_islem: Option<ButceIslemId>,
+        kullanim: Option<GunlukToken>,
+    ) {
+        let Some((cagri, tx, _)) = &self.ic else {
             return;
         };
         let _ = tx
@@ -493,6 +524,8 @@ impl AracOrtami {
                 ozet,
                 meta,
                 sonuc,
+                butce_islem,
+                kullanim,
             })
             .await;
     }

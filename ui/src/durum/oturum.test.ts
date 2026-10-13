@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { KanalMesaji, Olay, OturumAcilisi, Zarf } from '../ipc/tipler';
+import type { ButceGorunumu, KanalMesaji, Olay, OturumAcilisi, Zarf } from '../ipc/tipler';
 import { kanalIsleyicisi } from './dinleyici';
 import { acilistanEkran, uygula, type EkranOgesi, type OturumEkrani } from './oturum';
 
@@ -21,6 +21,7 @@ function acilis(gecmis: OturumAcilisi['gecmis'] = { ogeler: [], daha_eski_var: f
       dusunce: 0,
     },
     salt_okunur: null,
+    butce: null,
   });
 }
 
@@ -671,5 +672,121 @@ describe('bağlam özeti', () => {
     expect(d.ogeler).toMatchObject([
       { tip: 'BaglamOzetlendi', adet: 2, yer_tutucu: 0, once: 70000, sonra: 30000 },
     ]);
+  });
+});
+
+describe('bütçe (5b tasarımı §7, §9)', () => {
+  function butce(ustune: Partial<ButceGorunumu> = {}): ButceGorunumu {
+    return {
+      sinirlar: { istek: 200, token: 5_000_000 },
+      baslatilan: 0,
+      bilinen_token: 0,
+      bilinmeyen: 0,
+      onaylanan_bilinmeyen: 0,
+      aktif: 0,
+      engel: null,
+      ...ustune,
+    };
+  }
+
+  /** Kayıttan açılış: sayaç görünümü açılışla gelir (yeniden bağlanma). */
+  function bagli(sayac: ButceGorunumu | null) {
+    return acilistanEkran({
+      oturum: OTURUM,
+      calisma_alani: 'C:\proje',
+      gecmis: { ogeler: [], daha_eski_var: false },
+      ozet: {
+        model: 'glm-5.3',
+        kip: 'Siki',
+        yonlendirilen_model: null,
+        son_kredi: null,
+        istem: 0,
+        tamamlama: 0,
+        dusunce: 0,
+      },
+      salt_okunur: null,
+      butce: sayac,
+    });
+  }
+
+  it('açılış sayaçları görünümü taşır; kayıttan açılan oturumda bekleyen kart yeniden verilir', () => {
+    const d0 = bagli(butce({ baslatilan: 2, bilinmeyen: 1, engel: 'bilinmeyen' }));
+    expect(d0.butce).toMatchObject({ baslatilan: 2, bilinmeyen: 1 });
+    expect(d0.ogeler).toEqual([]);
+
+    const d = uygula(d0, {
+      tip: 'Kanal',
+      mesaj: paket(1, {
+        tip: 'ButceKarariGerekli',
+        durum: butce({ baslatilan: 2, bilinmeyen: 1, engel: 'bilinmeyen' }),
+      }),
+    });
+    expect(d.anlik).toBe('OnayBekliyor');
+    expect(d.ogeler.at(-1)).toMatchObject({
+      tip: 'ButceKarari',
+      durum: 'Bekliyor',
+      gorunum: { engel: 'bilinmeyen', bilinmeyen: 1 },
+    });
+  });
+
+  it('bekleyen karar yeni sayaçlarla yerinde yenilenir; ikinci kart açmaz', () => {
+    const d1 = uygula(bagli(null), {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'ButceKarariGerekli', durum: butce({ baslatilan: 200, engel: 'istek' }) }),
+    });
+    const d2 = uygula(d1, {
+      tip: 'Kanal',
+      mesaj: paket(2, { tip: 'ButceKarariGerekli', durum: butce({ baslatilan: 200, engel: 'istek', bilinmeyen: 0, onaylanan_bilinmeyen: 0 }) }),
+    });
+    const kartlar = d2.ogeler.filter((o) => o.tip === 'ButceKarari');
+    expect(kartlar).toHaveLength(1);
+    expect(kartlar[0]).toMatchObject({ durum: 'Bekliyor' });
+  });
+
+  it('engelsiz sayaç bekleyen kartı yanıtlar; tur sürüyorsa akış devam eder', () => {
+    let d = uygula(bagli(null), {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'TurBasladi' }, { tip: 'ButceKarariGerekli', durum: butce({ bilinmeyen: 1, engel: 'bilinmeyen' }) }),
+    });
+    expect(d.anlik).toBe('OnayBekliyor');
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(2, { tip: 'ButceDurumu', durum: butce({ bilinmeyen: 1, onaylanan_bilinmeyen: 1 }) }),
+    });
+    expect(d.ogeler.find((o) => o.tip === 'ButceKarari')).toMatchObject({ durum: 'Yanitlandi' });
+    expect(d.anlik).toBe('Calisiyor');
+    expect(d.butce).toMatchObject({ onaylanan_bilinmeyen: 1, engel: null });
+  });
+
+  it('karar kabul edilince (ButceYanitlandi) turda değilse oturum boşa döner', () => {
+    let d = uygula(bagli(null), {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'ButceKarariGerekli', durum: butce({ bilinmeyen: 1, engel: 'bilinmeyen' }) }),
+    });
+    d = uygula(d, { tip: 'ButceYanitlandi' });
+    expect(d.ogeler.find((o) => o.tip === 'ButceKarari')).toMatchObject({ durum: 'Yanitlandi' });
+    expect(d.anlik).toBe('Bos');
+  });
+
+  it('tur bitince bekleyen bütçe kartı geçersiz olur', () => {
+    let d = uygula(bagli(null), {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'TurBasladi' }, { tip: 'ButceKarariGerekli', durum: butce({ bilinmeyen: 1, engel: 'bilinmeyen' }) }),
+    });
+    d = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(2, { tip: 'Tamamlandi', neden: { tip: 'Iptal' } }),
+    });
+    expect(d.ogeler.find((o) => o.tip === 'ButceKarari')).toMatchObject({ durum: 'Gecersiz' });
+    expect(d.anlik).toBe('Bos');
+  });
+
+  it('ButceDurumu sayaçları günceller ve engel varken kartı yanıtlamaz', () => {
+    const d = uygula(bagli(butce({ baslatilan: 1 })), {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'ButceDurumu', durum: butce({ baslatilan: 2, bilinmeyen: 1, engel: 'bilinmeyen' }) }),
+    });
+    expect(d.butce).toMatchObject({ baslatilan: 2, bilinmeyen: 1, engel: 'bilinmeyen' });
+    expect(d.ogeler).toEqual([]);
   });
 });

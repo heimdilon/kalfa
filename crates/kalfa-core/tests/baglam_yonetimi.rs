@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use kalfa_core::arac::Arac;
+use kalfa_core::butce::ButceSinirlari;
 use kalfa_core::gonderim::{IstekSonucu, oge_metni};
 use kalfa_core::kayit::{KayitOgesi, OturumKaydi, OzetYontemi};
 use kalfa_core::kurtarma::kurtar;
@@ -146,6 +147,8 @@ async fn esigin_altinda_ozetleme_istegi_yok() {
 fn kullanimla(yanit: SahteYanit, istem: u64) -> SahteYanit {
     match yanit {
         SahteYanit::Akis(mut olaylar) => {
+            // Sahte yanıtın varsayılan kullanımının yerine geçer: son kullanım olayı sayılır.
+            olaylar.retain(|o| !matches!(o, Ok(AkisOlayi::Kullanim(_))));
             olaylar.insert(
                 0,
                 Ok(AkisOlayi::Kullanim(Usage {
@@ -168,10 +171,14 @@ async fn kullanim_orani_varsayilan_esigi_tetikler() {
     let (mut ayar, _) = ayarlar(dizin.path());
     ayar.sinirlar.baglam_esigi = 64_000;
     ayar.sinirlar.baglam_hedefi = 32_000;
-    // İlk yanıt, birkaç yüz baytlık istemin 10 milyon token tuttuğunu söyler.
+    // Bu test 5a eşiğini sınar. 10 milyonluk yanıt varsayılan 5 milyon token
+    // bütçesini aşar; bütçe kararı araya girmesin diye sınır yükseltilir.
+    ayar.butce.token = 100_000_000;
+    // İlk iki yanıt, birkaç yüz baytlık istemin 10 milyon token tuttuğunu söyler;
+    // oran ikinci yanıtta da yüksek kalır ki eşik üçüncü istekten önce aşılsın.
     let s = SahteSaglayici::yeni(vec![
         kullanimla(oku_cagrisi("a.txt"), 10_000_000),
-        oku_cagrisi("b.txt"),
+        kullanimla(oku_cagrisi("b.txt"), 10_000_000),
         SahteYanit::metin("tamam"),
     ]);
     s.sohbet_ekle(SahteSohbet::Metin("özet".into()));
@@ -180,12 +187,27 @@ async fn kullanim_orani_varsayilan_esigi_tetikler() {
     assert_eq!(s.sohbet_istekleri().len(), 1);
 }
 
-async fn yer_tutucu_bekle(yanit: SahteSohbet) {
+/// Özetleyici kullanımsız bitince tüketim bilinmez; ana istek kartta bekler
+/// (5b tasarımı §2, §7). Bu testler yer tutucu davranışını sınar; kart, sınırı
+/// yükselten bir kararla geçilir.
+fn kart_karari() -> Option<ButceSinirlari> {
+    Some(ButceSinirlari {
+        istek: 50,
+        token: 5_000_000,
+    })
+}
+
+async fn yer_tutucu_bekle(yanit: SahteSohbet, kart_beklenir: bool) {
     let dizin = tempfile::tempdir().unwrap();
     let (ayar, yol) = ayarlar(dizin.path());
     let s = iki_okuma();
     s.sohbet_ekle(yanit);
-    let (d, neden) = tur(&s, ayar).await;
+    let mut d = surucu(&s, ayar);
+    d.gonder(mesaj()).await;
+    if kart_beklenir {
+        d.butce_devam_et(kart_karari()).await;
+    }
+    let neden = d.tur_sonu().await;
     assert_eq!(neden, BitisNedeni::Normal);
     let istekler = s.istekler();
     let ozgun = icerik(arac_mesajlari(&istekler[1].messages)[0]).len();
@@ -206,17 +228,21 @@ async fn yer_tutucu_bekle(yanit: SahteSohbet) {
 
 #[tokio::test]
 async fn ozetleyici_hatasinda_yer_tutucu_konur() {
-    yer_tutucu_bekle(SahteSohbet::Hata(EvrenError::Sunucu {
-        durum: 500,
-        kod: None,
-        mesaj: "iç hata".into(),
-    }))
+    // 5xx bilinmeyen tüketimdir: ana istek kartta bekler.
+    yer_tutucu_bekle(
+        SahteSohbet::Hata(EvrenError::Sunucu {
+            durum: 500,
+            kod: None,
+            mesaj: "iç hata".into(),
+        }),
+        true,
+    )
     .await;
 }
 
 #[tokio::test]
 async fn bos_ozet_yer_tutucu_olur() {
-    yer_tutucu_bekle(SahteSohbet::Metin("  \n ".into())).await;
+    yer_tutucu_bekle(SahteSohbet::Metin("  \n ".into()), false).await;
 }
 
 #[tokio::test]
@@ -505,6 +531,8 @@ async fn zaman_asiminda_yer_tutucu_konur() {
     s.sohbet_ekle(SahteSohbet::Gecikme(Duration::from_secs(60)));
     let mut d = surucu(&s, ayar).zaman_asimi(Duration::from_secs(120));
     d.gonder(mesaj()).await;
+    // Zaman aşımı bilinmeyen tüketimdir (5b §2): ana istek kartta bekler.
+    d.butce_devam_et(kart_karari()).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
     assert!(
         icerik(arac_mesajlari(&s.istekler()[2].messages)[0])
@@ -522,6 +550,9 @@ async fn durdurucu_hatada_baslamis_istekler_kaydedilir() {
     let (mut ayar, yol) = ayarlar(dizin.path());
     ayar.sinirlar.baglam_esigi = 64_000;
     ayar.sinirlar.baglam_hedefi = 32_000;
+    // Bu test 5a'nın durdurucu hatasını sınar; üçüncü yanıtın 10 milyon
+    // token'ı varsayılan bütçeyi aşar, bu yüzden sınır yükseltilir.
+    ayar.butce.token = 100_000_000;
     // Eşik ancak üçüncü yanıtın kullanımıyla aşılır.
     let s = SahteSaglayici::yeni(vec![
         oku_cagrisi("a.txt"),

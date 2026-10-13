@@ -4,6 +4,7 @@
 use kalfa_evren::KrediGozlemi;
 use serde::{Deserialize, Serialize};
 
+use crate::butce::{ButceGorunumu, ButceSinirlari};
 use crate::denetci::DenetimSonucu;
 use crate::geri_alma::{GeriAlmaPlani, GeriAlmaSonucu};
 use crate::izin::Kip;
@@ -73,6 +74,10 @@ pub enum Komut {
     OnizlemeAyarla {
         acik: bool,
     },
+    /// Bütçe kartındaki kullanıcı kararı (5b tasarımı §7). Kart yokken reddedilir.
+    ButceKarari {
+        karar: ButceKarari,
+    },
     /// Gönderim önizlemesi kararı (aşama 3b).
     GonderimKarari {
         islem: IslemId,
@@ -90,6 +95,21 @@ pub enum Komut {
 pub enum OnayKarari {
     Onayla,
     Reddet { gerekce: Option<String> },
+}
+
+/// Bütçe kartındaki karar. `gozlenen_*`, kartın gösterdiği sayaçlardır; kart
+/// değiştiyse eski karar kabul edilmez (5b tasarımı §7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "tip")]
+pub enum ButceKarari {
+    /// Bilinmeyen tüketimi kabul edip yeni mutlak sınırlarla sürdürür.
+    DevamEt {
+        sinirlar: ButceSinirlari,
+        gozlenen_baslatilan: u64,
+        gozlenen_bilinmeyen: u64,
+    },
+    /// Turu durdurur; sayaçlar korunur.
+    Durdur,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -300,6 +320,16 @@ pub enum Olay {
     /// Kayda yazılmaz.
     Kisayollar {
         liste: Vec<crate::kisayol::Kisayol>,
+    },
+    /// Bütçe sayaçlarının güncel görünümü; her başlatma, bitiş ve karar sonrası
+    /// (5b tasarımı §9).
+    ButceDurumu {
+        durum: ButceGorunumu,
+    },
+    /// Bütçe engeli yüzünden yeni istek başlamadı; kullanıcının kararı bekleniyor
+    /// (5b tasarımı §7).
+    ButceKarariGerekli {
+        durum: ButceGorunumu,
     },
     /// Güvenlik denetçisinin sonucu (aşama 3c).
     DenetimSonucu {

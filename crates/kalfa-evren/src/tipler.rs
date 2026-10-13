@@ -199,6 +199,18 @@ impl Usage {
             .as_ref()
             .map_or(0, |d| d.reasoning_tokens)
     }
+
+    /// Bütçede sayılabilecek kullanım: `(istem, tamamlama)`. Geçerli yalnız
+    /// `prompt_tokens > 0` ve `total_tokens == prompt_tokens + completion_tokens`
+    /// (taşmasız) ise; aksi hâlde `None`: kullanım bilinmeyendir, 0 değildir.
+    /// Düşünce tokenları tamamlamanın dökümüdür; ayrıca eklenmez.
+    pub fn butce_kullanimi(&self) -> Option<(u64, u64)> {
+        if self.prompt_tokens == 0 {
+            return None;
+        }
+        let toplam = self.prompt_tokens.checked_add(self.completion_tokens)?;
+        (toplam == self.total_tokens).then_some((self.prompt_tokens, self.completion_tokens))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

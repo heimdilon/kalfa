@@ -9,7 +9,7 @@ pub mod baglam;
 mod geri_alma;
 mod model_turu;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -18,15 +18,19 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use kalfa_evren::tipler::{ChatMessage, ToolCall, ToolDef};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::AracKayitDefteri;
+use crate::butce::{
+    ButceDevri, ButceDurumu, ButceGorunumu, ButceHatasi, ButceIslemId, ButceMesaji, ButceSinirlari,
+    ButceTalebi, ButceTalepci, eski_kayit_devri,
+};
 use crate::denetci::{DenetimKipi, GuvenlikDenetcisi};
 use crate::geri_alma::{
     GeriAlmaDizini, GeriYukleyici, OTURUM_ALT_SINIRI, OTURUM_SINIRI, OncekiHalDeposu,
 };
-use crate::gonderim::EklentiKullanimi;
+use crate::gonderim::{EklentiKullanimi, GunlukToken};
 use crate::izin::{Kip, Siniflandirici};
 use crate::kayit::{KayitOgesi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
@@ -35,7 +39,8 @@ use crate::kimlik::{OturumId, TurId};
 use crate::kisayol::Kisayol;
 use crate::kurtarma::{BILINMEYEN_SONUC, KurtarilmisDurum, KurtarmaHatasi, kurtar};
 use crate::protokol::{
-    AktarimDurmaNedeni, AracDurumu, BitisNedeni, Komut, Olay, OnayOgesi, SEMA_SURUMU, Zarf,
+    AktarimDurmaNedeni, AracDurumu, BitisNedeni, ButceKarari, Komut, Olay, OnayOgesi, SEMA_SURUMU,
+    Zarf,
 };
 use crate::saglayici::Saglayici;
 use crate::sart_kapisi::SartKapisi;
@@ -94,6 +99,9 @@ pub struct OturumAyarlari {
     /// Çalışma alanının kökü; açılış kaydına yazılır.
     pub calisma_alani: Option<PathBuf>,
     pub sinirlar: Sinirlar,
+    /// Yeni oturumun istek ve bilinen token sınırı (5b tasarımı §2). Açık ya da
+    /// kurtarılan oturum kendi kaydedilmiş sınırını kullanır.
+    pub butce: ButceSinirlari,
     pub olay_butcesi: OlayButcesi,
     /// `None`: kayıtsız oturum (spec §6.6).
     pub kayit_yolu: Option<PathBuf>,
@@ -111,6 +119,7 @@ impl OturumAyarlari {
             kip: Kip::Siki,
             calisma_alani: Some(calisma_alani.to_path_buf()),
             sinirlar: Sinirlar::default(),
+            butce: ButceSinirlari::default(),
             olay_butcesi: OlayButcesi::default(),
             kayit_yolu: None,
             geri_alma_dizini: None,
@@ -160,6 +169,8 @@ pub enum OturumHatasi {
     Kayit(#[from] io::Error),
     #[error("Oturum kurtarılamadı: {0}")]
     Kurtarma(#[from] KurtarmaHatasi),
+    #[error("Oturum bütçesi geçersiz: {0}")]
+    Butce(#[from] ButceHatasi),
     #[error("Oturum kapandı.")]
     Kapali,
 }
@@ -655,6 +666,152 @@ mod tests {
             AktarimDurmaNedeni::Diger
         );
     }
+
+    /// Oturum görevini çalıştırmadan, kayıtsız bir oturum kurar. Olay alıcısı
+    /// çağıranda kalır: bırakılırsa oturum kapalı sayılır.
+    fn kayitsiz_oturum(butce: ButceSinirlari) -> (Oturum, OlayAlici) {
+        let s = crate::test_destek::SahteSaglayici::yeni(Vec::new());
+        let baglam = crate::test_destek::test_baglami(
+            s,
+            Vec::new(),
+            crate::test_destek::sanal_siniflandirici(),
+        );
+        let (oturum, _tutamac, alici, _kapanis) = Oturum::kur(
+            OturumId::yeni(),
+            OturumAyarlari::yeni("glm-5.3", Path::new("calisma")),
+            baglam,
+            None,
+            BaglamGirdisi {
+                mesajlar: Vec::new(),
+                sira: 0,
+                gonderilen: 0,
+                mesaj_bilgileri: Vec::new(),
+                son_sistem_istemi: None,
+                son_arac_tanimlari: None,
+                onizleme_acik: false,
+                eklenti_kullanimi: HashMap::new(),
+                bekleyen_ozetler: BTreeSet::new(),
+                butce: Some(ButceDurumu::yeni(butce).expect("geçerli bütçe sınırı")),
+            },
+            GeriAlmaKurulumu {
+                depo: None,
+                dizin: GeriAlmaDizini::default(),
+            },
+        );
+        (oturum, alici)
+    }
+
+    /// Denetçi gibi bir çağıranın bütçe talebi: hizmet edilen talep kimlik
+    /// alır; izin beklerken düşürülen talep sayaç tüketmez; tur dışı talep
+    /// izin alamaz.
+    #[tokio::test]
+    async fn butce_kanali_hizmet_eder_dusen_talebi_saymaz_ve_tur_disini_reddeder() {
+        let (mut oturum, _olaylar) = kayitsiz_oturum(ButceSinirlari {
+            istek: 5,
+            token: 1_000,
+        });
+        oturum.tur = Some(TurId::yeni());
+
+        // Bekleyen çağıran düşerse talep ağa çıkmadan ve sayaç değişmeden kapanır.
+        let talepci = oturum.butce_talepci();
+        let dusen = tokio::spawn(async move { talepci.izin("denetci").await });
+        let talep = oturum
+            .butce_talep_alici
+            .recv()
+            .await
+            .expect("talep gelmeli");
+        dusen.abort();
+        let _ = dusen.await;
+        oturum.butce_talebi_geldi(talep).await;
+        assert_eq!(
+            oturum.butce.as_ref().map(|d| d.gorunum().baslatilan),
+            Some(0),
+            "düşen talep bir istek saymamalı"
+        );
+
+        // Hizmet edilen talep, düşen talebin boşluğunu bırakmadan ilk kimliği alır.
+        let talepci = oturum.butce_talepci();
+        let izin = tokio::spawn(async move { talepci.izin("denetci").await });
+        let talep = oturum
+            .butce_talep_alici
+            .recv()
+            .await
+            .expect("talep gelmeli");
+        oturum.butce_talebi_geldi(talep).await;
+        assert_eq!(izin.await.expect("görev bitmeli"), Some(ButceIslemId(1)));
+        let g = oturum.butce.as_ref().expect("bütçe hazır").gorunum();
+        assert_eq!((g.baslatilan, g.aktif), (1, 1));
+
+        // Tur dışında gelen talep izin alamaz.
+        oturum.tur = None;
+        let talepci = oturum.butce_talepci();
+        let izin = tokio::spawn(async move { talepci.izin("ozet").await });
+        let talep = oturum
+            .butce_talep_alici
+            .recv()
+            .await
+            .expect("talep gelmeli");
+        oturum.butce_talebi_geldi(talep).await;
+        assert_eq!(izin.await.expect("görev bitmeli"), None);
+        assert_eq!(
+            oturum.butce.as_ref().map(|d| d.gorunum().baslatilan),
+            Some(1)
+        );
+    }
+
+    /// Denetçi her denemesinin bitişini bir sonraki talepten önce gönderir. Aynı
+    /// denemenin ikinci bitişi (çift sonuç) ya da sonuçlanmamış bir kimlik sayaca
+    /// dokunmaz ve oturumu bozmaz.
+    #[tokio::test]
+    async fn bitis_mesaji_yalniz_acik_denemeyi_kapatir() {
+        let (mut oturum, _olaylar) = kayitsiz_oturum(ButceSinirlari {
+            istek: 5,
+            token: 1_000,
+        });
+        oturum.tur = Some(TurId::yeni());
+        let talepci = oturum.butce_talepci();
+        let izin = {
+            let talepci = talepci.clone();
+            tokio::spawn(async move { talepci.izin("denetçi").await })
+        };
+        let talep = oturum
+            .butce_talep_alici
+            .recv()
+            .await
+            .expect("talep gelmeli");
+        oturum.butce_talebi_geldi(talep).await;
+        let islem = izin.await.expect("görev bitmeli").expect("izin verilmeli");
+
+        talepci
+            .bitir(
+                islem,
+                Some(GunlukToken {
+                    istem: 4,
+                    tamamlama: 3,
+                    dusunce: 0,
+                }),
+            )
+            .await;
+        let bitis = oturum
+            .butce_talep_alici
+            .recv()
+            .await
+            .expect("bitiş gelmeli");
+        oturum.butce_talebi_geldi(bitis).await;
+
+        // Aynı kimlik ikinci kez bitince yok sayılır.
+        talepci.bitir(islem, None).await;
+        let ikinci = oturum
+            .butce_talep_alici
+            .recv()
+            .await
+            .expect("ikinci bitiş gelmeli");
+        oturum.butce_talebi_geldi(ikinci).await;
+
+        let g = oturum.butce.as_ref().expect("bütçe hazır").gorunum();
+        assert_eq!((g.aktif, g.bilinen_token, g.bilinmeyen), (0, 7, 0));
+        assert!(oturum.butce_hatasi.is_none(), "çift bitiş bozmamalı");
+    }
 }
 
 #[derive(Clone)]
@@ -743,12 +900,13 @@ pub fn baslat_kimlikle(
     ayarlar: OturumAyarlari,
     baglam: OturumBaglami,
 ) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi> {
+    let butce = ButceDurumu::yeni(ayarlar.butce)?;
     let depo = depo_ac(&ayarlar)?;
     let kayit = match &ayarlar.kayit_yolu {
         Some(yol) => Some(OturumKaydi::olustur(yol)?),
         None => None,
     };
-    Ok(baslat_ic(kimlik, ayarlar, baglam, kayit, depo))
+    Ok(baslat_ic(kimlik, ayarlar, baglam, kayit, depo, butce))
 }
 
 /// Kayıtlı oturumun geri alma deposu. Açılamazsa oturum başlamaz: onay kartı
@@ -770,6 +928,11 @@ pub fn devam_et(
 ) -> Result<(OturumTutamaci, OlayAlici, KurtarilmisDurum), OturumHatasi> {
     let (kayit, kayitlar) = OturumKaydi::devam_icin_ac(kayit_yolu)?;
     let durum = kurtar(&kayitlar)?;
+    let butce = ButceDurumu::kayittan(kayitlar.iter().map(|z| &z.yuk))?;
+    // 5b öncesi kayıtta bütçe ayarı yok: ayar ve devir açılışta yazılır.
+    let eski_devir = butce
+        .is_none()
+        .then(|| eski_kayit_devri(kayitlar.iter().map(|z| &z.yuk)));
     let ayarlar = OturumAyarlari {
         model: durum.model.clone(),
         kip: durum.kip,
@@ -797,6 +960,7 @@ pub fn devam_et(
             onizleme_acik: durum.onizleme_acik,
             eklenti_kullanimi: durum.eklenti_kullanimi.clone(),
             bekleyen_ozetler: durum.bekleyen_ozetler.clone(),
+            butce,
         },
         GeriAlmaKurulumu {
             depo,
@@ -830,6 +994,11 @@ pub fn devam_et(
             };
             oturum.yay(olay).await;
         }
+        if let Some(devir) = eski_devir {
+            oturum.butce_eski_kayit_devret(devir).await;
+        }
+        oturum.butce_sonuclanmamislari_kapat().await;
+        oturum.butce_acilis_kartini_goster().await;
         oturum.calis().await;
         let _ = kapanis.send(true);
     });
@@ -845,6 +1014,7 @@ pub fn baslat_kayitla(
     baglam: OturumBaglami,
     kayit: OturumKaydi,
 ) -> Result<(OturumTutamaci, OlayAlici), OturumHatasi> {
+    let butce = ButceDurumu::yeni(ayarlar.butce)?;
     let depo = match &ayarlar.geri_alma_dizini {
         Some(dizin) => Some(OncekiHalDeposu::ac(dizin)?),
         None => None,
@@ -855,6 +1025,7 @@ pub fn baslat_kayitla(
         baglam,
         Some(kayit),
         depo,
+        butce,
     ))
 }
 
@@ -864,6 +1035,7 @@ fn baslat_ic(
     baglam: OturumBaglami,
     kayit: Option<OturumKaydi>,
     depo: Option<OncekiHalDeposu>,
+    butce: ButceDurumu,
 ) -> (OturumTutamaci, OlayAlici) {
     let (mut oturum, tutamac, alici, kapanis) = Oturum::kur(
         kimlik,
@@ -880,6 +1052,7 @@ fn baslat_ic(
             onizleme_acik: false,
             eklenti_kullanimi: HashMap::new(),
             bekleyen_ozetler: BTreeSet::new(),
+            butce: Some(butce),
         },
         GeriAlmaKurulumu {
             depo,
@@ -893,6 +1066,14 @@ fn baslat_ic(
             calisma_alani: oturum.ayarlar.calisma_alani.clone(),
         };
         oturum.kaydet(acilis).await;
+        // Yeni oturumun bütçe ayarı kalıcıdır (5b tasarımı §8).
+        let sinirlar = oturum.ayarlar.butce;
+        oturum
+            .kaydet_kalici(KayitOgesi::ButceAyarlandi {
+                sinirlar,
+                devir: None,
+            })
+            .await;
         oturum.calis().await;
         let _ = kapanis.send(true);
     });
@@ -962,6 +1143,18 @@ struct Oturum {
     son_istek_bayti: u64,
     /// Özetlenmiş, henüz bir ana istekle gönderilmemiş mesajlar (§9).
     pub(super) bekleyen_ozetler: BTreeSet<usize>,
+    /// Bütçe durumu; açılışta hazırlanır. `None` iken kapı kapalıdır (5b §8).
+    butce: Option<ButceDurumu>,
+    /// Sayaç tutarsızlığı yüzünden bu oturumda yeni izin verilmez.
+    butce_hatasi: Option<String>,
+    /// Denetçi, özetleyici ve eklentinin izin talepleri (5b tasarımı §4.1).
+    butce_talep_alici: mpsc::Receiver<ButceMesaji>,
+    /// Talep göndericisi; oturum yaşadıkça kanal açık kalır.
+    butce_talepci: ButceTalepci,
+    /// Kapı kapalıyken bekleyen talepler, geliş sırasıyla. Doluysa kapı kapalıdır.
+    butce_kuyrugu: VecDeque<ButceTalebi>,
+    /// Gösterilen karar kartı; `None` ise karar beklenmiyor.
+    butce_karti: Option<ButceGorunumu>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -980,6 +1173,15 @@ struct BaglamGirdisi {
     onizleme_acik: bool,
     eklenti_kullanimi: HashMap<String, EklentiKullanimi>,
     bekleyen_ozetler: BTreeSet<usize>,
+    butce: Option<ButceDurumu>,
+}
+
+/// Bütçe kapısının bir denemesinin reddi (5b tasarımı §4.1).
+enum IzinRedi {
+    /// Sayaç doldu ya da bilinmeyen tüketim var; karar bekler.
+    Engelli,
+    /// Bu oturumda izin verilemez: kayıt yazılamadı ya da sayaç bozuk.
+    Durdu,
 }
 
 impl Oturum {
@@ -999,6 +1201,7 @@ impl Oturum {
         let bekleyen_onaylar = BekleyenOnaylar::default();
         let bekleyen_govdeler = BekleyenGovdeler::default();
         let tur_denetci_kipi = ayarlar.denetci_kipi;
+        let (butce_talepci, butce_talep_alici) = ButceTalepci::kanal();
         let oturum = Self {
             kimlik,
             ayarlar,
@@ -1034,6 +1237,12 @@ impl Oturum {
             oran: Oran::default(),
             son_istek_bayti: 0,
             bekleyen_ozetler: baglam_girdisi.bekleyen_ozetler,
+            butce: baglam_girdisi.butce,
+            butce_hatasi: None,
+            butce_talep_alici,
+            butce_talepci,
+            butce_kuyrugu: VecDeque::new(),
+            butce_karti: None,
         };
         (
             oturum,
@@ -1074,16 +1283,25 @@ impl Oturum {
     }
 
     async fn komut_al(&mut self) -> Option<Komut> {
-        let komut = tokio::select! {
-            biased;
-            _ = self.olay_kapanma.cancelled() => {
-                self.kapandi = true;
-                self.iptal.cancel();
-                None
-            }
-            komut = self.komutlar.recv() => komut,
-        };
-        self.komut_geldi(komut).await
+        loop {
+            let komut = tokio::select! {
+                biased;
+                _ = self.olay_kapanma.cancelled() => {
+                    self.kapandi = true;
+                    self.iptal.cancel();
+                    None
+                }
+                // Boşta gelen bütçe talebi izin alamaz (5b tasarımı §7).
+                talep = self.butce_talep_alici.recv() => {
+                    if let Some(talep) = talep {
+                        self.butce_talebi_geldi(talep).await;
+                    }
+                    continue;
+                }
+                komut = self.komutlar.recv() => komut,
+            };
+            return self.komut_geldi(komut).await;
+        }
     }
 
     /// Gelen komutu kaydeder. Kanal kapandıysa (arayüz gitti) oturum kapanır
@@ -1173,6 +1391,7 @@ impl Oturum {
             Komut::GonderimKarari { .. } => {
                 self.hata("Bekleyen bir gönderim önizlemesi yok.").await;
             }
+            Komut::ButceKarari { karar } => return self.butce_karari_isle(karar).await,
         }
         Etki::Devam
     }
@@ -1198,6 +1417,10 @@ impl Oturum {
         .await;
         let mut neden = self.tur_dongusu().await;
         *self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()) = None;
+        // Tur bitti: bekleyen bütçe talepleri izinsiz kapanır; sonuçlanmamış
+        // denemeler bilinmeyen sayılır (5b tasarımı §4.1).
+        self.butce_kuyrugunu_bosalt();
+        self.butce_sonuclanmamislari_kapat().await;
         if self.kayit_hatasi.is_some() {
             neden = BitisNedeni::Hata;
         }
@@ -1408,5 +1631,337 @@ impl Oturum {
         .await;
         self.mesajlar.push(mesaj);
         self.mesaj_bilgileri.push((sira, kaynak));
+    }
+
+    /// Bütçe kapısının tek izin yolu (5b tasarımı §4.1). Sayaç açıksa başlangıç
+    /// önce kalıcı yazılır, sonra sayaç geçer ve kimlik döner. Kayıt yazılamazsa
+    /// izin verilmez ve ağa çıkılmaz.
+    async fn butce_kapisindan_gec(&mut self, amac: &str) -> Result<ButceIslemId, IzinRedi> {
+        if self.butce_hatasi.is_some() {
+            return Err(IzinRedi::Durdu);
+        }
+        let siradaki = match self.butce.as_ref() {
+            Some(durum) => durum.siradaki(),
+            None => {
+                self.butce_bozuldu("Bütçe durumu hazır değil.".to_string())
+                    .await;
+                return Err(IzinRedi::Durdu);
+            }
+        };
+        let islem = siradaki.map_err(|_| IzinRedi::Engelli)?;
+        let baslangic = KayitOgesi::ButceIstegiBasladi {
+            islem,
+            amac: amac.to_string(),
+        };
+        if !self.kaydet_kalici(baslangic).await {
+            return Err(IzinRedi::Durdu);
+        }
+        match self.butce.as_mut().map(|durum| durum.baslat(islem)) {
+            Some(Ok(())) => {}
+            Some(Err(hata)) => {
+                self.butce_bozuldu(hata.to_string()).await;
+                return Err(IzinRedi::Durdu);
+            }
+            None => return Err(IzinRedi::Durdu),
+        }
+        self.butce_durumunu_yay().await;
+        Ok(islem)
+    }
+
+    /// Denemenin tek sonlandırması (5b tasarımı §6). Kayıt yazılamazsa sayaç
+    /// değişmez; sayaç kuralı bozulduysa bu oturumda yeni izin verilmez. Tur
+    /// özeti denemenin kullanımını yalnız başarılı bitişte, bir kez toplar.
+    async fn butce_bitir(&mut self, islem: ButceIslemId, kullanim: Option<GunlukToken>) {
+        let bitis = KayitOgesi::ButceIstegiBitti { islem, kullanim };
+        if !self.kaydet_kalici(bitis).await {
+            return;
+        }
+        match self
+            .butce
+            .as_mut()
+            .map(|durum| durum.bitir(islem, kullanim))
+        {
+            Some(Ok(())) => {
+                if let Some(k) = kullanim {
+                    self.tur_ozeti.kullanim(k.istem, k.tamamlama, k.dusunce);
+                }
+                self.butce_durumunu_yay().await;
+                self.butce_karti_guncelle().await;
+            }
+            Some(Err(hata)) => self.butce_bozuldu(hata.to_string()).await,
+            None => {
+                self.butce_bozuldu("Bütçe durumu hazır değil.".to_string())
+                    .await
+            }
+        }
+    }
+
+    /// Sayaç ya da kayıt kuralı bozuldu: bu oturumda yeni bütçe izni verilmez.
+    async fn butce_bozuldu(&mut self, mesaj: String) {
+        self.butce_hatasi = Some(mesaj.clone());
+        self.hata(mesaj).await;
+    }
+
+    async fn butce_durumunu_yay(&mut self) {
+        if let Some(durum) = self.butce.as_ref().map(ButceDurumu::gorunum) {
+            self.yay(Olay::ButceDurumu { durum }).await;
+        }
+    }
+
+    /// Kartı yalnızca kapı kapalı, bir talep bekliyor ve başlamış istek kalmadıysa
+    /// gösterir; aynı durumu bir daha yaymaz (5b tasarımı §7).
+    async fn butce_karti_guncelle(&mut self) {
+        if self.butce_kuyrugu.is_empty() || self.butce_hatasi.is_some() {
+            return;
+        }
+        let Some(durum) = self.butce.as_ref().map(ButceDurumu::gorunum) else {
+            return;
+        };
+        if durum.engel.is_none() || durum.aktif > 0 || self.butce_karti == Some(durum) {
+            return;
+        }
+        self.butce_karti = Some(durum);
+        self.yay(Olay::ButceKarariGerekli { durum }).await;
+    }
+
+    /// Kurtarılan oturumda engel varsa karar kartı açılışta verilir: kullanıcı ilk
+    /// yeni istekten önce karar verir (5b tasarımı §8). Kart kayıttan türetilir;
+    /// yeniden bağlanan arayüz bunu aynı olaydan görür.
+    async fn butce_acilis_kartini_goster(&mut self) {
+        if self.butce_hatasi.is_some() {
+            return;
+        }
+        let Some(durum) = self.butce.as_ref().map(ButceDurumu::gorunum) else {
+            return;
+        };
+        if durum.engel.is_none() || durum.aktif > 0 {
+            return;
+        }
+        self.butce_karti = Some(durum);
+        self.yay(Olay::ButceKarariGerekli { durum }).await;
+    }
+
+    /// Kartın güncel sayaçlarla yeniden yayımı; karar reddedildiğinde kart açık
+    /// kalır ve arayüz onu yeniden gösterir.
+    async fn butce_karti_yeniden_yay(&mut self) {
+        let Some(durum) = self.butce.as_ref().map(ButceDurumu::gorunum) else {
+            return;
+        };
+        self.butce_karti = Some(durum);
+        self.yay(Olay::ButceKarariGerekli { durum }).await;
+    }
+
+    /// Ana istek için izin (5b tasarımı §4.1, §7). Kapı kapalıysa talep kuyruğa
+    /// girer ve kullanıcının kararını bekler; iptal bu bekleyişi sonlandırır.
+    async fn butce_izni_ver(&mut self, amac: &str) -> Result<ButceIslemId, BitisNedeni> {
+        if self.iptal.is_cancelled() {
+            return Err(BitisNedeni::Iptal);
+        }
+        match self.butce_kapisindan_gec(amac).await {
+            Ok(islem) => Ok(islem),
+            Err(IzinRedi::Durdu) => Err(BitisNedeni::Hata),
+            Err(IzinRedi::Engelli) => {
+                let (yanit, alici) = oneshot::channel();
+                self.butce_kuyrugu.push_back(ButceTalebi {
+                    amac: amac.to_string(),
+                    yanit,
+                });
+                self.butce_karti_guncelle().await;
+                match self.iptal_edilebilir(alici).await {
+                    Ok(Ok(Some(islem))) => Ok(islem),
+                    Ok(_) => Err(BitisNedeni::Iptal),
+                    Err(neden) => Err(neden),
+                }
+            }
+        }
+    }
+
+    /// Bütçe kanalının mesajı (5b tasarımı §4.1, §7): izin talebi ya da bir ağ
+    /// denemesinin bitişi. Bitiş, aynı çağıranın sonraki talebinden önce gelir.
+    async fn butce_talebi_geldi(&mut self, mesaj: ButceMesaji) {
+        match mesaj {
+            ButceMesaji::Talep(talep) => self.izin_talebi_geldi(talep).await,
+            ButceMesaji::Bitis { islem, kullanim } => self.deneme_bitti(islem, kullanim).await,
+        }
+    }
+
+    /// Yardımcının bir denemesinin bitişi. Kimlik hâlâ sonuçlanmamışsa tek bitiş
+    /// yazılır; tur sonunda süpürülmüş ya da zaten bitmiş bir kimlik yok sayılır.
+    async fn deneme_bitti(&mut self, islem: ButceIslemId, kullanim: Option<GunlukToken>) {
+        let acik = self
+            .butce
+            .as_ref()
+            .is_some_and(|durum| durum.sonuclanmamis().contains(&islem));
+        if acik {
+            self.butce_bitir(islem, kullanim).await;
+        }
+    }
+
+    /// Bütçe kanalına gelen izin talebi (denetçi, özetleyici, eklenti). Tur dışındaysa
+    /// ya da tur iptal edilmişse izin verilmez; kapı kapalıysa kuyrukta bekler.
+    async fn izin_talebi_geldi(&mut self, talep: ButceTalebi) {
+        if self.tur.is_none() || self.iptal.is_cancelled() {
+            let _ = talep.yanit.send(None);
+            return;
+        }
+        if self.butce_kuyrugu.is_empty() {
+            if let Some(bekleyen) = self.talebi_kapidan_gecir(talep).await {
+                self.butce_kuyrugu.push_back(bekleyen);
+            }
+        } else {
+            self.butce_kuyrugu.push_back(talep);
+        }
+        self.butce_karti_guncelle().await;
+    }
+
+    /// Talebi kapıdan geçirir. Kapı kapalıysa talebi geri verir; çağıran kuyrukta
+    /// bekler.
+    async fn talebi_kapidan_gecir(&mut self, talep: ButceTalebi) -> Option<ButceTalebi> {
+        if talep.yanit.is_closed() {
+            // Çağıran bekleyişini bırakmış: izin üretilmez, sayaç değişmez.
+            return None;
+        }
+        match self.butce_kapisindan_gec(&talep.amac).await {
+            Ok(islem) => {
+                if talep.yanit.send(Some(islem)).is_err() {
+                    // İzin çağırana ulaşmadı: ağa çıkılmadı; deneme bilinen 0 tokenla kapanır.
+                    self.butce_bitir(islem, Some(GunlukToken::default())).await;
+                }
+                None
+            }
+            Err(IzinRedi::Engelli) => Some(talep),
+            Err(IzinRedi::Durdu) => {
+                let _ = talep.yanit.send(None);
+                None
+            }
+        }
+    }
+
+    /// Kapı açılınca kuyruğu geliş sırasıyla boşaltır; yeniden kapanırsa kalanlar
+    /// kuyrukta kalır.
+    async fn butce_kuyrugunu_isle(&mut self) {
+        while let Some(talep) = self.butce_kuyrugu.pop_front() {
+            if let Some(bekleyen) = self.talebi_kapidan_gecir(talep).await {
+                self.butce_kuyrugu.push_front(bekleyen);
+                break;
+            }
+        }
+        self.butce_karti_guncelle().await;
+    }
+
+    /// Bekleyen talepleri izinsiz kapatır ve kartı kaldırır.
+    fn butce_kuyrugunu_bosalt(&mut self) {
+        for talep in self.butce_kuyrugu.drain(..) {
+            let _ = talep.yanit.send(None);
+        }
+        self.butce_karti = None;
+    }
+
+    /// Bütçe kartındaki karar (5b tasarımı §7). `Durdur` turu iptal eder;
+    /// `DevamEt` kalıcı yazıldıktan sonra bekleyen işi yeniden kapıdan geçirir.
+    async fn butce_karari_isle(&mut self, karar: ButceKarari) -> Etki {
+        if self.butce_karti.is_none() {
+            self.hata("Bekleyen bir bütçe kararı yok.").await;
+            return Etki::Devam;
+        }
+        match karar {
+            ButceKarari::Durdur => {
+                self.butce_kuyrugunu_bosalt();
+                self.iptal.cancel();
+                Etki::Iptal
+            }
+            ButceKarari::DevamEt {
+                sinirlar,
+                gozlenen_baslatilan,
+                gozlenen_bilinmeyen,
+            } => {
+                let dogrulama = match self.butce.as_ref() {
+                    Some(durum) => durum
+                        .devam_dogrula(gozlenen_baslatilan, gozlenen_bilinmeyen, sinirlar)
+                        .map(|()| durum.gorunum().bilinmeyen),
+                    None => {
+                        self.butce_bozuldu("Bütçe durumu hazır değil.".to_string())
+                            .await;
+                        return Etki::Devam;
+                    }
+                };
+                let onaylanan_bilinmeyen = match dogrulama {
+                    Ok(bilinmeyen) => bilinmeyen,
+                    Err(hata) => {
+                        // Kart açık kalır ve güncel sayaçlarla yeniden yayılır; karar
+                        // doğru gözlemle yeniden verilebilir.
+                        self.hata(hata.to_string()).await;
+                        self.butce_karti_yeniden_yay().await;
+                        return Etki::Devam;
+                    }
+                };
+                let karar = KayitOgesi::ButceDevamKarari {
+                    sinirlar,
+                    onaylanan_bilinmeyen,
+                };
+                if !self.kaydet_kalici(karar).await {
+                    return Etki::Devam;
+                }
+                if let Some(durum) = self.butce.as_mut() {
+                    durum.devam_uygula(sinirlar);
+                }
+                self.butce_karti = None;
+                self.butce_durumunu_yay().await;
+                self.butce_kuyrugunu_isle().await;
+                Etki::Devam
+            }
+        }
+    }
+
+    /// 5b öncesi kaydın açılışı (5b tasarımı §8): bütçe ayarı ve, bilinen tüketim
+    /// varsa, devir kalıcı yazılır; durum aynı indirgeyiciyle kurulur.
+    async fn butce_eski_kayit_devret(&mut self, devir: ButceDevri) {
+        // Ayar ve devir tek kayıttır: arada çökme devri kaybettiremez.
+        let ayar = KayitOgesi::ButceAyarlandi {
+            sinirlar: self.ayarlar.butce,
+            devir: (devir.istek > 0).then_some(devir),
+        };
+        if !self.kaydet_kalici(ayar.clone()).await {
+            return;
+        }
+        match ButceDurumu::kayittan([&ayar]) {
+            Ok(Some(durum)) => {
+                self.butce = Some(durum);
+                self.butce_durumunu_yay().await;
+            }
+            _ => {
+                self.butce_bozuldu("Eski kayıt bütçesi kurulamadı.".to_string())
+                    .await
+            }
+        }
+    }
+
+    /// Sonuçlanmamış denemeleri bilinmeyen olarak kalıcı kapatır (5b tasarımı
+    /// §4.1, §8). Kurtarmada ve tur sonunda kullanılır.
+    async fn butce_sonuclanmamislari_kapat(&mut self) {
+        // İptal, kanalda bekleyen bitişlerden önce seçilmiş olabilir: biten
+        // denemeler önce kendi kullanımıyla kapanır, geç talepler izinsiz döner.
+        while let Ok(mesaj) = self.butce_talep_alici.try_recv() {
+            match mesaj {
+                ButceMesaji::Talep(talep) => {
+                    let _ = talep.yanit.send(None);
+                }
+                ButceMesaji::Bitis { islem, kullanim } => self.deneme_bitti(islem, kullanim).await,
+            }
+        }
+        let acik = self
+            .butce
+            .as_ref()
+            .map(ButceDurumu::sonuclanmamis)
+            .unwrap_or_default();
+        for islem in acik {
+            self.butce_bitir(islem, None).await;
+        }
+    }
+
+    /// Oturumun bütçe talep göndericisi. Denetçi, özetleyici ve eklentinin araç
+    /// ortamı her ağ denemesinden önce bundan izin ister (5b tasarımı §4.1).
+    pub(crate) fn butce_talepci(&self) -> ButceTalepci {
+        self.butce_talepci.clone()
     }
 }

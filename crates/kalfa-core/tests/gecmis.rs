@@ -318,6 +318,7 @@ fn durum_ozeti_kayittan_cikarilir() {
             yeni: Vec::new(),
             onceki: 0,
             sonuc: kalfa_core::gonderim::IstekSonucu::Basarili,
+            butce_islem: None,
         },
     );
     k.ekle(

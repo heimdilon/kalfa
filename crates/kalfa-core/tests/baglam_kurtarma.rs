@@ -41,6 +41,7 @@ fn istek(amac: &str, onceki: u32, yeni: Vec<GonderilenOge>) -> KayitOgesi {
         yeni,
         onceki,
         sonuc: IstekSonucu::Basarili,
+        butce_islem: None,
     }
 }
 

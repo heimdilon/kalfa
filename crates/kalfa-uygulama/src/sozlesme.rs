@@ -2,6 +2,7 @@
 //! biçimleri arayüzdeki `ui/src/ipc/tipler.ts` ile aynıdır; biri değişirse
 //! öbürü de aynı commit'te değişir.
 
+use kalfa_core::butce::ButceGorunumu;
 use kalfa_core::gecmis::{DurumOzeti, GecmisSayfasi, OturumDurumu, OturumOzeti};
 pub use kalfa_core::gonderim::{GunlukSatiri, GunlukSayfasi, GunlukToken};
 use kalfa_core::kimlik::{CagriId, OturumId};
@@ -137,6 +138,9 @@ pub struct OturumAcilisi {
     pub gecmis: GecmisSayfasi,
     pub ozet: DurumOzeti,
     pub salt_okunur: Option<SaltOkunurNedeni>,
+    /// Bütçe sayaçları ve son limitler (5b tasarımı §9). Kayıttan açılan oturumda
+    /// kayıttan, yeni oturumda varsayılandan gelir; salt okunur oturumda yoktur.
+    pub butce: Option<ButceGorunumu>,
 }
 
 /// Onay sayfasındaki tek bir çağrının kararı.

@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, stream};
 use kalfa_evren::tipler::{
     ChatMessage, ChatRequest, ChatResponse, Choice, FunctionCall, ModelInfo, TermsStatus,
-    TermsText, ToolCall,
+    TermsText, ToolCall, Usage,
 };
 use kalfa_evren::{AkisOlayi, EkUc, EvrenError, HamYanit, YanitMeta};
 use serde_json::{Value, json};
@@ -19,6 +19,9 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, Hazirlik, YazmaHedefi};
+use crate::butce::{
+    ButceGorunumu, ButceIslemId, ButceMesaji, ButceSinirlari, ButceTalebi, ButceTalepci,
+};
 use crate::geri_alma::{DosyaDurumu, GeriYukleyici};
 use crate::izin::Siniflandirici;
 use crate::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
@@ -26,7 +29,7 @@ use crate::kayit::{KayitHedefi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
 use crate::muhur::ozet_hex;
 use crate::oturum::{OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci, baslat};
-use crate::protokol::{BitisNedeni, Komut, Olay, Zarf};
+use crate::protokol::{BitisNedeni, ButceKarari, Komut, Olay, Zarf};
 use crate::saglayici::{Saglayici, SaglayiciAkisi};
 use crate::sart_kapisi::SartKapisi;
 use crate::yol::CalismaYolu;
@@ -43,10 +46,22 @@ pub enum SahteYanit {
     Hata(EvrenError),
 }
 
+/// Başarılı bir yanıtın geçerli kullanımı (5b tasarımı §6): istem 10, tamamlama 5.
+fn basarili_kullanim() -> Result<AkisOlayi, EvrenError> {
+    Ok(AkisOlayi::Kullanim(Usage {
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 15,
+        completion_tokens_details: None,
+        evren: None,
+    }))
+}
+
 impl SahteYanit {
     pub fn metin(metin: &str) -> Self {
         Self::Akis(vec![
             Ok(AkisOlayi::Metin(metin.into())),
+            basarili_kullanim(),
             Ok(AkisOlayi::Bitti {
                 neden: "stop".into(),
             }),
@@ -74,6 +89,7 @@ impl SahteYanit {
             .collect();
         Self::Akis(vec![
             Ok(AkisOlayi::AracCagrilari(cagrilar)),
+            basarili_kullanim(),
             Ok(AkisOlayi::Bitti {
                 neden: "tool_calls".into(),
             }),
@@ -94,13 +110,51 @@ impl SahteYanit {
     }
 }
 
-/// Sahte sağlayıcının bir `sohbet()` çağrısına vereceği bloklu yanıt.
+/// Sahte sağlayıcının bir `sohbet()` çağrısına vereceği bloklu yanıt. `Json`,
+/// `Metin` ve `Gecikme` geçerli bir kullanım taşır; `KullanimsizMetin` kullanım
+/// bildirmez ve 5b bütçesinde bilinmeyen tüketimdir.
 #[derive(Debug, Clone)]
 pub enum SahteSohbet {
     Json(Value),
     Metin(String),
+    KullanimsizMetin(String),
     Hata(EvrenError),
     Gecikme(Duration),
+}
+
+/// Başarılı bir `sohbet` yanıtının geçerli kullanımı (5b tasarımı §6): istem 10,
+/// tamamlama 5.
+fn sohbet_kullanimi() -> Option<Usage> {
+    Some(Usage {
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 15,
+        completion_tokens_details: None,
+        evren: None,
+    })
+}
+
+fn sohbet_yaniti(
+    sira: usize,
+    model: String,
+    metin: String,
+    usage: Option<Usage>,
+    meta: YanitMeta,
+) -> (ChatResponse, YanitMeta) {
+    let message = ChatMessage::assistant(Some(metin), Vec::new());
+    (
+        ChatResponse {
+            id: format!("sahte-sohbet-{sira}"),
+            model,
+            choices: vec![Choice {
+                index: 0,
+                message,
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage,
+        },
+        meta,
+    )
 }
 
 struct SahteSart {
@@ -121,6 +175,7 @@ pub struct SahteSaglayici {
     ek_gecikme: Mutex<Option<Duration>>,
     ek_hatalari: Mutex<BTreeMap<usize, EvrenError>>,
     modeller: Mutex<Result<Vec<ModelInfo>, EvrenError>>,
+    sohbet_kancasi: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl SahteSaglayici {
@@ -141,7 +196,13 @@ impl SahteSaglayici {
             ek_gecikme: Mutex::new(None),
             ek_hatalari: Mutex::new(BTreeMap::new()),
             modeller: Mutex::new(Ok(sahte_modeller())),
+            sohbet_kancasi: Mutex::new(None),
         })
+    }
+
+    /// Her `sohbet()` çağrısı yanıttan önce bunu çalıştırır (ör. turu iptal etmek).
+    pub fn sohbet_kancasi(&self, kanca: impl Fn() + Send + Sync + 'static) {
+        *self.sohbet_kancasi.lock().unwrap() = Some(Arc::new(kanca));
     }
 
     /// Eklenti uçlarına gelen istekler, geliş sırasıyla (sahte EVREN'in
@@ -243,60 +304,37 @@ impl Saglayici for SahteSaglayici {
             .unwrap()
             .pop_front()
             .expect("sahte sohbet senaryosunda yanıt kalmadı");
+        let kanca = self.sohbet_kancasi.lock().unwrap().clone();
+        if let Some(kanca) = kanca {
+            kanca();
+        }
         let meta = YanitMeta {
             istek_id: Some(format!("sahte-sohbet-{sira}")),
             yonlendirilen_model: Some(model.clone()),
             ..Default::default()
         };
         match yanit {
-            SahteSohbet::Json(deger) => {
-                let metin = deger.to_string();
-                let message = ChatMessage::assistant(Some(metin), Vec::new());
-                Ok((
-                    ChatResponse {
-                        id: format!("sahte-sohbet-{sira}"),
-                        model,
-                        choices: vec![Choice {
-                            index: 0,
-                            message,
-                            finish_reason: Some("stop".to_string()),
-                        }],
-                        usage: None,
-                    },
-                    meta,
-                ))
-            }
+            SahteSohbet::Json(deger) => Ok(sohbet_yaniti(
+                sira,
+                model,
+                deger.to_string(),
+                sohbet_kullanimi(),
+                meta,
+            )),
             SahteSohbet::Metin(metin) => {
-                let message = ChatMessage::assistant(Some(metin), Vec::new());
-                Ok((
-                    ChatResponse {
-                        id: format!("sahte-sohbet-{sira}"),
-                        model,
-                        choices: vec![Choice {
-                            index: 0,
-                            message,
-                            finish_reason: Some("stop".to_string()),
-                        }],
-                        usage: None,
-                    },
-                    meta,
-                ))
+                Ok(sohbet_yaniti(sira, model, metin, sohbet_kullanimi(), meta))
+            }
+            SahteSohbet::KullanimsizMetin(metin) => {
+                Ok(sohbet_yaniti(sira, model, metin, None, meta))
             }
             SahteSohbet::Hata(hata) => Err(hata),
             SahteSohbet::Gecikme(sure) => {
                 tokio::time::sleep(sure).await;
-                let message = ChatMessage::assistant(Some(String::new()), Vec::new());
-                Ok((
-                    ChatResponse {
-                        id: format!("sahte-sohbet-{sira}"),
-                        model,
-                        choices: vec![Choice {
-                            index: 0,
-                            message,
-                            finish_reason: Some("stop".to_string()),
-                        }],
-                        usage: None,
-                    },
+                Ok(sohbet_yaniti(
+                    sira,
+                    model,
+                    String::new(),
+                    sohbet_kullanimi(),
                     meta,
                 ))
             }
@@ -483,10 +521,17 @@ pub fn sahte_ek_yanit(uc: EkUc, govde: &Value) -> Value {
                 .into_iter()
                 .map(|(i, p)| json!({"index": i, "relevance_score": p}))
                 .collect();
+            // Gerçek sıralama yanıtı da `usage` taşır (5b tasarımı §2): istem tokenı
+            // sorgu ve belgelerin kabaca uzunluğudur.
+            let token: usize = std::iter::once(sorgu.len())
+                .chain(belgeler.iter().map(String::len))
+                .map(|uzunluk| uzunluk / 4 + 1)
+                .sum();
             json!({
                 "id": "sahte-siralama",
                 "model": format!("qwen/{model}"),
                 "results": sonuclar,
+                "usage": {"prompt_tokens": token, "total_tokens": token},
             })
         }
     }
@@ -971,6 +1016,28 @@ impl Surucu {
             .expect("oturum kapanmalı");
     }
 
+    /// Bütçe kartını bekler ve kartın sayaçlarını kabul eder (5b tasarımı §7).
+    /// `sinirlar` verilmezse kartın sınırları korunur; verilirse onlar kullanılır.
+    pub async fn butce_devam_et(&mut self, sinirlar: Option<ButceSinirlari>) -> ButceGorunumu {
+        let durum = match self
+            .bekle(|o| matches!(o, Olay::ButceKarariGerekli { .. }))
+            .await
+            .yuk
+        {
+            Olay::ButceKarariGerekli { durum } => durum,
+            diger => unreachable!("{diger:?}"),
+        };
+        self.gonder(Komut::ButceKarari {
+            karar: ButceKarari::DevamEt {
+                sinirlar: sinirlar.unwrap_or(durum.sinirlar),
+                gozlenen_baslatilan: durum.baslatilan,
+                gozlenen_bilinmeyen: durum.bilinmeyen,
+            },
+        })
+        .await;
+        durum
+    }
+
     pub async fn sonraki(&mut self) -> Zarf<Olay> {
         let zarf = tokio::time::timeout(self.zaman_asimi, self.olaylar.recv())
             .await
@@ -1025,12 +1092,61 @@ impl Surucu {
     }
 }
 
+/// Bir ortama verilecek bütçe talepçisi ve alıcısı. Alıcıyı çağıran tutar ve
+/// izni o verir (ya da vermez): fake oturumun yerini tutar.
+pub fn butce_kanali() -> (ButceTalepci, tokio::sync::mpsc::Receiver<ButceTalebi>) {
+    // Yalnız izin talepleri iletilir; eklenti bitişi araç ortamından geçer,
+    // bu kanaldaki bitiş mesajları burada yok sayılır.
+    let (talepci, mut alici) = ButceTalepci::kanal();
+    let (tx, rx) = tokio::sync::mpsc::channel(16);
+    tokio::spawn(async move {
+        while let Some(mesaj) = alici.recv().await {
+            if let ButceMesaji::Talep(talep) = mesaj
+                && tx.send(talep).await.is_err()
+            {
+                break;
+            }
+        }
+    });
+    (talepci, rx)
+}
+
 /// Var olmayan bir kök: git koruması yoktur, yalnızca gizli kalıplar çalışır.
 pub fn sanal_siniflandirici() -> Arc<Siniflandirici> {
     Arc::new(
         Siniflandirici::yeni(std::env::temp_dir().join("kalfa-sanal-calisma-alani"), &[])
             .expect("sınıflandırıcı"),
     )
+}
+
+/// Her izin talebini sırayla kabul eden sahte bütçe kanalı: bütçe kapısı hiç
+/// kapanmaz. Bitişler yok sayılır. Bütçe davranışını değil, yardımcının kendi
+/// mantığını (ağ çağrısı sayısı, süre, sonuç) sınayan testler için.
+pub fn sinirsiz_butce_talepci() -> ButceTalepci {
+    let (talepci, mut alici) = ButceTalepci::kanal();
+    tokio::spawn(async move {
+        let mut sira = 0;
+        while let Some(mesaj) = alici.recv().await {
+            if let ButceMesaji::Talep(talep) = mesaj {
+                sira += 1;
+                let _ = talep.yanit.send(Some(ButceIslemId(sira)));
+            }
+        }
+    });
+    talepci
+}
+
+/// Her izin talebini reddeden sahte bütçe kanalı: izin yok, çağıran ağa çıkmaz.
+pub fn reddeden_butce_talepci() -> ButceTalepci {
+    let (talepci, mut alici) = ButceTalepci::kanal();
+    tokio::spawn(async move {
+        while let Some(mesaj) = alici.recv().await {
+            if let ButceMesaji::Talep(talep) = mesaj {
+                let _ = talep.yanit.send(None);
+            }
+        }
+    });
+    talepci
 }
 
 /// Yeni bir kilit yöneticisiyle bağlam. Aynı çalışma alanını paylaşan iki

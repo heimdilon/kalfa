@@ -23,6 +23,7 @@
     kabukOzeti,
     sonucGovdesi,
   } from './bicim';
+  import ButceKarti from './ButceKarti.svelte';
   import { geriAlmaSonucMetni } from './geriAlma';
   import OnayKarti from './OnayKarti.svelte';
   import OnizlemeKarti from './OnizlemeKarti.svelte';
@@ -99,6 +100,8 @@
   </ToolCallCard>
 {:else if oge.tip === 'OnayIstegi'}
   <OnayKarti {oge} onincele={() => durum.onayiAc(oturum, oge.islem)} />
+{:else if oge.tip === 'ButceKarari'}
+  <ButceKarti {oge} onkarar={(karar) => durum.butceKarari(oturum, karar)} />
 {:else if oge.tip === 'GonderimOnizlemesi'}
   <OnizlemeKarti
     {oge}

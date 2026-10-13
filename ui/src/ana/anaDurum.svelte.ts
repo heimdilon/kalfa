@@ -9,6 +9,8 @@ import { sar as e2eSar } from '../e2e/kanca';
 import * as ipc from '../ipc/ana';
 import { komutHatasi } from '../ipc/hata';
 import type {
+  ButceKarari,
+  ButceSinirlari,
   DenetciDurumu,
   CagriId,
   GunlukSinirDurumu,
@@ -64,6 +66,8 @@ export class AnaDurum {
 
   /** Denetçi kipi ve ayar dosyasının durumu (3c Görev 8); Ayarlar'da değişir (3e). */
   denetci = $state<DenetciDurumu | null>(null);
+  /** Yeni oturumların bütçe varsayılanı; Ayarlar açılınca okunur (5b tasarımı §9). */
+  butceVarsayilani = $state<ButceSinirlari | null>(null);
   aktif = $derived(this.secili ? (this.ekranlar.get(this.secili) ?? null) : null);
 
   /** Pencere açılınca: uygulama durumu, liste ve son açık oturum (1c tasarımı §5.6). */
@@ -201,6 +205,24 @@ export class AnaDurum {
     this.#uygula(oturum, { tip: 'GeriAlmaKapandi' });
   }
 
+  /**
+   * Bütçe kararını gönderir (5b tasarımı §7). Kart, komut kabul edilince
+   * yanıtlanır; Rust kararı reddederse kartı yeniden yayar.
+   */
+  async butceKarari(oturum: OturumId, karar: ButceKarari): Promise<void> {
+    const gitti = await this.#dene(() => ipc.butceKarari(oturum, karar));
+    if (gitti === undefined) return;
+    this.#uygula(oturum, { tip: 'ButceYanitlandi' });
+  }
+
+  /** Yeni oturumların bütçe varsayılanını kaydeder; Rust da doğrular (5b §9). */
+  async butceVarsayilaniniAyarla(istek: number, token: number): Promise<boolean> {
+    const yeni = await this.#dene(() => ipc.oturumButcesiniAyarla(istek, token));
+    if (yeni === undefined) return false;
+    this.butceVarsayilani = yeni;
+    return true;
+  }
+
   /** Oturumu, kaydını ve geri alma verisini siler; onayı Rust yerel pencerede sorar. */
   async oturumuSil(oturum: OturumId): Promise<void> {
     const silindi = await this.#dene(() => ipc.oturumuSil(oturum));
@@ -277,6 +299,8 @@ export class AnaDurum {
     this.onarim = null;
     const boyut = await this.#dene(() => ipc.geriAlmaVerisiBoyutu());
     if (boyut !== undefined) this.geriAlmaBoyutu = boyut;
+    const butce = await this.#dene(() => ipc.oturumButcesi());
+    if (butce !== undefined) this.butceVarsayilani = butce;
     const platform = this.uygulama?.platform;
     if (platform !== 'linux' && platform !== 'windows') return;
     const dizinler = await this.#dene(() => ipc.aracZinciriDizinleri());
@@ -422,6 +446,7 @@ export class AnaDurum {
     for (const o of yeni.ogeler.slice(onceki.ogeler.length)) {
       if (o.tip === 'OnayIstegi') this.duyuru = m('duyuru.onay', { sayi: o.ogeler.length });
       else if (o.tip === 'SartIstegi') this.duyuru = m('duyuru.sart');
+      else if (o.tip === 'ButceKarari') this.duyuru = m('duyuru.butce');
       else if (o.tip === 'TurSonu') this.duyuru = m('duyuru.tur_sonu');
     }
   }

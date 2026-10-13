@@ -1,13 +1,14 @@
+use kalfa_core::butce::ButceIslemId;
 use kalfa_core::gonderim::{
-    GonderilenOge, GunlukSatiri, GunlukToken, IstekAsamasi, IstekSonucu, gunluk_sayfasi,
-    gunluk_uret, oge_metni,
+    EklentiIstekOzeti, GonderilenOge, GunlukSatiri, GunlukToken, IstekAsamasi, IstekSonucu,
+    gunluk_sayfasi, gunluk_uret, oge_metni,
 };
 use kalfa_core::izin::Kip;
 use kalfa_core::kayit::KayitOgesi;
-use kalfa_core::kimlik::{OturumId, TurId};
+use kalfa_core::kimlik::{CagriId, OturumId, TurId};
 use kalfa_core::protokol::{SEMA_SURUMU, Zarf};
-use kalfa_evren::KrediGozlemi;
 use kalfa_evren::tipler::{ChatMessage, ToolDef};
+use kalfa_evren::{EkUc, KrediGozlemi};
 
 fn zarf(sira: u64, yuk: KayitOgesi) -> Zarf<KayitOgesi> {
     Zarf {
@@ -16,6 +17,56 @@ fn zarf(sira: u64, yuk: KayitOgesi) -> Zarf<KayitOgesi> {
         tur: Some(TurId::yeni()),
         sira,
         yuk,
+    }
+}
+
+fn token(istem: u64, tamamlama: u64) -> GunlukToken {
+    GunlukToken {
+        istem,
+        tamamlama,
+        dusunce: 0,
+    }
+}
+
+fn sohbet_istegi(butce_islem: Option<u64>) -> KayitOgesi {
+    KayitOgesi::Istek {
+        amac: "ana".into(),
+        istek_id: None,
+        kredi: None,
+        yonlendirilen_model: None,
+        model: Some("glm-5.3".into()),
+        yeni: vec![],
+        onceki: 0,
+        sonuc: IstekSonucu::Basarili,
+        butce_islem: butce_islem.map(ButceIslemId),
+    }
+}
+
+fn eklenti_istegi(butce_islem: Option<u64>) -> KayitOgesi {
+    KayitOgesi::EklentiIstegi {
+        cagri: CagriId::yeni(),
+        istek: EklentiIstekOzeti {
+            eklenti: "rag".into(),
+            uc: EkUc::Gomme,
+            model: "gomme-modeli".into(),
+            metin_sayisi: 1,
+            bayt: 10,
+            ozet: "00".into(),
+            dosyalar: vec![],
+            dosya_fazlasi: 0,
+        },
+        istek_id: None,
+        kredi: None,
+        yonlendirilen_model: None,
+        sonuc: IstekSonucu::Basarili,
+        butce_islem: butce_islem.map(ButceIslemId),
+    }
+}
+
+fn butce_bitisi(islem: u64, kullanim: Option<GunlukToken>) -> KayitOgesi {
+    KayitOgesi::ButceIstegiBitti {
+        islem: ButceIslemId(islem),
+        kullanim,
     }
 }
 
@@ -51,6 +102,7 @@ fn satir_istek_ve_kullanimi_birlestirir() {
                 }],
                 onceki: 0,
                 sonuc: IstekSonucu::Basarili,
+                butce_islem: None,
             },
         ),
         zarf(
@@ -99,6 +151,7 @@ fn kopan_istek_satiri_hata_gosterir() {
                 yeni: vec![],
                 onceki: 0,
                 sonuc: IstekSonucu::Basarili,
+                butce_islem: None,
             },
         ),
         zarf(
@@ -199,6 +252,7 @@ fn oge_metni_kayittan() {
                 yeni: vec![],
                 onceki: 0,
                 sonuc: IstekSonucu::Basarili,
+                butce_islem: None,
             },
         ),
     ];
@@ -232,4 +286,113 @@ fn eski_kayittan_gunluk_uretilir() {
     assert_eq!(s.onceki, 0);
     assert_eq!(s.sonuc, IstekSonucu::Basarili);
     assert_eq!(s.token, None);
+}
+
+#[test]
+fn butce_islemli_satir_tokenini_yalniz_kendi_bitisinden_alir() {
+    let kayitlar = vec![
+        zarf(1, sohbet_istegi(Some(1))),
+        // Yeni satırın tokenı bitişten gelir; bu kullanım kaydı onu değiştirmez.
+        zarf(
+            2,
+            KayitOgesi::Kullanim {
+                istem: 999,
+                tamamlama: 999,
+                dusunce: 0,
+            },
+        ),
+        zarf(3, butce_bitisi(1, Some(token(100, 20)))),
+        zarf(4, sohbet_istegi(Some(2))),
+        zarf(5, butce_bitisi(2, None)),
+        // Bitişi henüz yazılmamış denemenin kullanımı yeni satıra girmez.
+        zarf(6, sohbet_istegi(Some(3))),
+        zarf(
+            7,
+            KayitOgesi::Kullanim {
+                istem: 7,
+                tamamlama: 7,
+                dusunce: 0,
+            },
+        ),
+    ];
+
+    let satirlar = gunluk_uret(&kayitlar);
+    assert_eq!(satirlar.len(), 3);
+    assert_eq!(satirlar[0].token, Some(token(100, 20)));
+    assert_eq!(
+        satirlar[1].token, None,
+        "bilinmeyen kullanım token göstermez"
+    );
+    assert_eq!(satirlar[2].token, None);
+}
+
+#[test]
+fn ic_ice_eklenti_bitisi_komsu_tokeni_degistirmez() {
+    let kayitlar = vec![
+        zarf(1, sohbet_istegi(Some(1))),
+        zarf(
+            2,
+            KayitOgesi::ButceIstegiBasladi {
+                islem: ButceIslemId(2),
+                amac: "rag".into(),
+            },
+        ),
+        zarf(3, eklenti_istegi(Some(2))),
+        zarf(4, butce_bitisi(2, Some(token(4, 1)))),
+        zarf(
+            5,
+            KayitOgesi::Kullanim {
+                istem: 50,
+                tamamlama: 10,
+                dusunce: 0,
+            },
+        ),
+        zarf(6, butce_bitisi(1, Some(token(50, 10)))),
+    ];
+
+    let satirlar = gunluk_uret(&kayitlar);
+    assert_eq!(satirlar.len(), 2);
+    assert_eq!(satirlar[0].amac, "ana");
+    assert_eq!(satirlar[0].token, Some(token(50, 10)));
+    assert_eq!(satirlar[1].amac, "eklenti:rag");
+    assert_eq!(satirlar[1].token, Some(token(4, 1)));
+}
+
+#[test]
+fn butcesiz_eski_kayit_kullanimi_son_sohbet_satirina_eklenir() {
+    let kayitlar = vec![
+        zarf(1, sohbet_istegi(None)),
+        zarf(
+            2,
+            KayitOgesi::Kullanim {
+                istem: 10,
+                tamamlama: 5,
+                dusunce: 0,
+            },
+        ),
+        zarf(3, eklenti_istegi(None)),
+        zarf(
+            4,
+            KayitOgesi::Kullanim {
+                istem: 3,
+                tamamlama: 1,
+                dusunce: 0,
+            },
+        ),
+        zarf(5, sohbet_istegi(None)),
+        zarf(
+            6,
+            KayitOgesi::Kullanim {
+                istem: 20,
+                tamamlama: 4,
+                dusunce: 0,
+            },
+        ),
+    ];
+
+    let satirlar = gunluk_uret(&kayitlar);
+    assert_eq!(satirlar.len(), 3);
+    assert_eq!(satirlar[0].token, Some(token(10, 5)));
+    assert_eq!(satirlar[1].token, None, "eklenti satırı kullanım almaz");
+    assert_eq!(satirlar[2].token, Some(token(20, 4)));
 }
