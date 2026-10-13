@@ -304,3 +304,13 @@ böyle sınandı.
 - **yayimla:** Linux ve Windows sınamaları geçerse bütün paketler için tek
   `SHA256SUMS` üretir; sürüm notuna Windows kurucusunun getirdiği Python ve
   Node sürümlerini ekler.
+
+**Koşu (PR #11, `bdd4e78`, 38463488003): bütün işler geçti.** İlk koşu
+(`b3fa6f1`) temiz makinede bir hatayı gösterdi: `derle.mjs`'teki
+`cargo build -p kalfa-yalitim -p kalfa-sandbox --bin kalfa-kopru` yalnız
+köprüyü derliyordu; `kalfa-yalitim.exe` yerel makinede eski bir derlemeden
+kaldığı için fark edilmemişti. Düzeltmede iki ikili de `--bin` ile anılır.
+İkinci koşuda kurucu `Kalfa_0.1.0_x64-setup.exe` (47 MB) üretildi; sessiz
+kurulumda yedi dosya yerinde, yalıtım kök izinleri `C:\`, `D:\` ve
+`C:\Users`'ta; sessiz kaldırmada dosyalar, kurulum kaydı ve kök izinleri
+gitti. Linux işleri de geçti; taslak sürüm etiket olmadığı için atlandı.

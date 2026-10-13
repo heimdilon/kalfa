@@ -143,7 +143,7 @@ Kullanıcının açık onayıyla squash birleşti; Codex incelemesinin üç bulg
 denetim) birleşmeden önce düzeltildi.
 
 **Linux sürüm derlemesi (13 Ekim, PR [#9](https://github.com/heimdilon/kalfa/pull/9), `fd42cb0`):**
-`.github/workflows/linux-paket.yml` paketleri Debian 12 kabında derler
+`.github/workflows/linux-paket.yml` (sonra `surum.yml`) paketleri Debian 12 kabında derler
 (en yeni glibc sembolü `GLIBC_2.34`), `SHA256SUMS` üretir, paketleri Debian
 12, Ubuntu 24.04 (`.deb`) ve Fedora 44 (`.rpm`) kaplarında kurar, kitaplık
 çözümünü denetler ve kaldırır; ilk koşu tümüyle geçti. `v*` etiketinde
@@ -153,11 +153,18 @@ düzeltildi: etiket `tauri.conf.json` sürümüyle denetlenir, sürüm notu
 paketteki bwrap kopyasının Debian sürümünü yazar, simge değişikliği de iş
 akışını tetikler.
 
-**Sıradaki tek iş:** Windows NSIS kurucusunun aynı sürüm iş akışına
-alınması (kurucu `kurucu/derle.mjs`, Windows makinesinde; taslak sürüme
-`SHA256SUMS` ile eklenmesi). Sonraki adaylar: sonuçları dosyaya göre
-tekilleştirme (G5 +2 sorgu); canlı `baglam_canli` deneyi ayrı onay
-bekler.
+**Windows kurucusu sürüm akışında (13 Ekim, dal `derleme/windows-surum`):**
+İş akışı `surum.yml` ("Sürüm paketleri") adını aldı. Windows makinesinde
+`kurucu/derle.mjs` NSIS kurucusunu derler; geçici CI makinesinde
+`.github/scripts/windows-kurucu-sinama.ps1` sessiz kurar, dosyaları ve
+yalıtımın kök izinlerini denetler, sessiz kaldırır ve izinlerin geri
+alındığını doğrular. Etikette bütün paketler tek `SHA256SUMS` ile taslak
+sürüme eklenir. Temiz makine, `derle.mjs`'in `kalfa-yalitim.exe`'yi
+derlemediğini gösterdi; düzeltildi. Koşu 38463488003 tümüyle geçti.
+
+**Sıradaki tek iş:** Windows sürüm akışı PR'ının CI'ı ve kullanıcının
+birleştirme onayı. Sonraki adaylar: sonuçları dosyaya göre tekilleştirme
+(G5 +2 sorgu); canlı `baglam_canli` deneyi ayrı onay bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
