@@ -68,7 +68,7 @@ kurar ve yükler. Profil yalnız bu kopyaya ad alanı izni verir; kopyanın
 başlattığı süreçler yeteneksiz bir alt profilde çalışır. Sistemin
 `/usr/bin/bwrap`'ı etkilenmez. Profili onarmak için
 `sudo dpkg-reconfigure kalfa`. Kaldırma profili de kaldırır; kullanıcı
-verisi (`~/.local/share/dev.kalfa.masaustu`) kalır. `.rpm` sistemin
+verisi (`~/.local/share/kalfa`) kalır. `.rpm` sistemin
 `bubblewrap` paketine bağlıdır ve profil taşımaz. Python, Node ve git
 sistemden gelir; paketler onları yalnız önerir.
 

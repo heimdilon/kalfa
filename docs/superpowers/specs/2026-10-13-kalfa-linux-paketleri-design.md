@@ -70,7 +70,12 @@ Bağımlılıklar:
   bwrap kopyası için `libcap2`, `libselinux1`. Öneri: `python3`, `nodejs`,
   `git`. `bubblewrap` paketine bağlı değildir.
 - `.rpm`: `bubblewrap` (Fedora'da ad alanı kısıtı yok; sistem bwrap'ı
-  kullanılır). Öneri: `python3`, `nodejs`, `git`.
+  kullanılır) ve paylaşımlı kitaplık yetenekleri
+  `libwebkit2gtk-4.1.so.0()(64bit)`, `libgtk-3.so.0()(64bit)`. Tauri'nin RPM
+  paketleyicisi, `.deb`'tekinin aksine, WebKitGTK/GTK bağımlılığını kendisi
+  eklemez (Codex incelemesi); kitaplık adı biçimi dağıtımın paket adından
+  (`webkit2gtk4.1`, `libwebkit2gtk-4_1-0`) bağımsızdır. Öneri: `python3`,
+  `nodejs`, `git`.
 
 Ayar `crates/kalfa/tauri.linux-paket.conf.json`'dadır; derleme
 `kurucu/derle-linux.mjs` ile yapılır (§7). Tauri'nin otomatik birleştirdiği
@@ -120,7 +125,7 @@ sürer ve komut iletisi yazılır.
 
 **Kaldırma:** `postrm remove|purge` profili çekirdekten ve
 `/etc/apparmor.d/`'den kaldırır; `upgrade`'de dokunmaz, yeni `postinst`
-yeniler. Kullanıcı verisi (`~/.local/share/...`) silinmez.
+yeniler. Kullanıcı verisi (`~/.local/share/kalfa`) silinmez.
 
 **Kod:** `BWRAP_YOLLARI` önce `/usr/lib/kalfa/bwrap`'ı dener. Yol kök
 sahipli paket dizinindedir; `PATH` kuralı (§8.1) korunur. Paket dışı

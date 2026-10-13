@@ -45,8 +45,10 @@ fi
 
 echo "== Elle: uygulama"
 echo "Kalfa'yı uygulama menüsünden açın; Ayarlar'da yalıtım durumu 'Hazır' olmalı."
-echo "Bir oturumda ağsız ve ağlı birer kabuk komutu çalıştırın. Bitince Enter'a basın."
-read -r _
+echo "Bir oturumda ağsız ve ağlı birer kabuk komutu çalıştırın."
+printf "Yalıtım 'Yalıtımlı: bwrap …' göründü ve iki komut çalıştı mı? [e/h] "
+read -r yanit
+[ "$yanit" = e ]; sonuc $? "uygulamada yalıtım hazır, ağsız ve ağlı komut çalıştı (elle)"
 
 echo "== Yeniden kurulum (yükseltme yolu)"
 sudo apt-get install -y --reinstall "$paket" >/dev/null
@@ -54,12 +56,16 @@ sonuc $? "yeniden kurulum"
 profil_yuklu kalfa-bwrap; sonuc $? "profil yeniden kurulumdan sonra yüklü"
 
 echo "== Kaldırma"
+# Kullanıcı verisi (kalfa-uygulama::dizin::veri_dizini) kaldırmada kalmalı.
+veri="$HOME/.local/share/kalfa"
+mkdir -p "$veri" && : > "$veri/.kabul-isaret"
 sudo apt-get remove -y kalfa >/dev/null
 sonuc $? "apt kaldırması"
 [ ! -e /etc/apparmor.d/kalfa-bwrap ]; sonuc $? "profil dosyası kaldırıldı"
 ! profil_yuklu kalfa-bwrap; sonuc $? "profil çekirdekten kaldırıldı"
 [ ! -e "$kopya" ]; sonuc $? "bwrap kopyası kaldırıldı"
-echo "Kullanıcı verisi korunur: ls ~/.local/share/dev.kalfa.masaustu (uygulama açıldıysa var olmalı)."
+[ -e "$veri/.kabul-isaret" ]; sonuc $? "kullanıcı verisi ($veri) kaldı"
+rm -f "$veri/.kabul-isaret"
 
 echo "== Sonuç: $kalan düşen"
 [ "$kalan" -eq 0 ]
