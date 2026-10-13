@@ -323,7 +323,7 @@ impl Uygulama {
         salt_okunur: Option<SaltOkunurNedeni>,
         butce: Option<ButceGorunumu>,
     ) -> Result<OturumAcilisi, KomutHatasi> {
-        let (ilk_sayfa, ozet) = tokio::task::spawn_blocking(move || -> io::Result<_> {
+        let (ilk_sayfa, mut ozet) = tokio::task::spawn_blocking(move || -> io::Result<_> {
             let kayitlar = OturumKaydi::oku(&yol)?;
             let ogeler = gecmis::gorunum_uret(&kayitlar);
             Ok((
@@ -333,7 +333,18 @@ impl Uygulama {
         })
         .await
         .map_err(ic_hata)??;
-        self.ic().son_oturum = Some(oturum);
+        {
+            let mut ic = self.ic();
+            ic.son_oturum = Some(oturum);
+            if let Some(acik) = ic.oturumlar.get(&oturum) {
+                ozet.model = Some(acik.model.clone());
+                ozet.efor = Some(acik.efor);
+                ozet.kip = Some(acik.kip);
+            } else if let Some(model) = &ozet.model {
+                let efor = ozet.efor.unwrap_or(modeller::VARSAYILAN_EFOR);
+                ozet.efor = Some(modeller::uygun_efor(&ic.modeller, model, efor));
+            }
+        }
         Ok(OturumAcilisi {
             oturum,
             calisma_alani: kok.map(|k| k.display().to_string()),

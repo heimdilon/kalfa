@@ -383,3 +383,82 @@ async fn tur_ozetinde_komutun_ag_ozeti() {
     assert_eq!(ozet.komutlar[0].ag, Some(ag));
     d.kapat().await;
 }
+
+#[test]
+fn buyuk_coklu_duzenleme_tur_ozeti_olay_butcesine_sigar() {
+    use kalfa_core::kimlik::CagriId;
+    use kalfa_core::oturum::OlayButcesi;
+    use kalfa_core::tur_ozeti::{AZAMI_TUR_OZETI_DIFF_BAYT, TurBiriktirici, YazilanDosya};
+
+    let mut biriktirici = TurBiriktirici::default();
+    let satir_eski = format!("-{}\n", "a".repeat(126));
+    let satir_yeni = format!("+{}\n", "b".repeat(126));
+    let tek_diff = format!(
+        "--- a/dosya.rs\n+++ b/dosya.rs\n@@ -1,2048 +1,2048 @@\n{}{}",
+        satir_eski.repeat(2048),
+        satir_yeni.repeat(2048),
+    );
+    assert!(tek_diff.len() > 512 * 1024);
+
+    for i in 0..17 {
+        let cagri = CagriId::yeni();
+        biriktirici.yazma_basladi(
+            cagri,
+            vec![YazilanDosya {
+                yol: y(&format!("src/dosya_{i}.rs")),
+                olusturuldu: false,
+                eklenen: 2048,
+                silinen: 2048,
+                geri_alinabilir: GeriAlinabilirlik::Evet,
+                diff: Some(tek_diff.clone()),
+            }],
+        );
+        biriktirici.arac_bitti(cagri, AracDurumu::Basarili);
+    }
+
+    let ozet = biriktirici.bitir(TurId::yeni(), false);
+    let toplam_diff: usize = ozet
+        .dosyalar
+        .iter()
+        .filter_map(|d| d.diff.as_ref().map(String::len))
+        .sum();
+    assert!(toplam_diff <= AZAMI_TUR_OZETI_DIFF_BAYT);
+
+    let serilestirilmis = serde_json::to_vec(&Olay::TurOzeti { ozet }).unwrap();
+    assert!(
+        serilestirilmis.len() < OlayButcesi::default().azami_bayt(),
+        "TurOzeti olayı 8 MiB olay bütçesine sığmalı: {} bayt",
+        serilestirilmis.len()
+    );
+}
+
+#[test]
+fn ayni_dosyanin_ardisik_yamalarinda_ara_dosya_basliklari_atlanir() {
+    use kalfa_core::kimlik::CagriId;
+    use kalfa_core::tur_ozeti::{TurBiriktirici, YazilanDosya};
+
+    let mut biriktirici = TurBiriktirici::default();
+    let yama1 = "--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-a\n+b\n";
+    let yama2 = "--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-b\n+c\n";
+
+    for yama in [yama1, yama2] {
+        let cagri = CagriId::yeni();
+        biriktirici.yazma_basladi(
+            cagri,
+            vec![YazilanDosya {
+                yol: y("x"),
+                olusturuldu: false,
+                eklenen: 1,
+                silinen: 1,
+                geri_alinabilir: GeriAlinabilirlik::Evet,
+                diff: Some(yama.into()),
+            }],
+        );
+        biriktirici.arac_bitti(cagri, AracDurumu::Basarili);
+    }
+
+    let ozet = biriktirici.bitir(TurId::yeni(), false);
+    let birlesik = ozet.dosyalar[0].diff.as_deref().unwrap();
+    assert_eq!(birlesik.matches("--- a/x").count(), 1);
+    assert_eq!(birlesik.matches("+++ b/x").count(), 1);
+}

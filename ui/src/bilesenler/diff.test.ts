@@ -46,4 +46,16 @@ describe('birleşik diff', () => {
       { kind: 'add', neu: 2, text: 'b' },
     ]);
   });
+
+  it('aynı dosyada ardışık a→b ve b→c yamaları birleştiğinde ara dosya başlıkları içerik olmaz', () => {
+    const yama1 = '--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-a\n+b\n';
+    const yama2 = '--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-b\n+c\n';
+    const parcalar = diffCozumle(yama1 + yama2);
+    expect(parcalar).toHaveLength(2);
+    const metinler = parcalar.flatMap((p) => p.satirlar.map((s) => s.text));
+    expect(metinler).toEqual(['a', 'b', 'b', 'c']);
+    expect(metinler).not.toContain('-- a/x');
+    expect(metinler).not.toContain('++ b/x');
+  });
 });
+

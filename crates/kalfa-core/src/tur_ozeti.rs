@@ -106,6 +106,20 @@ struct Yazma {
     dosyalar: Vec<YazilanDosya>,
 }
 
+/// Bir `TurOzeti` olayındaki bütün dosya diff'lerinin toplam bayt üst sınırı.
+/// Tekil `TurOzeti` olayının 8 MiB'lık olay aktarım bütçesini aşmasını önler.
+pub const AZAMI_TUR_OZETI_DIFF_BAYT: usize = 2 * 1024 * 1024;
+
+fn yama_basligini_atla(diff: &str) -> &str {
+    if let Some(indeks) = diff.find("\n@@ ") {
+        let bas = &diff[..indeks];
+        if bas.starts_with("--- ") || bas.contains("\n--- ") {
+            return &diff[indeks + 1..];
+        }
+    }
+    diff
+}
+
 /// Tur boyunca özetin bilgisini toplar; turun başında sıfırlanır.
 #[derive(Debug, Default)]
 pub struct TurBiriktirici {
@@ -199,7 +213,7 @@ impl TurBiriktirici {
                                     if !mevcut.ends_with('\n') {
                                         mevcut.push('\n');
                                     }
-                                    mevcut.push_str(yeni_diff);
+                                    mevcut.push_str(yama_basligini_atla(yeni_diff));
                                 }
                                 None => o.diff = Some(yeni_diff.clone()),
                             }
@@ -218,6 +232,23 @@ impl TurBiriktirici {
                         geri_alinabilir: d.geri_alinabilir,
                         diff: d.diff.clone(),
                     }),
+                }
+            }
+        }
+        let mut kalan_diff = AZAMI_TUR_OZETI_DIFF_BAYT;
+        for d in &mut dosyalar {
+            if let Some(diff) = &mut d.diff {
+                if diff.len() <= kalan_diff {
+                    kalan_diff -= diff.len();
+                } else {
+                    let sinir = diff.floor_char_boundary(kalan_diff);
+                    let kesim = diff[..sinir].rfind('\n').unwrap_or(0);
+                    if kesim > 0 && diff[..kesim].contains("@@ ") {
+                        diff.truncate(kesim + 1);
+                    } else {
+                        d.diff = None;
+                    }
+                    kalan_diff = 0;
                 }
             }
         }

@@ -78,6 +78,7 @@ export class AnaDurum {
     await this.#dene(async () => {
       this.uygulama = await ipc.uygulamaDurumu();
     });
+    void this.#katalogEsitle();
     await this.#dene(async () => {
       this.denetci = await ipc.denetciKipi();
     });
@@ -108,7 +109,9 @@ export class AnaDurum {
   async yeniOturum(): Promise<void> {
     await this.#dene(async () => {
       const alan = await ipc.calismaAlaniSec();
-      if (!alan || !this.uygulama) return;
+      if (!alan) return;
+      await this.#katalogEsitle();
+      if (!this.uygulama) return;
       const acilis = await ipc.oturumBaslat(alan.kimlik, this.uygulama.varsayilan_model);
       await this.#kur(acilis);
       this.secili = acilis.oturum;
@@ -164,10 +167,25 @@ export class AnaDurum {
   async modelleriYenile(): Promise<void> {
     const liste = await this.#dene(() => ipc.modelleriYenile());
     if (liste && this.uygulama) {
-      const varsayilan_model = liste.some((m) => m.kimlik === this.uygulama!.varsayilan_model)
-        ? this.uygulama.varsayilan_model
-        : (liste[0]?.kimlik ?? this.uygulama.varsayilan_model);
+      const varsayilan_model =
+        liste.length > 0 && !liste.some((m) => m.kimlik === this.uygulama!.varsayilan_model)
+          ? liste[0].kimlik
+          : this.uygulama.varsayilan_model;
       this.uygulama = { ...this.uygulama, modeller: liste, varsayilan_model };
+    }
+  }
+
+  async #katalogEsitle(): Promise<void> {
+    try {
+      const liste = await ipc.modelleriYenile();
+      if (this.uygulama && liste.length > 0) {
+        const varsayilan_model = liste.some((m) => m.kimlik === this.uygulama!.varsayilan_model)
+          ? this.uygulama.varsayilan_model
+          : liste[0].kimlik;
+        this.uygulama = { ...this.uygulama, modeller: liste, varsayilan_model };
+      }
+    } catch {
+      // Katalog alınamazsa (ör. çevrimdışı) mevcut uygulama durumu korunur.
     }
   }
 

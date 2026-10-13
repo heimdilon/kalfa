@@ -23,7 +23,9 @@ export function diffCozumle(metin: string): DiffParcasi[] {
   let parca: DiffParcasi | null = null;
   let eski = 0;
   let yeni = 0;
-  for (const satir of metin.split('\n')) {
+  const satirlar = metin.split('\n');
+  for (let i = 0; i < satirlar.length; i++) {
+    const satir = satirlar[i];
     const blok = BLOK.exec(satir);
     if (blok) {
       parca = { baslik: satir, satirlar: [] };
@@ -32,7 +34,12 @@ export function diffCozumle(metin: string): DiffParcasi[] {
       yeni = Number(blok[2]);
       continue;
     }
-    // İlk bloktan önceki "---"/"+++" dosya başlıkları atlanır.
+    // Ardışık yamaların "--- a/..." ve "+++ b/..." dosya başlıkları atlanır.
+    if (satir.startsWith('--- ') && satirlar[i + 1]?.startsWith('+++ ')) {
+      parca = null;
+      i++;
+      continue;
+    }
     if (!parca) continue;
     if (satir.startsWith('+')) {
       parca.satirlar.push({ kind: 'add', neu: yeni++, text: satir.slice(1) });

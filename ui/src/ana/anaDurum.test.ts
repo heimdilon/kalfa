@@ -149,6 +149,16 @@ describe('komutlar', () => {
     expect(arka.dinleniyor('oturum-yeni-1')).toBe(true);
   });
 
+  it('ilk durum okumasından sonra katalog değiştiğinde yeni oturum güncel varsayılanla başlar', async () => {
+    const { arka, durum } = await acilmis();
+    arka.uygulama.modeller = [
+      { kimlik: 'ozel-mini', profil: 'Hizli', eforlar: ['dusuk'] },
+    ];
+    await durum.yeniOturum();
+    expect(arka.komutlar('oturum_baslat')).toEqual([{ calisma_alani: 1, model: 'ozel-mini' }]);
+    expect(durum.uygulama?.varsayilan_model).toBe('ozel-mini');
+  });
+
   it('eski sayfa en eski öğeden öncesini ister ve başa ekler', async () => {
     const { arka, durum } = await acilmis((a) =>
       a.oturumEkle(
