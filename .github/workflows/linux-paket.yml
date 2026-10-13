@@ -14,6 +14,7 @@ on:
       - crates/kalfa/tauri.linux-paket.conf.json
       - crates/kalfa/kurucu/derle-linux.mjs
       - crates/kalfa/kurucu/linux/**
+      - crates/kalfa/icons/**
   push:
     tags: ["v*"]
   workflow_dispatch:
@@ -45,6 +46,16 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+      # Etiket paketin sürümüyle aynı olmalı; yoksa taslak sürüm başka bir
+      # derlemeyi o sürümün adıyla dağıtırdı.
+      - name: Etiketi paket sürümüyle karşılaştır
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          surum=$(node -p "require('./crates/kalfa/tauri.conf.json').version")
+          [ "$GITHUB_REF_NAME" = "v$surum" ] || {
+            echo "Etiket $GITHUB_REF_NAME, paket sürümü $surum ile uyuşmuyor." >&2
+            exit 1
+          }
       - name: Rust araç zincirini kur (rust-toolchain.toml)
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
@@ -69,6 +80,17 @@ jobs:
           cd paketler
           sha256sum -- *.deb *.rpm > SHA256SUMS
           cat SHA256SUMS
+      # .deb'deki bwrap kopyası dağıtım güncellemesiyle değişmez; sürümü
+      # sürüm notunda yazılır (Linux paket tasarımı §5).
+      - name: Sürüm notu
+        run: |
+          bwrap_surum=$(dpkg-query -W -f '${Version}' bubblewrap)
+          {
+            echo "Linux paketleri (Debian 12 tabanı, glibc 2.36). Doğrulama için SHA256SUMS."
+            echo
+            echo ".deb, Kalfa'ya özel bwrap kopyası olarak Debian 12'nin bubblewrap $bwrap_surum paketinin değiştirilmemiş ikilisini taşır."
+          } > paketler/NOTLAR.md
+          cat paketler/NOTLAR.md
       - uses: actions/upload-artifact@v4
         with:
           name: linux-paketleri
@@ -139,5 +161,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
-            --title "Kalfa $GITHUB_REF_NAME" --notes "Linux paketleri; doğrulama için SHA256SUMS." \
-            paketler/*
+            --title "Kalfa $GITHUB_REF_NAME" --notes-file paketler/NOTLAR.md \
+            paketler/*.deb paketler/*.rpm paketler/SHA256SUMS

@@ -269,10 +269,12 @@ ve birim testi), `kurucu/README.md`, `.gitattributes` (betikler LF).
   dosyalar, `ldd` ile kitaplık çözümü ve bwrap (`.deb`'de Kalfa kopyası,
   `.rpm`'de sistemin) denetlenir; paket kaldırılır.
 - **yayimla:** yalnız `v*` etiketinde, sınama geçerse paketleri ve
-  `SHA256SUMS`'u taslak GitHub sürümüne ekler. Sürümü kullanıcı yayımlar;
+  `SHA256SUMS`'u taslak GitHub sürümüne ekler. Etiket `tauri.conf.json`'daki
+  sürümle (`v<sürüm>`) uyuşmazsa derleme işi düşer; sürüm notu paketteki
+  bwrap kopyasının Debian sürümünü yazar (Codex incelemesi). Sürümü kullanıcı yayımlar;
   etiket de kullanıcının onayıyla atılır.
 
-İş akışı paket dosyalarına dokunan PR'larda da koşar. AppArmor davranışı
+İş akışı paket dosyalarına (simgeler dahil) dokunan PR'larda da koşar. AppArmor davranışı
 kapta gözlenemez; VM kabulü (`kabul.sh`) ayrıca yapılır.
 
 **İlk koşu (PR #9, `9d5b8e1`, koşu 38445580145): bütün işler geçti.**
