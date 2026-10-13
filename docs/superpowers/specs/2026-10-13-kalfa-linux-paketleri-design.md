@@ -248,8 +248,29 @@ ve birim testi), `kurucu/README.md`, `.gitattributes` (betikler LF).
 
 ## 10. Kapsam dışı
 
-- Sürüm iş akışı (Debian 12 kabında derleme, `SHA256SUMS`, yayımlama):
-  ayrı iş.
+- Sürüm iş akışı (Debian 12 kabında derleme, `SHA256SUMS`, taslak sürüm):
+  ayrı iş olarak §12'de geldi.
 - AppImage ve Flatpak.
 - Paket imzası ve apt/dnf deposu.
 - Linux'ta araç zinciri paketleme (karar 2).
+
+## 12. Sürüm derlemesi (13 Ekim, KALFA-12)
+
+`.github/workflows/linux-paket.yml`:
+
+- **derle:** `debian:12` kabında derleme bağımlılıkları (`build-essential`,
+  `pkg-config`, `libwebkit2gtk-4.1-dev`, `bubblewrap`), Node 24,
+  `rust-toolchain.toml`'daki Rust; `derle-linux.mjs`. Paketteki bwrap kopyası
+  Debian 12'nin `bubblewrap`'ından gelir. `kalfa`'nın en yeni glibc sembolü
+  `GLIBC_2.36`'yı aşarsa iş düşer. `SHA256SUMS` paketlerle birlikte yapıt
+  olarak saklanır.
+- **sina:** paketler `debian:12`, `ubuntu:24.04` (`.deb`) ve `fedora:44`
+  (`.rpm`) kaplarında özetle doğrulanır, paket yöneticisiyle kurulur;
+  dosyalar, `ldd` ile kitaplık çözümü ve bwrap (`.deb`'de Kalfa kopyası,
+  `.rpm`'de sistemin) denetlenir; paket kaldırılır.
+- **yayimla:** yalnız `v*` etiketinde, sınama geçerse paketleri ve
+  `SHA256SUMS`'u taslak GitHub sürümüne ekler. Sürümü kullanıcı yayımlar;
+  etiket de kullanıcının onayıyla atılır.
+
+İş akışı paket dosyalarına dokunan PR'larda da koşar. AppArmor davranışı
+kapta gözlenemez; VM kabulü (`kabul.sh`) ayrıca yapılır.
