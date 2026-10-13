@@ -125,8 +125,23 @@ birikimli kullanım, kayıttan oynatılan karar); üçü gerekçeyle değiştiri
 (tasarım §11). Son kod Windows 1 209 + 190, Linux 1 152 + 190, yalıtım 26,
 uyumluluk 16; CI yeşil.
 
-**Sıradaki tek iş:** Linux paketleri (sonraki aday); canlı `baglam_canli`
-deneyi ayrı onay bekler.
+**Linux paketleri (13 Ekim, dal `linux-paket/tasarim`):** `.deb` ve
+`.rpm` tek betikle (`kurucu/derle-linux.mjs`) üretilir. `.deb` Kalfa'nın
+kendi bwrap kopyasını (`/usr/lib/kalfa/bwrap`) ve yalnız ona ad alanı
+izni veren, başlattığı süreçleri yeteneksiz alt profile yığan AppArmor
+profilini (`kalfa-bwrap`) taşır; sistem bwrap'ı etkilenmez. `.rpm` sistemin
+`bubblewrap`'ına bağlıdır. Araç zinciri sistemdendir. WSL'de paket
+mekaniği doğrulandı (içerik, izinler, bwrap denemesi, profil sözdizimi);
+Ubuntu 24.04.5 VM'inde gerçek AppArmor kabulü 19/19 geçti (kurulum,
+profiller, kopyanın yeteneksiz çocuğu, sistem bwrap'ının etkilenmediği,
+yeniden kurulum, kaldırma; uygulamada ağsız ve ağlı komut). Sürüm paketleri
+glibc nedeniyle Debian 12 tabanında derlenmeli.
+[Tasarım](superpowers/specs/2026-10-13-kalfa-linux-paketleri-design.md).
+
+**Sıradaki tek iş:** Linux paketleri PR'ının CI'ı ve kullanıcının
+birleştirme onayı. Sonraki adaylar: Debian 12 tabanlı sürüm derlemesi
+(`SHA256SUMS`), `.rpm` sınaması; canlı `baglam_canli` deneyi ayrı onay
+bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

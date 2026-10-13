@@ -3,3 +3,5 @@
 research/evren-probe/fixtures/** -text
 # Aşama 4 ön ölçümünün EVREN kayıtları da ham baytlardır.
 crates/kalfa-evren/tests/kayitlar/*.json -text
+# Linux paket betikleri ve AppArmor profili kurulu sistemde LF ister.
+crates/kalfa/kurucu/linux/** text eol=lf

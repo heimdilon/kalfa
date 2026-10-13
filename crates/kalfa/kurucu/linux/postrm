@@ -1,0 +1,16 @@
+#!/bin/sh
+# Kalfa .deb kaldırma sonrası: kurulumun eklediği AppArmor profilini kaldırır.
+# Yükseltmede ("upgrade") profil kalır; yeni sürümün postinst'i yeniler.
+set -e
+profil=/etc/apparmor.d/kalfa-bwrap
+case "$1" in
+  remove | purge)
+    if [ -e "$profil" ]; then
+      if command -v apparmor_parser >/dev/null 2>&1 && [ -d /sys/kernel/security/apparmor ]; then
+        apparmor_parser -R "$profil" >/dev/null 2>&1 || true
+      fi
+      rm -f "$profil"
+    fi
+    ;;
+esac
+exit 0

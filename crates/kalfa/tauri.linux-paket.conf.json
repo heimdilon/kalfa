@@ -1,0 +1,52 @@
+{
+  "bundle": {
+    "targets": [
+      "deb",
+      "rpm"
+    ],
+    "publisher": "Orkun Koray Güngör",
+    "shortDescription": "EVREN için Türkçe, açık kaynak ajan harness'ı",
+    "longDescription": "Kalfa, EVREN LLM Gateway için Türkçe, açık kaynak bir ajan harness'ıdır. Yapay zekânın önerdiği komutları bubblewrap ve seccomp ile yalıtır.",
+    "license": "Apache-2.0",
+    "externalBin": [
+      "binaries/kalfa-kopru"
+    ],
+    "resources": {
+      "eklentiler/": "eklentiler/"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libcap2",
+          "libselinux1"
+        ],
+        "recommends": [
+          "python3",
+          "nodejs",
+          "git"
+        ],
+        "section": "devel",
+        "files": {
+          "/usr/lib/kalfa/bwrap": "binaries/bwrap",
+          "/usr/share/kalfa/apparmor/kalfa-bwrap": "kurucu/linux/kalfa-bwrap",
+          "/usr/share/doc/kalfa/bubblewrap/copyright": "binaries/bubblewrap-copyright",
+          "/usr/share/doc/kalfa/bubblewrap/KAYNAK": "binaries/bubblewrap-KAYNAK"
+        },
+        "postInstallScript": "kurucu/linux/postinst",
+        "postRemoveScript": "kurucu/linux/postrm"
+      },
+      "rpm": {
+        "depends": [
+          "bubblewrap",
+          "libwebkit2gtk-4.1.so.0()(64bit)",
+          "libgtk-3.so.0()(64bit)"
+        ],
+        "recommends": [
+          "python3",
+          "nodejs",
+          "git"
+        ]
+      }
+    }
+  }
+}
