@@ -1,7 +1,7 @@
 # Kalfa — Linux paketleri: Tasarım
 
 **Tarih:** 2026-10-13.
-**Durum:** Uygulandı (dal `linux-paket/tasarim`); VM kabulü 19/19 geçti (§9.2).
+**Durum:** Uygulandı ve birleşti (PR #6, `0e0949d`); VM kabulü 19/19 geçti (§9.2).
 **Taban:** `main`, `4241994` (5b tamamlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §12.1 (Dağıtım), risk 9;
 [aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §8.3.

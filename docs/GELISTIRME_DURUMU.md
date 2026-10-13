@@ -125,7 +125,7 @@ birikimli kullanım, kayıttan oynatılan karar); üçü gerekçeyle değiştiri
 (tasarım §11). Son kod Windows 1 209 + 190, Linux 1 152 + 190, yalıtım 26,
 uyumluluk 16; CI yeşil.
 
-**Linux paketleri (13 Ekim, dal `linux-paket/tasarim`):** `.deb` ve
+**Linux paketleri (13 Ekim, PR [#6](https://github.com/heimdilon/kalfa/pull/6), `0e0949d`):** `.deb` ve
 `.rpm` tek betikle (`kurucu/derle-linux.mjs`) üretilir. `.deb` Kalfa'nın
 kendi bwrap kopyasını (`/usr/lib/kalfa/bwrap`) ve yalnız ona ad alanı
 izni veren, başlattığı süreçleri yeteneksiz alt profile yığan AppArmor
@@ -138,9 +138,13 @@ yeniden kurulum, kaldırma; uygulamada ağsız ve ağlı komut). Sürüm paketle
 glibc nedeniyle Debian 12 tabanında derlenmeli.
 [Tasarım](superpowers/specs/2026-10-13-kalfa-linux-paketleri-design.md).
 
-**Sıradaki tek iş:** Linux paketleri PR'ının CI'ı ve kullanıcının
-birleştirme onayı. Sonraki adaylar: Debian 12 tabanlı sürüm derlemesi
-(`SHA256SUMS`), `.rpm` sınaması; canlı `baglam_canli` deneyi ayrı onay
+Kullanıcının açık onayıyla squash birleşti; Codex incelemesinin üç bulgusu
+(rpm WebKitGTK/GTK gereksinimi, kabul betiğinde veri dizini ve elle
+denetim) birleşmeden önce düzeltildi.
+
+**Sıradaki tek iş:** Debian 12 tabanlı sürüm derlemesi (glibc 2.36 uyumu,
+`SHA256SUMS`; Linux paket tasarımı §6, §10). Sonraki adaylar: `.rpm` için
+temiz Fedora kurulum sınaması; canlı `baglam_canli` deneyi ayrı onay
 bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
