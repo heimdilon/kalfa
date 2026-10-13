@@ -142,17 +142,22 @@ Kullanıcının açık onayıyla squash birleşti; Codex incelemesinin üç bulg
 (rpm WebKitGTK/GTK gereksinimi, kabul betiğinde veri dizini ve elle
 denetim) birleşmeden önce düzeltildi.
 
-**Linux sürüm derlemesi (13 Ekim, dal `derleme/linux-surum`):**
+**Linux sürüm derlemesi (13 Ekim, PR [#9](https://github.com/heimdilon/kalfa/pull/9), `fd42cb0`):**
 `.github/workflows/linux-paket.yml` paketleri Debian 12 kabında derler
 (en yeni glibc sembolü `GLIBC_2.34`), `SHA256SUMS` üretir, paketleri Debian
 12, Ubuntu 24.04 (`.deb`) ve Fedora 44 (`.rpm`) kaplarında kurar, kitaplık
 çözümünü denetler ve kaldırır; ilk koşu tümüyle geçti. `v*` etiketinde
-taslak sürüm oluşturur; yayımlamayı kullanıcı yapar.
+taslak sürüm oluşturur; yayımlamayı kullanıcı yapar. Kullanıcının açık
+onayıyla squash birleşti. Codex incelemesinin üç bulgusu birleşmeden önce
+düzeltildi: etiket `tauri.conf.json` sürümüyle denetlenir, sürüm notu
+paketteki bwrap kopyasının Debian sürümünü yazar, simge değişikliği de iş
+akışını tetikler.
 
-**Sıradaki tek iş:** Linux sürüm derlemesi PR'ının CI'ı ve kullanıcının
-birleştirme onayı. Sonraki adaylar: Windows NSIS kurucusunun aynı sürüm
-iş akışına alınması; sonuçları dosyaya göre tekilleştirme (G5 +2 sorgu);
-canlı `baglam_canli` deneyi ayrı onay bekler.
+**Sıradaki tek iş:** Windows NSIS kurucusunun aynı sürüm iş akışına
+alınması (kurucu `kurucu/derle.mjs`, Windows makinesinde; taslak sürüme
+`SHA256SUMS` ile eklenmesi). Sonraki adaylar: sonuçları dosyaya göre
+tekilleştirme (G5 +2 sorgu); canlı `baglam_canli` deneyi ayrı onay
+bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
