@@ -1,7 +1,7 @@
 # Kalfa — Linux paketleri: Tasarım
 
 **Tarih:** 2026-10-13.
-**Durum:** Uygulandı (dal `linux-paket/tasarim`); VM kabulü bekliyor (§9).
+**Durum:** Uygulandı (dal `linux-paket/tasarim`); VM kabulü geçti (§9.2).
 **Taban:** `main`, `4241994` (5b tamamlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §12.1 (Dağıtım), risk 9;
 [aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §8.3.
@@ -199,6 +199,29 @@ WSL Ubuntu 24.04 (`kalfatest`), commit `7b1ec30`, paket kurulmadan:
 Sınanmadı: gerçek AppArmor altında kurulum ve kaldırma (VM, kullanıcı
 kurar; `kurucu/linux/kabul.sh`), `.rpm` içeriği ve kurulumu (WSL'de `rpm`
 yok).
+
+## 9.2 VM kabulü (13 Ekim)
+
+Kullanıcının Ubuntu 24.04.5 LTS masaüstü VM'inde (VirtualBox, AppArmor
+açık, `kernel.apparmor_restrict_unprivileged_userns = 1`), `c257a7c`'nin
+`.deb`'i ile `kurucu/linux/kabul.sh`: **17 denetimin 17'si geçti, 0
+düştü.**
+
+- Ön koşul: kısıt açık; sistem bwrap'ı (`bubblewrap` paketi) kurulumdan
+  önce reddediliyor.
+- Kurulum: `apt` kurulumu; profil `/etc/apparmor.d/kalfa-bwrap`'ta;
+  `kalfa-bwrap` ve `kalfa-bwrap-cocuk` yüklü.
+- Kopya: ağsız ad alanı açıyor; `--uid 0 --cap-add ALL` ile çağrılsa da
+  kapta `CAP_SYS_ADMIN` kullanılamıyor; sistem bwrap'ı kurulumdan sonra da
+  reddediliyor.
+- Yeniden kurulum: profil yüklü kalıyor.
+- Kaldırma: profil dosyası ve çekirdekteki profil gitti; bwrap kopyası
+  gitti.
+- Uygulama (elle, kullanıcı bildirimi): Kalfa açıldı; bir oturumda ağsız
+  (`echo`) ve ağlı (`curl`) birer kabuk komutu çalıştı.
+
+Sınanmadı: `.rpm` içeriği ve kurulumu; Debian 12 / Pardus / Fedora
+matrisi (sürüm derlemesi Debian 12 tabanında gelince).
 
 ## 9.1 Uygulama
 

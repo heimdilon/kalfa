@@ -132,13 +132,16 @@ izni veren, başlattığı süreçleri yeteneksiz alt profile yığan AppArmor
 profilini (`kalfa-bwrap`) taşır; sistem bwrap'ı etkilenmez. `.rpm` sistemin
 `bubblewrap`'ına bağlıdır. Araç zinciri sistemdendir. WSL'de paket
 mekaniği doğrulandı (içerik, izinler, bwrap denemesi, profil sözdizimi);
-gerçek AppArmor kabulü Ubuntu 24.04 VM'inde bekliyor. Sürüm paketleri
+Ubuntu 24.04.5 VM'inde gerçek AppArmor kabulü 17/17 geçti (kurulum,
+profiller, kopyanın yeteneksiz çocuğu, sistem bwrap'ının etkilenmediği,
+yeniden kurulum, kaldırma; uygulamada ağsız ve ağlı komut). Sürüm paketleri
 glibc nedeniyle Debian 12 tabanında derlenmeli.
 [Tasarım](superpowers/specs/2026-10-13-kalfa-linux-paketleri-design.md).
 
-**Sıradaki tek iş:** Linux paketlerinin VM kabulü (kullanıcı Ubuntu 24.04
-masaüstü VM'ini kurar, `kurucu/linux/kabul.sh` çalışır) ve PR onayı;
-canlı `baglam_canli` deneyi ayrı onay bekler.
+**Sıradaki tek iş:** Linux paketleri PR'ının CI'ı ve kullanıcının
+birleştirme onayı. Sonraki adaylar: Debian 12 tabanlı sürüm derlemesi
+(`SHA256SUMS`), `.rpm` sınaması; canlı `baglam_canli` deneyi ayrı onay
+bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
