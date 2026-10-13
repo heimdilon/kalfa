@@ -3,6 +3,14 @@
 Güncelleme: 2026-10-13; aşama 5b uygulandı (PR bekliyor), depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
+**PR #8 — Codex ek düzeltmeleri (14 Ekim):** JSON boyutuna göre diff bütçesi,
+gerçek `--`/`++` içerik satırlarının korunması ve yeni oturumun katalog
+ağ isteğini beklememesi düzeltildi. Üç regresyon önce düştü, sonra geçti;
+arayüz 429/429, check/build temiz; Windows workspace 1 214/0/19, Ubuntu
+workspace 1 158/0/19, iki platformda e2e özellikli Rust 191/0/0. Workspace
+ve e2e özellikli clippy ile fmt temiz. Gerçek yalıtım/WebDriver yeniden koşmadı.
+[Doğrulama kaydı](superpowers/bulgular/2026-10-14-pr8-ek-duzeltmeler.md).
+
 ## Güncel devam noktası — 2026-10-12 18:44 TSİ
 
 Aşama 1–3 tamamlandı. Aşama 4'te tasarım #49, çalışma zamanı #50

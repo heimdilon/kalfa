@@ -106,9 +106,17 @@ struct Yazma {
     dosyalar: Vec<YazilanDosya>,
 }
 
-/// Bir `TurOzeti` olayındaki bütün dosya diff'lerinin toplam bayt üst sınırı.
+/// Bir `TurOzeti` olayındaki bütün diff'lerin JSON dizgisi olarak bayt üst sınırı.
 /// Tekil `TurOzeti` olayının 8 MiB'lık olay aktarım bütçesini aşmasını önler.
 pub const AZAMI_TUR_OZETI_DIFF_BAYT: usize = 2 * 1024 * 1024;
+
+fn json_bayti(bayt: u8) -> usize {
+    match bayt {
+        b'"' | b'\\' | b'\n' | b'\r' | b'\t' | 8 | 12 => 2,
+        0..=31 => 6,
+        _ => 1,
+    }
+}
 
 fn yama_basligini_atla(diff: &str) -> &str {
     if let Some(indeks) = diff.find("\n@@ ") {
@@ -238,13 +246,23 @@ impl TurBiriktirici {
         let mut kalan_diff = AZAMI_TUR_OZETI_DIFF_BAYT;
         for d in &mut dosyalar {
             if let Some(diff) = &mut d.diff {
-                if diff.len() <= kalan_diff {
-                    kalan_diff -= diff.len();
+                // JSON'un iki tırnağı ve kaçışları da bütçeye dahildir.
+                // Yalnız tam satırlar tutulur; UTF-8 karakterleri bölünmez.
+                let mut json_bayt = 2usize;
+                let mut kesim = 0;
+                for satir in diff.split_inclusive('\n') {
+                    let satir_bayt = satir.bytes().map(json_bayti).sum::<usize>();
+                    if json_bayt.saturating_add(satir_bayt) > kalan_diff {
+                        break;
+                    }
+                    json_bayt += satir_bayt;
+                    kesim += satir.len();
+                }
+                if kesim == diff.len() && json_bayt <= kalan_diff {
+                    kalan_diff -= json_bayt;
                 } else {
-                    let sinir = diff.floor_char_boundary(kalan_diff);
-                    let kesim = diff[..sinir].rfind('\n').unwrap_or(0);
                     if kesim > 0 && diff[..kesim].contains("@@ ") {
-                        diff.truncate(kesim + 1);
+                        diff.truncate(kesim);
                     } else {
                         d.diff = None;
                     }

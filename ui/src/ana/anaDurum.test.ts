@@ -151,12 +151,38 @@ describe('komutlar', () => {
 
   it('ilk durum okumasından sonra katalog değiştiğinde yeni oturum güncel varsayılanla başlar', async () => {
     const { arka, durum } = await acilmis();
+    arka.ozel.set('uygulama_durumu', () => structuredClone(arka.uygulama));
     arka.uygulama.modeller = [
       { kimlik: 'ozel-mini', profil: 'Hizli', eforlar: ['dusuk'] },
     ];
     await durum.yeniOturum();
     expect(arka.komutlar('oturum_baslat')).toEqual([{ calisma_alani: 1, model: 'ozel-mini' }]);
     expect(durum.uygulama?.varsayilan_model).toBe('ozel-mini');
+  });
+
+  it('arka planda bekleyen katalog isteği yeni oturumu engellemez', async () => {
+    const arka = new SahteArka().kur();
+    let katalogBekliyor = true;
+    let katalogTamamla: (() => void) | undefined;
+    arka.ozel.set('modelleri_yenile', () => new Promise((resolve) => {
+      katalogTamamla = () => {
+        katalogBekliyor = false;
+        resolve(arka.uygulama.modeller);
+      };
+    }));
+    const durum = new AnaDurum();
+    await durum.baslat();
+    const baslatma = durum.yeniOturum();
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(katalogBekliyor).toBe(true);
+      expect(arka.komutlar('oturum_baslat')).toEqual([
+        { calisma_alani: 1, model: 'glm-5.3' },
+      ]);
+    } finally {
+      katalogTamamla?.();
+      await baslatma;
+    }
   });
 
   it('eski sayfa en eski öğeden öncesini ister ve başa ekler', async () => {

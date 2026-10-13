@@ -462,3 +462,51 @@ fn ayni_dosyanin_ardisik_yamalarinda_ara_dosya_basliklari_atlanir() {
     assert_eq!(birlesik.matches("--- a/x").count(), 1);
     assert_eq!(birlesik.matches("+++ b/x").count(), 1);
 }
+
+#[test]
+fn kontrol_karakterli_diffler_json_butcesine_sigar() {
+    use kalfa_core::kimlik::CagriId;
+    use kalfa_core::oturum::OlayButcesi;
+    use kalfa_core::tur_ozeti::{AZAMI_TUR_OZETI_DIFF_BAYT, TurBiriktirici, YazilanDosya};
+
+    let satir_eski = format!("-{}\n", "\u{0001}".repeat(127));
+    let satir_yeni = format!("+{}\n", "\u{0002}".repeat(127));
+    let diff = format!(
+        "--- a/x\n+++ b/x\n@@ -1,2048 +1,2048 @@\n{}{}",
+        satir_eski.repeat(2048),
+        satir_yeni.repeat(2048),
+    );
+    let mut biriktirici = TurBiriktirici::default();
+    for i in 0..5 {
+        let cagri = CagriId::yeni();
+        biriktirici.yazma_basladi(
+            cagri,
+            vec![YazilanDosya {
+                yol: y(&format!("kontrol-{i}.txt")),
+                olusturuldu: false,
+                eklenen: 2048,
+                silinen: 2048,
+                geri_alinabilir: GeriAlinabilirlik::Evet,
+                diff: Some(diff.clone()),
+            }],
+        );
+        biriktirici.arac_bitti(cagri, AracDurumu::Basarili);
+    }
+
+    let ozet = biriktirici.bitir(TurId::yeni(), false);
+    let json_diff_bayt: usize = ozet
+        .dosyalar
+        .iter()
+        .filter_map(|d| d.diff.as_ref())
+        .map(|diff| serde_json::to_vec(diff).unwrap().len())
+        .sum();
+    assert!(json_diff_bayt <= AZAMI_TUR_OZETI_DIFF_BAYT);
+    assert!(
+        ozet.dosyalar[0]
+            .diff
+            .as_ref()
+            .is_some_and(|diff| { diff.contains("@@ ") && diff.ends_with('\n') })
+    );
+    let olay_bayt = serde_json::to_vec(&Olay::TurOzeti { ozet }).unwrap().len();
+    assert!(olay_bayt < OlayButcesi::default().azami_bayt());
+}

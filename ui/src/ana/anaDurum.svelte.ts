@@ -110,9 +110,13 @@ export class AnaDurum {
     await this.#dene(async () => {
       const alan = await ipc.calismaAlaniSec();
       if (!alan) return;
-      await this.#katalogEsitle();
-      if (!this.uygulama) return;
-      const acilis = await ipc.oturumBaslat(alan.kimlik, this.uygulama.varsayilan_model);
+      // Arka uçtaki mevcut katalog yerel IPC ile okunur; yeni ağ isteği beklenmez.
+      const guncel = await ipc.uygulamaDurumu();
+      const model = guncel.modeller.some((m) => m.kimlik === guncel.varsayilan_model)
+        ? guncel.varsayilan_model
+        : (guncel.modeller[0]?.kimlik ?? guncel.varsayilan_model);
+      this.uygulama = { ...guncel, varsayilan_model: model };
+      const acilis = await ipc.oturumBaslat(alan.kimlik, model);
       await this.#kur(acilis);
       this.secili = acilis.oturum;
       this.gorunum = 'oturumlar';
