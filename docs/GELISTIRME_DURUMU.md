@@ -142,10 +142,17 @@ Kullanıcının açık onayıyla squash birleşti; Codex incelemesinin üç bulg
 (rpm WebKitGTK/GTK gereksinimi, kabul betiğinde veri dizini ve elle
 denetim) birleşmeden önce düzeltildi.
 
-**Sıradaki tek iş:** Debian 12 tabanlı sürüm derlemesi (glibc 2.36 uyumu,
-`SHA256SUMS`; Linux paket tasarımı §6, §10). Sonraki adaylar: `.rpm` için
-temiz Fedora kurulum sınaması; canlı `baglam_canli` deneyi ayrı onay
-bekler.
+**Linux sürüm derlemesi (13 Ekim, dal `derleme/linux-surum`):**
+`.github/workflows/linux-paket.yml` paketleri Debian 12 kabında derler
+(en yeni glibc sembolü `GLIBC_2.34`), `SHA256SUMS` üretir, paketleri Debian
+12, Ubuntu 24.04 (`.deb`) ve Fedora 44 (`.rpm`) kaplarında kurar, kitaplık
+çözümünü denetler ve kaldırır; ilk koşu tümüyle geçti. `v*` etiketinde
+taslak sürüm oluşturur; yayımlamayı kullanıcı yapar.
+
+**Sıradaki tek iş:** Linux sürüm derlemesi PR'ının CI'ı ve kullanıcının
+birleştirme onayı. Sonraki adaylar: Windows NSIS kurucusunun aynı sürüm
+iş akışına alınması; sonuçları dosyaya göre tekilleştirme (G5 +2 sorgu);
+canlı `baglam_canli` deneyi ayrı onay bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

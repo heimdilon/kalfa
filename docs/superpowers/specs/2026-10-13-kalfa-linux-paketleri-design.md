@@ -274,3 +274,11 @@ ve birim testi), `kurucu/README.md`, `.gitattributes` (betikler LF).
 
 İş akışı paket dosyalarına dokunan PR'larda da koşar. AppArmor davranışı
 kapta gözlenemez; VM kabulü (`kabul.sh`) ayrıca yapılır.
+
+**İlk koşu (PR #9, `9d5b8e1`, koşu 38445580145): bütün işler geçti.**
+`kalfa`'nın en yeni glibc sembolü `GLIBC_2.34`; paketteki bwrap
+`bubblewrap 0.8.0` (Debian 12). `.deb` Debian 12 ve Ubuntu 24.04 kaplarında,
+`.rpm` Fedora 44 kabında kuruldu; `dnf`, `.rpm`'in yeni gereksinimleriyle
+`webkit2gtk4.1` (2.54.1) ve `bubblewrap` (0.12.0) paketlerini çekti; `ldd`'de
+çözülmeyen kitaplık yok; üç kapta kaldırma temiz. `.rpm` kurulumu ilk kez
+böyle sınandı.
