@@ -1,0 +1,188 @@
+# Kalfa — Linux paketleri: Tasarım
+
+**Tarih:** 2026-10-13.
+**Durum:** Taslak; ön doğrulama §9.
+**Taban:** `main`, `4241994` (5b tamamlandı).
+**Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §12.1 (Dağıtım), risk 9;
+[aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §8.3.
+
+## 1. Amaç ve kabul ölçütü
+
+Kalfa Linux'ta `.deb` ve `.rpm` paketiyle kurulur, kaldırılır ve yükseltilir.
+Kurulu uygulama yerleşik `kalfa-rag` eklentisini ve ağ köprüsünü (`kalfa-kopru`)
+bulur. Ubuntu 24.04 ve sonrasında, AppArmor ayrıcalıksız kullanıcı ad alanını
+kısıtladığı hâlde, `.deb` ile kurulan Kalfa'nın yalıtımı elle ayar
+gerektirmeden hazır olur. Sistemin `/usr/bin/bwrap`'ı ve onu kullanan diğer
+uygulamalar (Flatpak vb.) etkilenmez.
+
+Başarı: iki paket aynı sürümden tek betikle üretilir; paket içeriği, izinler
+ve bakımcı betikleri denetlenir; Ubuntu 24.04 masaüstü VM'inde `.deb`
+kurulunca Kalfa'nın yalıtım durumu `Hazir`, kaldırılınca profil ve dosyalar
+gider, kullanıcı verisi kalır.
+
+## 2. Kullanıcı kararları (13 Ekim)
+
+1. **AppArmor:** profil yalnız Kalfa'nın kendi bwrap kopyasına
+   (`/usr/lib/kalfa/bwrap`) ad alanı izni verir. Sistem bwrap'ına profil
+   eklenmez; dağıtımın `bwrap-userns-restrict` profiline bağlanılmaz
+   (sürümler arasında eklenip geri alındı, sınaması zor).
+2. **Araç zinciri:** Linux'ta Python, Node ve git sistemden gelir; paketler
+   bunları yalnız öneri (`Recommends`) olarak anar. Windows'taki gibi
+   paketlenmez.
+3. **Biçim:** `.deb` ve `.rpm` birlikte.
+4. **Gerçek sınama:** kullanıcının kuracağı Ubuntu 24.04 masaüstü VM'i.
+   WSL'de AppArmor yoktur (aşama 2 tasarımı §8.4).
+
+## 3. Mevcut durum
+
+- `tauri.conf.json` paketlemeyi açar; Windows'a özgü ayar
+  `tauri.nsis.conf.json`'dadır ve `kurucu/derle.mjs` onu `--config` ile
+  verir (NSIS, `kalfa-yalitim`, `kalfa-kopru`, araç zinciri, eklenti).
+- `kalfa-uygulama::dizin::kopru_ikilisi` köprüyü exe'nin dizininde ve bir
+  üstünde arar; Linux paketinde exe `/usr/bin/kalfa`, köprü
+  `/usr/bin/kalfa-kopru`'dur.
+- `yerlesik_eklenti_dizini` Tauri'nin kaynak dizinindeki `eklentiler/`'i
+  kullanır; Linux'ta bu `/usr/lib/Kalfa/`'dır.
+- `kalfa_araclari` Linux'ta boştur: araç zinciri sistemdendir (karar 2 ile
+  uyumlu).
+- `kalfa-sandbox::linux` bwrap'ı yalnız sabit sistem yollarında arar (§8.1:
+  `PATH`'ten aranmaz). Algılama, ad alanı kısıtını `KullaniciAdAlaniKapali`
+  olarak bildirir ve elle profil talimatı verir.
+- Seccomp filtresi kaptaki `unshare`/`clone` çağrılarında `CLONE_NEWUSER`
+  dahil ad alanı bayraklarını reddeder: kaptaki komut yeni kullanıcı ad
+  alanı açamaz.
+
+## 4. Paket içeriği
+
+| Yol | `.deb` | `.rpm` | Kaynak |
+|---|---|---|---|
+| `/usr/bin/kalfa` | ✓ | ✓ | Tauri |
+| `/usr/bin/kalfa-kopru` | ✓ | ✓ | `externalBin` |
+| `/usr/lib/Kalfa/eklentiler/kalfa-rag/` | ✓ | ✓ | `resources` |
+| `/usr/share/applications/`, simgeler | ✓ | ✓ | Tauri |
+| `/usr/lib/kalfa/bwrap` | ✓ | — | derleme makinesinin `bubblewrap` paketi |
+| `/usr/share/kalfa/apparmor/kalfa-bwrap` | ✓ | — | `kurucu/linux/` |
+| `/usr/share/doc/kalfa/bubblewrap/{copyright,KAYNAK}` | ✓ | — | LGPL bilgisi |
+
+Bağımlılıklar:
+
+- `.deb`: Tauri'nin ekledikleri (`libwebkit2gtk-4.1-0`, `libgtk-3-0`) ile
+  bwrap kopyası için `libcap2`, `libselinux1`. Öneri: `python3`, `nodejs`,
+  `git`. `bubblewrap` paketine bağlı değildir.
+- `.rpm`: `bubblewrap` (Fedora'da ad alanı kısıtı yok; sistem bwrap'ı
+  kullanılır). Öneri: `python3`, `nodejs`, `git`.
+
+Ayar `crates/kalfa/tauri.linux-paket.conf.json`'dadır; derleme
+`kurucu/derle-linux.mjs` ile yapılır (§7). Tauri'nin otomatik birleştirdiği
+`tauri.linux.conf.json` adı kullanılmaz: geliştirme derlemesi paket
+ayarından etkilenmemelidir.
+
+## 5. Kalfa'nın bwrap kopyası ve AppArmor
+
+**Neden kopya:** AppArmor profili yola bağlanır. `/usr/bin/bwrap`'a profil
+eklemek dağıtımın ya da başka uygulamaların bwrap profilleriyle çakışır ve
+makinedeki her bwrap kullanıcısının davranışını değiştirir. Kalfa'ya özel
+yol yalnız bu kopyanın davranışını belirler.
+
+**Kaynak:** Derleme makinesinin dağıtım paketindeki değiştirilmemiş
+`/usr/bin/bwrap`. Sürüm `dpkg-query` ile okunur; `copyright` ve kaynak
+bilgisi (`apt-get source bubblewrap=<sürüm>`) pakete yazılır (LGPL-2.0+).
+Kopya setuid değildir. Güvenlik güncellemeleri Kalfa sürümüyle gelir;
+sürüm notlarında bwrap sürümü yazılır.
+
+**Profil:** AppArmor'un `bwrap-userns-restrict` desenini Kalfa'nın yoluna
+uygular (`kurucu/linux/kalfa-bwrap`). `kalfa-bwrap` profili bwrap'a
+kullanıcı ad alanını ve kurulum için yetenekleri verir; bwrap'ın başlattığı
+her süreç (`pix … -> &kalfa-bwrap//&kalfa-bwrap-cocuk`) `audit deny
+capability` taşıyan çocuk profile yığılır. Yığma gereklidir: bwrap
+no-new-privs kullanır.
+
+**Neden kısıtlı çocuk (güvenlik incelemesi, 13 Ekim):** Kopya her yerel
+kullanıcı tarafından çalıştırılabilir. Yalnız `unconfined` + `userns`
+veren bir profil, makinedeki her programın Kalfa'nın bwrap'ı üzerinden ad
+alanı kısıtını aşmasına, yani `/usr/bin/bwrap`'a izin vermekle hemen hemen
+aynı sonuca yol açardı. Kısıtın amacı, ayrıcalıksız kodun kullanıcı ad
+alanındaki yeteneklerle çekirdek saldırı yüzeyine erişmesini önlemektir.
+Çocuk profil yeteneği kaldırdığı için kopyayı çalıştıran başka bir program
+da yeteneksiz bir ad alanı alır. Kalan etki: her yerel kullanıcı Kalfa'nın
+bwrap'ıyla yeteneksiz bir kap açabilir; bu, Ubuntu'nun kendi
+`bwrap-userns-restrict` profilinin kabul ettiği düzeydir. Kalfa'nın kendi
+komutları yetenek kullanmaz; kaptaki yeni ad alanı ayrıca seccomp ile
+kapalıdır (§3).
+
+**Kurulum:** Profil `/usr/share/kalfa/apparmor/` altında gelir; `postinst`
+yalnız `kernel.apparmor_restrict_unprivileged_userns` varsa (AppArmor 4'lü
+Ubuntu çekirdekleri) ve `apparmor_parser` bulunuyorsa onu
+`/etc/apparmor.d/kalfa-bwrap`'a kopyalar ve yükler. Debian 12'nin AppArmor
+3'ü `abi <abi/4.0>`'ı bilmez; profil doğrudan `/etc/apparmor.d/`'ye
+konsaydı oradaki AppArmor yüklemesini bozardı. Yükleme başarısızsa kurulum
+sürer ve komut iletisi yazılır.
+
+**Kaldırma:** `postrm remove|purge` profili çekirdekten ve
+`/etc/apparmor.d/`'den kaldırır; `upgrade`'de dokunmaz, yeni `postinst`
+yeniler. Kullanıcı verisi (`~/.local/share/...`) silinmez.
+
+**Kod:** `BWRAP_YOLLARI` önce `/usr/lib/kalfa/bwrap`'ı dener. Yol kök
+sahipli paket dizinindedir; `PATH` kuralı (§8.1) korunur. Paket dışı
+kurulumda davranış değişmez.
+
+**Algılama iletisi:** `TALIMAT_AD_ALANI`, `.deb` kurulumunda profilin
+kurulmuş olması gerektiğini ve onarım için `sudo dpkg-reconfigure kalfa`
+ya da paketin yeniden kurulmasını söyler. Paket dışı kurulum için elle profil
+talimatı kalır, ancak sistem bwrap'ı yerine kullanıcıyı paket kurmaya
+yönlendirir.
+
+## 6. Derleme tabanı
+
+Tauri, en eski desteklenen dağıtımda derlemeyi önerir: daha yeni glibc ile
+derlenen ikili eski sistemde açılmaz. Ubuntu 24.04'te (glibc 2.39) derlenen
+paket Debian 12 / Pardus 23'te (glibc 2.36) çalışmaz. Sürüm paketleri
+Debian 12 kabında derlenir; bwrap kopyası da o kabın `bubblewrap`
+paketinden gelir. Ön doğrulama Ubuntu 24.04'te paket mekaniğini ölçer
+(§9); taban kabı sürüm iş akışıyla gelir (§10).
+
+## 7. Derleme betiği
+
+`node crates/kalfa/kurucu/derle-linux.mjs` (`ui/`'de `npm ci` sonrası):
+
+1. `kalfa-kopru`'yu sürüm kipinde derler, `binaries/kalfa-kopru-<üçlü>`'ye
+   kopyalar.
+2. `kalfa-rag`'ı `wasm32-wasip2` için derler, `eklentiler/kalfa-rag/`'a
+   koyar.
+3. bwrap'ı, `copyright`'ı ve sürüm/kaynak notunu `binaries/`'e yazar.
+4. Arayüzü derler ve `tauri build --config tauri.linux-paket.conf.json`
+   çalıştırır. Çıktı `target/release/bundle/{deb,rpm}/`'dedir.
+
+`binaries/` ve `eklentiler/` derleme çıktısıdır, depoya girmez.
+
+## 8. Sınama
+
+- **Birim:** `bwrap_yolu` sırası (paket kopyası önce) ve yeni talimat metni.
+- **Paket (WSL, kurulumsuz):** `dpkg-deb -I/-c` ile bağımlılık, dosya,
+  izin ve bakımcı betikleri; açılan paketteki bwrap'ın `--version` ve
+  ad alanlı deneme çalıştırması; profilin `apparmor_parser -Q -K` ile
+  sözdizimi.
+- **VM (Ubuntu 24.04 masaüstü, kullanıcı kurar):** `apt install ./kalfa*.deb`;
+  `aa-status`'ta `kalfa-bwrap` ve `kalfa-bwrap-cocuk`; sistem bwrap'ının
+  hâlâ reddedildiği (`bwrap --unshare-user … true` başarısız), Kalfa
+  kopyasının çalıştığı ve kaptaki sürecin `CapEff`'inin 0, yetenek isteyen
+  bir işlemin (`unshare -r`, `--cap-add`) reddedildiği;
+  uygulamanın yalıtım durumu `Hazir`; ağsız ve ağlı yalıtımlı komut;
+  yükseltme (aynı paketi yeniden kur); `apt remove` sonrası profilin
+  `aa-status`'tan ve `/etc/apparmor.d/`'den gittiği, `~/.local/share`'in
+  kaldığı. Betik ve geri alma adımları plandadır.
+- **`.rpm`:** içerik denetimi `rpm -qlp` ister; WSL'de `rpm` aracı yok.
+  Kurulumu kullanıcı onayıyla (paket kurma) ya da bir Fedora kabıyla
+  sınanır; aksi hâlde raporda sınanmadı yazılır.
+
+## 9. Ön doğrulama
+
+(ön doğrulama sonuçları buraya)
+
+## 10. Kapsam dışı
+
+- Sürüm iş akışı (Debian 12 kabında derleme, `SHA256SUMS`, yayımlama):
+  ayrı iş.
+- AppImage ve Flatpak.
+- Paket imzası ve apt/dnf deposu.
+- Linux'ta araç zinciri paketleme (karar 2).

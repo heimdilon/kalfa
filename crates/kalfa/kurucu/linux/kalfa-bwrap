@@ -1,12 +1,51 @@
-# Kalfa'nın kendi bubblewrap kopyasına ayrıcalıksız kullanıcı ad alanı izni
-# verir (Linux paket tasarımı). Sistemin /usr/bin/bwrap'ı etkilenmez. Kaptaki
-# komutların yeni kullanıcı ad alanı açması Kalfa'nın seccomp filtresiyle
-# kapalıdır.
+# Kalfa'nın kendi bubblewrap kopyası (/usr/lib/kalfa/bwrap) için AppArmor
+# profili (Linux paket tasarımı §5). AppArmor'un bwrap-userns-restrict
+# desenini izler: bwrap kullanıcı ad alanını ve kurulum için gereken
+# yetenekleri alır; başlattığı her süreç yeteneksiz bir alt profile yığılır.
+# Böylece kopya, makinedeki başka bir program için ad alanı kısıtını aşan
+# yetenekli bir araç olmaz. Sistemin /usr/bin/bwrap'ı etkilenmez.
 abi <abi/4.0>,
 include <tunables/global>
 
-profile kalfa-bwrap /usr/lib/kalfa/bwrap flags=(unconfined) {
-  userns,
+profile kalfa-bwrap /usr/lib/kalfa/bwrap flags=(attach_disconnected,mediate_deleted) {
+  allow capability,
+  allow file rwlkm /{**,},
+  allow network,
+  allow unix,
+  allow ptrace,
+  allow signal,
+  allow mqueue,
+  allow io_uring,
+  allow userns,
+  allow mount,
+  allow umount,
+  allow pivot_root,
+  allow dbus,
+
+  # bwrap no-new-privs kullandığı için çocuk profil yığılarak uygulanır.
+  allow pix /** -> &kalfa-bwrap//&kalfa-bwrap-cocuk,
 
   include if exists <local/kalfa-bwrap>
+}
+
+# bwrap'ın başlattığı süreçler: yetenek yok; geri kalan sınırı bwrap ve
+# Kalfa'nın seccomp filtresi koyar.
+profile kalfa-bwrap-cocuk flags=(attach_disconnected,mediate_deleted) {
+  allow file rwlkm /{**,},
+  allow network,
+  allow unix,
+  allow ptrace,
+  allow signal,
+  allow mqueue,
+  allow io_uring,
+  allow userns,
+  allow mount,
+  allow umount,
+  allow pivot_root,
+  allow dbus,
+  allow pix /** -> &kalfa-bwrap-cocuk,
+
+  audit deny capability,
+
+  include if exists <local/kalfa-bwrap-cocuk>
 }
