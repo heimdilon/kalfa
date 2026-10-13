@@ -117,8 +117,16 @@ temiz, arayüz 420, e2e Windows ve Linux 41/41. Sapmalar tasarım §4.1 ve
 §11'de. Not: kullanıcının iptal ettiği akıştan sonra (kullanımı bilinmez)
 bir sonraki istekten önce bütçe kararı istenir.
 
-**Sıradaki tek iş:** 5b PR'ının CI'ı ve kullanıcının birleştirme onayı. Linux paketleri sonraki
-adaydır; canlı `baglam_canli` deneyi ayrı onay bekler.
+**5b birleşti (13 Ekim):** PR [#4](https://github.com/heimdilon/kalfa/pull/4)
+kullanıcının açık onayıyla squash birleşti (`1c3a6e1`). Codex incelemesinin
+yedi bulgusundan dördü önce düşen testlerle düzeltildi (iptal sırasında
+kuyruktaki bitiş, salt okunur açılışın bütçesi, eski kayıt devrinde
+birikimli kullanım, kayıttan oynatılan karar); üçü gerekçeyle değiştirilmedi
+(tasarım §11). Son kod Windows 1 209 + 190, Linux 1 152 + 190, yalıtım 26,
+uyumluluk 16; CI yeşil.
+
+**Sıradaki tek iş:** Linux paketleri (sonraki aday); canlı `baglam_canli`
+deneyi ayrı onay bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
