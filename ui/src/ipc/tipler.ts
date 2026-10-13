@@ -413,8 +413,13 @@ export interface GecmisSayfasi {
   daha_eski_var: boolean;
 }
 
+export type DusunceEforu = 'kapali' | 'dusuk' | 'orta' | 'yuksek';
+
+export const EFORLAR: readonly DusunceEforu[] = ['kapali', 'dusuk', 'orta', 'yuksek'];
+
 export interface DurumOzeti {
   model: string | null;
+  efor?: DusunceEforu | null;
   kip: Kip | null;
   yonlendirilen_model: string | null;
   son_kredi: KrediGozlemi | null;
@@ -447,6 +452,7 @@ export type ModelProfili = 'Hizli' | 'Dengeli' | 'Derin' | 'Otomatik';
 export interface ModelSecenegi {
   kimlik: string;
   profil: ModelProfili;
+  eforlar?: DusunceEforu[];
 }
 
 export type DepoTuru = 'Kalici' | 'Bellekte';
@@ -481,6 +487,7 @@ export interface UygulamaDurumu {
   anahtar_deposu: DepoTuru;
   modeller: ModelSecenegi[];
   varsayilan_model: string;
+  varsayilan_efor?: DusunceEforu;
   son_oturum: OturumId | null;
   yalitim: YalitimDurumu;
   /** Yalıtım yokken komutlar yalıtımsız çalışabilir mi (aşama 2 tasarımı §9.8). */

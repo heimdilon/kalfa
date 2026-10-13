@@ -47,6 +47,57 @@
     return null;
   });
 
+  const seciliModelKimligi = $derived(
+    ekran?.ozet.model ?? durum.uygulama?.varsayilan_model ?? '',
+  );
+  const seciliModelBilgisi = $derived(
+    (durum.uygulama?.modeller ?? []).find((s) => s.kimlik === seciliModelKimligi),
+  );
+  const seciliEfor = $derived(
+    ekran?.ozet.efor ?? durum.uygulama?.varsayilan_efor ?? 'orta',
+  );
+  const degisenDosyaOzeti = $derived.by(() => {
+    if (!ekran) return { sayi: 0, eklenen: 0, silinen: 0, sonDosya: null as string | null };
+    const dosyalar = new Map<string, { eklenen: number; silinen: number }>();
+    for (const oge of ekran.ogeler) {
+      if (oge.tip === 'TurOzeti' && !oge.geri_alindi) {
+        for (const d of oge.ozet.dosyalar) {
+          const mevcut = dosyalar.get(d.yol) ?? { eklenen: 0, silinen: 0 };
+          dosyalar.set(d.yol, {
+            eklenen: mevcut.eklenen + d.eklenen,
+            silinen: mevcut.silinen + d.silinen,
+          });
+        }
+      }
+    }
+    let eklenen = 0;
+    let silinen = 0;
+    let sonDosya: string | null = null;
+    for (const [yol, s] of dosyalar) {
+      eklenen += s.eklenen;
+      silinen += s.silinen;
+      sonDosya = yol;
+    }
+    return { sayi: dosyalar.size, eklenen, silinen, sonDosya };
+  });
+
+  const cetvelCizgileri = $derived.by(() => {
+    if (!ekran) return [];
+    return ekran.ogeler
+      .filter((o) => o.tip === 'KullaniciMesaji' || o.tip === 'AracCagrisi' || o.tip === 'TurOzeti')
+      .slice(-18)
+      .map((o) => ({
+        anahtar: o.anahtar,
+        tur: o.tip === 'KullaniciMesaji' ? 'ana' : o.tip === 'TurOzeti' ? 'ozet' : 'adim',
+      }));
+  });
+
+  function projeKisaAdi(yol: string | null): string {
+    if (!yol) return 'kalfa';
+    const parcalar = yol.replace(/\\/g, '/').split('/').filter(Boolean);
+    return parcalar.at(-1) ?? yol;
+  }
+
   let metin = $state('');
   let akis = $state<HTMLDivElement>();
   let icerik = $state<HTMLDivElement>();
@@ -171,6 +222,12 @@
           onchange={(acik) => durum.onizlemeAyarla(ekran.oturum, acik)}
         />
         <IconButton
+          icon="code"
+          active={durum.sagBolmeAcik}
+          label={durum.sagBolmeAcik ? m('konusma.sag_bolme_kapat') : m('konusma.sag_bolme_ac')}
+          onclick={() => (durum.sagBolmeAcik = !durum.sagBolmeAcik)}
+        />
+        <IconButton
           icon="send"
           label={m('konusma.gunluk')}
           onclick={() => durum.gunluguAc(ekran.oturum)}
@@ -183,6 +240,25 @@
         <IconButton icon="x" label={m('konusma.kapat')} onclick={() => durum.kapat(ekran.oturum)} />
       </div>
     </header>
+
+    {#if degisenDosyaOzeti.sayi > 0 && degisenDosyaOzeti.sonDosya}
+      <div class="degisiklik-seridi">
+        <Icon name="file-pen" size={14} />
+        <span class="degisiklik-metin">
+          {m('konusma.duzenlendi', { dosya: degisenDosyaOzeti.sonDosya })}
+        </span>
+        <span class="degisiklik-arti">+{degisenDosyaOzeti.eklenen}</span>
+        <span class="degisiklik-eksi">−{degisenDosyaOzeti.silinen}</span>
+        <span class="bosluk"></span>
+        <button
+          type="button"
+          class="degisiklik-dugme"
+          onclick={() => (durum.sagBolmeAcik = !durum.sagBolmeAcik)}
+        >
+          {m('konusma.degisiklikleri_gor')}
+        </button>
+      </div>
+    {/if}
 
     {#if ekran.salt_okunur}
       <div class="serit bilgi" role="status">
@@ -247,32 +323,75 @@
       </details>
     {/if}
 
-    <div class="akis" bind:this={akis} onscroll={kaydirildi}>
-      <div class="icerik" bind:this={icerik}>
-        {#if ekran.daha_eski_var}
-          <div class="eski">
-            <Button variant="ghost" size="sm" iconLeft="chevron-down" onclick={eskileriYukle}>
-              {m('konusma.eskiler')}
-            </Button>
-          </div>
-        {/if}
-        {#each ekran.ogeler as oge (oge.anahtar)}
-          <div class="oge">
-            <KonusmaOgesi {oge} {durum} oturum={ekran.oturum} />
-          </div>
-        {:else}
-          <p class="bos">{m('konusma.bos')}</p>
-        {/each}
+    <div class="akis-sarmal">
+      {#if cetvelCizgileri.length > 0}
+        <div class="tur-cetveli" aria-hidden="true">
+          {#each cetvelCizgileri as c (c.anahtar)}
+            <span class={['cetvel-cizgi', `c-${c.tur}`]}></span>
+          {/each}
+        </div>
+      {/if}
+
+      <div class="akis" bind:this={akis} onscroll={kaydirildi}>
+        <div class="icerik" bind:this={icerik}>
+          {#if ekran.daha_eski_var}
+            <div class="eski">
+              <Button variant="ghost" size="sm" iconLeft="chevron-down" onclick={eskileriYukle}>
+                {m('konusma.eskiler')}
+              </Button>
+            </div>
+          {/if}
+          {#each ekran.ogeler as oge (oge.anahtar)}
+            <div class="oge">
+              <KonusmaOgesi {oge} {durum} oturum={ekran.oturum} />
+            </div>
+          {:else}
+            <p class="bos">{m('konusma.bos')}</p>
+          {/each}
+        </div>
       </div>
+
+      {#if !durum.sagBolmeAcik}
+        <aside class="yuzen-denetci" aria-label={m('konusma.denetci_baslik')}>
+          <button
+            type="button"
+            class="denetci-satir baslik-satir"
+            onclick={() => (durum.sagBolmeAcik = true)}
+          >
+            <Icon name="folder-open" size={14} />
+            <span class="denetci-ad">{projeKisaAdi(ekran.calisma_alani)}</span>
+            <Icon name="chevron-right" size={13} />
+          </button>
+          <button
+            type="button"
+            class="denetci-satir"
+            onclick={() => (durum.sagBolmeAcik = true)}
+          >
+            <span class="denetci-etiket">{m('konusma.denetci.degisiklikler')}</span>
+            {#if degisenDosyaOzeti.sayi > 0}
+              <span class="degisiklik-arti">+{degisenDosyaOzeti.eklenen}</span>
+              <span class="degisiklik-eksi">−{degisenDosyaOzeti.silinen}</span>
+            {:else}
+              <span class="denetci-deger">0</span>
+            {/if}
+          </button>
+          <div class="denetci-satir">
+            <span class="denetci-etiket">{seciliModelKimligi}</span>
+            <span class="denetci-deger">{seciliEfor}</span>
+          </div>
+        </aside>
+      {/if}
     </div>
 
     <div class="alt">
       <Composer
         bind:value={metin}
         models={modeller}
-        model={ekran.ozet.model ?? durum.uygulama?.varsayilan_model ?? ''}
+        model={seciliModelKimligi}
         modes={kipler}
         mode={ekran.ozet.kip ?? 'Siki'}
+        efor={seciliEfor}
+        eforlar={seciliModelBilgisi?.eforlar}
         running={ekran.anlik !== 'Bos'}
         disabled={kapaliNedeni !== null}
         placeholder={kapaliNedeni ?? undefined}
@@ -280,6 +399,8 @@
         oncancel={() => durum.iptal()}
         onmodelchange={(v) => durum.modelSec(v)}
         onmodechange={(v) => durum.kipSec(v as Kip)}
+        oneforchange={(v) => durum.eforSec(v)}
+        onmodelyenile={() => durum.modelleriYenile()}
       />
     </div>
   {:else}
@@ -408,6 +529,132 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+  .degisiklik-seridi {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 22px;
+    font: var(--type-small);
+    color: var(--text-secondary);
+    background: var(--surface-card);
+    border-bottom: var(--border-width) solid var(--border-subtle);
+  }
+  .degisiklik-metin {
+    font-family: var(--font-mono);
+    font-size: var(--text-micro);
+    color: var(--text-body);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .degisiklik-arti {
+    font: var(--type-meta);
+    color: var(--status-ok);
+  }
+  .degisiklik-eksi {
+    font: var(--type-meta);
+    color: var(--status-danger);
+  }
+  .bosluk {
+    flex: 1;
+  }
+  .degisiklik-dugme {
+    padding: 3px 10px;
+    border: var(--border-width) solid var(--border-default);
+    border-radius: var(--radius-pill);
+    background: var(--surface-raised);
+    color: var(--text-body);
+    font: var(--type-meta);
+    cursor: pointer;
+    transition: var(--transition-control);
+  }
+  .degisiklik-dugme:hover {
+    border-color: var(--border-accent);
+    color: var(--text-accent);
+  }
+  .akis-sarmal {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .tur-cetveli {
+    width: 16px;
+    flex: 0 0 16px;
+    padding: 20px 0 20px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+  .cetvel-cizgi {
+    display: block;
+    height: 2px;
+    width: 5px;
+    border-radius: 1px;
+    background: var(--border-default);
+  }
+  .cetvel-cizgi.c-ana {
+    width: 10px;
+    background: var(--copper-300);
+  }
+  .cetvel-cizgi.c-ozet {
+    width: 8px;
+    background: var(--status-ok);
+  }
+  .yuzen-denetci {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    width: 210px;
+    z-index: 12;
+    padding: 8px;
+    background: color-mix(in srgb, var(--surface-card) 92%, transparent);
+    backdrop-filter: blur(8px);
+    border: var(--border-width) solid var(--border-default);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-overlay);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .denetci-satir {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 8px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font: var(--type-meta);
+    text-align: left;
+  }
+  button.denetci-satir {
+    cursor: pointer;
+  }
+  button.denetci-satir:hover {
+    background: var(--surface-raised);
+    color: var(--text-body);
+  }
+  .baslik-satir {
+    font-weight: var(--fw-semibold);
+    color: var(--text-title);
+  }
+  .denetci-ad,
+  .denetci-etiket {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .denetci-deger {
+    color: var(--text-accent);
+    font-weight: var(--fw-medium);
   }
   .akis {
     flex: 1;

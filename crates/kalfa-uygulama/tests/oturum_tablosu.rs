@@ -779,3 +779,29 @@ async fn oge_metni_yalnizca_kayittaki_sira() {
             .unwrap_err();
     assert_eq!(err.kod, HataKodu::GecersizGirdi);
 }
+
+#[tokio::test]
+async fn efor_degistir_kaydedilir_ve_kurtarilir() {
+    use kalfa_evren::tipler::DusunceEforu;
+
+    let o = ortam(vec![SahteYanit::metin("tamam")]).await;
+    let modeller = o.t.uygulama.modelleri_yenile().await.unwrap();
+    assert!(modeller.iter().any(|m| m.kimlik == "glm-5.3"));
+    assert!(modeller.iter().any(|m| m.kimlik == "auto"));
+
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .efor_degistir(oturum, DusunceEforu::Yuksek)
+        .await
+        .unwrap();
+    o.t.uygulama
+        .mesaj_gonder(oturum, "merhaba".into())
+        .await
+        .unwrap();
+    olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+
+    o.t.uygulama.oturumu_kapat(oturum).await.unwrap();
+    let acilan = o.t.uygulama.oturum_ac(oturum).await.unwrap();
+    assert_eq!(acilan.ozet.efor, Some(DusunceEforu::Yuksek));
+}

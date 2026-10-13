@@ -15,11 +15,13 @@ import type {
   CalismaAlani,
   DenetciDurumu,
   DenetimKipi,
+  DusunceEforu,
   GecmisSayfasi,
   GunlukSayfasi,
   IslemId,
   KanalMesaji,
   Kip,
+  ModelSecenegi,
   OnarimSonucu,
   OnayGirdisi,
   OturumAcilisi,
@@ -32,6 +34,8 @@ import type {
 } from './tipler';
 
 export const uygulamaDurumu = () => invoke<UygulamaDurumu>('uygulama_durumu');
+
+export const modelleriYenile = () => invoke<ModelSecenegi[]>('modelleri_yenile');
 
 export const oturumlariListele = () => invoke<OturumSatiri[]>('oturumlari_listele');
 
@@ -64,6 +68,9 @@ export const aracOnayi = (oturum: OturumId, kararlar: OnayGirdisi[]) =>
 
 export const modelDegistir = (oturum: OturumId, model: string) =>
   invoke<void>('model_degistir', { oturum, model });
+
+export const eforDegistir = (oturum: OturumId, efor: DusunceEforu) =>
+  invoke<void>('efor_degistir', { oturum, efor });
 
 /** Yükseltmede yerel onay sorulur; reddedilirse eski kip döner. */
 export const izinKipiDegistir = (oturum: OturumId, kip: Kip) =>

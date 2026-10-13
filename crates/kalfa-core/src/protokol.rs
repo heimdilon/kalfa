@@ -2,6 +2,7 @@
 //! birim testine eşit uzaklıktadır.
 
 use kalfa_evren::KrediGozlemi;
+use kalfa_evren::tipler::DusunceEforu;
 use serde::{Deserialize, Serialize};
 
 use crate::butce::{ButceGorunumu, ButceSinirlari};
@@ -56,6 +57,9 @@ pub enum Komut {
     },
     ModelDegistir {
         model: String,
+    },
+    EforDegistir {
+        efor: DusunceEforu,
     },
     IzinKipiDegistir {
         kip: Kip,

@@ -12,6 +12,7 @@ import type {
   ButceKarari,
   ButceSinirlari,
   DenetciDurumu,
+  DusunceEforu,
   CagriId,
   GunlukSinirDurumu,
   IslemId,
@@ -36,6 +37,8 @@ export class AnaDurum {
   hata = $state<string | null>(null);
   /** Açık onay sayfası. */
   onay = $state<{ oturum: OturumId; islem: IslemId } | null>(null);
+  /** Sağdaki bölünmüş değişiklik / inceleme bölmesi açık mı (varsayılan kapalı). */
+  sagBolmeAcik = $state(false);
   /** Açık gönderim günlüğü (oturum kimliğiyle). */
   gunlukOturum = $state<OturumId | null>(null);
   gunlukAcik = $derived(this.gunlukOturum !== null);
@@ -139,6 +142,32 @@ export class AnaDurum {
     if (!oturum) return;
     const oldu = await this.#dene(() => ipc.modelDegistir(oturum, model));
     if (oldu !== undefined) this.#uygula(oturum, { tip: 'ModelDegisti', model });
+  }
+
+  async eforSec(efor: DusunceEforu): Promise<void> {
+    const oturum = this.secili;
+    if (!oturum) return;
+    const oldu = await this.#dene(() => ipc.eforDegistir(oturum, efor));
+    if (oldu !== undefined) this.#uygula(oturum, { tip: 'EforDegisti', efor });
+  }
+
+  async modelleriYenile(): Promise<void> {
+    const liste = await this.#dene(() => ipc.modelleriYenile());
+    if (liste && this.uygulama) {
+      this.uygulama = { ...this.uygulama, modeller: liste };
+    }
+  }
+
+  sagBolmeyiAc(): void {
+    this.sagBolmeAcik = true;
+  }
+
+  sagBolmeyiKapat(): void {
+    this.sagBolmeAcik = false;
+  }
+
+  sagBolmeyiDegistir(): void {
+    this.sagBolmeAcik = !this.sagBolmeAcik;
   }
 
   /** Yükseltmede Rust yerel onay sorar; reddedilirse eski kip döner (1c tasarımı §6). */

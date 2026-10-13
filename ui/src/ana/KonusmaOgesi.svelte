@@ -53,15 +53,15 @@
   </Message>
 {:else if oge.tip === 'Yanit'}
   <Message streaming={oge.akista}>
-    {#if oge.metin}
-      <Markdown metin={oge.metin} akista={oge.akista} baglantiAc={durum.baglantiAc} />
-    {/if}
     {#if oge.dusunce}
       <div class="dusunce">
-        <ThoughtPanel>
+        <ThoughtPanel akista={oge.akista}>
           <Markdown metin={oge.dusunce} akista={oge.akista} baglantiAc={durum.baglantiAc} />
         </ThoughtPanel>
       </div>
+    {/if}
+    {#if oge.metin}
+      <Markdown metin={oge.metin} akista={oge.akista} baglantiAc={durum.baglantiAc} />
     {/if}
   </Message>
 {:else if oge.tip === 'AracCagrisi'}

@@ -634,4 +634,30 @@ describe('tur özeti ve geri alma (aşama 3 tasarımı §5.11)', () => {
     await waitFor(() => expect(within(liste).getByText('Henüz oturum yok. Yeni bir oturumla başlayın.')).toBeTruthy());
     expect(screen.queryByRole('heading', { name: 'Dosyaları incele' })).toBeNull();
   });
+
+  it('varsayılan kapalı sağ bölmede yüzen denetçi görünür; açılınca bölmeler boyutlandırılır', async () => {
+    await ciz();
+    const denetci = screen.getByRole('complementary', { name: 'Oturum denetçisi' });
+    expect(denetci).toBeTruthy();
+
+    // Sol bölme tutamacı klavye ile en çok 300px'e kadar genişler.
+    const solTutamac = screen.getByRole('button', { name: 'Bölme genişliğini ayarla' });
+    for (let i = 0; i < 10; i++) {
+      await fireEvent.keyDown(solTutamac, { key: 'ArrowRight' });
+    }
+    expect(document.querySelector('.sol-genislik-300')).toBeTruthy();
+
+    // Sağ inceleme bölmesini aç.
+    await fireEvent.click(screen.getByRole('button', { name: 'İnceleme bölmesini aç' }));
+    expect(screen.queryByRole('complementary', { name: 'Oturum denetçisi' })).toBeNull();
+    expect(screen.getByRole('complementary', { name: 'Değişiklikler' })).toBeTruthy();
+
+    // Sağ bölme tutamacı klavye ile %50'ye (yarı yarıya) kadar çekilebilir.
+    const tutamaclar = screen.getAllByRole('button', { name: 'Bölme genişliğini ayarla' });
+    const sagTutamac = tutamaclar[1];
+    for (let i = 0; i < 10; i++) {
+      await fireEvent.keyDown(sagTutamac, { key: 'ArrowLeft' });
+    }
+    expect(document.querySelector('.sag-oran-50')).toBeTruthy();
+  });
 });

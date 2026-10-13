@@ -54,6 +54,7 @@ impl Uygulama {
         self.evren.ayarla(saglayici);
         match self.kapi.ilk_durum().await {
             Ok(IlkDurum::KabulEdilmis) => {
+                self.modelleri_guncelle().await;
                 self.ic().sart_penceresi = SartPenceresiDurumu::Tamam;
                 self.pencereler.ana_ac();
             }
@@ -146,6 +147,7 @@ impl Uygulama {
         self.ic().baglanti = BaglantiDurumu::Var;
         let sonraki = match self.kapi.ilk_durum().await? {
             IlkDurum::KabulEdilmis => {
+                self.modelleri_guncelle().await;
                 self.sart_tamam();
                 SartPenceresiDurumu::Tamam
             }
@@ -169,6 +171,7 @@ impl Uygulama {
         let _komut = PencereKomutu::yeni(self);
         match self.kapi.kabul_et(surum).await? {
             KabulSonucu::Kabul => {
+                self.modelleri_guncelle().await;
                 self.sart_tamam();
                 Ok(KabulYaniti::Kabul)
             }
@@ -187,6 +190,7 @@ impl Uygulama {
             // yapılmaz.
             KabulSonucu::Bosta => match self.kapi.durum().son_karar {
                 Some(SartKarari::Kabul { .. }) => {
+                    self.modelleri_guncelle().await;
                     self.sart_tamam();
                     Ok(KabulYaniti::Kabul)
                 }
@@ -214,6 +218,7 @@ impl Uygulama {
         let durum = match self.kapi.gerekli(nesil).await? {
             GerekliSonucu::OnayGerekli { metin, .. } => SartPenceresiDurumu::SartGerekli { metin },
             GerekliSonucu::KabulEdildi { .. } => {
+                self.modelleri_guncelle().await;
                 self.sart_tamam();
                 SartPenceresiDurumu::Tamam
             }

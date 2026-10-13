@@ -54,12 +54,33 @@ describe('Composer (1c tasarımı §8.1, §9.5)', () => {
     await fireEvent.keyDown(alan, { key: 'Enter' });
     expect(onsend).not.toHaveBeenCalled();
   });
+
+  it('düşünce eforu balonu açılır, kaydırıcıyla efor seçilir ve modeller yenilenir', async () => {
+    const oneforchange = vi.fn();
+    const onmodelyenile = vi.fn();
+    ciz({ efor: 'orta', oneforchange, onmodelyenile });
+    const tetik = screen.getByRole('button', { name: 'Düşünce eforu' });
+    expect(tetik.textContent).toContain('Orta');
+    await fireEvent.click(tetik);
+    expect(screen.getByRole('dialog', { name: 'Düşünce eforu ve model' })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('radio', { name: 'Yüksek' }));
+    expect(oneforchange).toHaveBeenCalledWith('yuksek');
+    await fireEvent.click(screen.getByRole('button', { name: 'Modelleri yenile' }));
+    expect(onmodelyenile).toHaveBeenCalledOnce();
+  });
 });
 
 describe('sohbet ve gezinme bileşenleri', () => {
-  it('ThoughtPanel kapalı başlar, düğmeyle açılır', async () => {
-    render(ThoughtPanel, { props: { children: metin('iç düşünce') } });
+  it('ThoughtPanel kapalı başlar, düğmeyle açılır; akışta canlı açık görünür', async () => {
+    const { rerender } = render(ThoughtPanel, {
+      props: { children: metin('iç düşünce'), akista: true },
+    });
     const dugme = screen.getByRole('button', { name: /Düşünce/ });
+    expect(dugme.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Düşünüyor…')).toBeTruthy();
+    expect(screen.getByText('iç düşünce').textContent).toBe('iç düşünce');
+
+    await rerender({ children: metin('iç düşünce'), akista: false });
     expect(dugme.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByText('iç düşünce')).toBeNull();
     await fireEvent.click(dugme);

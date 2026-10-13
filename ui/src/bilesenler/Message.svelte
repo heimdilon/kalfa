@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { m } from '../dil/tr';
-  import IconTile from './IconTile.svelte';
 
   interface Props {
     author?: 'user' | 'kalfa';
@@ -22,9 +21,8 @@
 </script>
 
 <article class={['mesaj', { kullanici }, sinif]}>
-  <IconTile icon={kullanici ? 'user' : 'hexagon'} tone={kullanici ? 'neutral' : 'accent'} />
   <div class="govde">
-    <header>
+    <header class={{ 'gizli-erisilebilir': !kullanici && !time }}>
       <span class="ad">{name ?? (kullanici ? m('mesaj.kullanici') : m('mesaj.kalfa'))}</span>
       {#if time}<span class="zaman">{time}</span>{/if}
     </header>
@@ -38,12 +36,14 @@
 <style>
   .mesaj {
     display: flex;
-    gap: 12px;
-    padding: 14px 16px;
+    padding: 6px 4px;
   }
   .kullanici {
-    background: var(--surface-raised);
-    border: var(--border-width) solid var(--border-subtle);
+    margin-left: auto;
+    max-width: min(76%, 640px);
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--copper-400) 14%, var(--surface-raised));
+    border: var(--border-width) solid color-mix(in srgb, var(--border-accent) 45%, var(--border-default));
     border-radius: var(--radius-xl);
   }
   .govde {
@@ -54,7 +54,10 @@
     display: flex;
     align-items: baseline;
     gap: 10px;
-    margin-bottom: 5px;
+    margin-bottom: 4px;
+  }
+  .kullanici header {
+    display: none;
   }
   .ad {
     font: var(--fw-semibold) var(--text-small) / 1 var(--font-sans);

@@ -3,77 +3,149 @@
   (aşama 2 tasarımı §10.4) ve "Anahtarı değiştir".
 -->
 <script lang="ts">
-  import NavItem from '../bilesenler/NavItem.svelte';
-  import NavRail from '../bilesenler/NavRail.svelte';
+  import Icon from '../bilesenler/Icon.svelte';
   import { m } from '../dil/tr';
   import type { AnaDurum } from './anaDurum.svelte';
 
   let { durum }: { durum: AnaDurum } = $props();
 </script>
 
-<NavRail label={m('menu.ad')} class="menu">
-  {#snippet header()}
-    <div class="marka">{m('uygulama.adi')}</div>
-    <div class="slogan">{m('uygulama.slogan')}</div>
-  {/snippet}
-  <NavItem
-    icon="message-square"
-    active={durum.gorunum === 'oturumlar'}
-    onclick={() => durum.oturumlaraDon()}
-  >
-    {m('menu.oturumlar')}
-  </NavItem>
-  <NavItem
-    icon="puzzle"
-    active={durum.gorunum === 'eklentiler'}
-    onclick={() => durum.eklentileriAc()}
-  >
-    {m('menu.eklentiler')}
-  </NavItem>
-  <NavItem
-    icon="settings"
-    active={durum.gorunum === 'ayarlar'}
-    onclick={() => durum.ayarlariAc()}
-  >
-    {m('menu.ayarlar')}
-  </NavItem>
-  <NavItem icon="key-round" onclick={() => durum.anahtariDegistir()}>
-    {m('menu.anahtar')}
-  </NavItem>
-  {#if durum.secili}
-    <NavItem
-      icon="send"
-      active={durum.gunlukAcik}
-      onclick={() => durum.gunluguAc()}
+<nav class="menu codex-serit" aria-label={m('menu.ad')}>
+  <div class="ust" title={`${m('uygulama.adi')} — ${m('uygulama.slogan')}`}>
+    <span class="amblem" aria-hidden="true">
+      <Icon name="hexagon" size={20} />
+    </span>
+    <span class="gizli-erisilebilir">{m('uygulama.adi')}</span>
+  </div>
+
+  <div class="liste">
+    <button
+      type="button"
+      class={['serit-dugme', { etkin: durum.gorunum === 'oturumlar' }]}
+      aria-current={durum.gorunum === 'oturumlar' ? 'page' : undefined}
+      title={m('menu.oturumlar')}
+      onclick={() => durum.oturumlaraDon()}
     >
-      {m('menu.gunluk')}
-    </NavItem>
-  {/if}
-  {#snippet footer()}
-    <div class="cizgi"></div>
-    <div class="alt-not">{m('uygulama.alt_not')}</div>
-  {/snippet}
-</NavRail>
+      <Icon name="message-square" size={18} />
+      <span class="gizli-erisilebilir">{m('menu.oturumlar')}</span>
+    </button>
+
+    <button
+      type="button"
+      class={['serit-dugme', { etkin: durum.gorunum === 'eklentiler' }]}
+      aria-current={durum.gorunum === 'eklentiler' ? 'page' : undefined}
+      title={m('menu.eklentiler')}
+      onclick={() => durum.eklentileriAc()}
+    >
+      <Icon name="puzzle" size={18} />
+      <span class="gizli-erisilebilir">{m('menu.eklentiler')}</span>
+    </button>
+
+    {#if durum.secili}
+      <button
+        type="button"
+        class={['serit-dugme', { etkin: durum.gunlukAcik }]}
+        aria-current={durum.gunlukAcik ? 'page' : undefined}
+        title={m('menu.gunluk')}
+        onclick={() => durum.gunluguAc()}
+      >
+        <Icon name="send" size={18} />
+        <span class="gizli-erisilebilir">{m('menu.gunluk')}</span>
+      </button>
+    {/if}
+  </div>
+
+  <div class="alt">
+    <button
+      type="button"
+      class="serit-dugme"
+      title={m('menu.anahtar')}
+      onclick={() => durum.anahtariDegistir()}
+    >
+      <Icon name="key-round" size={18} />
+      <span class="gizli-erisilebilir">{m('menu.anahtar')}</span>
+    </button>
+
+    <button
+      type="button"
+      class={['serit-dugme', { etkin: durum.gorunum === 'ayarlar' }]}
+      aria-current={durum.gorunum === 'ayarlar' ? 'page' : undefined}
+      title={m('menu.ayarlar')}
+      onclick={() => durum.ayarlariAc()}
+    >
+      <Icon name="settings" size={18} />
+      <span class="gizli-erisilebilir">{m('menu.ayarlar')}</span>
+    </button>
+  </div>
+</nav>
 
 <style>
-  .marka {
-    font: var(--type-wordmark);
-    letter-spacing: var(--tracking-wordmark);
-    color: var(--text-title);
+  .codex-serit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 48px;
+    flex: 0 0 48px;
+    height: 100%;
+    padding: 10px 0;
+    box-sizing: border-box;
+    background: var(--bg-rail);
+    border-right: var(--border-width) solid var(--border-subtle);
   }
-  .slogan {
-    margin-top: 4px;
-    font: var(--type-tagline);
-    color: var(--text-muted);
-  }
-  .cizgi {
+  .ust {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 34px;
-    height: 2px;
-    margin-bottom: 10px;
-    background: var(--copper-400);
+    height: 34px;
+    margin-bottom: 8px;
+    border-radius: var(--radius-md);
+    color: var(--text-accent);
+    background: color-mix(in srgb, var(--copper-400) 14%, transparent);
   }
-  .alt-not {
-    font: var(--type-small);
+  .amblem {
+    display: inline-flex;
+  }
+  .liste {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 0;
+  }
+  .alt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding-top: 8px;
+    border-top: var(--border-width) solid var(--border-subtle);
+  }
+  .serit-dugme {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
     color: var(--text-muted);
+    cursor: pointer;
+    transition: var(--transition-control);
+  }
+  .serit-dugme:hover {
+    color: var(--text-body);
+    background: var(--surface-raised);
+  }
+  .serit-dugme.etkin {
+    color: var(--text-accent);
+    background: var(--surface-selected);
+    box-shadow: var(--shadow-accent-edge);
   }
 </style>

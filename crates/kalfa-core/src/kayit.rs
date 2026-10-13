@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use same_file::Handle;
 
 use kalfa_evren::KrediGozlemi;
-use kalfa_evren::tipler::{ChatMessage, ToolDef};
+use kalfa_evren::tipler::{ChatMessage, DusunceEforu, ToolDef};
 use serde::{Deserialize, Serialize};
 
 use crate::arac::DosyaDegisiklikleri;
@@ -177,6 +177,9 @@ pub enum KayitOgesi {
     },
     ModelDegisti {
         model: String,
+    },
+    EforDegisti {
+        efor: DusunceEforu,
     },
     TurBitti {
         neden: BitisNedeni,

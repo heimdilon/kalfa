@@ -18,9 +18,9 @@ use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::hata::KomutHatasi;
 use kalfa_uygulama::sozlesme::{
-    AgHostu, AnahtarSonucu, CalismaAlani, DenetciDurumu, GizliAyarGorunumu, GunlukSayfasi,
-    KabulYaniti, OnarimSonucu, OnayGirdisi, OturumAcilisi, OturumSatiri, SartPenceresiDurumu,
-    UygulamaDurumu, YalitimCalismaAlani,
+    AgHostu, AnahtarSonucu, CalismaAlani, DenetciDurumu, DusunceEforu, GizliAyarGorunumu,
+    GunlukSayfasi, KabulYaniti, ModelSecenegi, OnarimSonucu, OnayGirdisi, OturumAcilisi,
+    OturumSatiri, SartPenceresiDurumu, UygulamaDurumu, YalitimCalismaAlani,
 };
 use kalfa_uygulama::sozlesme::{
     AlanHedefi, EklentiSatiri, GunlukSinirDurumu, KurulumSonucu, OturumEklentisi,
@@ -38,6 +38,7 @@ type Sonuc<T> = Result<T, KomutHatasi>;
 pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
     kurucu.invoke_handler(tauri::generate_handler![
         uygulama_durumu,
+        modelleri_yenile,
         oturumlari_listele,
         calisma_alani_sec,
         oturum_baslat,
@@ -49,6 +50,7 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         turu_iptal_et,
         arac_onayi,
         model_degistir,
+        efor_degistir,
         izin_kipi_degistir,
         oturumu_kapat,
         geri_alma_onizle,
@@ -118,6 +120,11 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
 #[tauri::command(rename_all = "snake_case")]
 pub async fn uygulama_durumu(u: State<'_, Arc<Uygulama>>) -> Sonuc<UygulamaDurumu> {
     Ok(u.uygulama_durumu())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn modelleri_yenile(u: State<'_, Arc<Uygulama>>) -> Sonuc<Vec<ModelSecenegi>> {
+    u.modelleri_yenile().await
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -197,6 +204,15 @@ pub async fn model_degistir(
     model: String,
 ) -> Sonuc<()> {
     u.model_degistir(oturum, model).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn efor_degistir(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    efor: DusunceEforu,
+) -> Sonuc<()> {
+    u.efor_degistir(oturum, efor).await
 }
 
 #[tauri::command(rename_all = "snake_case")]

@@ -20,6 +20,8 @@ use kalfa_core::kurtarma::kurtar;
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::oturum::{self, OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci};
 use kalfa_core::protokol::{ButceKarari, Komut, OnayKarari, OnayOgesi};
+use kalfa_core::saglayici::Saglayici;
+use kalfa_evren::tipler::DusunceEforu;
 use kalfa_tools::{CalismaAlani as AracAlani, KabukAraci, varsayilan_araclar};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
@@ -28,7 +30,8 @@ use crate::arayuz::KanalYazici;
 use crate::calisma_alanlari::{AlanGuveni, CalismaAlaniKaydi};
 use crate::hata::KomutHatasi;
 use crate::sozlesme::{
-    CalismaAlani, OnayGirdisi, OturumAcilisi, OturumSatiri, SaltOkunurNedeni, UygulamaDurumu,
+    CalismaAlani, ModelSecenegi, OnayGirdisi, OturumAcilisi, OturumSatiri, SaltOkunurNedeni,
+    UygulamaDurumu,
 };
 use crate::{Uygulama, dizin, guvenlik, kopru, modeller};
 
@@ -95,12 +98,28 @@ impl Uygulama {
         UygulamaDurumu {
             baglanti: ic.baglanti,
             anahtar_deposu: self.kasa.tur(),
-            modeller: modeller::modeller(),
+            modeller: ic.modeller.clone(),
             varsayilan_model: modeller::VARSAYILAN_MODEL.to_string(),
+            varsayilan_efor: modeller::VARSAYILAN_EFOR,
             son_oturum: ic.son_oturum,
             yalitim: self.yalitici.durum(),
             yalitimsiz_izinli: self.yalitimsiz_izinli(),
             platform: std::env::consts::OS.to_string(),
+        }
+    }
+
+    /// EVREN `/v1/models` uç noktasından sohbet modellerini ve efor düzeylerini
+    /// yeniden çeker.
+    pub async fn modelleri_yenile(&self) -> Result<Vec<ModelSecenegi>, KomutHatasi> {
+        let katalog = self.evren.modeller().await?;
+        let liste = modeller::katalogdan_modeller(&katalog);
+        self.ic().modeller = liste.clone();
+        Ok(liste)
+    }
+
+    pub(crate) async fn modelleri_guncelle(&self) {
+        if let Ok(katalog) = self.evren.modeller().await {
+            self.ic().modeller = modeller::katalogdan_modeller(&katalog);
         }
     }
 
@@ -138,7 +157,11 @@ impl Uygulama {
         calisma_alani: u64,
         model: String,
     ) -> Result<OturumAcilisi, KomutHatasi> {
-        if !modeller::bilinen_model_mi(&model) {
+        let gecerli = {
+            let ic = self.ic();
+            modeller::model_gecerli_mi(&ic.modeller, &model)
+        };
+        if !gecerli {
             return Err(KomutHatasi::gecersiz(format!("Bilinmeyen model: {model}")));
         }
         let kok = self
@@ -515,11 +538,26 @@ impl Uygulama {
     }
 
     pub async fn model_degistir(&self, oturum: OturumId, model: String) -> Result<(), KomutHatasi> {
-        if !modeller::bilinen_model_mi(&model) {
+        let gecerli = {
+            let ic = self.ic();
+            modeller::model_gecerli_mi(&ic.modeller, &model)
+        };
+        if !gecerli {
             return Err(KomutHatasi::gecersiz(format!("Bilinmeyen model: {model}")));
         }
         self.tutamac(oturum)?
             .gonder(Komut::ModelDegistir { model })
+            .await?;
+        Ok(())
+    }
+
+    pub async fn efor_degistir(
+        &self,
+        oturum: OturumId,
+        efor: DusunceEforu,
+    ) -> Result<(), KomutHatasi> {
+        self.tutamac(oturum)?
+            .gonder(Komut::EforDegistir { efor })
             .await?;
         Ok(())
     }

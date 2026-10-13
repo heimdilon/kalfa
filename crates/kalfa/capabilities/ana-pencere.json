@@ -6,6 +6,7 @@
   ],
   "permissions": [
     "allow-uygulama-durumu",
+    "allow-modelleri-yenile",
     "allow-oturumlari-listele",
     "allow-calisma-alani-sec",
     "allow-oturum-baslat",
@@ -17,6 +18,7 @@
     "allow-turu-iptal-et",
     "allow-arac-onayi",
     "allow-model-degistir",
+    "allow-efor-degistir",
     "allow-izin-kipi-degistir",
     "allow-oturumu-kapat",
     "allow-geri-alma-onizle",

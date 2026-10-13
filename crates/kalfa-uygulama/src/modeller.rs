@@ -1,8 +1,13 @@
-//! Model seçici (üst belge §6.4). Yalnızca bu kimlikler kabul edilir.
+//! Model seçici (üst belge §6.4). EVREN `/v1/models` kataloğundaki `chat`
+//! modellerini ve efor seçeneklerini dinamik olarak çözer; çevrimdışı açılışta
+//! varsayılan katalog kullanılır.
+
+use kalfa_evren::tipler::{DusunceEforu, ModelInfo};
 
 use crate::sozlesme::{ModelProfili, ModelSecenegi};
 
 pub const VARSAYILAN_MODEL: &str = "glm-5.3";
+pub const VARSAYILAN_EFOR: DusunceEforu = DusunceEforu::Orta;
 
 const MODELLER: [(&str, ModelProfili); 4] = [
     ("qwen3.8-flash-next", ModelProfili::Hizli),
@@ -17,10 +22,58 @@ pub fn modeller() -> Vec<ModelSecenegi> {
         .map(|(kimlik, profil)| ModelSecenegi {
             kimlik: (*kimlik).to_string(),
             profil: *profil,
+            eforlar: DusunceEforu::tumu(),
         })
         .collect()
 }
 
+pub fn katalogdan_modeller(katalog: &[ModelInfo]) -> Vec<ModelSecenegi> {
+    let mut sonuc: Vec<ModelSecenegi> = katalog
+        .iter()
+        .filter(|m| m.task == "chat" && !m.id.trim().is_empty())
+        .map(|m| ModelSecenegi {
+            kimlik: m.id.clone(),
+            profil: profil_tahmin_et(&m.id),
+            eforlar: if m.eforlar.is_empty() {
+                DusunceEforu::tumu()
+            } else {
+                m.eforlar.clone()
+            },
+        })
+        .collect();
+    if sonuc.is_empty() {
+        return modeller();
+    }
+    if !sonuc.iter().any(|m| m.kimlik == "auto") {
+        sonuc.push(ModelSecenegi {
+            kimlik: "auto".to_string(),
+            profil: ModelProfili::Otomatik,
+            eforlar: DusunceEforu::tumu(),
+        });
+    }
+    sonuc
+}
+
+fn profil_tahmin_et(kimlik: &str) -> ModelProfili {
+    if let Some((_, p)) = MODELLER.iter().find(|(k, _)| *k == kimlik) {
+        return *p;
+    }
+    let kucuk = kimlik.to_ascii_lowercase();
+    if kucuk == "auto" {
+        ModelProfili::Otomatik
+    } else if kucuk.contains("flash") || kucuk.contains("mini") || kucuk.contains("fast") {
+        ModelProfili::Hizli
+    } else if kucuk.contains("glm") || kucuk.contains("pro") || kucuk.contains("reasoner") {
+        ModelProfili::Derin
+    } else {
+        ModelProfili::Dengeli
+    }
+}
+
 pub fn bilinen_model_mi(model: &str) -> bool {
     MODELLER.iter().any(|(kimlik, _)| *kimlik == model)
+}
+
+pub fn model_gecerli_mi(liste: &[ModelSecenegi], model: &str) -> bool {
+    liste.iter().any(|m| m.kimlik == model) || bilinen_model_mi(model)
 }

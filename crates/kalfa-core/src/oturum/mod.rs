@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kalfa_evren::tipler::{ChatMessage, ToolCall, ToolDef};
+use kalfa_evren::tipler::{ChatMessage, DusunceEforu, ToolCall, ToolDef};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -95,6 +95,7 @@ impl Default for Sinirlar {
 #[derive(Debug, Clone)]
 pub struct OturumAyarlari {
     pub model: String,
+    pub efor: Option<DusunceEforu>,
     pub kip: Kip,
     /// Çalışma alanının kökü; açılış kaydına yazılır.
     pub calisma_alani: Option<PathBuf>,
@@ -116,6 +117,7 @@ impl OturumAyarlari {
     pub fn yeni(model: impl Into<String>, calisma_alani: &Path) -> Self {
         Self {
             model: model.into(),
+            efor: None,
             kip: Kip::Siki,
             calisma_alani: Some(calisma_alani.to_path_buf()),
             sinirlar: Sinirlar::default(),
@@ -935,6 +937,7 @@ pub fn devam_et(
         .then(|| eski_kayit_devri(kayitlar.iter().map(|z| &z.yuk)));
     let ayarlar = OturumAyarlari {
         model: durum.model.clone(),
+        efor: durum.efor.or(ayarlar.efor),
         kip: durum.kip,
         kayit_yolu: Some(kayit_yolu.to_path_buf()),
         ..ayarlar
@@ -1369,6 +1372,10 @@ impl Oturum {
             Komut::ModelDegistir { model } => {
                 self.ayarlar.model = model.clone();
                 self.kaydet(KayitOgesi::ModelDegisti { model }).await;
+            }
+            Komut::EforDegistir { efor } => {
+                self.ayarlar.efor = Some(efor);
+                self.kaydet(KayitOgesi::EforDegisti { efor }).await;
             }
             Komut::KullaniciMesaji { .. } => {
                 self.hata(geri_alma::TUR_SURUYOR).await;

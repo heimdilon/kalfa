@@ -5,6 +5,7 @@ import type {
   AktarimDurmaNedeni,
   AracDurumu,
   DenetimKipi,
+  DusunceEforu,
   EkUc,
   EklentiDurumu,
   Kip,
@@ -20,13 +21,23 @@ export const tr = {
   'mesaj.kalfa': 'Kalfa',
 
   'dusunce.baslik': 'Düşünce',
+  'dusunce.suruyor': 'Düşünüyor…',
+  'dusunce.bitti': 'Düşünce tamamlandı',
   'dusunce.ozet': 'Modelin bu yanıt için düşündükleri',
 
   'composer.yer_tutucu': 'Bir şey sorun ya da bir görev tanımlayın…',
   'composer.gonder': 'Gönder',
   'composer.durdur': 'Turu durdur',
   'composer.model': 'Model',
+  'composer.efor': 'Düşünce eforu',
+  'composer.efor_baslik': 'Düşünce eforu ve model',
+  'composer.yenile': 'Modelleri yenile',
   'composer.kip': 'İzin kipi',
+
+  'efor.kapali': 'Kapalı',
+  'efor.dusuk': 'Düşük',
+  'efor.orta': 'Orta',
+  'efor.yuksek': 'Yüksek',
 
   'kip.Inceleme': 'İnceleme',
   'kip.Siki': 'Sıkı',
@@ -85,6 +96,10 @@ export const tr = {
   'menu.gunluk': 'Gönderim günlüğü',
 
   'liste.baslik': 'Oturumlar',
+  'liste.projeler': 'Projeler',
+  'liste.genel_proje': 'Genel',
+  'liste.daha_fazla': 'Daha fazla göster',
+  'liste.daha_az': 'Daha az göster',
   'liste.yeni': 'Yeni oturum',
   'liste.ara': 'Oturumlarda ara…',
   'liste.bos': 'Henüz oturum yok. Yeni bir oturumla başlayın.',
@@ -114,6 +129,17 @@ export const tr = {
   'konusma.kapandi': 'Oturum kapandı. Devam etmek için yeniden açın.',
   'konusma.gunluk': 'Gönderim günlüğü',
   'konusma.onizleme_ayari': 'Göndermeden önce göster',
+  'konusma.duzenlendi': 'Düzenlendi: {dosya}',
+  'konusma.degisiklikleri_gor': 'Değişiklikleri gör',
+  'konusma.sag_bolme_ac': 'İnceleme bölmesini aç',
+  'konusma.sag_bolme_kapat': 'İnceleme bölmesini kapat',
+  'konusma.bolme_boyutlandir': 'Bölme genişliğini ayarla',
+  'konusma.denetci_baslik': 'Oturum denetçisi',
+  'konusma.denetci.degisiklikler': 'Değişiklikler',
+  'konusma.denetci.dosya_yok': 'Henüz dosya değişmedi',
+  'konusma.denetci.yalitim': 'Yalıtım ve izinler',
+  'konusma.denetci.turlar': 'Son turlar',
+  'konusma.denetci.kaynaklar': 'Kaynaklar ve eklentiler',
   'konusma.karsilama.baslik': 'Bir oturum seçin ya da yeni bir oturum başlatın.',
   'konusma.karsilama.metin':
     'Kalfa seçtiğiniz klasörde çalışır. Dosya yazmadan önce onayınızı ister.',
@@ -639,6 +665,13 @@ export const MODEL_PROFILI_ADI: Record<ModelProfili, MetinAnahtari> = {
   Dengeli: 'model.Dengeli',
   Derin: 'model.Derin',
   Otomatik: 'model.Otomatik',
+};
+
+export const EFOR_ADI: Record<DusunceEforu, MetinAnahtari> = {
+  kapali: 'efor.kapali',
+  dusuk: 'efor.dusuk',
+  orta: 'efor.orta',
+  yuksek: 'efor.yuksek',
 };
 
 export const ARAC_DURUMU_ADI: Record<AracDurumu | 'Suruyor' | 'Baslamadi', MetinAnahtari> = {

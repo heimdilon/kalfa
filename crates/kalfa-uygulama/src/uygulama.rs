@@ -18,8 +18,9 @@ use crate::calisma_alanlari::CalismaAlaniKaydi;
 use crate::dizin;
 use crate::eklentiler::EklentiYoneticisi;
 use crate::evren::{DegisirSaglayici, SaglayiciUretici};
+use crate::modeller;
 use crate::oturumlar::{AcikOturum, KapananOturum};
-use crate::sozlesme::{AnahtarNedeni, BaglantiDurumu, SartPenceresiDurumu};
+use crate::sozlesme::{AnahtarNedeni, BaglantiDurumu, ModelSecenegi, SartPenceresiDurumu};
 use crate::yalitim::{Dinleyici, YalitimAyarlari, YalitimKaynagi, yalitici_kur};
 
 /// Uygulamayı kurmak için gerekenler; Tauri katmanı ya da test verir.
@@ -64,7 +65,7 @@ pub struct Uygulama {
     pub(crate) veri_dizini: PathBuf,
     pub(crate) ev_dizini: PathBuf,
     pub(crate) geri_alma_dizini: PathBuf,
-    /// Kabuk komutlarını başlatan arka uç (aşama 2 tasarımı §3.2).
+    /// Kabuk komutlarının başlatan arka uç (aşama 2 tasarımı §3.2).
     pub(crate) yalitici: Arc<dyn Yalitici>,
     pub(crate) yalitim_ayarlari: Arc<YalitimAyarlari>,
     /// `ayarlar.json` (3c Görev 7).
@@ -83,6 +84,7 @@ pub struct Uygulama {
 /// Kilitle korunan durum. Kilit hiçbir `await` boyunca tutulmaz.
 pub(crate) struct IcDurum {
     pub baglanti: BaglantiDurumu,
+    pub modeller: Vec<ModelSecenegi>,
     pub son_oturum: Option<OturumId>,
     pub oturumlar: HashMap<OturumId, AcikOturum>,
     /// Kapatılmış ama görevi henüz bitmemiş oturumlar; yeniden açılmadan önce
@@ -148,6 +150,7 @@ impl Uygulama {
             geri_alma_dizini: b.geri_alma_dizini,
             ic: Mutex::new(IcDurum {
                 baglanti: BaglantiDurumu::Var,
+                modeller: modeller::modeller(),
                 son_oturum: None,
                 oturumlar: HashMap::new(),
                 kapaniyor: HashMap::new(),
