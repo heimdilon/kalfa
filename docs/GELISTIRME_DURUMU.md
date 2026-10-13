@@ -132,7 +132,7 @@ izni veren, başlattığı süreçleri yeteneksiz alt profile yığan AppArmor
 profilini (`kalfa-bwrap`) taşır; sistem bwrap'ı etkilenmez. `.rpm` sistemin
 `bubblewrap`'ına bağlıdır. Araç zinciri sistemdendir. WSL'de paket
 mekaniği doğrulandı (içerik, izinler, bwrap denemesi, profil sözdizimi);
-Ubuntu 24.04.5 VM'inde gerçek AppArmor kabulü 17/17 geçti (kurulum,
+Ubuntu 24.04.5 VM'inde gerçek AppArmor kabulü 19/19 geçti (kurulum,
 profiller, kopyanın yeteneksiz çocuğu, sistem bwrap'ının etkilenmediği,
 yeniden kurulum, kaldırma; uygulamada ağsız ve ağlı komut). Sürüm paketleri
 glibc nedeniyle Debian 12 tabanında derlenmeli.

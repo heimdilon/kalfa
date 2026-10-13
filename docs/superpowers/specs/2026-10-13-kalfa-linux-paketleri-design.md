@@ -1,7 +1,7 @@
 # Kalfa — Linux paketleri: Tasarım
 
 **Tarih:** 2026-10-13.
-**Durum:** Uygulandı (dal `linux-paket/tasarim`); VM kabulü geçti (§9.2).
+**Durum:** Uygulandı (dal `linux-paket/tasarim`); VM kabulü 19/19 geçti (§9.2).
 **Taban:** `main`, `4241994` (5b tamamlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §12.1 (Dağıtım), risk 9;
 [aşama 2 tasarımı](2026-09-24-kalfa-2-kabuk-yalitim-design.md) §8.3.
@@ -225,8 +225,17 @@ düştü.**
 - Uygulama (elle, kullanıcı bildirimi): Kalfa açıldı; bir oturumda ağsız
   (`echo`) ve ağlı (`curl`) birer kabuk komutu çalıştı.
 
-Sınanmadı: `.rpm` içeriği ve kurulumu; Debian 12 / Pardus / Fedora
-matrisi (sürüm derlemesi Debian 12 tabanında gelince).
+İkinci koşu (`46bb8d5`'in `kabul.sh`'ı, aynı `.deb`; Codex incelemesinden
+sonra): **19/19 geçti.** Eklenenler: elle denetim artık açık `[e/h]` yanıtıyla
+sayılır (kullanıcı: yalıtım hazır, iki komut çalıştı) ve kaldırmadan sonra
+gerçek veri dizini `~/.local/share/kalfa`'daki işaret dosyası yerinde.
+
+`.rpm` başlığında (`46bb8d5`, `strings` ile) `bubblewrap`,
+`libwebkit2gtk-4.1.so.0()(64bit)` ve `libgtk-3.so.0()(64bit)` gereksinimleri
+var.
+
+Sınanmadı: `.rpm` kurulumu; Debian 12 / Pardus / Fedora matrisi (sürüm
+derlemesi Debian 12 tabanında gelince).
 
 ## 9.1 Uygulama
 
