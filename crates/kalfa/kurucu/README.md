@@ -60,9 +60,11 @@ derler ve `tauri.linux-paket.conf.json` ile `.deb` ve `.rpm` üretir. Sonuç
 `bubblewrap` kurulu olmalıdır. Paketler derlendikleri dağıtımın glibc'sini
 ister; desteklenen en eski dağıtımda derleyin
 ([Linux paket tasarımı](../../../docs/superpowers/specs/2026-10-13-kalfa-linux-paketleri-design.md) §6).
-Sürüm paketlerini `.github/workflows/linux-paket.yml` Debian 12 kabında
-derler, `SHA256SUMS` üretir ve paketleri Debian 12, Ubuntu 24.04 ve Fedora
-kaplarında kurup kaldırarak sınar.
+Sürüm paketlerini `.github/workflows/surum.yml` Debian 12 kabında derler ve
+paketleri Debian 12, Ubuntu 24.04 ve Fedora kaplarında kurup kaldırarak
+sınar. Aynı iş akışı Windows kurucusunu da derler ve geçici CI makinesinde
+sessiz kurup kaldırır; `v*` etiketinde bütün paketler tek `SHA256SUMS` ile
+taslak sürüme eklenir.
 
 `.deb`, Kalfa'nın kendi bwrap kopyasını `/usr/lib/kalfa/bwrap`'a koyar.
 AppArmor'un ayrıcalıksız kullanıcı ad alanını kısıtladığı sistemlerde

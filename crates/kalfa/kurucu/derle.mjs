@@ -38,6 +38,9 @@ calistir(
     'kalfa-yalitim',
     '-p',
     'kalfa-sandbox',
+    // `--bin` tek başına yalnız adı geçen ikiliyi derler; ikisi de anılır.
+    '--bin',
+    'kalfa-yalitim',
     '--bin',
     'kalfa-kopru',
     '--release',

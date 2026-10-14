@@ -256,7 +256,7 @@ ve birim testi), `kurucu/README.md`, `.gitattributes` (betikler LF).
 
 ## 12. Sürüm derlemesi (13 Ekim, KALFA-12)
 
-`.github/workflows/linux-paket.yml`:
+`.github/workflows/linux-paket.yml` (KALFA-13'te `surum.yml` adını aldı; §13):
 
 - **derle:** `debian:12` kabında derleme bağımlılıkları (`build-essential`,
   `pkg-config`, `libwebkit2gtk-4.1-dev`, `bubblewrap`), Node 24,
@@ -284,3 +284,33 @@ kapta gözlenemez; VM kabulü (`kabul.sh`) ayrıca yapılır.
 `webkit2gtk4.1` (2.54.1) ve `bubblewrap` (0.12.0) paketlerini çekti; `ldd`'de
 çözülmeyen kitaplık yok; üç kapta kaldırma temiz. `.rpm` kurulumu ilk kez
 böyle sınandı.
+
+## 13. Windows kurucusu sürüm akışında (13 Ekim, KALFA-13)
+
+İş akışı `surum.yml` ("Sürüm paketleri") adını aldı ve Windows'u da kapsar:
+
+- **derle-windows (`windows-2025`):** Node 24 ve `rust-toolchain.toml`'daki
+  Rust ile `kurucu/derle.mjs`. Python ve Node `araclar.json`'daki adres ve
+  SHA-256 ile indirilir; özet tutmazsa derleme durur. NSIS kurucusu yapıt
+  olarak saklanır.
+- **sina-windows:** geçici CI makinesinde
+  `.github/scripts/windows-kurucu-sinama.ps1`: `/S` ile sessiz kurulum;
+  `Program Files\Kalfa` altında uygulama, yalıtım yardımcısı, köprü, araç
+  zinciri ve eklenti; `kurulum.json` ve kayıttaki köklerde yalıtımın
+  yetenek SID'ine (`S-1-15-3-1024-*`) mirassız izin; `/S _?=` ile sessiz
+  kaldırma; dosyaların, kurulum kaydının ve kök izinlerinin gittiği. Betik
+  sistem ACL'sini değiştirir; yalnız CI makinesi içindir (elle kabul
+  `kurucu/kabul.ps1`).
+- **yayimla:** Linux ve Windows sınamaları geçerse bütün paketler için tek
+  `SHA256SUMS` üretir; sürüm notuna Windows kurucusunun getirdiği Python ve
+  Node sürümlerini ekler.
+
+**Koşu (PR #11, `bdd4e78`, 38463488003): bütün işler geçti.** İlk koşu
+(`b3fa6f1`) temiz makinede bir hatayı gösterdi: `derle.mjs`'teki
+`cargo build -p kalfa-yalitim -p kalfa-sandbox --bin kalfa-kopru` yalnız
+köprüyü derliyordu; `kalfa-yalitim.exe` yerel makinede eski bir derlemeden
+kaldığı için fark edilmemişti. Düzeltmede iki ikili de `--bin` ile anılır.
+İkinci koşuda kurucu `Kalfa_0.1.0_x64-setup.exe` (47 MB) üretildi; sessiz
+kurulumda yedi dosya yerinde, yalıtım kök izinleri `C:\`, `D:\` ve
+`C:\Users`'ta; sessiz kaldırmada dosyalar, kurulum kaydı ve kök izinleri
+gitti. Linux işleri de geçti; taslak sürüm etiket olmadığı için atlandı.
