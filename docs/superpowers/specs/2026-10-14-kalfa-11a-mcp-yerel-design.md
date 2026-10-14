@@ -1,8 +1,9 @@
 # Kalfa 1.1a — Yerel MCP sunucuları: Tasarım
 
 **Tarih:** 2026-10-14.
-**Durum:** Tasarım, r2. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
-Codex incelemesinin (`dd641a3`) altı bulgusu §13'te yanıtlandı. Yeniden
+**Durum:** Tasarım, r3. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
+§13'te iki incelemenin yanıtı var: Codex'in yerel incelemesi (`dd641a3`,
+altı bulgu) ve PR #19'daki satır içi Codex yorumları (15 bulgu). Yeniden
 incelemeye hazır. G1 ve uygulama, kullanıcının ayrı onayını bekliyor.
 **Taban:** `main`, `04f16fc` (`v0.1.0` ön sürümü yayımlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §10, §12.2.
@@ -95,14 +96,17 @@ dışında karakter varsa ya da toplam ad 64 karakteri aşıyorsa.
 **Sunucu tanımı** uygulama verisindeki ayarlar dosyasında durur:
 
 ```text
-ad, etkin, komut, argümanlar, ortam (ad → düz değer | kimlik deposu
-anahtarı), erişim (Yalitimli | TamErisim), ağ izin listesi,
+ad, etkin, komut, argümanlar, ortam (ad → düz değer | gizli kimliği),
+erişim (Yalitimli | TamErisim), ağ izin listesi (yalnız Yalitimli),
 başlatma zaman aşımı (vars. 30 sn), çağrı zaman aşımı (vars. 120 sn)
 ```
 
-**Ortam:** Kabuktaki izin listesi ilkesi (`ortam::uret`) geçerlidir.
-Sunucu yalnız temel izinli değişkenleri ve kendi tanımındakileri görür.
-EVREN anahtarı ve Kalfa'nın iç değişkenleri sunucuya asla geçmez.
+- **Komut:** İki biçimden biri olabilir.
+  - Çıplak bir program adı (`npx`, `uvx`, `node` gibi). Ad, arka uçta
+    sunucunun ortamındaki `PATH`'te aranır.
+  - Yerel dosya seçiciyle seçilmiş bir yürütülebilir dosya. Bu durumda yolu
+    arka uç tutar; arayüz yalnız bir kimlik görür (§9).
+- **Ortam:** §5.5'teki birleştirme kuralı geçerlidir.
 
 ## 4. Süreç ve taşıma
 
@@ -121,9 +125,25 @@ eklenir:
   Windows'ta `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, Linux'ta bwrap
   `--die-with-parent` ve mevcut `agac` kapanışı kullanılır. `kapat()`
   döndüğünde ağaçta yaşayan süreç kalmaz.
-- Kip uyuşması (`kip_uyusmasi`) aynen uygulanır: yalıtımlı onaylanan
-  sunucu yalıtım yoksa başlamaz, tersi de geçerli.
-- Ağ listesi doluysa mevcut vekil ve köprü yolu kullanılır; boşsa ağ yoktur.
+- **Çalışma kipi açıkça seçilir.** Mevcut `kip_uyusmasi(false, true)`
+  yalıtım hazırken yalıtımsız başlatmayı reddeder
+  (`kalfa-sandbox/src/lib.rs`), çünkü kabukta yalıtımsız çalışma yalnız
+  bir geri düşme yoludur. MCP'de *Tam sistem erişimi* ise kullanıcının
+  açık seçimidir. Bu yüzden istek seçilen kipi taşır
+  (`CalistirmaKipi::{Yalitimli, TamErisim}`):
+
+  | Seçilen | Yalıtım hazır | Yalıtım yok |
+  |---|---|---|
+  | Yalıtımlı | Yalıtımlı başlar | Başlamaz |
+  | Tam erişim | Yalıtımsız arka uçla başlar | Yalıtımsız arka uçla başlar |
+
+  Yalıtımlı tarif hiçbir zaman yalıtımsız arka uca düşmez. Tam erişim de
+  hiçbir zaman sessizce yalıtıma geçmez. Seçilen kip mühürdedir (§5.3).
+- **Ağ (yalnız yalıtımlıda):** Ağ listesi doluysa mevcut vekil ve köprü
+  yolu kullanılır; boşsa ağ yoktur. Yalıtımsız arka uç ağı kapatamaz
+  (`CalistirmaIstegi::ag` belgesi). Bu yüzden tam erişimli sunucuda ağ
+  listesi yoktur: arayüz onu gizler, ağı "sınırsız" diye gösterir ve
+  liste tanım özetine girmez.
 
 **Ön doğrulama G1 (plan 1.1a-1'den önce):** Windows'ta AppContainer içinde
 `CreateProcessW` ile başlatılan sürecin stdin ve stdout borularının
@@ -145,16 +165,17 @@ adımında derlenerek doğrulanır.
 |---|---:|---|
 | Tek JSON-RPC çerçevesi (satır sonuna kadar, ayrıştırmadan önce) | 4 MiB | Sunucu kapatılır (§4.1); *Hata*: "çerçeve sınırı" |
 | İşlenmeyi bekleyen gelen ileti kuyruğu | 64 ileti | Sunucu kapatılır; *Hata*: "ileti seli" |
-| stderr satırı | 4 KiB | Satır kesilir |
+| stderr satırı | 4 KiB (maskeleme kesmeden önce, §5.5) | Satır kesilir |
 | stderr halkası | Son 50 satır (≤ 200 KiB) | En eski satır düşer |
 | `tools/list` sayfası | En çok 10 sayfa | *Hata*: "araç listesi çok uzun" |
 | Araç sayısı | Sunucu başına 128 | *Hata* (kısmi liste kullanılmaz) |
-| Toplam tanım baytı (ad, açıklama, şema JSON'u) | Sunucu başına 256 KiB | *Hata* |
+| Toplam tanım baytı (ad, açıklama, `inputSchema` ve `outputSchema` JSON'u) | Sunucu başına 256 KiB | *Hata* |
 | Açıklama | 1 KiB | Kesilir (§6.2) |
 
 - **Bildirimler:**
-  - `notifications/tools/list_changed` gelirse tek bir "yenileme bekliyor"
-    bayrağı kalkar. Yenileme en sık 5 sn'de bir yapılır.
+  - Liste değişikliği haberi gelirse (§7.1'deki sürüme göre) tek bir
+    "yenileme bekliyor" bayrağı kalkar. Yenileme en sık 5 sn'de bir
+    yapılır.
   - Öbür bildirimler (`logging`, `progress` gibi) okunup atılır.
 - **Sunucudan gelen istekler:** `ping` yanıtlanır. Öbürleri (`sampling`,
   `elicitation`, `roots/list`) "method not found" hatası alır.
@@ -247,7 +268,7 @@ yenilemesi (§4.3) mevcut izinle onaysız yapılır.
 |---|---|---|
 | İnceleme | Araçlar modele sunulmaz | Araçlar modele sunulmaz |
 | Sıkı, Proje | `Onayli` | `YerelOnayli`, her çağrıda |
-| Serbest | `Serbest`; sunucunun bu çalışma alanındaki ilk çağrısıysa ya da ağ listesi doluysa `Onayli` | `YerelOnayli`, her çağrıda |
+| Serbest | `Serbest`; sunucunun bu çalışma alanındaki ilk çağrısıysa ya da ağ listesi doluysa `Onayli` | `YerelOnayli`, her çağrıda (ağ sınırsız, §4.1) |
 
 - "Bu oturumda izin ver" kısayolu yalnız yalıtımlı sunucularda, araç
   bazında çalışır. Tam erişimli sunucuda kısayol yoktur; yalıtımsız kabuk
@@ -260,13 +281,15 @@ yenilemesi (§4.3) mevcut izinle onaysız yapılır.
 Üç özet tanımlanır. Gizli değerler özetlere yalnız SHA-256 olarak girer;
 değerin kendisi hiçbir özete, kayda ya da loga yazılmaz.
 
-- **Tanım özeti T** = ad, komut, argümanlar, **bütün** ortam (düz değerler
-  ve gizli değerlerin özetleri), erişim, ağ listesi, çalışma alanı kimliği.
+- **Tanım özeti T** = ad, komut (çözülmüş mutlak yol ve dosyanın
+  SHA-256'sı), argümanlar, **bütün** ortam (birleştirilmiş son ortamın
+  ad-değer çiftleri; gizli değerler özetleriyle), çalışma kipi, ağ listesi
+  (yalnız yalıtımlıda), çalışma alanı kimliği.
 - **Çalışma tarifi R** = T, yalıtım profilinin özeti P (`profil_ozeti`;
   K'yı içerir) ve **kuşak N**. N her süreç başlatmada artan sayaçtır. R
   süreç başlarken sabitlenir ve süreçte saklanır.
 - **Araç tanım özeti D** = aracın modele giden adı, açıklaması (kesilmiş
-  hâliyle) ve giriş şeması.
+  hâliyle), giriş şeması ve varsa çıkış şeması (`outputSchema`).
 
 Bu özetler şöyle bağlanır:
 
@@ -288,15 +311,58 @@ Her MCP çağrısı, kabuk gibi bütün çalışma alanının yazma kilidini al�
 öbür araçlarla ve birbirleriyle çakışmaz. Kilit, çağrı bitene ya da süreç
 ağacı durdurulana kadar (§7.3) tutulur.
 
-### 5.5 Sırlar
+### 5.5 Ortam ve sırlar
 
-- Gizli ortam değerleri yalnız işletim sisteminin kimlik deposunda durur.
-  Ayarlar dosyasına, JSONL kayda, loglara ve gönderim günlüğüne yazılmaz.
+**Ortamın birleştirilmesi.** `ortam::uret` yalnız kalıtılan ortam içindir.
+İzin listesi dışındaki adları ve `KEY`, `TOKEN`, `SECRET`, `PASSWORD`,
+`CREDENTIAL`, `AUTH` içeren adları düşürür; sabit değerleri de en sona
+yazar. Kullanıcının bir sunucu için açıkça verdiği değişkenler ayrı bir
+adımla eklenir:
+
+1. Kalıtılan kısım `ortam::uret(sistem ortamı)` ile üretilir.
+2. Yapılandırılan değişkenler eklenir. Kayıt sırasında şu kurallar
+   doğrulanır:
+   - Ad `[A-Za-z_][A-Za-z0-9_]{0,63}` olmalı.
+   - Aynı ad iki kez yazılamaz (Windows'ta büyük-küçük harf duyarsız).
+   - Ayrılmış adlar reddedilir: `EVREN_API_KEY`, `EVREN_BASE_URL`, `KALFA_`
+     önekli her ad ve `ortam::SABIT`'teki adlar.
+   - Kalıtılan izinli bir değişkeni ezmek serbesttir (`NODE_OPTIONS`
+     gibi). Ezilen değer T'ye girer.
+   - `TOKEN` ya da `KEY` içeren adlar burada serbesttir; kullanıcı onları
+     bilerek veriyordur. EVREN anahtarı ve Kalfa'nın iç değişkenleri ise
+     ayrılmış adlar kuralı yüzünden hiçbir yoldan geçmez.
+
+**Gizli değerler kasası.** `anahtar.rs`'teki `SistemDeposu` tek bir yuvaya
+(`Kalfa`/`evren-api-anahtari`) bağlıdır. MCP için ayrı, anahtarlı bir kasa
+eklenir:
+
+- `GizliKasa::{oku, yaz, sil}(kimlik)`. Kimlik opak ve kalıcıdır
+  (`mcp-<uuid v4>`; `uuid` zaten workspace bağımlılığı). Girişin adı
+  kimlik deposunda `Kalfa`/`mcp-…` olur.
+- Değişkeni ya da sunucuyu yeniden adlandırmak kimliği değiştirmez.
+  Değişkeni ya da sunucuyu silmek girişi siler.
+- Kimlik deposu kullanılamıyorsa gizli değerli sunucu başlamaz ve *Hata*
+  olur: "kimlik deposu kullanılamıyor". Değer başka bir yere (dosyaya)
+  düşülmez.
+- Gizli değer en az 8 karakter olmalıdır; kayıt sırasında doğrulanır. Bu,
+  aşağıdaki maskelemenin her sırrı kapsamasını sağlar.
+
+**Sızmayı önleme:**
+
+- Gizli değerler ayarlar dosyasına, JSONL kayda, loglara ve gönderim
+  günlüğüne yazılmaz.
 - JSON içe aktarmada bütün `env` değerleri varsayılan olarak gizli sayılır.
   Kullanıcı istediğini düz değere çevirebilir.
-- Sunucunun 8 karakter ve üstü gizli değerleri; stderr halkasında, hata
-  metinlerinde ve araç sonucunda `[gizli]` ile değiştirilir. Bu değiştirme
-  saklamadan, göstermeden ve modele göndermeden önce yapılır.
+- **Maskeleme:** Sunucunun gizli değerleri; stderr'de, hata metinlerinde ve
+  araç sonucunda, alt dize olarak geçtikleri her yerde `[gizli]` ile
+  değiştirilir.
+  - Değiştirme, veri bir tampona, durum nesnesine, arayüz olayına ya da
+    modele girmeden önce yapılır.
+  - stderr satırı kesilmeden önce maskelenir. Satır en çok 4 KiB + en
+    uzun sır uzunluğu kadar tutulur; böylece kesme yeri bir sırrı ikiye
+    bölemez.
+- Sunucunun tanımı ya da gizli değerleri değişince stderr halkası
+  temizlenir.
 
 ### 5.6 Windows çalışma alanı hazırlığı
 
@@ -328,6 +394,19 @@ ağacı durdurulana kadar (§7.3) tutulur.
 | `resource_link` | Yalnız URI |
 | Gömülü `resource`, metin | Metin, "kaynak: `<uri>`" başlığıyla |
 | Gömülü `resource`, ikili | "[ikili kaynak atlandı: `<uri>`]" |
+
+**Çıkış şeması:**
+
+MCP belirtimi, istemcinin yapılandırılmış sonucu aracın `outputSchema`'sına
+göre doğrulamasını ister.
+
+- `outputSchema` keşifte saklanır ve derlenir. Derlenemeyen şemalı araç
+  kapatılır (§6.2).
+- Şemalı bir aracın `isError` olmayan sonucu iki durumda dış kaynaklı bir
+  araç hatası (`Basarisiz`) olur: `structuredContent` şemaya uymuyorsa ya
+  da hiç yoksa. Hata metni "yapılandırılmış sonuç şemaya uymuyor" olur ve
+  denetlenir.
+- Modele giden metin yukarıdaki tabloya göre yine `content`'ten üretilir.
 
 **Hatalar:**
 
@@ -380,11 +459,24 @@ tanımları denetimsiz verir (`kalfa-core/src/arac.rs`). MCP araçları için
 - **Çalışma alanına bağlılık:** Yalıtım çalışma alanına özeldir; bu yüzden
   her (sunucu, çalışma alanı) çifti için bir süreç açılır. Tam erişimli
   sunucular da aynı kuralla, çalışma alanında çalışır.
-- **Başlatma:** §5.1'in koşulları sağlanınca süreç başlar. Kalfa önce
-  `initialize` gönderir; bu istekte istemci yetenekleri **boş** ilan
-  edilir (`roots`, `sampling`, `elicitation` yok). Ardından
-  `notifications/initialized` ve `tools/list` gelir. Protokol sürüm
-  pazarlığını `rmcp` 3.5.1 yapar; desteklenmeyen sürüm *Hata* olur.
+- **Başlatma:** §5.1'in koşulları sağlanınca süreç başlar. İstemci
+  yetenekleri **boş** ilan edilir (`roots`, `sampling`, `elicitation` yok).
+- **Protokol dönemleri:** MCP 2026-07-28, `initialize` el sıkışmasını
+  kaldırıp yerine `server/discover`'ı koydu. Liste değişikliklerini de
+  `subscriptions/listen` akışıyla iletiyor. Kalfa iki dönemi de destekler:
+  - `rmcp` 3.5.1'in `ClientLifecycleMode::Auto` kipi kullanılır. Bu kip
+    önce `server/discover` dener; eş eski dönemdeyse ya da 10 sn içinde
+    yanıt vermezse `initialize` + `notifications/initialized` yoluna düşer.
+    Bu 10 sn, başlatma zaman aşımının içindedir.
+  - **Liste değişikliği pazarlıktaki sürüme göre izlenir.** Eski dönemde
+    `notifications/tools/list_changed` dinlenir. 2026 döneminde
+    `subscriptions/listen` kullanılır. `rmcp` bu aboneliği stdio'da
+    istemci olarak sunmuyorsa yedek yol devreye girer: liste her tur
+    başında, en sık 30 sn'de bir `tools/list` ile yeniden okunur ve D'ler
+    karşılaştırılır. Hangi yolun mümkün olduğu plan 1.1a-2'nin ilk
+    adımında derlenerek doğrulanır.
+  - Ardından `tools/list` (sayfalamayla) gelir. Desteklenmeyen sürüm
+    *Hata* olur.
   - Başlatma zaman aşımı sunucu tanımındadır.
   - Başlamayan sunucu oturumu bekletmez: araçları o tur gelmez, Ayarlar'da
     hata görünür, sohbette tek satırlık bir not çıkar.
@@ -397,13 +489,28 @@ tanımları denetimsiz verir (`kalfa-core/src/arac.rs`). MCP araçları için
 
 ### 7.2 Araç listesi ve oturumlar
 
-`AracKayitDefteri` ve derlenmiş şemalar bugün oturum boyunca sabittir.
-MCP araçları bunun yerine **tur başında alınan bir anlık görüntüyle**
-sunulur. Görüntüde her araç için tanım, argüman doğrulayıcısı ve çağrı
-sarmalayıcısı vardır; bu üçü aynı listeye ve aynı D'ye aittir. Liste
-değişikliği bir sonraki turda geçerli olur; tur ortasında modelin gördüğü
-tanım değişmez. Tur ortasında D'si değişen aracın çağrısı mühür denetiminde
-(§5.3) reddedilir.
+Bugün her oturum, bağlamı kurulurken tek seferlik bir `AracKayitDefteri`
+alır (`kalfa-uygulama/src/oturumlar.rs`). Defterin araç listesi ve
+derlenmiş şemaları sabittir (`kalfa-core/src/arac.rs`). Bu yapıyla,
+oturum açıldıktan sonra keşfini bitiren ya da listesini değiştiren bir
+sunucunun araçları o oturuma hiç giremez.
+
+Çözüm, **yenilenebilir bir kaynak ve tur başında atomik bir anlık
+görüntüdür:**
+
+- Uygulama yöneticisi her çalışma alanı için paylaşılan bir
+  `McpAracKaynagi` tutar. Kaynak sürümlüdür; her keşif ya da liste
+  değişikliği, denetimden geçmiş (§6.2) yeni bir sürüm yayımlar.
+- Oturumun defteri iki parçadan oluşur: sabit araçlar (bugünkü gibi) ve
+  bu kaynak. Her model turunun başında kaynaktan **tek bir anlık görüntü**
+  alınır. Görüntü her araç için tanımı, derlenmiş argüman doğrulayıcısını
+  ve çağrı sarmalayıcısını birlikte taşır; üçü aynı sürüme ve aynı D'ye
+  aittir.
+- O turun `tanimlar`, `dogrula` ve `bul` çağrıları yalnız bu görüntüyü
+  kullanır. Tur ortasında modelin gördüğü tanım değişmez.
+- Liste değişikliği, araç ekleme ve çıkarma dahil, bir sonraki turda
+  geçerli olur. Tur ortasında D'si değişen aracın çağrısı mühür
+  denetiminde (§5.3) reddedilir.
 
 ### 7.3 Çağrı, iptal ve zaman aşımı
 
@@ -480,12 +587,26 @@ ayrıdır (üst belge §10.1).
   - Yalıtımlı: "çalışma alanına yazabilir, izinli ağa çıkabilir".
   - Tam erişim: "hesabınızın erişebildiği her şeye erişir".
 - **Ekle/düzenle formu:** ad, komut, argümanlar, ortam değişkenleri (gizli
-  işaretiyle), ağ izin listesi, zaman aşımları, erişim. *Tam sistem
-  erişimi* seçilince formda kalıcı bir uyarı görünür; kaydederken yerel
-  pencere açılır.
-- **JSON içe aktarma:** `{"mcpServers": {...}}` yapıştırılır ve önizlenir.
-  Sunucular yalıtımlı ve kapalı olarak eklenir. `url` içerenler "1.1b'de"
-  notuyla atlanır.
+  işaretiyle), ağ izin listesi (yalnız yalıtımlıda), zaman aşımları,
+  erişim. *Tam sistem erişimi* seçilince formda kalıcı bir uyarı görünür.
+- **Yollar arayüzden gelmez** (AGENTS: "Arayüz arka uca dosya yolu
+  göndermez").
+  - Komut ya çıplak bir program adıdır ya da "Gözat" ile yerel dosya
+    seçicisinden seçilir. Seçilen yolu arka uç tutar, arayüze bir kimlik
+    döner.
+  - Argümanlar programa verilen metinlerdir; Kalfa onları yol olarak
+    açmaz.
+  - Ele geçirilmiş bir arayüzün sessizce sunucu tanımlamasını önlemek için
+    **her kayıt** (ekleme, düzenleme, içe aktarma) yerel pencerede
+    onaylanır. Pencere, arka ucun çözdüğü tam komut satırını, çalışma
+    kipini ve ağ listesini gösterir. Tam erişim uyarısı da bu
+    penceredadır.
+- **JSON içe aktarma:**
+  - Metin arayüzden arka uca gider; ayrıştırmayı arka uç yapar.
+  - Mutlak `command` yolları arka uçta kimliğe çevrilir ve yerel onay
+    penceresinde açıkça gösterilir.
+  - Sunucular yalıtımlı ve kapalı olarak eklenir.
+  - `url` içerenler "1.1b'de" notuyla atlanır.
 - **Ayrıntı:**
   - araçlar, denetlenen tanım metinleri ve denetim sonuçları,
   - kapatılan ya da sunulmayan araçların nedeni,
@@ -590,6 +711,47 @@ ağacının temizlendiği gözlenmeli.
   sürdürmeli.
 - MCP kendisi profil ya da ACE bırakmamalı.
 
+**Çalışma kipi ve ağ** (§4.1)
+- İki çalışma kipinin iki yalıtım durumuyla dört birleşiminin hepsi denenir.
+- Yalıtımlı tarif yalıtım yokken başlamamalı.
+- Tam erişim, yalıtım hazırken yalıtımsız başlamalı.
+- Tam erişimli tanım ağ listesi taşımamalı.
+
+**Ortam ve kasa** (§5.5)
+- `GITHUB_TOKEN` ve `API_KEY` sunucuya ulaşmalı.
+- `EVREN_API_KEY`, `KALFA_*` ve `SABIT` adları reddedilmeli.
+- Yinelenen ad reddedilmeli.
+- `NODE_OPTIONS` ezilince T değişmeli.
+- İki sunucu ve birden çok sır karışmamalı.
+- Yeniden adlandırma kimliği korumalı.
+- Silme girişi silmeli.
+- Kimlik deposu yoksa sunucu başlamamalı.
+- 8 karakterden kısa sır reddedilmeli.
+- Sır, tam ve alt dize olarak, stderr'de, hatada, sonuçta ve kesme sınırında
+  maskelenmeli.
+- Tanım değişince stderr halkası temizlenmeli.
+
+**Protokol dönemleri** (§7.1)
+- Yalnız eski dönemi bilen bir test sunucusu çalışmalı.
+- Yalnız 2026 dönemini bilen bir test sunucusu çalışmalı.
+- Her ikisinde liste değişikliği sonraki turda görünmeli.
+
+**Araç kaynağı** (§7.2)
+- Oturum açıldıktan sonra keşfini bitiren sunucunun araçları sonraki turda
+  görünmeli.
+- Açık oturumda araç eklenmeli ve çıkarılmalı.
+- Tur ortasında tanım, doğrulayıcı ve sarmalayıcı aynı sürümden gelmeli.
+
+**Çıkış şeması** (§6.1)
+- Şemaya uymayan `structuredContent` denetlenen araç hatası olmalı.
+- Eksik `structuredContent` denetlenen araç hatası olmalı.
+- Derlenemeyen `outputSchema`'lı araç kapatılmalı.
+
+**Arayüz sınırı** (§9)
+- Arayüz komutları yol taşımamalı.
+- Kayıt, içe aktarma ve tam erişim yerel onay penceresi olmadan
+  kaydedilmemeli.
+
 **`kalfa-core`**
 - `mcp_karari` tablosunun her hücresi.
 
@@ -608,15 +770,22 @@ ağacının temizlendiği gözlenmeli.
 
 1. **G1:** Windows'ta borulu AppContainer prototipi (§4.1).
 2. **Plan 1.1a-1:** `kalfa-sandbox` etkileşimli süreç (iki platform).
-3. **Plan 1.1a-2:** sınırlı çerçeveleyici ve `rmcp` bağlantısı (§4.2),
-   `kalfa-mcp`, `mcp_karari`, başlatma izni, tarif ve mühür, tanım
-   denetimi, uygulama yöneticisi, arayüz, e2e.
+3. **Plan 1.1a-2:**
+   - sınırlı çerçeveleyici ve `rmcp` bağlantısı (§4.2), protokol dönemleri
+     (§7.1),
+   - `kalfa-mcp`, `mcp_karari`, başlatma izni, tarif ve mühür,
+   - ortam birleştirme ve `GizliKasa` (§5.5),
+   - tanım denetimi ve çıkış şeması (§6),
+   - `McpAracKaynagi` (§7.2), uygulama yöneticisi,
+   - arayüz ve yerel onaylı kayıt (§9), e2e.
 
 **Yeni bağımlılıklar:** `rmcp` 3.5.1 (`client`; dev'de `server`).
 `rust-version` 1.88, depo araç zinciri 1.98.1'in altındadır.
 `transport-async-rw` kullanılmaz (§4.2).
 
-## 13. Codex incelemesinin yanıtı (`dd641a3`)
+## 13. İncelemelerin yanıtı
+
+### 13.1 Codex'in yerel incelemesi (`INCELEME-dd641a3.md`)
 
 | # | Bulgu | Karar | Çözüm |
 |---|---|---|---|
@@ -654,3 +823,26 @@ D'ye bağlı kalır. Gerekçeler:
 Ek olarak, ilk sürümün §1'indeki "geride ACE kalmaz" ölçütü, kalıcı
 çalışma alanı hazırlığıyla çelişiyordu. Ölçüt "MCP kendisi bırakmaz"
 olarak düzeltildi.
+
+### 13.2 PR #19'daki satır içi Codex yorumları (`dd641a3`)
+
+Yorumlar ilk sürüme yazıldı. Altısı r2'de zaten çözülmüştü; geri kalanı
+r3'te koda karşı doğrulanıp çözüldü.
+
+| Yorum | Konu | Karar | Çözüm |
+|---|---|---|---|
+| Stdout ve stderr sınırı | Ham çerçeve ve stderr | Katılıyorum (r2) | §4.2 |
+| Tam erişimde ağ süzgeci | Yalıtımsız arka uç ağı kapatamaz (`lib.rs`, `CalistirmaIstegi::ag`) | Katılıyorum | §4.1: tam erişimde ağ listesi yok, ağ "sınırsız" gösterilir |
+| Mührün tam tanımı | Düz ortam değerleri | Katılıyorum (r2) | §5.3: T bütün ortamı, komut dosyasının özetini ve kuşağı kapsar |
+| Tam tanımın denetimi ve sınırı | İç içe şema metinleri | Katılıyorum (r2) | §4.2 toplam bayt, §6.2 bütün metin değerleri |
+| Başlatmadan önce kapı | Süreç başlatma | Katılıyorum (r2) | §5.1 |
+| İki protokol dönemi | 2026-07-28'de `server/discover` ve `subscriptions/listen` | Katılıyorum; `rmcp` 3.5.1 `ClientLifecycleMode::Auto` doğrulandı | §7.1 |
+| Yenilenebilir araç defteri | `AracKayitDefteri` oturumda sabit (`oturumlar.rs`, `arac.rs`) | Katılıyorum | §7.2: `McpAracKaynagi` ve tur başında anlık görüntü |
+| `outputSchema` doğrulaması | MCP belirtimi | Katılıyorum | §6.1 |
+| Gömülü kaynak blokları | `EmbeddedResource` | Katılıyorum (r2) | §6.1 |
+| stderr'de sır | Maskeleme sırası | Katılıyorum | §5.5: tampondan önce maskeleme, kesme sınırı, en kısa sır 8 karakter, halkanın temizlenmesi |
+| Yolların webview'den gelmemesi | AGENTS kuralı | Katılıyorum | §3, §9: çıplak ad ya da yerel seçici; her kayıt yerel onaylı |
+| Paylaşılan profil korunsun | Windows hazırlığı | Katılıyorum (r2) | §1, §5.6 |
+| Açık seçilen tam erişim | `kip_uyusmasi(false, true)` reddi | Katılıyorum | §4.1: `CalistirmaKipi` tablosu |
+| Ortamın güvenli birleşimi | `ortam::uret` `TOKEN`/`KEY` adlarını düşürür | Katılıyorum | §5.5: iki adımlı birleştirme ve ayrılmış adlar |
+| Anahtarlı kimlik kasası | `SistemDeposu` tek yuvalı (`anahtar.rs`) | Katılıyorum | §5.5: `GizliKasa` |

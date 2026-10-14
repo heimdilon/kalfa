@@ -243,7 +243,18 @@ Codex incelemesinin (`dd641a3`) altı bulgusu r2'de çözüldü:
 - araç tanımı denetimi.
 
 Bulgu 5'in bir alt maddesine kaynaklı gerekçeyle kısmen katılınmadı:
-kısayollar aynı tarifle yeniden başlatmada düşmez. Yanıt tasarımın §13'ünde.
+kısayollar aynı tarifle yeniden başlatmada düşmez. PR #19'daki 15 satır içi
+Codex yorumu r3'te ele alındı:
+- tam erişimde ağ süzgeci yok,
+- iki MCP protokol dönemi,
+- yenilenebilir araç kaynağı,
+- `outputSchema` doğrulaması,
+- yolların arayüzden gelmemesi ve yerel onaylı kayıt,
+- açık seçilen çalışma kipi,
+- ortam birleştirme,
+- anahtarlı kimlik kasası.
+
+Yanıtlar tasarımın §13'ünde.
 
 **Sıradaki tek iş:** r2'nin yeniden incelenmesi. Kullanıcı ayrıca şu iki
 kararı verecek: iptalde süreci durdurma değişikliği (§2) ve çağrılar
