@@ -180,9 +180,16 @@ hakkı ve miras denetimi, kaldırmada bütün dosyalar) birleşmeden önce
 düzeltildi; koşu [38466119004](https://github.com/heimdilon/kalfa/actions/runs/38466119004)
 tümüyle geçti. Kullanıcının açık onayıyla squash birleşti.
 
-**Sıradaki tek iş:** sonuçları dosyaya göre tekilleştirme (G5 +2 sorgu).
-`v*` etiketi ve sürüm yayımı kullanıcının ayrı onayını bekler; canlı
-`baglam_canli` deneyi de ayrı onay bekler.
+**RAG sonuçları dosyaya göre tekil (14 Ekim, dal `rag/dosya-tekillestirme`):**
+`kalfa-rag` yeniden sıralamada bütün adayların sırasını alır ve her dosyayı
+en iyi parçasıyla bir kez gösterir; liste sonraki dosyalarla dolar. Kosinüs
+geri dönüşünde de aynı kural geçerlidir. G5 tam ölçümünde bu sayım 26/32
+yerine 28/32 vermişti; canlı ölçüm yeniden koşulmadı (kredi, ayrı onay).
+Tasarım §11.3 adım 5 ve §11.4.
+
+**Sıradaki tek iş:** RAG tekilleştirme PR'ının CI'ı ve kullanıcının
+birleştirme onayı. `v*` etiketi ve sürüm yayımı kullanıcının ayrı onayını
+bekler; canlı `baglam_canli` deneyi de ayrı onay bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
@@ -200,7 +207,8 @@ değerlendirme), G5 makbuz ve logları ile 4d'nin Windows ve WSL inceleme
 logları `C:\Users\kullanici\kalfa-yedek\asama-4-veri-20261012`'dedir.
 
 **Sonraki iyileştirme adayları:** Sonuçları dosyaya göre tekilleştirmek
-(G5'te +2 sorgu); Linux paketlemesi (depoda henüz yok).
+(G5'te +2 sorgu; 14 Ekim'de uygulandı); Linux paketlemesi (13 Ekim'de
+eklendi).
 
 Ayrıntılı yerel handoff: `C:\Users\kullanici\kalfa-yedek\HANDOFF-asama-4.md`;
 [PR handoff'u](https://github.com/heimdilon/kalfa-arsiv/pull/52#issuecomment-6078860023).

@@ -1,6 +1,6 @@
 //! Arama ve sonuç biçimi (aşama 4 tasarımı §11.3, §11.4).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kalfa_plugin_sdk::Hata;
 use serde::Deserialize;
@@ -122,7 +122,19 @@ fn vektorle_ara(
             .then_with(|| x.1.cmp(y.1))
             .then(x.2.cmp(&y.2))
     });
+    // İlk ADAY parça adaydır. Sonuçlar dosyaya göre tekilleştiği için bu
+    // parçalar `n`'den az dosyadan geliyorsa, sonraki dosyaların en iyi
+    // parçası da eklenir (en çok `n - 1` belge). Böylece tek dosya adayları
+    // doldurduğunda da liste öteki dosyalarla dolabilir.
+    let mut dosyalar: BTreeSet<&str> = puanli.iter().take(ADAY).map(|p| p.1).collect();
+    let ek: Vec<_> = puanli
+        .iter()
+        .skip(ADAY)
+        .filter(|p| dosyalar.len() < n as usize && dosyalar.insert(p.1))
+        .copied()
+        .collect();
     puanli.truncate(ADAY);
+    puanli.extend(ek);
 
     // Her dosya bir kez okunur. Okunamayan, arada değişmiş ya da bayt aralığı
     // bozuk parça atlanır.
@@ -156,28 +168,35 @@ fn vektorle_ara(
         });
     }
 
+    // Bütün adayların sırası istenir: aynı dosyanın parçaları atlanınca liste
+    // sonraki dosyalarla dolar. `top_n` maliyeti değiştirmez; token sorgu ve
+    // belgelerden sayılır.
     let mut arama_notu = None;
     let siralama = if adaylar.is_empty() {
         Vec::new()
     } else {
         let metinler: Vec<String> = adaylar.iter().map(|a| a.metin.clone()).collect();
-        match o.sirala(sorgu, &metinler, n) {
+        match o.sirala(sorgu, &metinler, adaylar.len() as u32) {
             Ok(siralama) => siralama,
             Err(Hata::SinirAsildi(_)) => {
                 arama_notu = Some("Yeniden sıralama EVREN sınırına takıldı; sonuçlar kosinüs benzerliğiyle sıralandı.".into());
                 adaylar
                     .iter()
                     .enumerate()
-                    .take(n as usize)
                     .map(|(i, a)| (i, a.puan))
                     .collect()
             }
             Err(e) => return Err(e),
         }
     };
+    // Her dosya en iyi sıradaki parçasıyla bir kez gelir: aynı dosyanın
+    // parçaları ilk sonuçları doldurup başka dosyaları aşağı itmez (G5: ilk
+    // beşte 26/32 yerine 28/32). Dosyanın geri kalanı `dosya_oku` ile okunur.
+    let mut gorulen = BTreeSet::new();
     let sonuclar: Vec<(&Aday, f32)> = siralama
         .iter()
         .filter_map(|&(i, puan)| adaylar.get(i).map(|aday| (aday, puan)))
+        .filter(|(aday, _)| gorulen.insert(aday.yol.as_str()))
         .take(n as usize)
         .collect();
 
@@ -483,6 +502,75 @@ mod testler {
         );
     }
 
+    /// a.rs'in iki parçası da sorguyu tam içerir; b.rs yalnızca yarısını.
+    fn iki_parcali_dosya(o: &SahteOrtam) -> (IndeksDurumu, Vec<(String, usize, Vec<f32>)>) {
+        indeks_kur(
+            o,
+            &[
+                ("a.rs", "alfa beta\nx\ny\nalfa beta\nx\ny\n"),
+                ("b.rs", "alfa\n"),
+            ],
+        )
+    }
+
+    #[test]
+    fn her_dosya_en_iyi_parcasiyla_bir_kez_gelir() {
+        let o = SahteOrtam::yeni();
+        let (durum, vektorler) = iki_parcali_dosya(&o);
+        let s = basarili(sonuclari_bul(&o, &arg("alfa beta", 2), &durum, vektorler));
+        // a.rs'in ikinci parçası b.rs'den yüksek puanlıdır ama aynı dosyadır.
+        assert!(s.starts_with("\"alfa beta\" için 2 sonuç"), "{s}");
+        assert!(s.contains("[1] dosya:a.rs:1-3"), "{s}");
+        assert!(s.contains("[2] dosya:b.rs:1-1"), "{s}");
+        assert!(!s.contains("a.rs:4-6"), "{s}");
+        // Tekilleştirmenin doldurabilmesi için bütün adayların sırası istenir.
+        assert_eq!(o.siralamalar.borrow()[0].1.len(), 3);
+    }
+
+    #[test]
+    fn adaylari_tek_dosya_doldurunca_sonraki_dosyalar_eklenir() {
+        let o = SahteOrtam::yeni();
+        // a.rs'in 50 parçasının hepsi sorguyla aynı yönde: ilk ADAY adayı
+        // doldurur. b.rs ve c.rs daha uzaktır.
+        let a: String = (0..150).map(|i| format!("alfa {i}\n")).collect();
+        let (durum, mut vektorler) = indeks_kur(
+            &o,
+            &[
+                ("a.rs", a.as_str()),
+                ("b.rs", "alfa b\n"),
+                ("c.rs", "alfa c\n"),
+            ],
+        );
+        for v in &mut vektorler {
+            v.2 = if v.0 == "a.rs" {
+                sorgu_vektoru("alfa")
+            } else {
+                sahte_vektor("baska")
+            };
+        }
+        let s = basarili(sonuclari_bul(&o, &arg("alfa", 2), &durum, vektorler));
+        assert!(s.starts_with("\"alfa\" için 2 sonuç"), "{s}");
+        assert!(s.contains("dosya:a.rs:"), "{s}");
+        assert!(s.contains("dosya:b.rs:1-1"), "{s}");
+        // Yalnızca eksik dosya sayısı kadar aday eklenir.
+        assert_eq!(o.siralamalar.borrow()[0].1.len(), ADAY + 1);
+    }
+
+    #[test]
+    fn kosinus_sirasi_da_dosyaya_gore_tekillesir() {
+        let o = SahteOrtam::yeni();
+        let (durum, mut vektorler) = iki_parcali_dosya(&o);
+        vektorler[0].2 = sorgu_vektoru("alfa beta");
+        vektorler[1].2 = sorgu_vektoru("alfa beta");
+        vektorler[2].2 = sahte_vektor("baska");
+        *o.siralama_hatasi.borrow_mut() = Some(Hata::SinirAsildi("429".into()));
+        let s = basarili(sonuclari_bul(&o, &arg("alfa beta", 2), &durum, vektorler));
+        assert!(s.contains("kosinüs benzerliğiyle sıralandı"));
+        assert!(s.contains("[1] dosya:a.rs:1-3 (puan 1,00)"), "{s}");
+        assert!(s.contains("[2] dosya:b.rs:1-1"), "{s}");
+        assert!(!s.contains("a.rs:4-6"), "{s}");
+    }
+
     #[test]
     fn sonuc_sayisi_bir_ile_yirmi_arasina_kirpilir() {
         let o = SahteOrtam::yeni();
@@ -664,13 +752,23 @@ mod testler {
         assert_eq!(o.gommeler.borrow().len(), 4);
     }
 
+    /// Dört dosya, her biri üç satırlık tek parça. Her satır yaklaşık 7 KB
+    /// (Türkçe harfli): parça ~21 KB, dört parça sınırı aşar.
+    fn uzun_dosyalar() -> Vec<(String, String)> {
+        (0..4)
+            .map(|d| {
+                let icerik: String = (0..3)
+                    .map(|i| format!("{:05} {}\n", d * 3 + i, "ğ".repeat(3500)))
+                    .collect();
+                (format!("uzun{d}.rs"), icerik)
+            })
+            .collect()
+    }
+
     #[test]
     fn kosinus_sonuclarinin_notu_da_bayt_sinirina_dahildir() {
         let o = SahteOrtam::yeni();
-        let icerik: String = (0..12)
-            .map(|i| format!("{i:05} {}\n", "ğ".repeat(3500)))
-            .collect();
-        let (durum, vektorler) = indeks_kur(&o, &[("uzun.rs", icerik.as_str())]);
+        let (durum, vektorler) = indeks_kur(&o, &uzun_dosyalar());
         *o.siralama_hatasi.borrow_mut() = Some(Hata::SinirAsildi("429".into()));
         let s = basarili(sonuclari_bul(&o, &arg("uzun metin", 8), &durum, vektorler));
         assert!(s.len() <= SONUC_SINIRI);
@@ -681,15 +779,10 @@ mod testler {
     #[test]
     fn uzun_sonuc_sinira_kirpilir() {
         let o = SahteOrtam::yeni();
-        // Her satır yaklaşık 7 KB (Türkçe harfli): üç satırlık parça ~21 KB,
-        // dört parça sınırı aşar.
-        let icerik: String = (0..12)
-            .map(|i| format!("{i:05} {}\n", "ğ".repeat(3500)))
-            .collect();
-        let (durum, vektorler) = indeks_kur(&o, &[("uzun.rs", icerik.as_str())]);
+        let (durum, vektorler) = indeks_kur(&o, &uzun_dosyalar());
         let s = basarili(sonuclari_bul(&o, &arg("uzun metin", 8), &durum, vektorler));
         assert!(s.len() <= SONUC_SINIRI);
-        assert!(s.contains("\n… (kısaltıldı; tamamı için dosya_oku ile uzun.rs satır "));
+        assert!(s.contains("\n… (kısaltıldı; tamamı için dosya_oku ile uzun"));
         assert!(s.ends_with("(1 sonuç sınır yüzünden gösterilmedi)"));
         assert_eq!(s.matches("] dosya:").count(), 3);
     }
