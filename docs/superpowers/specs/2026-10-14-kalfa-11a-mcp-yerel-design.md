@@ -1,7 +1,7 @@
 # Kalfa 1.1a — Yerel MCP sunucuları: Tasarım
 
 **Tarih:** 2026-10-14.
-**Durum:** Tasarım, r7. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
+**Durum:** Tasarım, r8. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
 §13'te şu incelemelerin yanıtı var:
 
 - Codex'in yerel incelemesi (`dd641a3`, altı bulgu),
@@ -9,11 +9,13 @@
 - Codex'in r3 yeniden incelemesi (`5dd79a4`, beş bulgu),
 - Codex'in r4 yeniden incelemesi (`e5080c2`, iki bulgu),
 - Codex'in plan 1.1a-1 incelemelerinin tasarıma dokunan bulguları
-  (`9d6b6b5`, `6205095`; §13.5, §13.6).
+  (`9d6b6b5`, `6205095`, `aa09afa`; §13.5–§13.7).
 
-G1 geçti ve kalan risk kabul edildi (§4.1, §4.3). Plan 1.1a-1 ön
-doğrulandı ve yeniden incelemede; ürün uygulaması o incelemeden sonra
-başlar.
+G1 geçti; §4.1 ve §4.3'teki ayrı kalan riskler kullanıcı tarafından
+kabul edildi. 1.1a-1 ürün uygulamasını Codex devraldı; süreç altyapısı
+`c1d464f` commit'inde iki platformun zorunlu kontrollerini geçti.
+[Ürün raporu](../bulgular/2026-10-14-kalfa-11a-1-urun.md) kanıtı taşır.
+MCP yöneticisi ve arayüz sonraki 1.1a-2 planının kapsamıdır.
 **Taban:** `main`, `04f16fc` (`v0.1.0` ön sürümü yayımlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §10, §12.2.
 
@@ -176,8 +178,9 @@ eklenir:
   - Linux'ta torunlar `/proc`'tan bulunur. Tarama tam yapılamazsa
     (açılamayan dizin, okunamayan ya da ayrıştırılamayan kayıt) `kapat()`
     `Err` döner; eksik tarama "torun yok" sayılmaz. Her torun `pidfd` ile
-    açılır ve başlangıç zamanı taramadakiyle karşılaştırılır; numarası
-    başka bir sürece verilmişse sinyal gönderilmez.
+    açılır; yaprağın ve köke kadar her ara ebeveynin başlangıç zamanı
+    taramadakiyle karşılaştırılır. Değişmiş ya da kaybolmuş ara kimliğin
+    alt dalına bu turda sinyal gönderilmez; güncel tarama yeniden yapılır.
   - Öldürme ya da doğrulama başarısızsa `Err` döner. Çağıran ağacın
     durduğunu varsayamaz ve kilidi bırakmaz (§7.3).
   - `kapat()` iptal edilirse ya da süreç `kapat()` çağrılmadan bırakılırsa
@@ -191,11 +194,11 @@ eklenir:
   sahiplendiği ağacı (Job Object; süreç grubu ve kökün alt ağacı) doğrular.
   Yalıtımlıda bu sınır yoktur.
 
-  **Karar bekliyor:** Bu daralma §4.3'teki gizli dosya riskinin kabulünden
-  ayrı bir karardır; kullanıcı henüz onaylamadı. Onaylanırsa tam erişim
-  uyarısı (§9), sunucunun kendiliğinden çıkışında da geride süreç
-  kalabileceğini anlaşılır biçimde söyler. İptal ve tarama hataları bu
-  istisnaya girmez.
+  **Karar:** Kullanıcı 14 Ekim 2026'da bu oturumdaki §4.1 karar sorusuna
+  doğrudan “Açık uyarıyla kabul et (önerim)” yanıtını verdi. Bu kabul
+  §4.3'teki gizli dosya riskinden ayrıdır. Tam erişim uyarısı (§9),
+  sunucunun kendiliğinden çıkışında da geride süreç kalabileceğini söyler.
+  İptal ve tarama hataları bu istisnaya girmez. Ayrı denetleyici eklenmez.
 - **Çalışma kipi açıkça seçilir.** Mevcut `kip_uyusmasi(false, true)`
   yalıtım hazırken yalıtımsız başlatmayı reddeder
   (`kalfa-sandbox/src/lib.rs`), çünkü kabukta yalıtımsız çalışma yalnız
@@ -882,7 +885,7 @@ ayrıdır (üst belge §10.1).
 - **Rozet açıklaması:** Rozet, erişimin yalnız çağrı sırasında değil,
   başladığı andan kapanana kadar sürdüğünü söyler.
   - Yalıtımlı: "çalışma alanına yazabilir, izinli ağa çıkabilir".
-  - Tam erişim: "hesabınızın erişebildiği her şeye erişir".
+  - Tam erişim: "Hesabınızın erişebildiği her şeye erişir. Sunucu kendiliğinden kapansa da geride çalışan süreçler kalabilir."
 - **Ekle/düzenle formu:** ad, komut, argümanlar, ortam değişkenleri (gizli
   işaretiyle), ağ izin listesi (yalnız yalıtımlıda), zaman aşımları,
   erişim. *Tam sistem erişimi* seçilince formda kalıcı bir uyarı görünür.
@@ -1251,3 +1254,11 @@ bulgularının karşılığı" bölümündedir.
 | 2 | Linux torun taraması eksikliği başarı sayıyor; PID sabitlenmiyor | Katılıyorum | §4.1: tam olmayan tarama `Err`; `pidfd` ve başlangıç zamanıyla kimlik. |
 | 3 | Windows güvensiz kökü reddetmeden önce değiştiriyor | Katılıyorum | §5.6'daki "ACL'ye dokunulmaz" kuralı artık ilk değişiklikten önceki denetimle sağlanır (plan Görev 4). |
 | — | Linux tam erişim istisnası ayrı bir karar | Katılıyorum | §4.1: kullanıcı kararı bekliyor olarak işaretlendi. |
+
+### 13.7 Codex'in plan r3 incelemesi ve ürün devri
+
+| Bulgu / karar | Karşılık |
+|---|---|
+| Yeniden kullanılan ara ebeveynin ilgisiz alt dalı sinyal hedefi oluyor | Yaprak pidfd ve bütün ebeveyn zincirinin başlangıç kimliği doğrulanıyor. Kayıp/değişmiş dal sonraki taramaya bırakılıyor; iki karşı örnek testi eklendi. |
+| Linux tam erişimin doğal çıkışta torun bırakması | Kullanıcı bu oturumda açık uyarıyla kabul etti; §4.1 ve §9 güncellendi. Yalıtımlı kipin güvencesi korunur. |
+| Ürün uygulamasının devri | Kullanıcı “Codex devralsın (önerim)” yanıtını verdi; alt ajan tercihi GPT-6 Luna / max. KALFA-19, `codex/mcp-etkilesimli` dalı. |

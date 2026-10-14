@@ -317,17 +317,33 @@ Plan kodu iki platformda yeniden ön doğrulandı
 Bu işin Windows koşularının %TEMP%'e eklediği üç test dizini silindi; eski
 44 dizin ayrı görev.
 
-**Kullanıcı kararı bekleyen:** Linux tam erişimde kök kendiliğinden
-çıktıktan sonra yaşayan `setsid` torunu sahiplenilemiyor (tasarım r7
-§4.1). Bu istisna §4.3'teki risk kabulünden ayrı bir karar.
+**Ürün uygulaması (Codex):** Kullanıcı 14 Ekim'de §4.1 için doğrudan
+“Açık uyarıyla kabul et (önerim)”, sahiplik için “Codex devralsın (önerim)”
+yanıtını verdi. Tam erişimde doğal çıkışın `setsid` torun bırakabilmesi
+§4.3'ten ayrı kabul edildi; arayüz uyarısı tasarım §9'da. Son alt ajan
+tercihi GPT-6 Luna / max; önceki Haiku seçiminin yerine geçer.
 
-Kullanıcı uygulama yöntemi olarak alt ajanlı yöntemi seçti (Haiku 5.5, en
-yüksek çaba).
+Codex'in r3 incelemesindeki kalan ara ebeveyn PID hatası düzeltildi.
+Yaprağın pidfd'si ve köke kadar bütün ara ebeveynlerin başlangıç kimliği
+doğrulanır; kayıp/değişmiş halka ilgisiz alt dalı sinyalden korur. Eski
+algoritmayla iki yeni regresyon düştü; yeni algoritmayla geçiyor.
 
-**Sıradaki tek iş:** Codex'in r3 planı, ön doğrulama kodunu ve raporu
-yeniden incelemesi. Ürün uygulaması o inceleme tamamlanınca başlar.
-Worktree (`C:\Users\kor_a\kalfa-11a1-on`, `target` 18 GB) ve WSL kopyası
-inceleme bitene kadar tutulur.
+Ürün kodu `codex/mcp-etkilesimli` dalındaki `c1d464f` commit'inde.
+Dokuz sandbox dosyası değişti; yeni bağımlılık yok. Ön doğrulanmış
+0eab968 kodu ürün kaynaklarına taşındı; kalan PID düzeltmesi ayrı alt
+ajana, bağımsız inceleme başka bir alt ajana verildi. KALFA-19 sahipliği
+Codex'te. Windows ve WSL ürün doğrulaması tamamlandı:
+Windows yalıtım 50/50, uyumluluk 24/24; WSL yalıtım 32/32, uyumluluk
+16/16. Sandbox birimleri 109/109 ve 75/75; fmt, workspace testleri ve
+iki clippy iki platformda geçti. Bağımsız incelemede açık ürün engeli yok.
+[Ürün raporu](superpowers/bulgular/2026-10-14-kalfa-11a-1-urun.md).
+
+**Sıradaki tek iş:** Ürün kodu ve raporu içeren PR #19'un bu başındaki
+CI ve bağımsız inceleme sonuçlarını kapatmak. Yerel doğrulama tamamlandı;
+merge kullanıcı onayı gerektirir. Ardından 1.1a-2 planı yazılabilir.
+Claude'un ön doğrulama worktree'si/kopyası ve ortak derleme önbellekleri
+korunur. Codex WSL kaynak kopyası ve Windows'a özel bu test kökü silindi;
+eski artık dizinlere dokunulmadı.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

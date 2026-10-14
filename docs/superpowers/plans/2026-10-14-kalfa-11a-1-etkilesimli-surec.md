@@ -7,21 +7,26 @@
 > ve 4, Görev 2'nin arayüzleri sabitlenmeden başlamaz. Ajanlar aynı
 > worktree'de eşzamanlı düzenleme yapmaz.
 
-**Durum:** İncelemede (r3). Codex'in iki plan incelemesi
-(`INCELEME-PLAN-9d6b6b5`, `INCELEME-PLAN-6205095`) işlendi. Ürün
-uygulaması, bu düzeltilmiş planın incelemesi tamamlanınca başlar.
+**Durum:** Ürün uygulaması tamamlandı (r4). Codex, kullanıcının 14 Ekim'deki
+doğrudan devriyle 1.1a-1'i uyguluyor. r3 incelemesindeki ara ebeveyn PID
+karşı örneği düzeltildi. Bağımsız inceleme GPT-6 Luna / max ile yapıldı;
+Windows ve WSL doğrulaması geçti. Ürün commit'i `c1d464f`; sonuçlar
+[ürün raporunda](../bulgular/2026-10-14-kalfa-11a-1-urun.md). Ön doğrulanmış görev 1–4 kodu yeniden
+kullanıldı; kalan düzeltme ayrı alt ajana verildi. Kullanıcının son model
+ve devir talimatı önceki yöntem kaydının yerine geçer.
 
 **Ön doğrulama:** Bu plandaki kod blokları ayrı bir worktree'de iki
 platformda derlendi ve testleri koşturuldu:
 
 - Dal `deneme/11a-1-on-dogrulama`, commit `0eab968` (yalnız
   yerel; push edilmedi).
-- Kod blokları o commit'teki dosyalardan birebir alındı.
+- İlk kod blokları o commit'ten alındı. r4'te `agac.rs` blokları ürün
+  kaynağındaki PID soy düzeltmesi ve güvenlik açıklamalarıyla güncellendi.
 - Sonuçlar [ön doğrulama raporunda](../bulgular/2026-10-14-kalfa-11a-1-on-dogrulama.md).
 
 **Taban:** `main` `04f16fc` ve PR #19 dalı (`docs/mcp-yerel-tasarim`).
 **Tasarım:** [1.1a tasarımı](../specs/2026-10-14-kalfa-11a-mcp-yerel-design.md)
-r6: §3 (sunucunun özel kökü, ortam), §4.1 (etkileşimli süreç, `kapat()`
+r8: §3 (sunucunun özel kökü, ortam), §4.1 (etkileşimli süreç, `kapat()`
 sözleşmesi, çalışma kipi, ağ), §5.6 (yetenek SID'i, korumalı kök).
 [G1 raporu](../bulgular/2026-10-14-kalfa-11a-g1.md).
 
@@ -50,7 +55,7 @@ bwrap/seccomp (mevcut). Yeni bağımlılık yok.
 ## Global Constraints
 
 - Yeni crate ya da `windows-sys` özelliği yok; `rmcp` 1.1a-2'dedir.
-- `unsafe` yalnız şu dosyalarda ve her blok `// SAFETY:` açıklamasıyla:
+- Bu planda eklenen `unsafe` yalnız şu dosyalarda ve her blok `// SAFETY:` açıklamasıyla:
   `agac.rs`, `windows/kap.rs`, `windows/guvenlik.rs`, `linux/mod.rs`.
 - Üretim kodunda `unwrap`/`expect` yok. Adlar, açıklamalar ve testler
   Türkçedir.
@@ -101,9 +106,11 @@ bwrap/seccomp (mevcut). Yeni bağımlılık yok.
 - **Linux torun taraması:** `/proc` tam okunamazsa (açılamayan dizin,
   okunamayan ya da ayrıştırılamayan kayıt) tarama hata döner; eksik tarama
   "torun yok" sayılmaz. Kaydı olmayan süreç toplanmıştır ve atlanır. Her
-  torun `pidfd_open` ile açılır; açtıktan sonra okunan başlangıç
-  taramadakiyle aynı değilse numara başka bir sürece verilmiştir ve sinyal
-  gönderilmez. Sinyal `pidfd_send_signal` ile gider.
+  torun `pidfd_open` ile açılır; açtıktan sonra yaprağın ve köke kadar
+  bütün ara ebeveynlerin başlangıçları taramadakiyle karşılaştırılır.
+  Değişmiş veya kaybolmuş halka varsa alt dal bu turda sinyal almaz;
+  sonraki tarama köke bağlanmış yetimleri kapsar. Okuma hatası `Err` verir.
+  Sinyal `pidfd_send_signal` ile gider.
 - **Windows kök denetimi önce gelir:** Var olan `mcp`, kök, `ev`,
   `gecici` ve `onbellek` ilk dosya, ACL ya da kayıt değişikliğinden önce
   denetlenir. Ret hiçbir şeyi değiştirmez.
@@ -181,7 +188,7 @@ olan görevde ayrı bir testle sabitlenmiştir:
   - `pub fn mcp_kip_uyusmasi(kip: CalistirmaKipi, yalitim_hazir: bool) -> Result<(), BaslatmaHatasi>`
   - `pub const KAPANMA_PAYI: Duration` (2 sn)
 
-- [ ] **Adım 1: Düşen birim testlerini yazın** (`etkilesimli.rs` sonu):
+- [x] **Adım 1: Düşen birim testlerini yazın** (`etkilesimli.rs` sonu):
 
 ```rust
 #[cfg(test)]
@@ -260,11 +267,11 @@ mod tests {
 }
 ```
 
-- [ ] **Adım 2: Düştüğünü görün:**
+- [x] **Adım 2: Düştüğünü görün:**
   `cargo test -p kalfa-sandbox --locked --lib etkilesimli::tests`.
   Beklenen: derleme hatası; `etkilesimli` modülü yok.
 
-- [ ] **Adım 3: Modülü yazın** (`etkilesimli.rs`, testlerden önce):
+- [x] **Adım 3: Modülü yazın** (`etkilesimli.rs`, testlerden önce):
 
 ```rust
 //! Etkileşimli süreç (1.1a tasarımı §3, §4.1): stdin/stdout borulu,
@@ -399,11 +406,11 @@ pub use etkilesimli::{
 };
 ```
 
-- [ ] **Adım 4: Geçtiğini görün:** İki platformda
+- [x] **Adım 4: Geçtiğini görün:** İki platformda
   `cargo test -p kalfa-sandbox --locked --lib etkilesimli::tests`. Beklenen:
   4 test geçer.
 
-- [ ] **Adım 5: Commit'leyin:** `sandbox: etkileşimli süreç sözleşmesi (kip, sunucu adı, özel kök, ortam)`.
+- [x] **Adım 5: Commit'leyin:** `sandbox: etkileşimli süreç sözleşmesi (kip, sunucu adı, özel kök, ortam)`.
 
 ---
 
@@ -458,7 +465,7 @@ pub use etkilesimli::{
   zaman aşımı ve `[etkin > 0, etkin > 0, etkin = 0]` dizisi sahte ağaçla
   sınanır.
 
-- [ ] **Adım 1: Düşen testleri yazın** (`surec.rs` sonu). Testler tam
+- [x] **Adım 1: Düşen testleri yazın** (`surec.rs` sonu). Testler tam
   erişimi her platformda doğrudan `tam_erisimle` ile sınar:
 
 ```rust
@@ -956,11 +963,11 @@ mod tests {
 }
 ```
 
-- [ ] **Adım 2: Düştüğünü görün:**
+- [x] **Adım 2: Düştüğünü görün:**
   `cargo test -p kalfa-sandbox --locked --lib surec::tests`.
   Beklenen: derleme hatası; `tam_erisimle` ve `EtkilesimliSurec` yok.
 
-- [ ] **Adım 3: `agac.rs`'e ekleyin.** `baslat`'tan sonra:
+- [x] **Adım 3: `agac.rs`'e ekleyin.** `baslat`'tan sonra:
 
 ```rust
 /// Etkileşimli sürecin kökü (1.1a §4.1). Linux'ta kök, kendi torunlarının
@@ -1084,14 +1091,19 @@ pub(crate) trait SurecKaynagi {
     fn sinyal(&self, tutamac: &Self::Tutamac, sinyal: i32) -> io::Result<()>;
 }
 
-/// `kok`'ün zombi olmayan torunlarını bulur. Her birini sabit başvuruyla
-/// açar ve başlangıcının taramadakiyle aynı olduğunu doğrular: tarama ile
-/// açma arasında numara başka bir sürece verildiyse asıl torun bitmiştir ve
-/// açılan süreç ilgisizdir; ona sinyal gönderilmez. Doğrulananlar dondurulur
-/// ve öldürülür. Torun bulduysa `true` döner.
+/// `kok`'ün zombi olmayan torunlarını bulur. Her adayın yaprağını pidfd
+/// ile açıp başlangıcını, sonra köke kadar snapshot'taki her ebeveynin
+/// başlangıcını doğrular. Değişmiş ya da kaybolmuş bir ara kimliğin alt dalı
+/// bu taramayla sinyallenmez; sonraki tarama güncel ebeveynliği görür.
+/// Kök toplanmadığı ve Linux'ta alt süreç toplayıcısı olduğu için doğrulama
+/// sonrasında ara süreç çıkarsa yetimleri yine bu kökün altına bağlanır.
 #[cfg(target_os = "linux")]
 pub(crate) fn torunlari_oldur_ile<K: SurecKaynagi>(k: &K, kok: i32) -> io::Result<bool> {
+    use std::collections::HashMap;
+
     let surecler = k.tara()?;
+    let bilgiye_gore_pid: HashMap<i32, SurecBilgisi> =
+        surecler.iter().map(|s| (s.pid, *s)).collect();
     let mut agac = vec![kok];
     let mut torunlar = Vec::new();
     let mut i = 0;
@@ -1113,8 +1125,21 @@ pub(crate) fn torunlari_oldur_ile<K: SurecKaynagi>(k: &K, kok: i32) -> io::Resul
         let Some(t) = k.ac(s.pid)? else {
             continue;
         };
-        if k.baslangic(s.pid)? == Some(s.baslangic) {
-            acik.push(t);
+        // Yaprak denetimi pidfd açıldıktan sonra sürer. Zincirin herhangi bir
+        // eski halkası eşleşmezse aynı snapshot'taki alt dal hedef olamaz.
+        let mut halka = s;
+        loop {
+            if k.baslangic(halka.pid)? != Some(halka.baslangic) {
+                break;
+            }
+            if halka.ppid == kok {
+                acik.push(t);
+                break;
+            }
+            let Some(ebeveyn) = bilgiye_gore_pid.get(&halka.ppid) else {
+                break;
+            };
+            halka = ebeveyn;
         }
     }
     for sinyal in [libc::SIGSTOP, libc::SIGKILL] {
@@ -1124,7 +1149,6 @@ pub(crate) fn torunlari_oldur_ile<K: SurecKaynagi>(k: &K, kok: i32) -> io::Resul
     }
     Ok(!torunlar.is_empty())
 }
-
 /// Gerçek `/proc` ve `pidfd` (Linux 5.3+).
 #[cfg(target_os = "linux")]
 pub(crate) struct ProcFs {
@@ -1256,6 +1280,7 @@ mod tests {
         simdiki: HashMap<i32, u64>,
         tarama_hatasi: bool,
         acma_hatasi: bool,
+        baslangic_hatasi: bool,
         sinyaller: RefCell<Vec<(i32, i32)>>,
     }
 
@@ -1277,9 +1302,11 @@ mod tests {
         }
 
         fn baslangic(&self, pid: i32) -> io::Result<Option<u64>> {
+            if self.baslangic_hatasi {
+                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            }
             Ok(self.simdiki.get(&pid).copied())
         }
-
         fn sinyal(&self, t: &i32, sinyal: i32) -> io::Result<()> {
             self.sinyaller.borrow_mut().push((*t, sinyal));
             Ok(())
@@ -1332,7 +1359,48 @@ mod tests {
     }
 
     #[test]
-    fn etkilesimli_tarama_ve_acma_hatasi_basari_sayilmaz() {
+    fn etkilesimli_yeniden_kullanilan_ara_ebeveynin_alt_dali_sinyal_almaz() {
+        let mut k = agac();
+        // 12'nin eski kimliği 11'in çocuğudur; yeni 12 ilgisiz 15'in ebeveynidir.
+        k.tablo.push(bilgi(15, 12, 300, false));
+        k.simdiki.insert(15, 300);
+        k.simdiki.insert(12, 999);
+
+        assert!(torunlari_oldur_ile(&k, 10).unwrap());
+        let sinyaller = k.sinyaller.borrow();
+        assert!(
+            sinyaller.iter().all(|(pid, _)| *pid != 12 && *pid != 15),
+            "yeniden kullanılan ebeveynin alt dalına sinyal gitti: {sinyaller:?}"
+        );
+        assert!(
+            sinyaller.iter().any(|(pid, _)| *pid == 11),
+            "geçerli kök çocuğu hâlâ kapsanmalı: {sinyaller:?}"
+        );
+    }
+
+    #[test]
+    fn etkilesimli_kaybolan_ara_ebeveyn_eski_dali_atlar_yeni_tarama_yetimi_kapsar() {
+        let mut k = agac();
+        // İlk taramadan sonra 11 kaybolur; 12 yeniden ebeveynlenince yeni
+        // /proc taraması onu doğrudan kökün çocuğu olarak görür.
+        k.simdiki.remove(&11);
+
+        assert!(torunlari_oldur_ile(&k, 10).unwrap());
+        assert!(
+            k.sinyaller.borrow().is_empty(),
+            "eski zincirden sinyal gitmemeli: {:?}",
+            *k.sinyaller.borrow()
+        );
+
+        k.tablo = vec![bilgi(12, 10, 101, false)];
+        assert!(torunlari_oldur_ile(&k, 10).unwrap());
+        assert_eq!(
+            *k.sinyaller.borrow(),
+            vec![(12, libc::SIGSTOP), (12, libc::SIGKILL),]
+        );
+    }
+    #[test]
+    fn etkilesimli_tarama_acma_ve_baslangic_hatasi_basari_sayilmaz() {
         let mut k = agac();
         k.tarama_hatasi = true;
         assert!(torunlari_oldur_ile(&k, 10).is_err());
@@ -1340,8 +1408,11 @@ mod tests {
         k.acma_hatasi = true;
         assert!(torunlari_oldur_ile(&k, 10).is_err());
         assert!(k.sinyaller.borrow().is_empty());
+        let mut k = agac();
+        k.baslangic_hatasi = true;
+        assert!(torunlari_oldur_ile(&k, 10).is_err());
+        assert!(k.sinyaller.borrow().is_empty());
     }
-
     #[test]
     fn etkilesimli_torunu_olmayan_kok_false_doner() {
         let k = agac();
@@ -1410,6 +1481,7 @@ mod tests {
         /// `sonlandir` gibi; başarısızlığı bildirir. Sonlandırma eşzamansızdır:
         /// bitiş `etkin_surec_sayisi` ile ayrıca doğrulanır.
         pub fn sonlandir_denetimli(&self) -> io::Result<()> {
+            // SAFETY: `self.0` bu nesnenin sahip olduğu açık iş tutamacıdır.
             if unsafe { TerminateJobObject(self.0, 1) } == 0 {
                 return Err(io::Error::last_os_error());
             }
@@ -1418,7 +1490,9 @@ mod tests {
 
         /// İşte henüz bitmemiş süreçlerin sayısı.
         pub fn etkin_surec_sayisi(&self) -> io::Result<u32> {
+            // SAFETY: Yapı yalnız sayısal alanlardan oluşur; sıfır geçerli bir değerdir.
             let mut bilgi: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+            // SAFETY: Açık iş tutamacı ve yapının boyutuna uygun yazılabilir gösterici verilir.
             let tamam = unsafe {
                 QueryInformationJobObject(
                     self.0,
@@ -1435,7 +1509,7 @@ mod tests {
         }
 ```
 
-- [ ] **Adım 4: `surec.rs`'e ekleyin** (`async fn oku`'dan önce):
+- [x] **Adım 4: `surec.rs`'e ekleyin** (`async fn oku`'dan önce):
 
 ```rust
 type Yazici = Box<dyn tokio::io::AsyncWrite + Send + Unpin>;
@@ -1718,12 +1792,12 @@ pub(crate) fn tam_erisimle(
     }
 ```
 
-- [ ] **Adım 5: Geçtiğini görün:** İki platformda (Linux'ta WSL,
+- [x] **Adım 5: Geçtiğini görün:** İki platformda (Linux'ta WSL,
   `kalfatest`) `cargo test -p kalfa-sandbox --locked --lib surec::tests`.
   Beklenen: Windows'ta 12, Linux'ta 13 test geçer (`setsid` testi yalnız
   Linux'ta). Linux'ta ayrıca
   `cargo test -p kalfa-sandbox --locked --lib agac::tests`: 6 test geçer.
-- [ ] **Adım 6: Commit'leyin:** `sandbox: EtkilesimliSurec, doğrulanan ağaç kapanışı ve tam erişim`.
+- [x] **Adım 6: Commit'leyin:** `sandbox: EtkilesimliSurec, doğrulanan ağaç kapanışı ve tam erişim`.
 
 ---
 
@@ -1738,7 +1812,7 @@ pub(crate) fn tam_erisimle(
 - Üretir: `KurIstegi`, `vekili_bagla`, `LinuxYalitici::sunucuyu_baslat`;
   `LinuxYalitici` için `baslat_etkilesimli` ve `sunucu_kokunu_kaldir`.
 
-- [ ] **Adım 1: `komut_kur`'u özel kökü dışarıdan alacak biçime getirin.**
+- [x] **Adım 1: `komut_kur`'u özel kökü dışarıdan alacak biçime getirin.**
   `komut_kur`'un imzası ve ilk satırları şununla değişir. Gövdedeki
   `OzelDizinler::yol(…)`, `ozel.hazirla(…)` ve `korumalilari_hazirla(…)`
   satırları silinir; çağıran yapar.
@@ -1908,12 +1982,12 @@ fn vekili_bagla(
 }
 ```
 
-- [ ] **Adım 2: Mevcut kabuk testleri yeşil kalmalı** (WSL, `kalfatest`):
+- [x] **Adım 2: Mevcut kabuk testleri yeşil kalmalı** (WSL, `kalfatest`):
   `cargo build -p kalfa-sandbox --bin kalfa-kopru --locked`, ardından
   `cargo test -p kalfa-sandbox --features yalitim-testleri --locked --test yalitim`.
   Bu adım yalnız yeniden düzenlemedir; davranış değişmez.
 
-- [ ] **Adım 3: Düşen kabul testlerini yazın** (`tests/yalitim.rs`, Linux
+- [x] **Adım 3: Düşen kabul testlerini yazın** (`tests/yalitim.rs`, Linux
   bloğunun kapanışından önce). `kurgu`, `kurgu_agli`, `TestCozucu`,
   `gizli_mi`, `korumali`, `surecler`, `deger` ve `Kurgu::betik` mevcut
   yardımcılardır.
@@ -2213,12 +2287,12 @@ async fn etkilesimli_agli_sunucu_vekilden_cikar_ve_kapanista_temizlenir() {
 }
 ```
 
-- [ ] **Adım 4: Düştüğünü görün:**
+- [x] **Adım 4: Düştüğünü görün:**
   `cargo test -p kalfa-sandbox --features yalitim-testleri --locked --test yalitim etkilesimli`.
   Beklenen: `baslat_etkilesimli` varsayılanı "bu yalıtıcı etkileşimli
   süreç başlatamaz" döner.
 
-- [ ] **Adım 5: Uygulayın.** `impl LinuxYalitici`'ye, `yalitimli`'den sonra:
+- [x] **Adım 5: Uygulayın.** `impl LinuxYalitici`'ye, `yalitimli`'den sonra:
 
 ```rust
     /// Sunucuyu yalıtımda başlatır (1.1a §3, §4.1): kabuğun bwrap kurulumu,
@@ -2303,12 +2377,12 @@ async fn etkilesimli_agli_sunucu_vekilden_cikar_ve_kapanista_temizlenir() {
   kabuğun özel dizinleri bağlanmaz. Proje kökü kabuktaki gibi yazılabilir
   bağlanır. `--chdir`, sunucunun `ev`'idir.
 
-- [ ] **Adım 6: Geçtiğini görün** (WSL, `kalfatest`):
+- [x] **Adım 6: Geçtiğini görün** (WSL, `kalfatest`):
   `cargo clippy -p kalfa-sandbox --features yalitim-testleri --all-targets --locked -- -D warnings`
   ve `cargo test -p kalfa-sandbox --features yalitim-testleri --locked --test yalitim`.
   Beklenen: clippy temiz; yeni 6 test ve bütün eski testler geçer
   (toplam 32).
-- [ ] **Adım 7: Commit'leyin:** `sandbox: Linux'ta yalıtımlı etkileşimli süreç ve sunucu özel kökü`.
+- [x] **Adım 7: Commit'leyin:** `sandbox: Linux'ta yalıtımlı etkileşimli süreç ve sunucu özel kökü`.
 
 ---
 
@@ -2346,7 +2420,7 @@ async fn etkilesimli_agli_sunucu_vekilden_cikar_ve_kapanista_temizlenir() {
   dosyaları, ACL'leri ve ACE kaydını değiştirmez. Aynı denetim
   hazırlığın sonunda bir kez daha yapılır.
 
-- [ ] **Adım 1: `kap.rs`'e borulu stdin.** `Kap`'a alan eklenir:
+- [x] **Adım 1: `kap.rs`'e borulu stdin.** `Kap`'a alan eklenir:
 
 ```rust
 /// Başlamış kap: süreç tutamacı ve iki çıktı borusunun okuma uçları.
@@ -2419,7 +2493,7 @@ fn baslat_ortak(istek: &KapIstegi, is: &Is, borulu: bool) -> io::Result<Kap> {
   standart girdi `NUL`'dur; etkileşimli süreçte (1.1a §4.1) bir borudur."
   olur.
 
-- [ ] **Adım 2: `surec.rs`'e Windows yapıcısını ekleyin** (`tam_erisimle`'den önce):
+- [x] **Adım 2: `surec.rs`'e Windows yapıcısını ekleyin** (`tam_erisimle`'den önce):
 
 ```rust
 #[cfg(windows)]
@@ -2438,7 +2512,7 @@ impl EtkilesimliSurec {
 }
 ```
 
-- [ ] **Adım 3: Düşen kabul testlerini yazın** (`tests/yalitim/windows.rs`
+- [x] **Adım 3: Düşen kabul testlerini yazın** (`tests/yalitim/windows.rs`
   sonuna). `kurgu`, `kurgu_agli`, `TestCozucu`, `powershell_yolu`,
   `windows_koku`, `surec_aktif_mi`, `deger`, `Kurgu::{alan, calistir, temizle}`
   mevcut yardımcılardır.
@@ -2913,10 +2987,10 @@ async fn etkilesimli_agli_sunucu_vekilden_cikar_ve_kapanista_temizlenir() {
 }
 ```
 
-- [ ] **Adım 4: Düştüğünü görün:**
+- [x] **Adım 4: Düştüğünü görün:**
   `cargo test -p kalfa-sandbox --features yalitim-testleri --locked --test yalitim etkilesimli -- --test-threads=1`.
 
-- [ ] **Adım 5: Ağ hazırlığını ortak işleve taşıyın** (`yalitici.rs`).
+- [x] **Adım 5: Ağ hazırlığını ortak işleve taşıyın** (`yalitici.rs`).
   `yalitilmis_baslat`'ın sonundaki `if istek.ag { … } else { … }`
   bloğunun tamamı şununla değişir. Köprü kopyası, vekil ve boru kodu
   değişmeden `ag_hazirla`'ya taşınır; iş nesnesi artık önce kurulur.
@@ -3072,11 +3146,11 @@ fn ag_hazirla(
 }
 ```
 
-- [ ] **Adım 6: Kabuk testleri yeşil kalmalı:**
+- [x] **Adım 6: Kabuk testleri yeşil kalmalı:**
   `cargo test -p kalfa-sandbox --features yalitim-testleri --locked --test yalitim -- --test-threads=1 --skip etkilesimli`.
   Beklenen: 43 test geçer (ağlı kabuk testleri dahil).
 
-- [ ] **Adım 7: Sunucu kökü ve başlatma** (`yalitici.rs`). `ag_hazirla`'dan
+- [x] **Adım 7: Sunucu kökü ve başlatma** (`yalitici.rs`). `ag_hazirla`'dan
   sonra:
 
 ```rust
@@ -3400,7 +3474,7 @@ fn yalniz_izinli_kimlikler(yol: &Path, izinli: &[Sid]) -> io::Result<()> {
     }
 ```
 
-- [ ] **Adım 8: `alani_kaldir_kilitli`'ye sunucu girdilerini ekleyin.**
+- [x] **Adım 8: `alani_kaldir_kilitli`'ye sunucu girdilerini ekleyin.**
   Bozuk olmayan kayıt dalında, `kayda_gore_geri_al(ace, kimlik)?;`
   çağrısından hemen önce:
 
@@ -3425,12 +3499,12 @@ fn yalniz_izinli_kimlikler(yol: &Path, izinli: &[Sid]) -> io::Result<()> {
   değişmez. Bozuk kayıtta `sunucu_kokunu_kaldir` da hata döner; kabuktaki
   "yalnız kanıtlananı geri al" kuralı korunur.
 
-- [ ] **Adım 9: Geçtiğini görün.** Windows'ta, kurulu makinede:
+- [x] **Adım 9: Geçtiğini görün.** Windows'ta, kurulu makinede:
   `cargo clippy -p kalfa-sandbox --features yalitim-testleri --all-targets --locked -- -D warnings`
   ve `cargo test -p kalfa-sandbox --features yalitim-testleri --locked --test yalitim -- --test-threads=1`.
   Beklenen: clippy temiz; yeni 7 test ve bütün eski testler geçer
   (toplam 50). Ardından Görev 5 Adım 3'teki temizlik denetimini yapın.
-- [ ] **Adım 10: Commit'leyin:** `sandbox: Windows'ta borulu AppContainer süreci, korumalı sunucu kökü ve köprülü ağ`.
+- [x] **Adım 10: Commit'leyin:** `sandbox: Windows'ta borulu AppContainer süreci, korumalı sunucu kökü ve köprülü ağ`.
 
 ---
 
@@ -3439,7 +3513,7 @@ fn yalniz_izinli_kimlikler(yol: &Path, izinli: &[Sid]) -> io::Result<()> {
 **Dosyalar:**
 - Değiştir: `docs/GELISTIRME_DURUMU.md`, tasarım §4.1 (G1'in yanına uygulama sonucu)
 
-- [ ] **Adım 1: Windows'ta** (worktree):
+- [x] **Adım 1: Windows'ta** (worktree):
 
 ```sh
 cargo fmt --all -- --check
@@ -3450,7 +3524,7 @@ cargo test -p kalfa-sandbox --features yalitim-testleri --locked --test yalitim 
 cargo test -p kalfa-tools --features yalitim-testleri --locked --test uyumluluk
 ```
 
-- [ ] **Adım 2: WSL'de** (Ubuntu 24.04, `kalfatest`, ayrı kopya ve
+- [x] **Adım 2: WSL'de** (Ubuntu 24.04, `kalfatest`, ayrı kopya ve
   `CARGO_TARGET_DIR`):
 
 ```sh
@@ -3463,17 +3537,19 @@ cargo test -p kalfa-sandbox --features yalitim-testleri --locked --test yalitim
 cargo test -p kalfa-tools --features yalitim-testleri --locked --test uyumluluk
 ```
 
-- [ ] **Adım 3: Temizliği doğrulayın.**
+- [x] **Adım 3: Temizliği doğrulayın.**
   - Windows'ta `HKCU\…\AppContainer\Mappings` altındaki `Kalfa.Alan.*`
     profillerinin, `%LOCALAPPDATA%\Packages\kalfa.alan.*` dizinlerinin ve
     `kalfa-kopru` süreçlerinin sayısı testlerden öncekiyle aynı olmalı.
     Testlerin geçici dizinleri silinir; ACE'leri onlarla gider.
-  - WSL kopyası ve `CARGO_TARGET_DIR` silinir.
-- [ ] **Adım 4: Belgeleri güncelleyin.** Sonuçları ve sayıları
+  - Bu koşuda üretilen WSL kaynak kopyası silinir. Önceden var olan
+    ortak `CARGO_TARGET_DIR` yeniden kullanıldıysa sahibinin denetim
+    worktree'siyle birlikte korunur; yeni ayrı önbellek oluşturulmaz.
+- [x] **Adım 4: Belgeleri güncelleyin.** Sonuçları ve sayıları
   `GELISTIRME_DURUMU.md`'ye ve tasarım §4.1'e yazın. `e2e`, arayüz ve
   `kalfa-mcp` bu planın kapsamında değil. Yalnız sandbox değiştiği için
   arayüz ve e2e komutları gerekmez.
-- [ ] **Adım 5: Commit'leyin ve PR'a yazın:** `docs: 1.1a-1 etkileşimli süreç sonucu`.
+- [x] **Adım 5: Commit'leyin ve PR'a yazın:** `docs: 1.1a-1 etkileşimli süreç sonucu`.
 
 ---
 
@@ -3566,8 +3642,22 @@ kapanışı, özel kök ve çalışma kipi.
 - **Bilinen sınırlar:**
   - Linux tam erişimde, kök kendiliğinden çıktıktan sonra yaşayan
     `setsid` torunu sahiplenilemez (tasarım §4.1). Bu istisna kullanıcının
-    ayrı kararını bekliyor; §4.3'teki risk kabulüne dahil değildir.
+    14 Ekim'deki doğrudan yanıtıyla açık uyarı koşuluyla kabul edildi;
+    §4.3'teki gizli dosya riskinden ayrı karardır.
   - `Drop` yolu bitişi doğrulamaz; iptal ve hata yolunda çağıran kilidi
     bırakmaz (1.1a-2).
   - `pidfd` Linux 5.3 gerektirir; yoksa tarama `Err` verir ve kapanış
     başarısız sayılır.
+
+## Üçüncü incelemenin karşılığı (r4)
+
+Ara ebeveyn PID'si yeniden kullanıldığında onun üzerinden bulunan ilgisiz
+alt dala sinyal gitmesi düzeltildi. Yaprak pidfd ile sabitlenir; kendi
+başlangıcı ve köke kadar bütün ara ebeveyn kimlikleri doğrulanır. Kayıp
+ya da değişmiş halka bu turun alt dalını reddeder. Yeni testler
+`etkilesimli_yeniden_kullanilan_ara_ebeveynin_alt_dali_sinyal_almaz` ve
+`etkilesimli_kaybolan_ara_ebeveyn_eski_dali_atlar_yeni_tarama_yetimi_kapsar`:
+eski seçimle ikisi de düştü, düzeltmeyle geçiyor. Bağımsız kaynak
+incelemesinde yeni engelleyici bulgu yok. İki platformun zorunlu ürün
+kontrolleri geçti; [ürün raporu](../bulgular/2026-10-14-kalfa-11a-1-urun.md)
+negatif kanıtı, sonuçları ve temizliği taşır.
