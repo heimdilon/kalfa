@@ -273,10 +273,14 @@ Codex'in r4 yeniden incelemesinden (`e5080c2`) gelen iki bulgu r5'te
 - Doğrulanamayan koruma taraması (hata, eksik yürüyüş, 30 sn aşımı) t_K'yı
   yenilemiyor, süreci durduruyor.
 
-**Sıradaki tek iş:** r5'in yeniden incelenmesi. Kullanıcı ayrıca şu iki
-kararı verecek: iptalde süreci durdurma değişikliği (§2) ve çağrılar
-arasındaki kalan risk (§4.3). G1 ve uygulama, kullanıcının sonraki onayını
-bekliyor.
+Kullanıcı, iptal ve zaman aşımında süreç ağacının her durumda
+durdurulmasını onayladı (14 Ekim). Yalnız G1'i yetkilendirdi. G1 Windows'ta
+geçti: borulu AppContainer süreci, 62 sn yaşam ve Job Object ile ağacın
+kapanışı, sunucuya özel yetenek SID'i ayrımı ölçüldü; temizlik doğrulandı.
+[G1 raporu](superpowers/bulgular/2026-10-14-kalfa-11a-g1.md).
+
+**Sıradaki tek iş:** Kullanıcı iki karar verecek: kalan riskin kabulü (§4.3)
+ve ürün uygulamasının onayı (plan 1.1a-1).
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

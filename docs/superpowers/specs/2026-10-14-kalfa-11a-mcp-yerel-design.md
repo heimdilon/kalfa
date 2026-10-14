@@ -195,6 +195,12 @@ eklenir:
 
 Engel çıkarsa bu belge güncellenir.
 
+**G1 sonucu (14 Ekim):** Üç ölçüm de geçti. Ayrıca bir bulgu çıktı:
+AppContainer başlatması profil değişkenlerini (`USERPROFILE`,
+`LOCALAPPDATA` ve benzerleri) ister; bunlar yoksa başlatma 203 hatasıyla
+düşer. Temizlik doğrulandı.
+[Rapor](../bulgular/2026-10-14-kalfa-11a-g1.md).
+
 ### 4.2 Ham stdio sınırları
 
 `rmcp`'nin `AsyncRwTransport`'u gelen satırı `read_until` ile sınırsız
