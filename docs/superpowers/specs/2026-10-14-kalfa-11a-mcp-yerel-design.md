@@ -1,16 +1,19 @@
 # Kalfa 1.1a — Yerel MCP sunucuları: Tasarım
 
 **Tarih:** 2026-10-14.
-**Durum:** Tasarım, r5. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
-§13'te üç incelemenin yanıtı var:
+**Durum:** Tasarım, r6. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
+§13'te şu incelemelerin yanıtı var:
 
 - Codex'in yerel incelemesi (`dd641a3`, altı bulgu),
 - PR #19'daki satır içi Codex yorumları (15 bulgu),
 - Codex'in r3 yeniden incelemesi (`5dd79a4`, beş bulgu),
-- Codex'in r4 yeniden incelemesi (`e5080c2`, iki bulgu).
+- Codex'in r4 yeniden incelemesi (`e5080c2`, iki bulgu),
+- Codex'in plan 1.1a-1 incelemesinin tasarıma dokunan iki bulgusu
+  (`9d6b6b5`, §13.5).
 
-Belge yeniden incelemeye hazır. G1 ve uygulama, kullanıcının ayrı onayını
-bekliyor.
+G1 geçti ve kalan risk kabul edildi (§4.1, §4.3). Plan 1.1a-1 ön
+doğrulandı ve yeniden incelemede; ürün uygulaması o incelemeden sonra
+başlar.
 **Taban:** `main`, `04f16fc` (`v0.1.0` ön sürümü yayımlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §10, §12.2.
 
@@ -132,7 +135,8 @@ başlatma zaman aşımı (vars. 30 sn), çağrı zaman aşımı (vars. 120 sn)
   `ev`, `gecici` ve `onbellek` dizinleri vardır. Bunlar sunucunun **özel
   köküdür** (§5.1.1, §5.6).
   - Yalıtımlıda kök `<yalıtım dizini>/<alan>/mcp/<sunucu>/` altındadır.
-  - Tam erişimde kök uygulama verisinde, aynı adla durur.
+  - Tam erişimde kök uygulama verisinde, aynı adla durur. Kök iki kipte
+    ortaktır; Windows'ta iki kipte de korumalı kurulur (§5.6).
   - Sunucunun ortamındaki `HOME`, `TMPDIR`/`TEMP`, `NPM_CONFIG_CACHE`,
     `PIP_CACHE_DIR`, `UV_CACHE_DIR` ve `XDG_CACHE_HOME` bu köke yönlenir.
     Böylece `npx` ya da `uvx`'in indirdiği paket kodu bu kökte durur.
@@ -158,10 +162,28 @@ eklenir:
 - Toplam süre ve toplam çıktı sınırı yoktur. Kabuğun süreç sınırları
   (Windows'ta Job Object'in etkin süreç sınırı, Linux'ta `prlimit`) aynen
   geçerlidir.
-- `kapat()` önce stdin'i kapatır, 2 sn bekler, sonra süreç ağacını öldürür.
-  Windows'ta `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, Linux'ta bwrap
-  `--die-with-parent` ve mevcut `agac` kapanışı kullanılır. `kapat()`
-  döndüğünde ağaçta yaşayan süreç kalmaz.
+- `kapat()` önce stdin'i kapatır, 2 sn bekler, sonra süreç ağacını her
+  durumda öldürür ve bitişini doğrular.
+  - stdin'e Kalfa'daki bir görev aktarır. `kapat()` bu görevi keser; stdin,
+    dışarıya verilen yazıcı hâlâ tutulsa bile kapanır.
+  - `Ok` döndüğünde ağaçta yaşayan süreç yoktur. Windows'ta Job Object'in
+    etkin süreç sayısı sıfırdır; ağlı sunucunun köprüsü de aynı iştedir.
+    Linux'ta süreç grubu boştur ve kök yaşarken bulunan bütün torunlar
+    ölmüştür. Kök, torunlarının alt süreç toplayıcısıdır
+    (`PR_SET_CHILD_SUBREAPER`): kendi oturumunu açan (`setsid`) torun da
+    kökün altında kalır ve öldürülür. Yalıtımlıda bwrap'ın PID ad alanı
+    bütün ağacı ayrıca kapsar.
+  - Öldürme ya da doğrulama başarısızsa `Err` döner. Çağıran ağacın
+    durduğunu varsayamaz ve kilidi bırakmaz (§7.3).
+  - Süreç `kapat()` çağrılmadan bırakılırsa (örneğin panik) ağaç yine
+    öldürülür; bu yolda bitiş doğrulanmaz.
+- **Tam erişimin sınırı:** Tam erişimli sunucu kullanıcının yetkileriyle
+  ağacın dışında süreç başlatabilir (Windows'ta WMI ya da Görev
+  Zamanlayıcı, Linux'ta `systemd-run --user`). Linux'ta ayrıca kök
+  kendiliğinden çıktıktan sonra yaşayan, kendi oturumunu açmış torunu init
+  sahiplenir; Kalfa onu bulamaz. `kapat()` tam erişimde yalnız Kalfa'nın
+  sahiplendiği ağacı (Job Object; süreç grubu ve kökün alt ağacı) doğrular.
+  Tam erişim uyarısı (§9) bunu kapsar. Yalıtımlıda bu sınır yoktur.
 - **Çalışma kipi açıkça seçilir.** Mevcut `kip_uyusmasi(false, true)`
   yalıtım hazırken yalıtımsız başlatmayı reddeder
   (`kalfa-sandbox/src/lib.rs`), çünkü kabukta yalıtımsız çalışma yalnız
@@ -310,7 +332,8 @@ Her süreç kendi K'sıyla başlar ve onu saklar.
 güvendiği yerel MCP sunucuları için kabul etti. Yeni gizli dosyaların
 aşağıda belirtilen süre boyunca okunabileceğini anladığını açıkça belirtti.
 Verinin izinli ağ adreslerine ya da EVREN'e çıkabileceğini de anladığını
-söyledi.
+söyledi. Kayıt, kullanıcının Claude oturumuna kendisinin yazdığı bu onaya
+dayanır; bir ajanın hazırladığı taslak metin onay sayılmaz.
 
 Kalfa dışındaki bir program
 (örneğin kullanıcının editörü) çalışma alanına gizli kalıba uyan bir dosya
@@ -601,6 +624,11 @@ eklenir:
     yeteneği taşımaz.
   - Bu ACE'ler de kayda girer. Sunucu ya da çalışma alanı kaldırılınca
     silinir.
+  - `mcp` dizini ve sunucunun kökü mirassız (korumalı) DACL'le kurulur:
+    yalnız geliştirici, SYSTEM ve Administrators. Üst dizinlerden gelen
+    paket ya da ortak araç yeteneği izni sınırı aşamaz. Var olan kök
+    korumalı değilse ya da beklenmeyen bir kimliğe izin veriyorsa başlatma
+    reddedilir; ACL'ye dokunulmaz.
   - Ölçümü G1'dedir (§4.1).
   - Linux'ta aynı ayrım bağlamayla kurulur: özel kök yalnız o sunucunun
     bwrap'ına bağlanır.
@@ -787,6 +815,8 @@ görüntüdür:**
    - Eski MCP döneminde iptal alan sunucunun yanıt göndermemesi önerilir.
      Sessiz kalan uyumlu bir sunucu da aynı yoldan durdurulur. Durdurma
      yanıta değil, `kapat()`'ın ağacın bittiğini doğrulamasına dayanır.
+   - `kapat()` `Err` dönerse ağaç durmuş sayılmaz: kilit bırakılmaz ve
+     sunucu "durdurulamadı" hatasıyla işaretlenir.
 3. O kuşağın bütün bekleyen çağrıları "sunucu durduruldu" hatasıyla biter.
    Sunucunun gönderdiği geç sonuç atılır.
 4. Ardından `komut_sonrasi_denetim` karşılığı çalışır (§4.3).
@@ -1189,3 +1219,13 @@ r3'te koda karşı doğrulanıp çözüldü.
 |---|---|---|---|
 | 1 | Proje dışındaki özel ev ve önbelleğe de model yazabilir | Katılıyorum. Kod doğrulandı: `linux/bwrap.rs` `--bind` ev/önbellek/gecici, `linux/mod.rs` `HOME` ve `NPM_CONFIG_CACHE`, `windows/yalitici.rs` miraslı `MASKE_DEGISTIR`. | §5.1.1: modelin yazabildiği bütün kökleri kapsayan W; W'de kodlu sunucuda yazma kuşağı (her kabuk komutu sayılır). §3: sunucuya özel kök (`npx`/`uvx` önbelleği orada). §5.6: Windows'ta sunucuya özel yetenek SID'i, Linux'ta yalnız o sunucuya bağlama. G1'e 3. ölçüm eklendi. §11'de karşı örnek testleri. |
 | 2 | Başarısız ya da eksik tarama korumayı doğrulamış sayılmamalı | Katılıyorum. Kod doğrulandı: `tara_ayrintili` okunamayan girdiyi atlar; `goruntu.eksik` görüntü sınırını da işaretler. | §4.3: `KorumaSonucu::{Aynı, Değişti, Doğrulanamadı}`; `koruma_tam` işareti görüntü sınırından ayrı; 30 sn tarama süresi; Doğrulanamadı'da t_K yenilenmez, süreç durur, yeniden başlatma yapılmaz. Üst sınır "10 dk + en çok 30 sn tarama + 2 sn + öldürme". §11'de karşı örnek testleri. |
+
+### 13.5 Codex'in plan 1.1a-1 incelemesi (`INCELEME-PLAN-9d6b6b5.md`)
+
+Tasarımı etkileyen bulgular. Plan tarafı plan belgesinin "Codex
+bulgularının karşılığı" bölümündedir.
+
+| # | Bulgu | Karar | Çözüm |
+|---|---|---|---|
+| 1 | `kapat()` ağacın bittiğini doğrulamıyor; Linux tam erişimde `setsid` torun gruptan çıkar | Katılıyorum. Kod doğrulandı: `agac.rs` öldürme sonuçlarını atıyor, `Cocuk::ayir` yalnız kökü bekliyor. | §4.1: `kapat()` `Result` döner; Windows'ta işin etkin süreç sayısı, Linux'ta süreç grubu ve kökün alt ağacı doğrulanır; kök alt süreç toplayıcısıdır. Tam erişimin kalan sınırı açıkça yazıldı. §7.3: `Err`'de kilit bırakılmaz. |
+| 3 | Windows özel kökü G1'deki korumalı DACL'i taşımıyor | Katılıyorum. Kod doğrulandı: `izin_ekle` mevcut ACL'i korur, `guvenli_dizin` mirası kesmez. | §5.6: `mcp` ve kök korumalı DACL'le kurulur; var olan güvensiz kök reddedilir. §3: kök iki kipte ortak ve korumalı. |

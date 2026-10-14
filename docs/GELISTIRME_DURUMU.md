@@ -291,8 +291,28 @@ Kapsamı:
 - G1 kontrollerinin ürün başlatıcısının kabul testlerine taşınması,
 - Windows ve WSL doğrulaması.
 
-**Sıradaki tek iş:** Kullanıcının planı incelemesi. Ürün kodu ve planın
-iki platformda ön doğrulaması, inceleme sonrasındaki onaya bağlı.
+Codex planı inceledi (`INCELEME-PLAN-9d6b6b5`, dört bulgu). Plan r2'de
+dördü de işlendi:
+- `kapat()` ağacın bittiğini doğrular ve `Result` döner. Linux'ta kök
+  torunlarının alt süreç toplayıcısıdır. Linux tam erişimin kalan sınırı
+  tasarım r6 §4.1'de açıkça yazıldı.
+- Windows'ta ağlı sunucu köprüyle ve aynı Job Object'te başlar.
+- Windows'ta sunucu kökü korumalı DACL'le kurulur.
+- stdin'i bir aktarma görevi yazar; `kapat()` dışarıda tutulan yazıcıya
+  rağmen stdin'i kapatır.
+
+Etkileşimli ağ testleri iki platformda eklendi. Plan kodu ayrı worktree'de
+iki platformda ön doğrulandı (`deneme/11a-1-on-dogrulama`, `a6a3a17`,
+yalnız yerel): Windows yalıtım 50/50, WSL yalıtım 32/32; AGENTS'ın bütün
+komutları iki platformda geçti.
+[Ön doğrulama raporu](superpowers/bulgular/2026-10-14-kalfa-11a-1-on-dogrulama.md).
+Kullanıcı uygulama yöntemi olarak alt ajanlı yöntemi seçti (Haiku 5.5, en
+yüksek çaba).
+
+**Sıradaki tek iş:** Codex'in r2 planı, ön doğrulama kodunu ve raporu
+yeniden incelemesi. Ürün uygulaması o inceleme tamamlanınca başlar.
+Worktree (`C:\Users\kor_a\kalfa-11a1-on`, `target` 18 GB) ve WSL kopyası
+inceleme bitene kadar tutulur.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
