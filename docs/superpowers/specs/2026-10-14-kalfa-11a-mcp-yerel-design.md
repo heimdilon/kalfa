@@ -1,12 +1,13 @@
 # Kalfa 1.1a — Yerel MCP sunucuları: Tasarım
 
 **Tarih:** 2026-10-14.
-**Durum:** Tasarım, r4. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
+**Durum:** Tasarım, r5. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
 §13'te üç incelemenin yanıtı var:
 
 - Codex'in yerel incelemesi (`dd641a3`, altı bulgu),
 - PR #19'daki satır içi Codex yorumları (15 bulgu),
-- Codex'in r3 yeniden incelemesi (`5dd79a4`, beş bulgu).
+- Codex'in r3 yeniden incelemesi (`5dd79a4`, beş bulgu),
+- Codex'in r4 yeniden incelemesi (`e5080c2`, iki bulgu).
 
 Belge yeniden incelemeye hazır. G1 ve uygulama, kullanıcının ayrı onayını
 bekliyor.
@@ -35,8 +36,12 @@ Başarı (her madde §11'de bir testle karşılanır):
 - Koruma kümesi değişince (§4.3) sonraki çağrı yeni korumalarla başlatılmış
   süreçte çalışır. Etkin çağrısı olan süreç dahil hiçbir süreç, 10 dk'dan
   eski bir koruma denetimiyle çalışmayı sürdürmez.
-- Sunucu kodu çalışma alanındaysa, Kalfa o alana yazdıktan sonraki ilk
-  başlatma yeniden izin ister (§5.1.1).
+- Sunucu kodu modelin yazabildiği bir kökteyse, o köke yazılmasından
+  sonraki ilk başlatma yeniden izin ister (§5.1.1). Kökler yalnız proje
+  dizini değildir; kabuğun özel ev, geçici ve önbellek dizinleri de
+  dahildir.
+- Koruma taraması doğrulanamazsa (hata, eksik yürüyüş, süre aşımı) t_K
+  yenilenmez ve süreç durdurulur (§4.3).
 - Ham stdio sınırları (§4.2) ayrıştırmadan önce uygulanır. Sınırı aşan
   sunucu kontrollü kapanır, uygulama yanıt vermeye devam eder.
 - İptal ya da zaman aşımında, sunucu ne yanıt verirse versin süreç ağacı
@@ -123,15 +128,21 @@ başlatma zaman aşımı (vars. 30 sn), çağrı zaman aşımı (vars. 120 sn)
     sunucunun ortamındaki `PATH`'te aranır.
   - Yerel dosya seçiciyle seçilmiş bir yürütülebilir dosya. Bu durumda yolu
     arka uç tutar; arayüz yalnız bir kimlik görür (§9).
-- **Çalışma dizini:** Sunucunun çalışma dizini çalışma alanı değil,
-  sunucuya özel bir dizindir:
-  - yalıtımlıda `<yalıtımın çalışma alanına özel ev dizini>/mcp/<sunucu>`,
-  - tam erişimde uygulama verisinde aynı adlı bir dizin.
-
-  Böylece `npx` ya da `uvx`, çalışma alanındaki `node_modules` ya da
-  `.venv` içinden kendiliğinden kod yüklemez. Çalışma alanının yolu sunucuya
-  yalnız açıkça, argümanda ya da ortam değerinde `${CALISMA_ALANI}` yer
-  tutucusuyla verilir. Kalfa yer tutucuyu başlatma anında çözer.
+- **Sunucunun özel kökü:** Her (sunucu, çalışma alanı) çiftinin kendi
+  `ev`, `gecici` ve `onbellek` dizinleri vardır. Bunlar sunucunun **özel
+  köküdür** (§5.1.1, §5.6).
+  - Yalıtımlıda kök `<yalıtım dizini>/<alan>/mcp/<sunucu>/` altındadır.
+  - Tam erişimde kök uygulama verisinde, aynı adla durur.
+  - Sunucunun ortamındaki `HOME`, `TMPDIR`/`TEMP`, `NPM_CONFIG_CACHE`,
+    `PIP_CACHE_DIR`, `UV_CACHE_DIR` ve `XDG_CACHE_HOME` bu köke yönlenir.
+    Böylece `npx` ya da `uvx`'in indirdiği paket kodu bu kökte durur.
+  - Kabuğun özel ev, geçici ve önbellek dizinleri sunucuya bağlanmaz.
+    Sunucunun özel kökü de kabuğa ve öbür sunuculara bağlanmaz.
+- **Çalışma dizini:** Sunucunun özel kökündeki `ev` dizinidir. Böylece
+  `npx` ya da `uvx`, çalışma alanındaki `node_modules` ya da `.venv`
+  içinden kendiliğinden kod yüklemez. Çalışma alanının yolu sunucuya
+  yalnız açıkça verilir: argümanda ya da ortam değerinde `${CALISMA_ALANI}`
+  yer tutucusuyla. Kalfa yer tutucuyu başlatma anında çözer.
 - **Ortam:** §5.5'teki birleştirme kuralı geçerlidir.
 
 ## 4. Süreç ve taşıma
@@ -171,10 +182,18 @@ eklenir:
   listesi yoktur: arayüz onu gizler, ağı "sınırsız" diye gösterir ve
   liste tanım özetine girmez.
 
-**Ön doğrulama G1 (plan 1.1a-1'den önce):** Windows'ta AppContainer içinde
-`CreateProcessW` ile başlatılan sürecin stdin ve stdout borularının
-kalıtımı, uzun yaşaması ve Job Object ile kapanışı küçük bir prototiple
-ölçülür (`prototip/` altında, 2c gibi). Engel çıkarsa bu belge güncellenir.
+**Ön doğrulama G1 (plan 1.1a-1'den önce):** Küçük bir prototiple
+(`prototip/` altında, 2c gibi) Windows'ta şunlar ölçülür:
+
+1. AppContainer içinde `CreateProcessW` ile başlatılan sürecin stdin ve
+   stdout borularının kalıtımı.
+2. Sürecin uzun süre yaşaması ve Job Object ile kapanışı.
+3. **Sunucuya özel yetenek SID'i (§5.6):** Aynı paket SID'iyle çalışan,
+   yetenek SID'i olmayan bir süreç (kabuk), yalnız o yetenek SID'ine izin
+   verilmiş bir dizine yazamaz. Aynı dizine o yetenek SID'iyle başlatılan
+   süreç ise yazabilir.
+
+Engel çıkarsa bu belge güncellenir.
 
 ### 4.2 Ham stdio sınırları
 
@@ -243,15 +262,39 @@ Her süreç kendi K'sıyla başlar ve onu saklar.
   saklar. Bir zamanlayıcı, t_K'dan en geç 10 dk sonra koruma denetimi
   yapar. Zamanlayıcı sürecin durumuna bakmaz: keşif sürerken, onay
   beklenirken ve bir çağrı çalışırken de denetler. Bu denetim kilit almaz,
-  yalnız tarar.
-  - K aynıysa t_K yenilenir.
-  - K değiştiyse süreç ağacı hemen durdurulur (§4.1). Etkin çağrı
-    "korumalar değişti, sunucu durduruldu" hatasıyla biter. Ardından son
-    denetim çalışır ve kilit bırakılır (§7.3).
+  yalnız tarar. Denetimin üç sonucu vardır (`KorumaSonucu`):
+  - **Aynı:** Tarama doğrulandı ve K aynı. Yalnız bu durumda t_K yenilenir.
+  - **Değişti:** Tarama doğrulandı ve K farklı. Süreç ağacı hemen
+    durdurulur (§4.1). Etkin çağrı "korumalar değişti, sunucu durduruldu"
+    hatasıyla biter. Ardından son denetim çalışır ve kilit bırakılır
+    (§7.3).
+  - **Doğrulanamadı:** t_K **yenilenmez**, süreç "Değişti" ile aynı yoldan
+    durdurulur. Etkin çağrı "korumalar doğrulanamadı" hatasıyla biter.
+    Başarılı bir tarama gelene kadar sunucu yeniden başlatılmaz. Ayarlar'da
+    hata ve nedeni (yol ya da süre) görünür.
   - Çağrı zaman aşımı ne kadar uzun tutulursa tutulsun bu sınır uzamaz.
+- **Doğrulanamadı** sayılan durumlar:
+  - Tarayıcı ya da `alan_bilgisi` bir hata döndürür.
+  - Windows'ta `alani_hazirla` başarısız olur.
+  - Koruma yürüyüşü bir girdiyi okuyamaz. Mevcut `tara_ayrintili`
+    okunamayan girdiyi atlayıp devam eder (`tarama.rs`); MCP için bu
+    durumda ayrı bir **`koruma_tam = false`** işareti konur.
+  - Tarama **30 sn** koruma tarama süresini aşar ve iptal edilir.
+
+  `goruntu.eksik` bu ölçüt değildir. O alan, koruma taraması sürerken
+  yalnız değişiklik görüntüsünün girdi ya da süre sınırı dolduğunda da
+  `true` olabilir (`GORUNTU_AZAMI_GIRDI`, `GORUNTU_AZAMI_SURE`).
+  Görüntü sınırının dolması tek başına "Doğrulanamadı" sayılmaz.
+- **Aynı kural her koruma denetiminde geçerlidir:** çağrı öncesi, onaydan
+  sonraki ikinci karşılaştırma, çağrı sonrası, Kalfa yazması sonrası ve
+  başlatma. Doğrulanamayan denetimden sonra çağrı yapılmaz, süreç
+  başlatılmaz.
+- **Kullanılabilirlik bedeli:** Kalfa'nın sürekli okuyamadığı bir dizin
+  (örneğin başka kullanıcıya ait bir dizin), o çalışma alanında yalıtımlı
+  MCP'yi kullanılamaz kılar. Ayarlar'daki hata o yolu gösterir.
 - **Boşta kapanma:** Son çağrısından bu yana 10 dk çağrı almayan süreç
   kapatılır (§4.1). Sonraki çağrıda izin geçerliyse onaysız yeniden başlar.
-  Çalışma alanı kodlu sunucuda ise yazma koşulu da aranır (§5.1.1).
+  W'de kodlu sunucuda ise yazma koşulu da aranır (§5.1.1).
 - **`.git` ve yapılandırma denetimi:** Kabuğun `komut_sonrasi_denetim`
   karşılığı şu anlarda çalışır: her çağrıdan sonra (iptal ve zaman aşımı
   dahil), her çağrıdan önce (son denetimden beri oluşanlar için) ve süreç
@@ -265,8 +308,10 @@ Risk yalnız yalıtımlı sunucular için geçerlidir; tam erişimli sunucu zate
 her dosyaya erişebilir.
 
 - **Süre (üst sınır):** Dosyanın yazıldığı andan sürecin durmasına kadar en
-  çok şu kadar geçer: **10 dk + bir koruma taraması + 2 sn kapanma payı +
-  ağacın öldürülmesi**.
+  çok şu kadar geçer: **10 dk + en çok 30 sn koruma taraması + 2 sn
+  kapanma payı + ağacın öldürülmesi**. Tarama 30 sn'de bitmezse
+  "Doğrulanamadı" sayılır ve süreç yine durdurulur; süre bu yüzden
+  uzamaz.
   - 10 dk, mutlak denetim yaşıdır. Çalışan çağrı, keşif ve onay bekleme bu
     süreyi uzatmaz.
   - Çoğu durumda süre daha kısadır. Kalfa'nın bir sonraki yazması, sonraki
@@ -310,7 +355,7 @@ olabilir. Bu yüzden süreç ancak şu koşullar birlikte sağlanınca oluşur:
      değişince düşer.
    - *Tam erişimli:* T için verilen **yerel pencere** onayı. Uygulama
      açık kaldıkça geçerlidir; Kalfa kapatılıp açılınca yeniden sorulur.
-4. Sunucu kodu çalışma alanındaysa §5.1.1'in koşulu da sağlanmalı.
+4. Sunucu W'de kodluysa (modelin yazabildiği bir kökte) §5.1.1'in koşulu da sağlanmalı.
 
 İzin yoksa oturumda, model dışında bir **başlatma kartı** görünür:
 "`<sunucu>` bu çalışma alanında başlatılsın mı?". Karttaki bilgiler: erişim
@@ -333,28 +378,62 @@ değildir; onu yükleyen yorumlayıcı ya da başlatıcıdır. `node ./sunucu.js
 tanımında `sunucu.js` değişse bile T aynı kalır. **Yalnız yorumlayıcının
 özeti, çalışan kodu sabitlemez.**
 
-Model yalnız çalışma alanına yazabilir:
+**Modelin yazabildiği kökler (W).** "Proje içi / dışı" ayrımı yetmez.
+Yalıtımlı kabuk proje kökünün yanında şunlara da yazar:
 
-- dosya araçları çalışma alanıyla sınırlıdır,
-- yalıtımlı kabuk dışarı yazamaz,
-- yalıtımsız kabuk her çağrıda yerel onay ister.
+- Linux'ta kabuğun özel ev ve önbellek dizinleri ile `/tmp`'ye bağlanan
+  geçici dizin (`linux/bwrap.rs`). `HOME` ve `NPM_CONFIG_CACHE` de bunlara
+  yönelir (`linux/mod.rs`).
+- Windows'ta paket SID'ine miraslı değiştirme izni verilmiş özel ev,
+  geçici ve önbellek dizinleri (`windows/yalitici.rs`).
 
-Bu yüzden güven, sunucu kodunun nerede durduğuna göre kurulur.
+Bir çalışma alanının **W** kümesi, modelin ya da öbür araçların yerel
+onaysız yazabildiği bütün köklerdir:
 
-- **Çalışma alanı kodlu sunucu:** Komut, argümanlardan biri ya da bir ortam
-  değeri çalışma alanının içini gösteriyorsa sunucu bu türdendir. Çalışma
-  dizini çalışma alanı olmadığından (§3) göreli yollar dışarıda çözülür. Bu
-  yüzden içeriyi gösteren bir yol ancak mutlak yolla ya da `${CALISMA_ALANI}`
-  yer tutucusuyla yazılabilir. Sunucunun türü kayıtta ve her başlatmada
-  belirlenebilir.
-- **Kodu çalışma alanı dışında olan sunucu:** T şunların içerik özetini
-  kapsar: komut dosyası, dosyaya çözülen her argüman ve dosyaya çözülen
-  her ortam yolu. Model bu dosyalara yerel onaysız yazamaz. Otomatik
+1. proje kökü,
+2. kabuğun o alana özel `ev`, `gecici` ve `onbellek` dizinleri,
+3. aynı alandaki **öbür** MCP sunucularının yazabildiği her yer. Bu yerler
+   1. ve 2. maddedeki köklerdir; öbür sunucuların kendi özel kökleri
+   onlara aittir.
+
+W dışında kalan ve modelin yerel onaysız yazamadığı yerler şunlardır:
+
+- sunucunun kendi özel kökü (§3, §5.6),
+- kullanıcının sistem dizinleri.
+
+Yalıtımsız kabuk ve tam erişimli araçlar her çağrıda yerel onay ister.
+
+**Yüklenen kodun yeri.** Sunucunun yüklediği kod üç yerden gelir:
+
+- **Sunucunun özel kökü:** `npx` ve `uvx` paketleri, `HOME`/önbellek
+  yönlendirmesiyle (§3) burada açılır. Kabuk ve öbür sunucular bu köke
+  yazamaz: Linux'ta bağlanmaz, Windows'ta yalnız sunucunun yetenek SID'ine
+  izin verilir (§5.6). Sunucunun kendi köküne kendisinin yazması, sunucunun
+  kendi davranışıdır (aşağıdaki kalan sınır).
+- **Açıkça verilen yollar:** Komut, argümanlar ya da ortam değerleri.
+  Kalfa bunları kayıtta ve her başlatmada çözer, W'nin içinde mi diye
+  bakar.
+- **`PATH` araması:** Çıplak program adı `PATH`'te çözülür. Çözülen dosya
+  W'nin içindeyse "açık yol" gibi sayılır. `PATH`'in W'deki dizinleri bu
+  denetime girer.
+
+Bu üç yere göre sunucu iki türden biridir:
+
+- **W'de kodlu sunucu:** Komutun çözüldüğü dosya, bir argüman ya da bir
+  ortam değeri W'nin içini gösteriyorsa sunucu bu türdendir. Buna
+  `${CALISMA_ALANI}` ve kabuğun özel dizinleri de dahildir.
+- **W dışında kodlu sunucu:** T şunların içerik özetini kapsar: komut
+  dosyası, dosyaya çözülen her argüman ve dosyaya çözülen her ortam yolu.
+  Paket kodu sunucunun özel kökündedir ve model oraya yazamaz. Otomatik
   yeniden başlatma serbesttir.
-- **Çalışma alanı kodlu sunucuda yazma kuşağı:** Her çalışma alanının bir
-  **yazma kuşağı** sayacı vardır. Sayacı şunların her biri artırır:
-  - Kalfa'nın o alana yazan her aracı (dosya araçları, kabuk),
-  - o alandaki her MCP çağrısı (sunucu çağrı sırasında yazmış olabilir).
+
+**W'de kodlu sunucuda yazma kuşağı.** Her çalışma alanının bir **yazma
+kuşağı** sayacı vardır. Sayacı şunların her biri artırır:
+
+- Kalfa'nın W'ye yazan her aracı: dosya araçları ve her kabuk komutu.
+  Kabuk özel dizinlere de yazabildiği için her komut sayılır.
+- O alandaki her MCP çağrısı. Sunucu çağrı sırasında proje köküne
+  yazmış olabilir.
 
   Başlatma izni, son onaylı başlatmanın kuşağını saklar. Kuşak arttıysa
   sonraki **her** başlatma yeniden izin ister: çökme, boşta kapanma ve
@@ -367,6 +446,11 @@ Bu yüzden güven, sunucu kodunun nerede durduğuna göre kurulur.
   - `npx -y paket` gibi uzak paketlerde paket sürümü T'de yer almaz.
     Arayüz sürüm sabitlemeyi önerir (`paket@1.2.3`). Sabitlenmemiş paket
     güncellenince yeni kod aynı izinle çalışabilir.
+  - Yalıtımlı sunucu kendi özel kökündeki paket kodunu kendisi
+    değiştirebilir. Bu, model için ayrı bir yol açmaz: Model sunucuya
+    ancak sunucunun araçları üzerinden ulaşır. Bir sunucunun kendi
+    önbelleğine keyfî yazan bir aracı varsa bu, sunucunun kendi
+    davranışıdır.
 
 ### 5.2 Çağrı onayı
 
@@ -421,7 +505,7 @@ Bu özetler şöyle bağlanır:
   - Yalnız N ya da yalnız K (içerik) değişirse kısayol korunur. İçerik
     değişimi aynı politikanın sonucudur ve yeni süreç güncel korumalarla
     başlar.
-- **Başlatma izni** T, Π ve çalışma alanına bağlanır. Çalışma alanı kodlu
+- **Başlatma izni** T, Π ve çalışma alanına bağlanır. W'de kodlu
   sunucuda ayrıca yazma kuşağına bağlanır (§5.1.1).
 
 ### 5.4 Çalışma alanı kilidi
@@ -498,6 +582,17 @@ eklenir:
   gibi yerel pencerede onaylanır.
 - MCP süreçleri kabukla aynı çalışma alanı profilini ve paket SID'ini
   kullanır. MCP hazırlığı ya da ACE'leri hiçbir zaman kaldırmaz.
+- **Sunucunun özel kökü** paket SID'ine açılmaz. Çünkü paket SID'ini
+  kabuk ve öbür sunucular da taşır.
+  - Her (sunucu, çalışma alanı) için bir **yetenek SID'i** türetilir.
+    Özel kökte miraslı değiştirme izni yalnız bu SID'e verilir.
+  - Sunucu süreci bu yetenekle başlatılır; kabuk ve öbür sunucular bu
+    yeteneği taşımaz.
+  - Bu ACE'ler de kayda girer. Sunucu ya da çalışma alanı kaldırılınca
+    silinir.
+  - Ölçümü G1'dedir (§4.1).
+  - Linux'ta aynı ayrım bağlamayla kurulur: özel kök yalnız o sunucunun
+    bwrap'ına bağlanır.
 - Mevcut "hazırlanmış alanı kaldır" işlemi, o çalışma alanında çalışan MCP
   süreçlerini önce kapatır; kabuk ve öbür sunucular bundan etkilenmez.
 
@@ -804,6 +899,17 @@ argümanıyla seçilir.
 - Çağrılar arasında yeni `.git` ve yapılandırma dosyası oluşturan
   sunucunun dosyaları karantinaya alınmalı.
 - Boşta kapanma çalışmalı.
+- **Doğrulanamayan tarama:** Periyodik denetimde sırayla tarayıcı hatası,
+  okunamayan bir dizin (`koruma_tam = false`) ve 30 sn'yi aşan bir tarama
+  (sahte saat) üretilir. K'nın kısmi özeti eski K ile eşleşecek biçimde
+  kurulur.
+  - t_K yenilenmemeli.
+  - Süreç, etkin çağrı ya da keşif sürerken de tanımlı süre içinde
+    durmalı.
+  - Başarılı tarama gelene kadar yeniden başlatma olmamalı.
+- **Görüntü sınırı ayrı:** Yalnız değişiklik görüntüsünün girdi ya da
+  süre sınırı dolar (`goruntu.eksik = true`), koruma yürüyüşü tamdır. Bu
+  durum "Doğrulanamadı" sayılmamalı.
 - **Mutlak denetim yaşı** (sahte saatle, kısaltılmış yaş): Uzun ve etkin
   bir çağrı sürerken dışarıdan bir gizli dosya oluşturulur.
   - Süreç, denetim yaşı dolduktan sonra en geç bir tarama ve kapanma
@@ -856,6 +962,22 @@ ağacının temizlendiği gözlenmeli.
 
   (a) ve (b)'de eski kısayol yeni erişimi otomatik onaylamamalı ve
   başlatma izni yeniden sorulmalı. (c) ve (d)'de kısayol korunmalı.
+
+**Kod kökleri** (§5.1.1, §5.6; iki platformda gerçek erişim sınırıyla)
+- **Karşı örnek:** İzin verilmiş yalıtımlı bir sunucu `npx -y paket@1.2.3`
+  ile başlar. Sonra yalıtımlı kabukla şunlar denenir:
+  - Sunucunun özel kökündeki açılmış paket betiğini değiştirmek. Yazma
+    reddedilmeli.
+  - Kabuğun kendi npm önbelleğine aynı paketin değiştirilmiş bir kopyasını
+    koymak. Sunucu bu önbelleği görmemeli.
+
+  Sürüm, komut, ortam, açıklama ve şema aynı kalır. Otomatik yeniden
+  başlatma değiştirilmiş kodu çalıştırmamalı.
+- Ortamında `NPM_CONFIG_CACHE` kabuğun önbelleğini gösteren bir sunucu
+  "W'de kodlu" sayılmalı. Kabuk komutundan sonraki başlatma yeniden izin
+  istemeli.
+- `PATH`'te W'deki bir dizinden çözülen komut "W'de kodlu" sayılmalı.
+- Bir sunucu, öbür sunucunun özel köküne yazamamalı.
 
 **Sunucu kodu** (§5.1.1)
 - Tam erişimde `node ${CALISMA_ALANI}/sunucu.js` tanımlanır. İlk başlatma
@@ -1049,3 +1171,10 @@ r3'te koda karşı doğrulanıp çözüldü.
 | 3 | Başlatma güveni, yorumlayıcının arkasındaki kodu kapsamıyor | Katılıyorum | §3 ve §5.1.1: çalışma dizini çalışma alanı dışında; çalışma alanı kodlu sunucuda yazma kuşağı geçmeden otomatik yeniden başlatma yapılmaz; dışarıdaki dosya yolları T'de. Kalan sınır (sunucunun kendi yüklemesi, sabitlenmemiş paket) yazıldı. |
 | 4 | Sır maskelemesi araç tanımlarını kapsamıyor | Katılıyorum. `model_turu.rs` tanımları JSONL'ye yazar. | §6.2'nin 0. adımı: sır geçen araç her şeyden önce kapatılır; ham tanım hiçbir yere gitmez. §5.5'e `serverInfo` ve `instructions` eklendi. |
 | 5 | P değişimi her zaman daraltmaz | Katılıyorum | §5.3: Π (politika) tanımlandı; kısayol ve başlatma izni Π'ye bağlı. Π'deki her değişiklik ikisini de düşürür. Yalnız N ya da yalnız içerik değişirse korunur. |
+
+### 13.4 Codex'in r4 yeniden incelemesi (`INCELEME-e5080c2.md`)
+
+| # | Bulgu | Karar | Çözüm |
+|---|---|---|---|
+| 1 | Proje dışındaki özel ev ve önbelleğe de model yazabilir | Katılıyorum. Kod doğrulandı: `linux/bwrap.rs` `--bind` ev/önbellek/gecici, `linux/mod.rs` `HOME` ve `NPM_CONFIG_CACHE`, `windows/yalitici.rs` miraslı `MASKE_DEGISTIR`. | §5.1.1: modelin yazabildiği bütün kökleri kapsayan W; W'de kodlu sunucuda yazma kuşağı (her kabuk komutu sayılır). §3: sunucuya özel kök (`npx`/`uvx` önbelleği orada). §5.6: Windows'ta sunucuya özel yetenek SID'i, Linux'ta yalnız o sunucuya bağlama. G1'e 3. ölçüm eklendi. §11'de karşı örnek testleri. |
+| 2 | Başarısız ya da eksik tarama korumayı doğrulamış sayılmamalı | Katılıyorum. Kod doğrulandı: `tara_ayrintili` okunamayan girdiyi atlar; `goruntu.eksik` görüntü sınırını da işaretler. | §4.3: `KorumaSonucu::{Aynı, Değişti, Doğrulanamadı}`; `koruma_tam` işareti görüntü sınırından ayrı; 30 sn tarama süresi; Doğrulanamadı'da t_K yenilenmez, süreç durur, yeniden başlatma yapılmaz. Üst sınır "10 dk + en çok 30 sn tarama + 2 sn + öldürme". §11'de karşı örnek testleri. |

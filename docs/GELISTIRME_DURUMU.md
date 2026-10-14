@@ -265,7 +265,15 @@ Codex'in r3 yeniden incelemesinden (`5dd79a4`) gelen beş bulgu r4'te
 - araç tanımında sır geçerse araç kapatılır,
 - kısayol ve başlatma izni politika özeti Π'ye bağlandı.
 
-**Sıradaki tek iş:** r4'ün yeniden incelenmesi. Kullanıcı ayrıca şu iki
+Codex'in r4 yeniden incelemesinden (`e5080c2`) gelen iki bulgu r5'te
+çözüldü:
+- Kod güveni artık modelin yazabildiği bütün kökleri (W) kapsıyor: proje,
+  kabuğun özel ev, geçici ve önbellek dizinleri. Her sunucunun kendi özel
+  kökü var; Windows'ta bu kök yetenek SID'iyle ayrılıyor.
+- Doğrulanamayan koruma taraması (hata, eksik yürüyüş, 30 sn aşımı) t_K'yı
+  yenilemiyor, süreci durduruyor.
+
+**Sıradaki tek iş:** r5'in yeniden incelenmesi. Kullanıcı ayrıca şu iki
 kararı verecek: iptalde süreci durdurma değişikliği (§2) ve çağrılar
 arasındaki kalan risk (§4.3). G1 ve uygulama, kullanıcının sonraki onayını
 bekliyor.
