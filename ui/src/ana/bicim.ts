@@ -103,6 +103,22 @@ export function satirDurumu(
   }
 }
 
+/** Akan düşüncede gösterilen en çok karakter. */
+export const CANLI_DUSUNCE = 2_000;
+
+/**
+ * Akan düşüncenin son kısmı. Düşünce milyonlarca karaktere çıkabilir; akarken
+ * her karede tamamını çözmek arayüzü geri bıraktırır. Kesilmişse başına "…"
+ * konur; UTF-16 vekil çifti bölünmez.
+ */
+export function dusunceKuyrugu(metin: string): string {
+  if (metin.length <= CANLI_DUSUNCE) return metin;
+  let bas = metin.length - CANLI_DUSUNCE;
+  const kod = metin.charCodeAt(bas);
+  if (kod >= 0xdc00 && kod <= 0xdfff) bas += 1;
+  return `…${metin.slice(bas)}`;
+}
+
 /** Çalışma alanının kısa adı: yolun son klasörü; yol yoksa "kalfa". */
 export function projeAdi(yol: string | null): string {
   if (!yol) return 'kalfa';

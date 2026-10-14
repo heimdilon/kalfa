@@ -190,15 +190,28 @@ dosyadan gelirse sonuç istenenden aza düşüyordu) birleşmeden önce düzelti
 o durumda sonraki dosyaların en iyi parçası da adaya girer. Kullanıcının
 açık onayıyla squash birleşti.
 
-**Bağımlılık denetimi ve güvenlik politikası (14 Ekim, dal
-`derleme/guvenlik-denetimi`):** Üst belge §12.1'in dağıtım satırındaki iki
-eksik: CI'a sabit sürümlü `cargo audit` işi ve kökte `SECURITY.md`. README
-bildirimi bu dosyaya bağlar.
+**Bağımlılık denetimi ve güvenlik politikası (14 Ekim, PR
+[#14](https://github.com/heimdilon/kalfa/pull/14), `ee86d02`):** Üst belge
+§12.1'in dağıtım satırındaki iki eksik: CI'a sabit sürümlü `cargo audit` işi
+ve kökte `SECURITY.md`; README bildirimi bu dosyaya bağlar. Kullanıcının
+isteğiyle repoda özel açık bildirimi açıldı. İlk denetim: açık yok; geri
+çekilen `yoke-derive` 0.8.3 PR [#15](https://github.com/heimdilon/kalfa/pull/15)
+(`22faf16`) ile 0.8.4'e güncellendi. Kalan uyarılar Tauri zincirinden
+dolaylı: `glib` 0.18 unsound (RUSTSEC-2024-0429; Linux GTK, Tauri gtk 0.18'de
+kaldıkça yükseltilemez), `proc-macro-error` ve beş `unic-*` bakımsız.
 
-**Sıradaki tek iş:** bu PR'ın CI'ı ve kullanıcının birleştirme onayı; özel
-güvenlik bildirimini açmak (repo ayarı) kullanıcının kararıdır. `v*` etiketi
-ve sürüm yayımı, canlı G5 doğrulaması ve canlı `baglam_canli` deneyi ayrı
-onay bekler.
+**Canlı düşünce kuyruğu (14 Ekim, dal `ui/canli-dusunce-kuyrugu`):** Windows
+e2e (msedgedriver 155) PR #8 sonrası 40/41 verdi: "duraklayan arayüz" testi
+kalıcı düşüyordu. Kök neden: PR #8'de düşünce paneli akarken açık kalıyor ve
+her karede bütün düşünceyi Markdown'a çözüyordu; milyonlarca karakterde
+arayüz kuyruğu eritemiyor, aktarım uyarısı 20 sn yerine ~77 sn'de geliyordu.
+Akarken yalnızca son 2 000 karakter düz metin çizilir; tamamı akış bitince
+açılınca bir kez çözülür. Bileşen testi önce düştü, sonra geçti; Windows e2e
+**41/41**. Linux e2e bu düzeltmede koşmadı.
+
+**Sıradaki tek iş:** canlı düşünce kuyruğu PR'ının CI'ı ve kullanıcının
+birleştirme onayı. `v*` etiketi ve sürüm yayımı, canlı G5 doğrulaması ve
+canlı `baglam_canli` deneyi ayrı onay bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

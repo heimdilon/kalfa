@@ -8,6 +8,8 @@ import {
   kabukOzeti,
   aracKartDurumu,
   ciktiOnizlemesi,
+  CANLI_DUSUNCE,
+  dusunceKuyrugu,
   gruplara,
   gunAy,
   gunlukSinirMetni,
@@ -267,5 +269,16 @@ describe('baglamNotu', () => {
     expect(baglamNotu({ adet: 4, yer_tutucu: 2, once: 80000, sonra: 30000 })).toBe(
       'Eski 6 araç çıktısı özetlendi (≈80.000 → ≈30.000 token). 2 tanesi özetlenemedi ve kaldırıldı.',
     );
+  });
+});
+
+describe('dusunceKuyrugu', () => {
+  it('kısa düşünceyi olduğu gibi, uzununu son kısmıyla verir; vekil çifti bölünmez', () => {
+    expect(dusunceKuyrugu('kısa')).toBe('kısa');
+    const uzun = 'a'.repeat(CANLI_DUSUNCE + 10);
+    expect(dusunceKuyrugu(uzun)).toBe(`…${'a'.repeat(CANLI_DUSUNCE)}`);
+    // Kesim noktası bir emojinin ikinci yarısına düşer: emoji tümüyle atlanır.
+    const emojili = `x😀${'b'.repeat(CANLI_DUSUNCE - 1)}`;
+    expect(dusunceKuyrugu(emojili)).toBe(`…${'b'.repeat(CANLI_DUSUNCE - 1)}`);
   });
 });

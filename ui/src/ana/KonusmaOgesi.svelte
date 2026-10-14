@@ -20,6 +20,7 @@
     aracKartDurumu,
     baglamNotu,
     ciktiOnizlemesi,
+    dusunceKuyrugu,
     kabukOzeti,
     sonucGovdesi,
   } from './bicim';
@@ -56,7 +57,12 @@
     {#if oge.dusunce}
       <div class="dusunce">
         <ThoughtPanel akista={oge.akista}>
-          <Markdown metin={oge.dusunce} akista={oge.akista} baglantiAc={durum.baglantiAc} />
+          <!-- Akarken yalnızca son kısım düz metin; tamamı akış bitince bir kez çözülür. -->
+          {#if oge.akista}
+            <p class="canli-dusunce">{dusunceKuyrugu(oge.dusunce)}</p>
+          {:else}
+            <Markdown metin={oge.dusunce} baglantiAc={durum.baglantiAc} />
+          {/if}
         </ThoughtPanel>
       </div>
     {/if}
@@ -181,6 +187,11 @@
   }
   .dusunce {
     margin-top: 10px;
+  }
+  .canli-dusunce {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .aciklama {
     margin: 0;
