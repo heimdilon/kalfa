@@ -221,8 +221,15 @@ Linux e2e (WSL Ubuntu 24.04, `kalfatest`, `xvfb-run`) bu başta **41/41**.
 - Değerlendirme düzeneğinin "İndeks eksik" döngüsü düzeltildi: durum artık
   yalnız başlıktan okunuyor (sonuç parçası bu metni içerebiliyordu).
 
-**Sıradaki tek iş:** `v0.1.0` etiketi (`0eab672`); `surum.yml` taslak sürümü
-üretir, yayımlamayı kullanıcı yapar.
+**rustls ve ilk sürüm (14 Ekim):** Aynı gün yayımlanan dört `rustls`
+0.23.45 duyurusu (RUSTSEC-2026-0346…0349) `cargo audit`'i kırdı;
+[#18](https://github.com/heimdilon/kalfa/pull/18) 0.23.46'ya yükseltti
+(`efa2ec2`). `v0.1.0` etiketi kullanıcının isteğiyle `efa2ec2`'ye atıldı.
+`surum.yml` yeşil: Windows ve Linux derlemeleri ile Debian 12, Ubuntu 24.04,
+Fedora ve Windows kurulum sınamaları geçti. Taslak sürümde `.deb`, `.rpm`,
+NSIS kurucusu ve `SHA256SUMS` var.
+
+**Sıradaki tek iş:** Kullanıcı `v0.1.0` taslak sürümünü yayımlar.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
