@@ -171,8 +171,8 @@ async fn turkce_sorgularin_en_az_yuzde_sekseninde_beklenen_dosya_ilk_beste() {
     let mut beklemeler = 0;
     loop {
         match ara(&arac, "indeks", 1).await {
-            Ok(c) if !c.contains("İndeks eksik") => break,
-            Ok(c) if c.contains("günlük token sınırı") => gunluk_sinir(&c, &sayan),
+            Ok(c) if !baslik(&c).contains("İndeks eksik") => break,
+            Ok(c) if baslik(&c).contains("günlük token sınırı") => gunluk_sinir(&c, &sayan),
             Ok(c) => println!("{}", c.lines().take(2).collect::<Vec<_>>().join(" / ")),
             Err(e) if e.contains("günlük token sınırı") => gunluk_sinir(&e, &sayan),
             Err(e) if e.contains("hız sınırı") && beklemeler < 30 => {
@@ -235,6 +235,23 @@ async fn turkce_sorgularin_en_az_yuzde_sekseninde_beklenen_dosya_ilk_beste() {
         sayan.harcanan_kredi()
     );
     assert!(oran >= 0.8, "isabet oranı %80'in altında: {oran:.2}");
+}
+
+/// Sonuçlardan önceki başlık satırları. Sonuç parçaları da "İndeks eksik"
+/// gibi metinler içerebilir (örneğin `arama.rs`'in testleri); durum yalnız
+/// başlıktan okunur.
+fn baslik(cikti: &str) -> &str {
+    cikti.split("\n\n").next().unwrap_or_default()
+}
+
+#[test]
+fn baslik_sonuc_metnini_saymaz() {
+    let tam = "\"indeks\" için 1 sonuç (indeks: 2 dosya; bu aramada güncellenen: 0).\n\n\
+               [1] dosya:a.rs:1-2 (puan 0,64)\nassert!(!tam.contains(\"İndeks eksik\"));";
+    assert!(!baslik(tam).contains("İndeks eksik"));
+    let yarim = "\"indeks\" için 1 sonuç (indeks: 1 dosya; bu aramada güncellenen: 1).\n\
+                 İndeks eksik: 2 dosyanın 1 tanesi indekslendi.\n\n[1] dosya:a.rs:1-2";
+    assert!(baslik(yarim).contains("İndeks eksik"));
 }
 
 /// "EVREN hız sınırı; <n> sn sonra yeniden deneyin" iletisinden `n`; yoksa 60.

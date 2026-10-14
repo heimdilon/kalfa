@@ -209,9 +209,20 @@ Akarken yalnızca son 2 000 karakter düz metin çizilir; tamamı akış bitince
 açılınca bir kez çözülür. Bileşen testi önce düştü, sonra geçti; Windows e2e
 **41/41**. Linux e2e bu düzeltmede koşmadı.
 
-**Sıradaki tek iş:** canlı düşünce kuyruğu PR'ının CI'ı ve kullanıcının
-birleştirme onayı. `v*` etiketi ve sürüm yayımı, canlı G5 doğrulaması ve
-canlı `baglam_canli` deneyi ayrı onay bekler.
+PR [#16](https://github.com/heimdilon/kalfa/pull/16) birleşti (`0eab672`).
+Linux e2e (WSL Ubuntu 24.04, `kalfatest`, `xvfb-run`) bu başta **41/41**.
+
+**Onaylı canlı işler (14 Ekim):** Kullanıcının onayıyla:
+- `baglam_canli` geçti: 1 612 baytlık çıktı 247 bayta özetlendi; `E0308`,
+  `lib.rs` ve satır/sütun korundu (1 121 token).
+- Canlı G5, dosya tekilleştirmeyle **28/32 (%88)**. 20 aday en iyi durumda
+  26/32 verdiği için **50 aday kalır**. Ayrıntı ve maliyet (~2,9 M token):
+  [G5 tekil](superpowers/bulgular/2026-10-14-kalfa-g5-tekil.md).
+- Değerlendirme düzeneğinin "İndeks eksik" döngüsü düzeltildi: durum artık
+  yalnız başlıktan okunuyor (sonuç parçası bu metni içerebiliyordu).
+
+**Sıradaki tek iş:** `v0.1.0` etiketi (`0eab672`); `surum.yml` taslak sürümü
+üretir, yayımlamayı kullanıcı yapar.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
