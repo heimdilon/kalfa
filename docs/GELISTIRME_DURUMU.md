@@ -234,9 +234,21 @@ Kullanıcı `v0.1.0`'ı ön sürüm olarak yayımladı (14 Ekim 18:14 TSİ).
 **MCP 1.1a (14 Ekim):** Kullanıcı MCP desteğini seçti; yerel stdio (1.1a)
 ve uzak HTTP/OAuth (1.1b) olarak bölündü. 1.1a tasarımı bölüm bölüm
 onaylandı: [tasarım](superpowers/specs/2026-10-14-kalfa-11a-mcp-yerel-design.md).
+Codex incelemesinin (`dd641a3`) altı bulgusu r2'de çözüldü:
+- başlatma izni,
+- uzun yaşayan süreçte koruma yenilemesi ve kalan risk,
+- ham stdio sınırları,
+- iptalde süreç ağacının durdurulması,
+- tarif ve mühür,
+- araç tanımı denetimi.
 
-**Sıradaki tek iş:** Kullanıcının yazılı 1.1a tasarımını incelemesi; onayla
-G1 (Windows borulu AppContainer prototipi) ve plan 1.1a-1.
+Bulgu 5'in bir alt maddesine kaynaklı gerekçeyle kısmen katılınmadı:
+kısayollar aynı tarifle yeniden başlatmada düşmez. Yanıt tasarımın §13'ünde.
+
+**Sıradaki tek iş:** r2'nin yeniden incelenmesi. Kullanıcı ayrıca şu iki
+kararı verecek: iptalde süreci durdurma değişikliği (§2) ve çağrılar
+arasındaki kalan risk (§4.3). G1 ve uygulama, kullanıcının sonraki onayını
+bekliyor.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
