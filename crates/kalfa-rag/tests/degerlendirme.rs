@@ -194,11 +194,10 @@ async fn turkce_sorgularin_en_az_yuzde_sekseninde_beklenen_dosya_ilk_beste() {
     }
     sayan.siralama_kapali.store(false, Ordering::Relaxed);
 
-    // 20 sonuç istenir: yeniden sıralama yine 50 adayı puanlar (aynı token),
-    // ilk 5 ve dosya tekilleştirmesi aynı yanıttan ölçülür.
+    // 20 sonuç istenir: yeniden sıralama yine 50 adayı puanlar (aynı token).
+    // Sonuçlar dosyaya göre tekildir; ilk 5 sonuç ilk 5 farklı dosyadır.
     let sorgular: Vec<Sorgu> = serde_json::from_str(include_str!("degerlendirme.json")).unwrap();
     let mut isabet = 0;
-    let mut tekil_isabet = 0;
     for (i, s) in sorgular.iter().enumerate() {
         let bas = Instant::now();
         let cikti = loop {
@@ -219,19 +218,10 @@ async fn turkce_sorgularin_en_az_yuzde_sekseninde_beklenen_dosya_ilk_beste() {
         let yollar = sonuc_yollari(&cikti);
         let beklenen = |y: &String| s.beklenen.iter().any(|b| y.starts_with(b.as_str()));
         let bulundu = yollar.iter().take(5).any(beklenen);
-        let mut tekil: Vec<&String> = Vec::new();
-        for y in &yollar {
-            if tekil.len() < 5 && !tekil.contains(&y) {
-                tekil.push(y);
-            }
-        }
-        let tekil_bulundu = tekil.into_iter().any(beklenen);
         isabet += u32::from(bulundu);
-        tekil_isabet += u32::from(tekil_bulundu);
         println!(
-            "{}{} {:>5.1} sn  {}\n    {:?}",
+            "{} {:>5.1} sn  {}\n    {:?}",
             if bulundu { "✓" } else { "✗" },
-            if tekil_bulundu { "✓" } else { "✗" },
             sure.as_secs_f64(),
             s.sorgu,
             yollar
@@ -239,10 +229,6 @@ async fn turkce_sorgularin_en_az_yuzde_sekseninde_beklenen_dosya_ilk_beste() {
     }
     let oran = f64::from(isabet) / sorgular.len() as f64;
     println!("isabet: {isabet}/{} ({:.0}%)", sorgular.len(), oran * 100.0);
-    println!(
-        "ilk 5 farklı dosyada isabet: {tekil_isabet}/{}",
-        sorgular.len()
-    );
     println!("toplam maliyet: {}", sayan.ozet());
     println!(
         "harcanan kredi (ilk yanıttan sona): {:?}",

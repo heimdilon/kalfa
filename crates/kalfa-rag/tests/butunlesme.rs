@@ -43,7 +43,8 @@ async fn tek_dosyanin_299_parcasi_iki_toplu_istekle_indekslenir() {
     let cikti = ara(&arac, "uzun belge", 2).await.unwrap();
     assert!(!cikti.contains("İndeks eksik"), "{cikti}");
     assert!(cikti.contains("indeks: 1 dosya"), "{cikti}");
-    assert_eq!(sonuc_yollari(&cikti), ["uzun.md", "uzun.md"]);
+    // Dosya, en iyi parçasıyla bir kez gelir.
+    assert_eq!(sonuc_yollari(&cikti), ["uzun.md"]);
     assert_eq!(
         gommeler(&s).iter().map(girdi_sayisi).collect::<Vec<_>>(),
         [1, 256, 43]
