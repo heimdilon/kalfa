@@ -1,6 +1,6 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-10-13; aşama 5b uygulandı (PR bekliyor), depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-10-14; Windows sürüm akışı birleşti, depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
 ## Güncel devam noktası — 2026-10-12 18:44 TSİ
@@ -153,18 +153,21 @@ düzeltildi: etiket `tauri.conf.json` sürümüyle denetlenir, sürüm notu
 paketteki bwrap kopyasının Debian sürümünü yazar, simge değişikliği de iş
 akışını tetikler.
 
-**Windows kurucusu sürüm akışında (13 Ekim, dal `derleme/windows-surum`):**
+**Windows kurucusu sürüm akışında (14 Ekim, PR [#11](https://github.com/heimdilon/kalfa/pull/11), `bfc3f83`):**
 İş akışı `surum.yml` ("Sürüm paketleri") adını aldı. Windows makinesinde
 `kurucu/derle.mjs` NSIS kurucusunu derler; geçici CI makinesinde
 `.github/scripts/windows-kurucu-sinama.ps1` sessiz kurar, dosyaları ve
 yalıtımın kök izinlerini denetler, sessiz kaldırır ve izinlerin geri
 alındığını doğrular. Etikette bütün paketler tek `SHA256SUMS` ile taslak
 sürüme eklenir. Temiz makine, `derle.mjs`'in `kalfa-yalitim.exe`'yi
-derlemediğini gösterdi; düzeltildi. Koşu 38463488003 tümüyle geçti.
+derlemediğini gösterdi; düzeltildi. Codex incelemesinin iki bulgusu (izin
+hakkı ve miras denetimi, kaldırmada bütün dosyalar) birleşmeden önce
+düzeltildi; koşu [38466119004](https://github.com/heimdilon/kalfa/actions/runs/38466119004)
+tümüyle geçti. Kullanıcının açık onayıyla squash birleşti.
 
-**Sıradaki tek iş:** Windows sürüm akışı PR'ının CI'ı ve kullanıcının
-birleştirme onayı. Sonraki adaylar: sonuçları dosyaya göre tekilleştirme
-(G5 +2 sorgu); canlı `baglam_canli` deneyi ayrı onay bekler.
+**Sıradaki tek iş:** sonuçları dosyaya göre tekilleştirme (G5 +2 sorgu).
+`v*` etiketi ve sürüm yayımı kullanıcının ayrı onayını bekler; canlı
+`baglam_canli` deneyi de ayrı onay bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
