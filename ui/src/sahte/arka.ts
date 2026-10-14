@@ -150,12 +150,13 @@ export class SahteArka {
     baglanti: 'Var',
     anahtar_deposu: 'Kalici',
     modeller: [
-      { kimlik: 'qwen3.8-flash-next', profil: 'Hizli' },
-      { kimlik: 'deepseek-v4-flash', profil: 'Dengeli' },
-      { kimlik: 'glm-5.3', profil: 'Derin' },
-      { kimlik: 'auto', profil: 'Otomatik' },
+      { kimlik: 'qwen3.8-flash-next', profil: 'Hizli', eforlar: ['kapali', 'dusuk', 'orta', 'yuksek'] },
+      { kimlik: 'deepseek-v4-flash', profil: 'Dengeli', eforlar: ['kapali', 'dusuk', 'orta', 'yuksek'] },
+      { kimlik: 'glm-5.3', profil: 'Derin', eforlar: ['kapali', 'dusuk', 'orta', 'yuksek'] },
+      { kimlik: 'auto', profil: 'Otomatik', eforlar: ['kapali', 'dusuk', 'orta', 'yuksek'] },
     ],
     varsayilan_model: 'glm-5.3',
+    varsayilan_efor: 'orta',
     son_oturum: null,
     yalitim: {
       tip: 'Yok',
@@ -380,6 +381,13 @@ export class SahteArka {
     switch (komut) {
       case 'uygulama_durumu':
         return this.uygulama;
+      case 'modelleri_yenile':
+        return this.uygulama.modeller;
+      case 'efor_degistir': {
+        const o = this.#oturumlar.get(oturum);
+        if (o) o.acilis.ozet.efor = a.efor as NonNullable<OturumAcilisi['ozet']['efor']>;
+        return null;
+      }
       case 'denetci_kipi':
         return this.denetci;
       case 'denetci_kipini_ayarla':

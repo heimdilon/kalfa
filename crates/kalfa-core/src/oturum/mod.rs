@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kalfa_evren::tipler::{ChatMessage, ToolCall, ToolDef};
+use kalfa_evren::tipler::{ChatMessage, DusunceEforu, ToolCall, ToolDef};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -95,6 +95,7 @@ impl Default for Sinirlar {
 #[derive(Debug, Clone)]
 pub struct OturumAyarlari {
     pub model: String,
+    pub efor: Option<DusunceEforu>,
     pub kip: Kip,
     /// Çalışma alanının kökü; açılış kaydına yazılır.
     pub calisma_alani: Option<PathBuf>,
@@ -116,6 +117,7 @@ impl OturumAyarlari {
     pub fn yeni(model: impl Into<String>, calisma_alani: &Path) -> Self {
         Self {
             model: model.into(),
+            efor: Some(DusunceEforu::Orta),
             kip: Kip::Siki,
             calisma_alani: Some(calisma_alani.to_path_buf()),
             sinirlar: Sinirlar::default(),
@@ -927,14 +929,18 @@ pub fn devam_et(
     baglam: OturumBaglami,
 ) -> Result<(OturumTutamaci, OlayAlici, KurtarilmisDurum), OturumHatasi> {
     let (kayit, kayitlar) = OturumKaydi::devam_icin_ac(kayit_yolu)?;
-    let durum = kurtar(&kayitlar)?;
+    let mut durum = kurtar(&kayitlar)?;
     let butce = ButceDurumu::kayittan(kayitlar.iter().map(|z| &z.yuk))?;
     // 5b öncesi kayıtta bütçe ayarı yok: ayar ve devir açılışta yazılır.
     let eski_devir = butce
         .is_none()
         .then(|| eski_kayit_devri(kayitlar.iter().map(|z| &z.yuk)));
+    let efor = ayarlar.efor.or(durum.efor);
+    let efor_degisti = efor != durum.efor;
+    durum.efor = efor;
     let ayarlar = OturumAyarlari {
         model: durum.model.clone(),
+        efor,
         kip: durum.kip,
         kayit_yolu: Some(kayit_yolu.to_path_buf()),
         ..ayarlar
@@ -974,6 +980,9 @@ pub fn devam_et(
     tokio::spawn(async move {
         let kip = oturum.ayarlar.kip;
         oturum.kaydet(KayitOgesi::KipDegisti { kip }).await;
+        if efor_degisti && let Some(efor) = oturum.ayarlar.efor {
+            oturum.kaydet_kalici(KayitOgesi::EforDegisti { efor }).await;
+        }
         for mesaj in tamamlayicilar {
             oturum
                 .mesaj_ekle(mesaj, Some("kalfa:sonuç".to_string()))
@@ -1066,6 +1075,9 @@ fn baslat_ic(
             calisma_alani: oturum.ayarlar.calisma_alani.clone(),
         };
         oturum.kaydet(acilis).await;
+        if let Some(efor) = oturum.ayarlar.efor {
+            oturum.kaydet(KayitOgesi::EforDegisti { efor }).await;
+        }
         // Yeni oturumun bütçe ayarı kalıcıdır (5b tasarımı §8).
         let sinirlar = oturum.ayarlar.butce;
         oturum
@@ -1369,6 +1381,10 @@ impl Oturum {
             Komut::ModelDegistir { model } => {
                 self.ayarlar.model = model.clone();
                 self.kaydet(KayitOgesi::ModelDegisti { model }).await;
+            }
+            Komut::EforDegistir { efor } => {
+                self.ayarlar.efor = Some(efor);
+                self.kaydet(KayitOgesi::EforDegisti { efor }).await;
             }
             Komut::KullaniciMesaji { .. } => {
                 self.hata(geri_alma::TUR_SURUYOR).await;

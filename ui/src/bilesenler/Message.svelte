@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { m } from '../dil/tr';
-  import IconTile from './IconTile.svelte';
 
   interface Props {
     author?: 'user' | 'kalfa';
@@ -22,9 +21,8 @@
 </script>
 
 <article class={['mesaj', { kullanici }, sinif]}>
-  <IconTile icon={kullanici ? 'user' : 'hexagon'} tone={kullanici ? 'neutral' : 'accent'} />
   <div class="govde">
-    <header>
+    <header class={{ 'gizli-erisilebilir': kullanici || !time }}>
       <span class="ad">{name ?? (kullanici ? m('mesaj.kullanici') : m('mesaj.kalfa'))}</span>
       {#if time}<span class="zaman">{time}</span>{/if}
     </header>
@@ -38,13 +36,14 @@
 <style>
   .mesaj {
     display: flex;
-    gap: 12px;
-    padding: 14px 16px;
   }
   .kullanici {
+    width: fit-content;
+    margin-left: auto;
+    max-width: min(80%, 640px);
+    padding: 9px 14px;
     background: var(--surface-raised);
-    border: var(--border-width) solid var(--border-subtle);
-    border-radius: var(--radius-xl);
+    border-radius: 14px;
   }
   .govde {
     flex: 1;
@@ -54,7 +53,7 @@
     display: flex;
     align-items: baseline;
     gap: 10px;
-    margin-bottom: 5px;
+    margin-bottom: 4px;
   }
   .ad {
     font: var(--fw-semibold) var(--text-small) / 1 var(--font-sans);
@@ -66,13 +65,13 @@
     color: var(--text-muted);
   }
   .icerik {
-    font: var(--type-body);
+    font: var(--fw-regular) 14.5px / 1.65 var(--font-sans);
     color: var(--text-body);
     text-wrap: pretty;
   }
   .imlec {
     display: inline-block;
-    width: 8px;
+    width: 7px;
     height: 15px;
     margin-left: 2px;
     vertical-align: -2px;

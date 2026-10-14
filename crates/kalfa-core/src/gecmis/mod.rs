@@ -11,7 +11,7 @@ pub use liste::{OturumDurumu, OturumOzeti, oturum_ozeti, oturumlari_listele};
 use std::collections::HashMap;
 
 use kalfa_evren::KrediGozlemi;
-use kalfa_evren::tipler::Role;
+use kalfa_evren::tipler::{DusunceEforu, Role};
 use serde::{Deserialize, Serialize};
 
 use crate::denetci::DenetimSonucu;
@@ -307,6 +307,8 @@ pub fn sayfa(ogeler: &[GorunumOgesi], once_sira: Option<u64>, tur_sayisi: usize)
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DurumOzeti {
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub efor: Option<DusunceEforu>,
     pub kip: Option<Kip>,
     pub yonlendirilen_model: Option<String>,
     pub son_kredi: Option<KrediGozlemi>,
@@ -326,6 +328,7 @@ pub fn durum_ozeti(kayitlar: &[Zarf<KayitOgesi>]) -> DurumOzeti {
                 o.kip = Some(*kip);
             }
             KayitOgesi::ModelDegisti { model } => o.model = Some(model.clone()),
+            KayitOgesi::EforDegisti { efor } => o.efor = Some(*efor),
             KayitOgesi::KipDegisti { kip } => o.kip = Some(*kip),
             KayitOgesi::OnizlemeDegisti { acik } => o.onizleme_acik = *acik,
             // Eklenti isteği de canlıda kredi ve yönlendirilen model gözlemi

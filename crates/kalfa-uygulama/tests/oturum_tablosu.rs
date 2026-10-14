@@ -779,3 +779,151 @@ async fn oge_metni_yalnizca_kayittaki_sira() {
             .unwrap_err();
     assert_eq!(err.kod, HataKodu::GecersizGirdi);
 }
+
+#[tokio::test]
+async fn efor_degistir_kaydedilir_ve_kurtarilir() {
+    use kalfa_evren::tipler::{DusunceEforu, ModelInfo};
+
+    let o = ortam(vec![SahteYanit::metin("bir"), SahteYanit::metin("iki")]).await;
+    let modeller = o.t.uygulama.modelleri_yenile().await.unwrap();
+    assert!(modeller.iter().any(|m| m.kimlik == "glm-5.3"));
+    assert!(modeller.iter().any(|m| m.kimlik == "auto"));
+
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    // Yeni oturum dokunulmadan varsayılan Orta eforla istek gönderir.
+    o.t.uygulama
+        .mesaj_gonder(oturum, "ilk".into())
+        .await
+        .unwrap();
+    olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+    assert_eq!(
+        o.t.saglayici.istekler()[0].reasoning_effort.as_deref(),
+        Some("medium")
+    );
+
+    o.t.uygulama
+        .efor_degistir(oturum, DusunceEforu::Yuksek)
+        .await
+        .unwrap();
+
+    // Canlı katalog yalnızca kısıtlı efor destekleyen modeli içerdiğinde
+    // katalogda olmayan sabit model reddedilir ve model değişimi eforu uyarlar.
+    o.t.saglayici.modeller_ayarla(Ok(vec![ModelInfo {
+        id: "ozel-mini".into(),
+        task: "chat".into(),
+        modalities: Vec::new(),
+        pricing: None,
+        eforlar: vec![DusunceEforu::Kapali, DusunceEforu::Dusuk],
+    }]));
+    o.t.uygulama.modelleri_yenile().await.unwrap();
+    assert_eq!(o.t.uygulama.uygulama_durumu().varsayilan_model, "ozel-mini");
+    assert!(
+        o.t.uygulama
+            .model_degistir(oturum, "glm-5.3".into())
+            .await
+            .is_err(),
+        "canlı katalogda olmayan model reddedilmeli"
+    );
+
+    o.t.uygulama
+        .model_degistir(oturum, "ozel-mini".into())
+        .await
+        .unwrap();
+    assert!(
+        o.t.uygulama
+            .efor_degistir(oturum, DusunceEforu::Yuksek)
+            .await
+            .is_err(),
+        "modelin desteklemediği efor reddedilmeli"
+    );
+    o.t.uygulama
+        .mesaj_gonder(oturum, "merhaba".into())
+        .await
+        .unwrap();
+    olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+    assert_eq!(o.t.saglayici.istekler()[1].model, "ozel-mini");
+    assert_eq!(o.t.saglayici.istekler()[1].reasoning_effort, None);
+
+    o.t.uygulama.oturumu_kapat(oturum).await.unwrap();
+    let acilan = o.t.uygulama.oturum_ac(oturum).await.unwrap();
+    assert_eq!(acilan.ozet.efor, Some(DusunceEforu::Kapali));
+
+    // Bulgu 3: efor seçicisine dokunulmadan kısıtlı modelle başlatılan yeni
+    // oturum bir tur yürütülüp kapatılıp açıldığında yine Kapalı döner.
+    let o_yeni = ortam(vec![
+        SahteYanit::metin("ilk tur"),
+        SahteYanit::metin("ikinci tur"),
+        SahteYanit::metin("üçüncü tur"),
+    ])
+    .await;
+    o_yeni.t.saglayici.modeller_ayarla(Ok(vec![ModelInfo {
+        id: "ozel-mini".into(),
+        task: "chat".into(),
+        modalities: Vec::new(),
+        pricing: None,
+        eforlar: vec![DusunceEforu::Kapali, DusunceEforu::Dusuk],
+    }]));
+    o_yeni.t.uygulama.modelleri_yenile().await.unwrap();
+    let alan = o_yeni.t.uygulama.calisma_alani_sec().await.unwrap();
+    let baslatilan = o_yeni
+        .t
+        .uygulama
+        .oturum_baslat(alan.kimlik, "ozel-mini".into())
+        .await
+        .unwrap();
+    assert_eq!(baslatilan.ozet.efor, Some(DusunceEforu::Kapali));
+    let oturum2 = baslatilan.oturum;
+    let mut rx2 = o_yeni.dinle(oturum2);
+    o_yeni
+        .t
+        .uygulama
+        .mesaj_gonder(oturum2, "selam".into())
+        .await
+        .unwrap();
+    olay_bekle(&o_yeni.t, oturum2, &mut rx2, tamamlandi).await;
+    o_yeni.t.uygulama.oturumu_kapat(oturum2).await.unwrap();
+    let yeniden = o_yeni.t.uygulama.oturum_ac(oturum2).await.unwrap();
+    assert_eq!(yeniden.ozet.efor, Some(DusunceEforu::Kapali));
+
+    // Bulgu 4: Yüksek kaydedilmiş bir oturum kapatılıp modelin seçenekleri
+    // yalnız Düşük yapıldığında yeniden açılınca özet ve sonraki istek Düşük olur.
+    o_yeni.t.saglayici.modeller_ayarla(Ok(vec![ModelInfo {
+        id: "ozel-mini".into(),
+        task: "chat".into(),
+        modalities: Vec::new(),
+        pricing: None,
+        eforlar: vec![DusunceEforu::Dusuk, DusunceEforu::Yuksek],
+    }]));
+    o_yeni.t.uygulama.modelleri_yenile().await.unwrap();
+    o_yeni
+        .t
+        .uygulama
+        .efor_degistir(oturum2, DusunceEforu::Yuksek)
+        .await
+        .unwrap();
+    o_yeni.t.uygulama.oturumu_kapat(oturum2).await.unwrap();
+
+    o_yeni.t.saglayici.modeller_ayarla(Ok(vec![ModelInfo {
+        id: "ozel-mini".into(),
+        task: "chat".into(),
+        modalities: Vec::new(),
+        pricing: None,
+        eforlar: vec![DusunceEforu::Dusuk],
+    }]));
+    o_yeni.t.uygulama.modelleri_yenile().await.unwrap();
+    let kurtarilan = o_yeni.t.uygulama.oturum_ac(oturum2).await.unwrap();
+    assert_eq!(kurtarilan.ozet.efor, Some(DusunceEforu::Dusuk));
+    let mut rx3 = o_yeni.dinle(oturum2);
+    o_yeni
+        .t
+        .uygulama
+        .mesaj_gonder(oturum2, "kurtarma sonrasi".into())
+        .await
+        .unwrap();
+    olay_bekle(&o_yeni.t, oturum2, &mut rx3, tamamlandi).await;
+    assert_eq!(
+        o_yeni.t.saglayici.istekler()[1].reasoning_effort.as_deref(),
+        Some("low")
+    );
+}

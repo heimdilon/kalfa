@@ -792,6 +792,7 @@ impl Oturum {
                 } else {
                     GeriAlinabilirlik::Evet
                 },
+                diff: tek.then(|| hazirlik.diff.clone()).flatten(),
             })
             .collect();
         self.tur_ozeti.yazma_basladi(p.cagri, dosyalar);

@@ -126,6 +126,29 @@ impl ToolDef {
     }
 }
 
+/// Modelin düşünce (reasoning) efor düzeyi.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DusunceEforu {
+    #[serde(alias = "none", alias = "off")]
+    Kapali,
+    #[serde(alias = "low")]
+    Dusuk,
+    #[default]
+    #[serde(alias = "medium")]
+    Orta,
+    #[serde(alias = "high")]
+    Yuksek,
+}
+
+impl DusunceEforu {
+    pub const TUMU: [Self; 4] = [Self::Kapali, Self::Dusuk, Self::Orta, Self::Yuksek];
+
+    pub fn tumu() -> Vec<Self> {
+        Self::TUMU.to_vec()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ChatRequest {
     pub model: String,
@@ -139,6 +162,10 @@ pub struct ChatRequest {
     pub response_format: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat_template_kwargs: Option<Value>,
 }
 
 impl ChatRequest {
@@ -151,6 +178,29 @@ impl ChatRequest {
             stream_options: None,
             response_format: None,
             max_tokens: None,
+            reasoning_effort: None,
+            chat_template_kwargs: None,
+        }
+    }
+
+    pub fn efor_uygula(&mut self, efor: DusunceEforu) {
+        match efor {
+            DusunceEforu::Kapali => {
+                self.reasoning_effort = None;
+                self.chat_template_kwargs = Some(serde_json::json!({ "enable_thinking": false }));
+            }
+            DusunceEforu::Dusuk => {
+                self.reasoning_effort = Some("low".to_string());
+                self.chat_template_kwargs = None;
+            }
+            DusunceEforu::Orta => {
+                self.reasoning_effort = Some("medium".to_string());
+                self.chat_template_kwargs = None;
+            }
+            DusunceEforu::Yuksek => {
+                self.reasoning_effort = Some("high".to_string());
+                self.chat_template_kwargs = None;
+            }
         }
     }
 }
@@ -289,6 +339,8 @@ pub struct ModelInfo {
     pub modalities: Vec<String>,
     #[serde(default)]
     pub pricing: Option<Pricing>,
+    #[serde(default, alias = "reasoning_efforts")]
+    pub eforlar: Vec<DusunceEforu>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

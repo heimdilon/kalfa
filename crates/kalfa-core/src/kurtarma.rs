@@ -6,7 +6,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
-use kalfa_evren::tipler::{ChatMessage, Role, ToolDef};
+use kalfa_evren::tipler::{ChatMessage, DusunceEforu, Role, ToolDef};
 
 use crate::butce::{ButceDurumu, ButceGorunumu, ButceHatasi};
 use crate::denetci::DenetimSonucu;
@@ -36,6 +36,7 @@ pub struct BilinmeyenCagri {
 pub struct KurtarilmisDurum {
     pub oturum: OturumId,
     pub model: String,
+    pub efor: Option<DusunceEforu>,
     pub kip: Kip,
     pub calisma_alani: Option<PathBuf>,
     /// Kayıtta bulunan bağlam mesajları.
@@ -93,6 +94,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
         return Err(KurtarmaHatasi::AcilisYok);
     };
     let (mut model, mut kip) = (model.clone(), *kip);
+    let mut efor: Option<DusunceEforu> = None;
     let mut mesajlar = Vec::new();
     let mut mesaj_bilgileri = Vec::new();
     let mut gonderilen = 0usize;
@@ -185,6 +187,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
             }
             KayitOgesi::KipDegisti { kip: k } => kip = *k,
             KayitOgesi::ModelDegisti { model: m } => model = m.clone(),
+            KayitOgesi::EforDegisti { efor: e } => efor = Some(*e),
             KayitOgesi::AracBasladi {
                 cagri,
                 model_cagri_id,
@@ -267,6 +270,7 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
     Ok(KurtarilmisDurum {
         oturum: ilk.oturum,
         model,
+        efor,
         kip,
         calisma_alani: calisma_alani.clone(),
         mesajlar,

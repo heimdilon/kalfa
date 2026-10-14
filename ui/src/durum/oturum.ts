@@ -9,6 +9,7 @@ import type {
   CagriId,
   DenetimSonucu,
   DurumOzeti,
+  DusunceEforu,
   GecmisSayfasi,
   GeriAlmaPlani,
   GeriAlmaSonucu,
@@ -148,6 +149,7 @@ export type Girdi =
   | { tip: 'MesajGonderildi'; metin: string }
   | { tip: 'OnayYanitlandi'; islem: IslemId }
   | { tip: 'ModelDegisti'; model: string }
+  | { tip: 'EforDegisti'; efor: DusunceEforu }
   | { tip: 'KipDegisti'; kip: Kip }
   | { tip: 'OnizlemeYanitlandi'; islem: IslemId }
   /** Gönderim kararı arka uca ulaşmadı; kart yeniden karar bekler. */
@@ -311,6 +313,8 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
       return { ...durum, ozet: { ...durum.ozet, onizleme_acik: girdi.acik } };
     case 'ModelDegisti':
       return { ...durum, ozet: { ...durum.ozet, model: girdi.model } };
+    case 'EforDegisti':
+      return { ...durum, ozet: { ...durum.ozet, efor: girdi.efor } };
     case 'KipDegisti':
       return { ...durum, ozet: { ...durum.ozet, kip: girdi.kip } };
     case 'ButceYanitlandi': {
