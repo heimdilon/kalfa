@@ -11,7 +11,7 @@ use std::sync::{Mutex, RwLock};
 
 use crate::profil::{self, AlanBilgisi, GitKimligi, Korumali, OzelDizinler, alan_kimligi};
 use crate::{
-    BaslatmaHatasi, CalistirmaIstegi, HazirAlan, Surec, Yalitici, YalitimDurumu,
+    BaslatmaHatasi, CalistirmaIstegi, HazirAlan, KomutBicimi, Surec, Yalitici, YalitimDurumu,
     YalitimYoklukNedeni, program,
 };
 
@@ -425,6 +425,20 @@ impl WindowsYalitici {
             ace.dacl_oncelerini_guncelle(|onceki| {
                 guvenlik::dacl_sddl_sidini_kaldir(onceki, &paket)
             })?;
+            // Sunucuların yetenek SID'leri (1.1a §5.6) alanla birlikte gider.
+            let onek = format!("{kimlik}/mcp/");
+            let mut sunucular: Vec<String> = ace
+                .girdiler()
+                .iter()
+                .map(|g| g.alan().to_string())
+                .filter(|a| a.starts_with(&onek))
+                .collect();
+            sunucular.sort();
+            sunucular.dedup();
+            for kayit in sunucular {
+                kayda_gore_geri_al(ace, &kayit)?;
+                ace.alani_cikar(&kayit, &[])?;
+            }
             kayda_gore_geri_al(ace, kimlik)?;
         }
         guvenlik::profil_sil(&ad)?;
@@ -505,6 +519,52 @@ impl Yalitici for WindowsYalitici {
                 }
             }
             None => Surec::baslat(istek),
+        }
+    }
+
+    fn baslat_etkilesimli(
+        &self,
+        istek: &crate::EtkilesimliIstek,
+    ) -> Result<crate::EtkilesimliSurec, BaslatmaHatasi> {
+        crate::etkilesimli::sunucu_adi_dogrula(&istek.sunucu)?;
+        crate::mcp_kip_uyusmasi(istek.kip, self.durum().hazir_mi())?;
+        if istek.kip == crate::CalistirmaKipi::TamErisim {
+            let ayar = self.ayar();
+            // Kök iki kipte ortaktır; yalıtımlı başlatma onu korumalı bekler.
+            let kimlik = alan_kimligi(&istek.alan.kok);
+            let yetenek = guvenlik::yetenek_sidi(&sunucu_yetenek_adi(&kimlik, &istek.sunucu))
+                .map_err(yalitim_hatasi)?;
+            sunucu_kokunu_kur(
+                &self.ace(),
+                &ayar.yalitim_dizini,
+                &kimlik,
+                &istek.sunucu,
+                &yetenek,
+            )
+            .map_err(yalitim_hatasi)?;
+            return crate::surec::tam_erisimle(istek, &ayar.yalitim_dizini, &ayar.git);
+        }
+        // Kabuktaki gibi: ACE kilidi izin değişikliklerini ve başlatmayı
+        // sıraya sokar.
+        let mut ace = self.ace();
+        self.sunucuyu_baslat(istek, &mut ace)
+    }
+
+    fn sunucu_kokunu_kaldir(&self, alan_koku: &Path, sunucu: &str) -> Result<(), String> {
+        crate::etkilesimli::sunucu_adi_dogrula(sunucu).map_err(|e| e.to_string())?;
+        let kimlik = alan_kimligi(alan_koku);
+        let kayit = sunucu_kaydi(&kimlik, sunucu);
+        let mut ace = self.ace();
+        if ace.bozuk_mu() {
+            return Err("ACE kaydı bozuk; sunucu kökü kaldırılmadı".into());
+        }
+        kayda_gore_geri_al(&mut ace, &kayit).map_err(|e| e.to_string())?;
+        ace.alani_cikar(&kayit, &[]).map_err(|e| e.to_string())?;
+        let kok = crate::sunucu_ozel(&self.ayar().yalitim_dizini, &kimlik, sunucu).kok;
+        match std::fs::remove_dir_all(&kok) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -710,103 +770,17 @@ impl WindowsYalitici {
             ));
         }
 
+        let is = crate::agac::Is::yeni(true).map_err(yalitim_hatasi)?;
         if istek.ag {
-            let kaynak_kopru = match ayar.kopru.as_ref() {
-                Some(k) if k.is_file() => k,
-                _ => {
-                    return Err(BaslatmaHatasi::Yalitim(
-                        "Ağlı yalıtımlı komut başlatılamadı: köprü bulunamadı".into(),
-                    ));
-                }
-            };
-            let kopru_dizini = ozel.kok.join("kopru");
-            std::fs::create_dir_all(&kopru_dizini).map_err(|e| {
-                BaslatmaHatasi::Yalitim(format!(
-                    "Ağlı yalıtımlı komut başlatılamadı: köprü kopyalanamadı ({e})"
-                ))
-            })?;
-            let kopru_izni_var = guvenlik::aceler_oku(&kopru_dizini)
-                .map(|aceler| {
-                    aceler.iter().any(|a| {
-                        a.tur == 0
-                            && a.maske & MASKE_OKU == MASKE_OKU
-                            && a.sid.as_ref() == Some(&paket)
-                    })
-                })
-                .unwrap_or(false);
-            if !kopru_izni_var {
-                let izin = Izin {
-                    sid: paket.clone(),
-                    maske: MASKE_OKU,
-                    miras: MIRAS,
-                };
-                guvenlik::izin_ekle(&kopru_dizini, &izin).map_err(|e| {
-                    BaslatmaHatasi::Yalitim(format!(
-                        "Ağlı yalıtımlı komut başlatılamadı: köprü dizini izni verilemedi ({e})"
-                    ))
-                })?;
-            }
-            let hedef_kopru = kopru_dizini.join("kalfa-kopru.exe");
-            let ayni_mi = if hedef_kopru.is_file() {
-                match (dosya_sha256(kaynak_kopru), dosya_sha256(&hedef_kopru)) {
-                    (Ok(h1), Ok(h2)) => h1 == h2,
-                    _ => false,
-                }
-            } else {
-                false
-            };
-            if !ayni_mi {
-                std::fs::copy(kaynak_kopru, &hedef_kopru).map_err(|e| {
-                    BaslatmaHatasi::Yalitim(format!(
-                        "Ağlı yalıtımlı komut başlatılamadı: köprü kopyalanamadı ({e})"
-                    ))
-                })?;
-            }
-
-            let ayar_vekil = crate::vekil::VekilAyari {
-                liste: istek
-                    .ag_listesi
-                    .clone()
-                    .unwrap_or_else(|| crate::vekil::IzinListesi::yeni(&[], &[])),
-                cozucu: ayar
-                    .vekil_cozucu
-                    .clone()
-                    .unwrap_or_else(|| std::sync::Arc::new(crate::vekil::SistemCozucu)),
-                yerel_izin: ayar.vekil_yerel_izin,
-                ..Default::default()
-            };
-            let vekil = std::sync::Arc::new(crate::vekil::Vekil::baslat(ayar_vekil));
-
-            let is = crate::agac::Is::yeni(true).map_err(yalitim_hatasi)?;
-            let gelistirici = guvenlik::kullanici_sidi().map_err(yalitim_hatasi)?;
-            let boru = match super::kopru::BoruSunucusu::ac(
+            let (kopru_komut, kap_ortami, ag_kapatici) = ag_hazirla(
+                &ayar,
+                &ozel,
                 &paket,
-                &gelistirici,
                 &is,
-                vekil.clone(),
-                64,
-            ) {
-                Ok(b) => b,
-                Err(e) => {
-                    return Err(BaslatmaHatasi::Yalitim(format!(
-                        "Ağlı yalıtımlı komut başlatılamadı: boru açılamadı ({e})"
-                    )));
-                }
-            };
-
-            let mut kap_ortami = ortam;
-            kap_ortami.push((
-                "KALFA_KOPRU_UYGULAMA".into(),
-                komut.uygulama.display().to_string(),
-            ));
-            kap_ortami.push((
-                "KALFA_KOPRU_SATIR".into(),
-                String::from_utf16_lossy(&komut.satir),
-            ));
-            kap_ortami.push(("KALFA_KOPRU_BORU".into(), boru.ad().to_string()));
-
-            let kopru_komut =
-                komut_satiri::uret(&hedef_kopru, &[], &cmd).map_err(yalitim_hatasi)?;
+                istek.ag_listesi.clone(),
+                &komut,
+                ortam,
+            )?;
             let kap_istegi = KapIstegi {
                 komut: &kopru_komut,
                 dizin: &calisma_dizini,
@@ -816,16 +790,9 @@ impl WindowsYalitici {
             };
             let kap = kap::baslat(&kap_istegi, &is).map_err(yalitim_hatasi)?;
             let mut surec = Surec::kaptan(kap, is);
-            let ag_kapatici: crate::surec::AgKapatici = Box::new(move || {
-                Box::pin(async move {
-                    boru.kapat();
-                    vekil.bitir().await
-                })
-            });
             surec.ag_kapat_ekle(ag_kapatici);
             Ok(surec)
         } else {
-            let is = crate::agac::Is::yeni(true).map_err(yalitim_hatasi)?;
             let kap_istegi = KapIstegi {
                 komut: &komut,
                 dizin: &calisma_dizini,
@@ -836,6 +803,382 @@ impl WindowsYalitici {
             let kap = kap::baslat(&kap_istegi, &is).map_err(yalitim_hatasi)?;
             Ok(Surec::kaptan(kap, is))
         }
+    }
+
+    /// Sunucuyu yalıtımda başlatır (1.1a §4.1, §5.6). ACE kilidi tutulurken
+    /// çağrılır.
+    fn sunucuyu_baslat(
+        &self,
+        istek: &crate::EtkilesimliIstek,
+        ace: &mut AceKaydi,
+    ) -> Result<crate::EtkilesimliSurec, BaslatmaHatasi> {
+        if let Some(neden) = self
+            .okunur_izin_hatasi
+            .read()
+            .unwrap_or_else(|z| z.into_inner())
+            .as_ref()
+        {
+            return Err(BaslatmaHatasi::Yalitim(neden.clone()));
+        }
+        if ace.bozuk_mu() {
+            return Err(BaslatmaHatasi::Yalitim(
+                "ACE kaydı bozuk; sunucu başlatılmadı".into(),
+            ));
+        }
+        let kimlik = alan_kimligi(&istek.alan.kok);
+        if !ace.hazir_mi(&kimlik) {
+            return Err(BaslatmaHatasi::Yalitim(
+                "çalışma alanı yalıtım için hazırlanmadı".into(),
+            ));
+        }
+        let ayar = self.ayar();
+        let ad = profil_adi(&kimlik);
+        let paket = guvenlik::profil_olustur(&ad, "Kalfa çalışma alanı yalıtımı")
+            .map_err(yalitim_hatasi)?;
+        let arac = guvenlik::arac_zinciri_sidi().map_err(yalitim_hatasi)?;
+        let sunucu_yetenegi = guvenlik::yetenek_sidi(&sunucu_yetenek_adi(&kimlik, &istek.sunucu))
+            .map_err(yalitim_hatasi)?;
+        let ozel = sunucu_kokunu_hazirla(
+            ace,
+            &ayar.yalitim_dizini,
+            &kimlik,
+            &istek.sunucu,
+            &ad,
+            &sunucu_yetenegi,
+            &ayar.git,
+        )
+        .map_err(yalitim_hatasi)?;
+        let alan_kok = guvenlik::sade(
+            &std::fs::canonicalize(&istek.alan.kok).map_err(BaslatmaHatasi::GirisCikis)?,
+        );
+        let (araclar, uygun) =
+            arac_yollarini_siniflandir(ace, &ayar, Some(&alan_kok)).map_err(yalitim_hatasi)?;
+        if !uygun {
+            return Err(BaslatmaHatasi::Yalitim(
+                "araç zinciri dizini çalışma alanı ya da Kalfa'nın özel verisiyle çakışıyor".into(),
+            ));
+        }
+        let ag = istek.ag_listesi.is_some();
+        // `yalitim_ortami` kalıtılan ortamı izin listesinden geçirir; adında
+        // `TOKEN`/`KEY` geçenleri de düşürür. Sunucunun ortamı yapılandırılmış
+        // değerleri taşır (1.1a §5.5): yalıtımın koyduğu değerler kalır,
+        // yalıtımın düşürdükleri PATH dışında geri eklenir.
+        let sunucu_ortami = crate::sunucu_ortami(&istek.ortam, &ozel);
+        let mut ortam = yalitim_ortami(&sunucu_ortami, &ozel, &ayar, &araclar, ag);
+        for (ad, deger) in &sunucu_ortami {
+            if !ad.eq_ignore_ascii_case("PATH") && deger_al(&ortam, ad).is_none() {
+                ortam.push((ad.clone(), deger.clone()));
+            }
+        }
+        let kokler = izinli_kokler(&ayar, &istek.alan, &ozel, &araclar);
+        let (program, argumanlar) = program::coz(
+            &KomutBicimi::Program {
+                program: istek.program.clone(),
+                argumanlar: istek.argumanlar.clone(),
+            },
+            &ortam,
+        )?;
+        let program = gorunen_program(&program, &kokler, &istek.alan, &ortam)?;
+        let komut =
+            komut_satiri::uret(&program, &argumanlar, &kap::sistem_dizini().join("cmd.exe"))
+                .map_err(yalitim_hatasi)?;
+        let yetenekler = vec![arac, sunucu_yetenegi];
+        let is = crate::agac::Is::yeni(true).map_err(yalitim_hatasi)?;
+        let (komut, ortam, ag_kapat) = if ag {
+            let kabuk_ozel = OzelDizinler::yol(&ayar.yalitim_dizini, &kimlik);
+            let (k, o, a) = ag_hazirla(
+                &ayar,
+                &kabuk_ozel,
+                &paket,
+                &is,
+                istek.ag_listesi.clone(),
+                &komut,
+                ortam,
+            )?;
+            (k, o, Some(a))
+        } else {
+            (komut, ortam, None)
+        };
+        let kap = kap::baslat_etkilesimli(
+            &KapIstegi {
+                komut: &komut,
+                dizin: &ozel.ev,
+                ortam: &ortam,
+                paket: &paket,
+                yetenekler: &yetenekler,
+            },
+            &is,
+        )
+        .map_err(yalitim_hatasi)?;
+        let mut surec = crate::EtkilesimliSurec::kaptan(kap, is)?;
+        if let Some(k) = ag_kapat {
+            surec.ag_kapat_ekle(k);
+        }
+        Ok(surec)
+    }
+}
+
+/// Köprünün komutu, köprünün ortamı ve ağın kapatıcısı.
+type AgHazirligi = (
+    komut_satiri::KomutSatiri,
+    Vec<(String, String)>,
+    crate::surec::AgKapatici,
+);
+
+/// Ağlı başlatma (§9.3, 1.1a §4.1): köprü kopyası, vekil ve `is`'e bağlı
+/// boru sunucusu. Boru yalnız bu işteki istemciyi kabul eder; köprü de asıl
+/// komut da aynı işte başlamalıdır. Asıl komut ve boru adı köprünün ortamına
+/// `KALFA_KOPRU_*` olarak girer; köprü onları çocuğa geçirmez. Dönen komut
+/// köprüdür. Köprünün kopyası kabuğun özel kökündedir (`ozel`).
+fn ag_hazirla(
+    ayar: &WindowsAyari,
+    ozel: &OzelDizinler,
+    paket: &Sid,
+    is: &crate::agac::Is,
+    liste: Option<crate::vekil::IzinListesi>,
+    komut: &komut_satiri::KomutSatiri,
+    ortam: Vec<(String, String)>,
+) -> Result<AgHazirligi, BaslatmaHatasi> {
+    let kaynak_kopru = match ayar.kopru.as_ref() {
+        Some(k) if k.is_file() => k,
+        _ => {
+            return Err(BaslatmaHatasi::Yalitim(
+                "Ağlı yalıtımlı komut başlatılamadı: köprü bulunamadı".into(),
+            ));
+        }
+    };
+    let kopru_dizini = ozel.kok.join("kopru");
+    std::fs::create_dir_all(&kopru_dizini).map_err(|e| {
+        BaslatmaHatasi::Yalitim(format!(
+            "Ağlı yalıtımlı komut başlatılamadı: köprü kopyalanamadı ({e})"
+        ))
+    })?;
+    let kopru_izni_var = guvenlik::aceler_oku(&kopru_dizini)
+        .map(|aceler| {
+            aceler.iter().any(|a| {
+                a.tur == 0 && a.maske & MASKE_OKU == MASKE_OKU && a.sid.as_ref() == Some(paket)
+            })
+        })
+        .unwrap_or(false);
+    if !kopru_izni_var {
+        let izin = Izin {
+            sid: paket.clone(),
+            maske: MASKE_OKU,
+            miras: MIRAS,
+        };
+        guvenlik::izin_ekle(&kopru_dizini, &izin).map_err(|e| {
+            BaslatmaHatasi::Yalitim(format!(
+                "Ağlı yalıtımlı komut başlatılamadı: köprü dizini izni verilemedi ({e})"
+            ))
+        })?;
+    }
+    let hedef_kopru = kopru_dizini.join("kalfa-kopru.exe");
+    let ayni_mi = if hedef_kopru.is_file() {
+        match (dosya_sha256(kaynak_kopru), dosya_sha256(&hedef_kopru)) {
+            (Ok(h1), Ok(h2)) => h1 == h2,
+            _ => false,
+        }
+    } else {
+        false
+    };
+    if !ayni_mi {
+        std::fs::copy(kaynak_kopru, &hedef_kopru).map_err(|e| {
+            BaslatmaHatasi::Yalitim(format!(
+                "Ağlı yalıtımlı komut başlatılamadı: köprü kopyalanamadı ({e})"
+            ))
+        })?;
+    }
+
+    let ayar_vekil = crate::vekil::VekilAyari {
+        liste: liste.unwrap_or_else(|| crate::vekil::IzinListesi::yeni(&[], &[])),
+        cozucu: ayar
+            .vekil_cozucu
+            .clone()
+            .unwrap_or_else(|| std::sync::Arc::new(crate::vekil::SistemCozucu)),
+        yerel_izin: ayar.vekil_yerel_izin,
+        ..Default::default()
+    };
+    let vekil = std::sync::Arc::new(crate::vekil::Vekil::baslat(ayar_vekil));
+    let gelistirici = guvenlik::kullanici_sidi().map_err(yalitim_hatasi)?;
+    let boru = match super::kopru::BoruSunucusu::ac(paket, &gelistirici, is, vekil.clone(), 64) {
+        Ok(b) => b,
+        Err(e) => {
+            return Err(BaslatmaHatasi::Yalitim(format!(
+                "Ağlı yalıtımlı komut başlatılamadı: boru açılamadı ({e})"
+            )));
+        }
+    };
+
+    let mut kap_ortami = ortam;
+    kap_ortami.push((
+        "KALFA_KOPRU_UYGULAMA".into(),
+        komut.uygulama.display().to_string(),
+    ));
+    kap_ortami.push((
+        "KALFA_KOPRU_SATIR".into(),
+        String::from_utf16_lossy(&komut.satir),
+    ));
+    kap_ortami.push(("KALFA_KOPRU_BORU".into(), boru.ad().to_string()));
+    let cmd = kap::sistem_dizini().join("cmd.exe");
+    let kopru_komut = komut_satiri::uret(&hedef_kopru, &[], &cmd).map_err(yalitim_hatasi)?;
+    let ag_kapatici: crate::surec::AgKapatici = Box::new(move || {
+        Box::pin(async move {
+            boru.kapat();
+            vekil.bitir().await
+        })
+    });
+    Ok((kopru_komut, kap_ortami, ag_kapatici))
+}
+
+fn sunucu_kaydi(alan: &str, sunucu: &str) -> String {
+    format!("{alan}/mcp/{sunucu}")
+}
+
+fn sunucu_yetenek_adi(alan: &str, sunucu: &str) -> String {
+    format!("kalfa-mcp-{alan}-{sunucu}")
+}
+
+/// Sunucunun özel kökü (1.1a §3, §5.6; G1.3). `mcp` ve sunucu kökü mirassız
+/// (korumalı) DACL'le kurulur: yalnız geliştirici, SYSTEM ve Administrators.
+/// Üst dizinlerden gelen paket ya da ortak yetenek izni sınırı aşamaz.
+/// Kökte yalnız listeleme, `ev`/`gecici`/`onbellek`'te miraslı değiştirme
+/// yalnız sunucunun yetenek SID'ine verilir; ACE'ler sunucu kaydına yazılır.
+/// Var olan kök ilk değişiklikten önce denetlenir: mirası açıksa ya da başka
+/// bir kimliğe izin veriyorsa başlatma reddedilir ve hiçbir şey değişmez.
+fn sunucu_kokunu_hazirla(
+    ace: &mut AceKaydi,
+    yalitim_dizini: &Path,
+    alan: &str,
+    sunucu: &str,
+    profil_adi: &str,
+    yetenek: &Sid,
+    git: &GitKimligi,
+) -> io::Result<OzelDizinler> {
+    let kayit = sunucu_kaydi(alan, sunucu);
+    let (mcp, ozel) = sunucu_kokunu_kur(ace, yalitim_dizini, alan, sunucu, yetenek)?;
+    ozel.hazirla(git)?;
+    let listele = Izin {
+        sid: yetenek.clone(),
+        maske: MASKE_LISTELE,
+        miras: MIRAS_YOK,
+    };
+    for yol in [&mcp, &ozel.kok] {
+        izin_kaydet_ve_ver(ace, &kayit, yol, &listele)?;
+    }
+    let degistir = Izin {
+        sid: yetenek.clone(),
+        maske: MASKE_DEGISTIR,
+        miras: MIRAS,
+    };
+    for yol in [&ozel.ev, &ozel.gecici, &ozel.onbellek] {
+        izin_kaydet_ve_ver(ace, &kayit, yol, &degistir)?;
+    }
+    // Windows kabın TEMP'ini `LOCALAPPDATA\Packages\<paket>\AC\Temp`'e çevirir.
+    profil::guvenli_dizin(
+        &ozel.kok,
+        Path::new("ev/Packages")
+            .join(profil_adi)
+            .join("AC")
+            .join("Temp")
+            .as_path(),
+    )?;
+    profil::guvenli_dizin(&ozel.kok, Path::new("ev/Roaming"))?;
+    // Son denetim, araya giren bir değişikliği yakalar.
+    sunucu_kokunu_denetle(ace, yalitim_dizini, alan, sunucu, yetenek)?;
+    Ok(ozel)
+}
+
+/// `mcp` ve sunucunun kökü. Önce var olanlar denetlenir; sonra eksikler
+/// mirassız ve yalnız geliştirici, SYSTEM ve Administrators'la oluşturulur.
+fn sunucu_kokunu_kur(
+    ace: &AceKaydi,
+    yalitim_dizini: &Path,
+    alan: &str,
+    sunucu: &str,
+    yetenek: &Sid,
+) -> io::Result<(PathBuf, OzelDizinler)> {
+    let (mcp, ozel) = sunucu_kokunu_denetle(ace, yalitim_dizini, alan, sunucu, yetenek)?;
+    std::fs::create_dir_all(yalitim_dizini)?;
+    profil::guvenli_dizin(yalitim_dizini, Path::new(alan))?;
+    let temel = temel_izinler(true)?;
+    for yol in [&mcp, &ozel.kok] {
+        match guvenlik::korumali_dizin_olustur(yol, &temel) {
+            // Var olan dizin yukarıda denetlendi.
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok((mcp, ozel))
+}
+
+/// Var olan `mcp`, sunucu kökü ve özel alt dizinleri değiştirmeden denetler.
+/// Olmayan dizin geçer. Bağlantı, mirası açık kök ya da izinli kimlikler
+/// dışında bir kimlik hatadır. `mcp`'de aynı alanın öbür sunucularının
+/// kayıtlı listeleme izinleri de vardır.
+fn sunucu_kokunu_denetle(
+    ace: &AceKaydi,
+    yalitim_dizini: &Path,
+    alan: &str,
+    sunucu: &str,
+    yetenek: &Sid,
+) -> io::Result<(PathBuf, OzelDizinler)> {
+    let mcp = OzelDizinler::yol(yalitim_dizini, alan).kok.join("mcp");
+    let ozel = crate::sunucu_ozel(yalitim_dizini, alan, sunucu);
+    let mut izinli: Vec<Sid> = temel_izinler(true)?.into_iter().map(|i| i.sid).collect();
+    izinli.push(yetenek.clone());
+    mevcut_dizini_denetle(&ozel.kok, true, &izinli)?;
+    for yol in [&ozel.ev, &ozel.gecici, &ozel.onbellek] {
+        mevcut_dizini_denetle(yol, false, &izinli)?;
+    }
+    let onek = format!("{alan}/mcp/");
+    for girdi in ace.girdiler() {
+        if let Girdi::Izin { alan, yol, sid, .. } = girdi
+            && alan.starts_with(&onek)
+            && yol == &mcp
+        {
+            izinli.push(Sid::metinden(sid)?);
+        }
+    }
+    mevcut_dizini_denetle(&mcp, true, &izinli)?;
+    Ok((mcp, ozel))
+}
+
+fn mevcut_dizini_denetle(yol: &Path, korumali: bool, izinli: &[Sid]) -> io::Result<()> {
+    match std::fs::symlink_metadata(yol) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+        Ok(_) => {}
+    }
+    guvenlik::yeniden_ayristirma_izlemeden_ac(yol, true)?;
+    if korumali && !guvenlik::mirasi_kesik_mi(yol)? {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{}: sunucu kökünün mirası açık", yol.display()),
+        ));
+    }
+    yalniz_izinli_kimlikler(yol, izinli)
+}
+
+/// Dizinin DACL'inde `izinli` dışında kimlik yoksa `Ok`.
+fn yalniz_izinli_kimlikler(yol: &Path, izinli: &[Sid]) -> io::Result<()> {
+    let fazla: Vec<String> = guvenlik::aceler_oku(yol)?
+        .iter()
+        .filter_map(|a| a.sid.as_ref())
+        .filter(|sid| !izinli.contains(sid))
+        .map(Sid::metin)
+        .collect();
+    if fazla.is_empty() {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "{}: sunucu kökünde beklenmeyen izin: {}",
+                yol.display(),
+                fazla.join(", ")
+            ),
+        ))
     }
 }
 

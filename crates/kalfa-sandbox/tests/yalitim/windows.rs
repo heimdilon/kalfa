@@ -2181,3 +2181,471 @@ async fn agsiz_komut_degismedi() {
 
     k.temizle(&[alan]);
 }
+
+// --- 1.1a-1: etkileşimli süreç (G1'in ürün başlatıcısıyla karşılıkları) ---
+
+fn etkilesimli_istek(
+    alan: &AlanBilgisi,
+    sunucu: &str,
+    betik: &str,
+) -> kalfa_sandbox::EtkilesimliIstek {
+    kalfa_sandbox::EtkilesimliIstek {
+        program: powershell_yolu().display().to_string(),
+        argumanlar: vec![
+            "-NoLogo".into(),
+            "-NoProfile".into(),
+            "-NonInteractive".into(),
+            "-Command".into(),
+            betik.into(),
+        ],
+        ortam: vec![
+            (
+                "PATH".into(),
+                windows_koku().join("System32").display().to_string(),
+            ),
+            ("PATHEXT".into(), ".COM;.EXE;.BAT;.CMD".into()),
+        ],
+        kip: kalfa_sandbox::CalistirmaKipi::Yalitimli,
+        sunucu: sunucu.into(),
+        alan: alan.clone(),
+        ag_listesi: None,
+    }
+}
+
+async fn tum_cikti(s: &mut kalfa_sandbox::EtkilesimliSurec) -> String {
+    let mut m = String::new();
+    tokio::io::AsyncReadExt::read_to_string(&mut s.cikti_al().unwrap(), &mut m)
+        .await
+        .unwrap();
+    m
+}
+
+const YANKI: &str = "[Console]::InputEncoding=[Text.Encoding]::UTF8;[Console]::OutputEncoding=[Text.Encoding]::UTF8;while(($s=[Console]::In.ReadLine()) -ne $null){[Console]::Out.WriteLine($s);[Console]::Out.Flush()}";
+
+fn yetenek(kimlik: &str, sunucu: &str) -> Sid {
+    guvenlik::yetenek_sidi(&format!("kalfa-mcp-{kimlik}-{sunucu}")).unwrap()
+}
+
+fn sid_var(yol: &Path, sid: &Sid) -> bool {
+    guvenlik::aceler_oku(yol)
+        .unwrap()
+        .iter()
+        .any(|a| a.sid.as_ref() == Some(sid))
+}
+
+/// G1.1 (ürün başlatıcısıyla): 1 000 JSON-RPC satırı, 1 MiB'lık satır ve
+/// UTF-8 birebir; EOF'ta çıkış.
+#[tokio::test]
+async fn etkilesimli_borular_birebir_yankilanir() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let k = kurgu();
+    let alan = k.alan(&k.kok);
+    let mut s =
+        k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "yanki", YANKI))
+            .unwrap();
+    let mut girdi = s.girdi_al().unwrap();
+    let mut cikti = BufReader::new(s.cikti_al().unwrap()).lines();
+    let mut gonderilen: Vec<String> = (0..1000)
+        .map(|i| format!("{{\"jsonrpc\":\"2.0\",\"id\":{i},\"method\":\"ping\"}}"))
+        .collect();
+    gonderilen.push("x".repeat(1024 * 1024));
+    gonderilen.push("{\"metin\":\"çğıöşü\"}".into());
+    let g = gonderilen.clone();
+    let yazici = tokio::spawn(async move {
+        for s in g {
+            girdi.write_all(s.as_bytes()).await.unwrap();
+            girdi.write_all(b"\n").await.unwrap();
+        }
+    });
+    let mut alinan = Vec::new();
+    while let Some(s) = cikti.next_line().await.unwrap() {
+        alinan.push(s.trim_end_matches('\r').to_string());
+    }
+    yazici.await.unwrap();
+    assert_eq!(alinan, gonderilen);
+    assert_eq!(s.bitisi_bekle().await, Some(0));
+    assert!(s.kapat().await.unwrap().kendiliginden);
+    k.temizle(&[alan]);
+}
+
+/// G1.2 (ürün başlatıcısıyla): torun yaşar, ping'lere yanıt verilir, EOF
+/// yok sayılır; `kapat` döndüğünde kök de torun da yaşamaz.
+#[tokio::test]
+async fn etkilesimli_uzun_yasar_kapat_agaci_durdurur() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let k = kurgu();
+    let alan = k.alan(&k.kok);
+    let betik = "$c = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\\timeout.exe') -ArgumentList @('/t','600','/nobreak') -PassThru -WindowStyle Hidden; \
+                 [Console]::Out.WriteLine(\"pid $PID $($c.Id)\"); [Console]::Out.Flush(); \
+                 while(($s=[Console]::In.ReadLine()) -ne $null){[Console]::Out.WriteLine(\"pong $s\");[Console]::Out.Flush()}; Start-Sleep 600";
+    let mut s =
+        k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "uzun", betik))
+            .unwrap();
+    let mut girdi = s.girdi_al().unwrap();
+    let mut cikti = BufReader::new(s.cikti_al().unwrap()).lines();
+    let ilk = cikti.next_line().await.unwrap().unwrap();
+    let pidler: Vec<u32> = ilk
+        .split_whitespace()
+        .filter_map(|p| p.trim().parse().ok())
+        .collect();
+    assert_eq!(pidler.len(), 2, "{ilk}");
+    for i in 1..=5 {
+        girdi.write_all(format!("{i}\n").as_bytes()).await.unwrap();
+        assert_eq!(
+            cikti
+                .next_line()
+                .await
+                .unwrap()
+                .map(|s| s.trim_end().to_string()),
+            Some(format!("pong {i}"))
+        );
+        tokio::time::sleep(Duration::from_secs(3)).await;
+    }
+    drop(girdi);
+    assert!(pidler.iter().all(|p| surec_aktif_mi(*p)));
+    let bas = std::time::Instant::now();
+    let kapanis = s.kapat().await.unwrap();
+    assert!(!kapanis.kendiliginden);
+    assert!(
+        bas.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        bas.elapsed()
+    );
+    for p in &pidler {
+        assert!(!surec_aktif_mi(*p), "kapat'tan sonra süreç yaşıyor: {p}");
+    }
+    k.temizle(&[alan]);
+}
+
+/// G1.3 (ürün başlatıcısıyla), Review Focus 4–5 ve Codex 3: üst dizinde
+/// miraslı paket ve ortak araç yeteneği izni varken de sunucunun kökü yalnız
+/// onun yetenek SID'ine açıktır. Kabuk (aynı paket, yeteneksiz), öbür
+/// sunucu ve başka alanın kabuğu okuyamaz, yazamaz. A kaldırılınca B kalır;
+/// alan kaldırılınca B'nin izinleri de geri alınır.
+#[tokio::test]
+async fn etkilesimli_sunucu_koku_yetenek_sidiyle_ayrilir_ve_izinler_geri_alinir() {
+    let k = kurgu();
+    let alan = k.alan(&k.kok);
+    let baska = k.alan(&k.baska_kok);
+    let kimlik = alan_kimligi(&k.kok);
+    let paket = guvenlik::profil_sidi(&format!("Kalfa.Alan.{kimlik}")).unwrap();
+    let arac = guvenlik::arac_zinciri_sidi().unwrap();
+    let miraslilar = [
+        Izin {
+            sid: paket.clone(),
+            maske: guvenlik::MASKE_DEGISTIR,
+            miras: guvenlik::MIRAS,
+        },
+        Izin {
+            sid: arac.clone(),
+            maske: MASKE_OKU,
+            miras: guvenlik::MIRAS,
+        },
+    ];
+    for izin in &miraslilar {
+        guvenlik::izin_ekle(&k.yalitim_dizini, izin).unwrap();
+    }
+    let a = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &kimlik, "a");
+    let b = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &kimlik, "b");
+    let dene = |hedef: &Path| {
+        format!(
+            "try {{ Set-Content -LiteralPath (Join-Path '{0}' 'g1.txt') 'g1' -ErrorAction Stop; 'yaz=TAMAM' }} catch {{ 'yaz=RED' }}; \
+             try {{ Get-ChildItem -LiteralPath '{0}' -ErrorAction Stop | Out-Null; 'oku=TAMAM' }} catch {{ 'oku=RED' }}",
+            hedef.display()
+        )
+    };
+    // B'nin ve A'nın kökü kurulsun; A'nın ikinci başlatması önceden var olan
+    // kökü kullanır.
+    for ad in ["b", "a"] {
+        let s =
+            k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, ad, "exit 0"))
+                .unwrap();
+        s.kapat().await.unwrap();
+    }
+    for yol in [&a.kok, &a.kok.parent().unwrap().to_path_buf()] {
+        assert!(guvenlik::mirasi_kesik_mi(yol).unwrap(), "{}", yol.display());
+        assert!(
+            !sid_var(yol, &paket) && !sid_var(yol, &arac),
+            "{}",
+            yol.display()
+        );
+    }
+    let mut s =
+        k.y.baslat_etkilesimli(&etkilesimli_istek(
+            &alan,
+            "a",
+            &format!("{}; {}", dene(&a.ev), dene(&b.ev)),
+        ))
+        .unwrap();
+    let m = tum_cikti(&mut s).await;
+    s.kapat().await.unwrap();
+    let satir: Vec<&str> = m.lines().map(str::trim).collect();
+    assert_eq!(
+        satir,
+        ["yaz=TAMAM", "oku=TAMAM", "yaz=RED", "oku=RED"],
+        "{m}"
+    );
+    for kabuk in [&alan, &baska] {
+        let sonuc = k.calistir(kabuk, false, &dene(&a.ev)).await;
+        assert!(
+            sonuc.standart.contains("yaz=RED") && sonuc.standart.contains("oku=RED"),
+            "{}",
+            sonuc.standart
+        );
+    }
+    let mcp = a.kok.parent().unwrap().to_path_buf();
+    let (ya, yb) = (yetenek(&kimlik, "a"), yetenek(&kimlik, "b"));
+    k.y.sunucu_kokunu_kaldir(&k.kok, "a").unwrap();
+    assert!(!a.kok.exists());
+    assert!(!sid_var(&mcp, &ya));
+    assert!(b.ev.exists() && sid_var(&b.ev, &yb) && sid_var(&mcp, &yb));
+    k.y.alani_kaldir(&alan).unwrap();
+    assert!(!sid_var(&mcp, &yb) && !sid_var(&b.ev, &yb));
+    for izin in &miraslilar {
+        guvenlik::izni_kaldir(&k.yalitim_dizini, &izin.sid).unwrap();
+    }
+    k.temizle(&[baska]);
+}
+
+/// Reddin hiçbir şeyi değiştirmediğini ölçmek için: dizinlerin SDDL'i,
+/// dosya içerikleri ve ACE kaydı.
+fn anlik(dizinler: &[&Path], dosyalar: &[PathBuf], kayit: &Path) -> Vec<String> {
+    let mut v: Vec<String> = dizinler
+        .iter()
+        .map(|y| guvenlik::dacl_sddl(y).unwrap())
+        .collect();
+    v.extend(
+        dosyalar
+            .iter()
+            .map(|d| std::fs::read_to_string(d).unwrap_or_else(|e| format!("yok: {e}"))),
+    );
+    v.push(std::fs::read_to_string(kayit).unwrap());
+    v
+}
+
+/// Codex 3 (r1, r2): önceden var olan kök mirası açıksa ya da korumalı ama
+/// beklenmeyen bir kimliğe izin veriyorsa sunucu başlamaz. Ret, ilk
+/// değişiklikten önce gelir: SDDL'ler, dosyalar, ACE kaydı ve öbür
+/// sunucunun izinleri aynı kalır.
+#[tokio::test]
+async fn etkilesimli_guvenli_olmayan_mevcut_kok_reddedilir() {
+    let k = kurgu();
+    let alan = k.alan(&k.kok);
+    let kimlik = alan_kimligi(&k.kok);
+    let paket = guvenlik::profil_sidi(&format!("Kalfa.Alan.{kimlik}")).unwrap();
+    let kayit = k.yalitim_dizini.join("ace-kaydi.jsonl");
+    let d = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &kimlik, "d");
+    let mcp = d.kok.parent().unwrap().to_path_buf();
+    let s =
+        k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "d", "exit 0"))
+            .unwrap();
+    s.kapat().await.unwrap();
+
+    // Mirası açık kök.
+    let c = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &kimlik, "c");
+    std::fs::create_dir_all(&c.ev).unwrap();
+    std::fs::write(c.ev.join(".gitconfig"), "ISARET-C").unwrap();
+    let dizinler = [mcp.as_path(), &c.kok, &c.ev, &d.kok, &d.ev];
+    let dosyalar = [c.ev.join(".gitconfig"), c.ev.join(".npmrc")];
+    let once = anlik(&dizinler, &dosyalar, &kayit);
+    let hata =
+        k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "c", "exit 0"))
+            .err()
+            .expect("mirası açık kök reddedilmeli");
+    assert!(format!("{hata}").contains("mirası açık"), "{hata}");
+    assert_eq!(anlik(&dizinler, &dosyalar, &kayit), once);
+
+    // Korumalı ama `ev`'inde paket izni olan kök.
+    let e = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &kimlik, "e");
+    let s =
+        k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "e", "exit 0"))
+            .unwrap();
+    s.kapat().await.unwrap();
+    let izin = Izin {
+        sid: paket.clone(),
+        maske: MASKE_OKU,
+        miras: MIRAS_YOK,
+    };
+    guvenlik::izin_ekle(&e.ev, &izin).unwrap();
+    std::fs::write(e.ev.join(".gitconfig"), "ISARET-E").unwrap();
+    std::fs::write(e.ev.join("isaret.txt"), "ISARET").unwrap();
+    let dizinler = [
+        mcp.as_path(),
+        &e.kok,
+        &e.ev,
+        &e.gecici,
+        &e.onbellek,
+        &d.kok,
+        &d.ev,
+    ];
+    let dosyalar = [
+        e.ev.join(".gitconfig"),
+        e.ev.join(".npmrc"),
+        e.ev.join(".curlrc"),
+        e.ev.join("isaret.txt"),
+    ];
+    let once = anlik(&dizinler, &dosyalar, &kayit);
+    let hata =
+        k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "e", "exit 0"))
+            .err()
+            .expect("beklenmeyen izinli kök reddedilmeli");
+    assert!(format!("{hata}").contains("beklenmeyen izin"), "{hata}");
+    assert_eq!(anlik(&dizinler, &dosyalar, &kayit), once);
+    // Tam erişim de aynı kökü reddeder.
+    let mut i = etkilesimli_istek(&alan, "e", "exit 0");
+    i.kip = kalfa_sandbox::CalistirmaKipi::TamErisim;
+    assert!(k.y.baslat_etkilesimli(&i).is_err());
+    assert_eq!(anlik(&dizinler, &dosyalar, &kayit), once);
+    guvenlik::izni_kaldir(&e.ev, &paket).unwrap();
+    k.temizle(&[alan]);
+}
+
+/// G1 bulgusu ve §3: ortam özel köke ve sistem değerlerine yönelir;
+/// `EVREN_`/`KALFA_` adları geçmez, yapılandırılmış belirteç geçer.
+#[tokio::test]
+async fn etkilesimli_ortam_ozel_koke_ve_sisteme_yonelir() {
+    let k = kurgu();
+    let alan = k.alan(&k.kok);
+    let mut i = etkilesimli_istek(
+        &alan,
+        "ortam",
+        "foreach($a in 'USERPROFILE','LOCALAPPDATA','HOME','NPM_CONFIG_CACHE','UV_CACHE_DIR','GITHUB_TOKEN','windir','SystemDrive','SystemRoot'){ \"$a=$([Environment]::GetEnvironmentVariable($a))\" }; \
+         'ayrilmis=' + ((Get-ChildItem env: | Where-Object { $_.Name -like 'EVREN_*' -or $_.Name -like 'KALFA_*' } | ForEach-Object Name) -join ',')",
+    );
+    i.ortam.push(("EVREN_API_KEY".into(), "evren_llm_x".into()));
+    i.ortam.push(("KALFA_E2E".into(), "1".into()));
+    i.ortam.push(("GITHUB_TOKEN".into(), "ghp_deneme".into()));
+    let mut s = k.y.baslat_etkilesimli(&i).unwrap();
+    let m = tum_cikti(&mut s).await;
+    s.kapat().await.unwrap();
+    let ozel = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &alan_kimligi(&k.kok), "ortam");
+    let es = |a: &str, b: &Path| {
+        deger(&m, a)
+            .trim()
+            .eq_ignore_ascii_case(&b.display().to_string())
+    };
+    assert!(es("USERPROFILE", &ozel.ev) && es("HOME", &ozel.ev), "{m}");
+    // AppContainer `LOCALAPPDATA`'yı `ev\Packages\<profil>\AC`'ye çevirir;
+    // yine özel kökün içindedir.
+    assert!(
+        Path::new(deger(&m, "LOCALAPPDATA").trim()).starts_with(&ozel.ev),
+        "{m}"
+    );
+    assert!(es("NPM_CONFIG_CACHE", &ozel.npm()), "{m}");
+    assert!(es("UV_CACHE_DIR", &ozel.onbellek.join("uv")), "{m}");
+    assert!(
+        es("windir", &windows_koku()) && es("SystemRoot", &windows_koku()),
+        "{m}"
+    );
+    assert!(!deger(&m, "SystemDrive").trim().is_empty(), "{m}");
+    assert_eq!(deger(&m, "GITHUB_TOKEN").trim(), "ghp_deneme", "{m}");
+    assert_eq!(deger(&m, "ayrilmis").trim(), "", "{m}");
+    k.temizle(&[alan]);
+}
+
+/// §4.1: tam erişim, yalıtım hazırken yalıtımsız başlar; yalıtımlı aynı
+/// sırrı okuyamaz.
+#[tokio::test]
+async fn etkilesimli_tam_erisim_yalitim_hazirken_yalitimsiz_baslar() {
+    let k = kurgu();
+    let alan = k.alan(&k.kok);
+    std::fs::write(k.ev.join(".ssh").join("id_rsa"), "GIZLI-SSH").unwrap();
+    let betik = format!(
+        "Get-Content -LiteralPath '{}' -ErrorAction SilentlyContinue",
+        k.ev.join(".ssh").join("id_rsa").display()
+    );
+    let mut i = etkilesimli_istek(&alan, "kip", &betik);
+    i.kip = kalfa_sandbox::CalistirmaKipi::TamErisim;
+    let mut s = k.y.baslat_etkilesimli(&i).unwrap();
+    assert!(tum_cikti(&mut s).await.contains("GIZLI-SSH"));
+    s.kapat().await.unwrap();
+    i.kip = kalfa_sandbox::CalistirmaKipi::Yalitimli;
+    let mut s = k.y.baslat_etkilesimli(&i).unwrap();
+    assert!(!tum_cikti(&mut s).await.contains("GIZLI-SSH"));
+    s.kapat().await.unwrap();
+    k.temizle(&[alan]);
+}
+
+/// Codex 2: ağlı sunucu köprüyle ve aynı işte başlar. stdin/stdout köprüden
+/// geçer; izinli hedefe vekilden ulaşılır, listede olmayan reddedilir;
+/// köprünün `KALFA_KOPRU_*` değerleri sunucuya geçmez. `kapat` döndüğünde
+/// iş boştur (köprü dahil) ve ağ özeti gelir.
+#[tokio::test]
+async fn etkilesimli_agli_sunucu_vekilden_cikar_ve_kapanista_temizlenir() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = dinleyici.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut soket, _)) = dinleyici.accept().await {
+            use tokio::io::AsyncReadExt;
+            let mut buf = [0u8; 1024];
+            let n = soket.read(&mut buf).await.unwrap_or(0);
+            if String::from_utf8_lossy(&buf[..n]).starts_with("CONNECT") {
+                let _ = soket
+                    .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                    .await;
+            } else {
+                let _ = soket
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nSELAM",
+                    )
+                    .await;
+            }
+        }
+    });
+    let mut eslemeler = std::collections::HashMap::new();
+    eslemeler.insert(
+        ("fake.crates.io".to_string(), port),
+        vec![std::net::SocketAddr::from(([127, 0, 0, 1], port))],
+    );
+    let k = kurgu_agli(Some(std::sync::Arc::new(TestCozucu { eslemeler })), true);
+    let alan = k.alan(&k.kok);
+    let betik = format!(
+        "[Console]::Out.WriteLine('pid ' + $PID + ' ayrilmis=' + ((Get-ChildItem env: | Where-Object {{ $_.Name -like 'KALFA_*' }} | ForEach-Object Name) -join ',')); [Console]::Out.Flush(); \
+         while(($s=[Console]::In.ReadLine()) -ne $null){{ \
+           if ($s -eq 'izinli') {{ $r = (curl.exe -p -s -S http://fake.crates.io:{port}/) -join '' }} \
+           elseif ($s -eq 'yasak') {{ $r = ((curl.exe -s -i http://evil.com/) | Select-Object -First 1) }} \
+           else {{ $r = 'pong ' + $s }}; \
+           [Console]::Out.WriteLine($r); [Console]::Out.Flush() }}"
+    );
+    let mut i = etkilesimli_istek(&alan, "agli", &betik);
+    i.ag_listesi = Some(kalfa_sandbox::vekil::IzinListesi::yeni(
+        &[],
+        &[("fake.crates.io".to_string(), port)],
+    ));
+    let mut s = k.y.baslat_etkilesimli(&i).unwrap();
+    let mut girdi = s.girdi_al().unwrap();
+    let mut cikti = BufReader::new(s.cikti_al().unwrap()).lines();
+    let ilk = cikti.next_line().await.unwrap().unwrap();
+    assert!(ilk.trim_end().ends_with("ayrilmis="), "{ilk}");
+    let pid: u32 = ilk.split_whitespace().nth(1).unwrap().parse().unwrap();
+    let mut sor = async |satir: &str| {
+        girdi
+            .write_all(format!("{satir}\n").as_bytes())
+            .await
+            .unwrap();
+        cikti.next_line().await.unwrap().unwrap()
+    };
+    assert_eq!(sor("1").await.trim(), "pong 1");
+    assert!(sor("izinli").await.contains("SELAM"));
+    assert!(sor("yasak").await.contains("403"));
+    let kapanis = s.kapat().await.unwrap();
+    assert!(!surec_aktif_mi(pid));
+    let ag = kapanis.ag.expect("ağ özeti dönmeli");
+    let karar = |host: &str, k: kalfa_sandbox::vekil::AgKarari| {
+        ag.baglantilar
+            .iter()
+            .any(|b| b.host == host && b.karar == k)
+    };
+    assert!(
+        karar("fake.crates.io", kalfa_sandbox::vekil::AgKarari::Izinli),
+        "{:?}",
+        ag.baglantilar
+    );
+    assert!(
+        karar("evil.com", kalfa_sandbox::vekil::AgKarari::ListedeYok),
+        "{:?}",
+        ag.baglantilar
+    );
+    k.temizle(&[alan]);
+}
