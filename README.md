@@ -115,7 +115,7 @@ göndereceğinde Kalfa bunu ayrıca sorar.
 Ayrıntı: [üst tasarım belgesi §7](docs/superpowers/specs/2026-09-21-kalfa-design.md).
 Bir güvenlik açığı bulduysanız lütfen herkese açık bir issue açmak yerine
 GitHub'ın özel güvenlik bildirimini kullanın (**Security → Report a
-vulnerability**).
+vulnerability**); ayrıntı [SECURITY.md](SECURITY.md)'de.
 
 ## Durum
 

@@ -180,16 +180,25 @@ hakkı ve miras denetimi, kaldırmada bütün dosyalar) birleşmeden önce
 düzeltildi; koşu [38466119004](https://github.com/heimdilon/kalfa/actions/runs/38466119004)
 tümüyle geçti. Kullanıcının açık onayıyla squash birleşti.
 
-**RAG sonuçları dosyaya göre tekil (14 Ekim, dal `rag/dosya-tekillestirme`):**
+**RAG sonuçları dosyaya göre tekil (14 Ekim, PR [#13](https://github.com/heimdilon/kalfa/pull/13), `238b7c7`):**
 `kalfa-rag` yeniden sıralamada bütün adayların sırasını alır ve her dosyayı
 en iyi parçasıyla bir kez gösterir; liste sonraki dosyalarla dolar. Kosinüs
 geri dönüşünde de aynı kural geçerlidir. G5 tam ölçümünde bu sayım 26/32
 yerine 28/32 vermişti; canlı ölçüm yeniden koşulmadı (kredi, ayrı onay).
-Tasarım §11.3 adım 5 ve §11.4.
+Tasarım §11.3 adım 5 ve §11.4. Codex incelemesinin bulgusu (ilk 50 aday tek
+dosyadan gelirse sonuç istenenden aza düşüyordu) birleşmeden önce düzeltildi:
+o durumda sonraki dosyaların en iyi parçası da adaya girer. Kullanıcının
+açık onayıyla squash birleşti.
 
-**Sıradaki tek iş:** RAG tekilleştirme PR'ının CI'ı ve kullanıcının
-birleştirme onayı. `v*` etiketi ve sürüm yayımı kullanıcının ayrı onayını
-bekler; canlı `baglam_canli` deneyi de ayrı onay bekler.
+**Bağımlılık denetimi ve güvenlik politikası (14 Ekim, dal
+`derleme/guvenlik-denetimi`):** Üst belge §12.1'in dağıtım satırındaki iki
+eksik: CI'a sabit sürümlü `cargo audit` işi ve kökte `SECURITY.md`. README
+bildirimi bu dosyaya bağlar.
+
+**Sıradaki tek iş:** bu PR'ın CI'ı ve kullanıcının birleştirme onayı; özel
+güvenlik bildirimini açmak (repo ayarı) kullanıcının kararıdır. `v*` etiketi
+ve sürüm yayımı, canlı G5 doğrulaması ve canlı `baglam_canli` deneyi ayrı
+onay bekler.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
