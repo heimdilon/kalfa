@@ -110,6 +110,26 @@ describe('ana pencere (1c tasarımı §8.1)', () => {
     expect(screen.getAllByText('Tamamlandı').length).toBeGreaterThan(0);
   });
 
+  it('akan düşüncenin yalnızca sonu çizilir; tamamı akış bitince açılınca gelir', async () => {
+    const { arka } = await ciz();
+    // Çok uzun düşünce her karede baştan Markdown'a çözülürse arayüz geri kalır
+    // (e2e "duraklayan arayüz"). Akarken yalnızca son kısım düz metin gösterilir.
+    const uzun = `BAS ${'a'.repeat(20_000)} SON`;
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      { tip: 'DusunceParcasi', metin: uzun },
+    ]);
+    const canli = await screen.findByText(/SON$/);
+    expect(canli.textContent!.length).toBeLessThan(2_100);
+    expect(document.body.textContent).not.toContain('BAS a');
+
+    arka.olaylar('o1', [{ tip: 'Tamamlandi', neden: { tip: 'Normal' } }]);
+    const dugme = await screen.findByRole('button', { name: 'Düşünce' });
+    await waitFor(() => expect(dugme.getAttribute('aria-expanded')).toBe('false'));
+    await fireEvent.click(dugme);
+    expect(await screen.findByText(/^BAS a+ SON$/)).toBeTruthy();
+  });
+
   it('kabuk çağrısının çıktısı terminalde akar; kart çıkış kodunu gösterir', async () => {
     const { arka } = await ciz();
     arka.olaylar('o1', [
