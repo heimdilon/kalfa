@@ -196,9 +196,8 @@ eklenir:
 Engel çıkarsa bu belge güncellenir.
 
 **G1 sonucu (14 Ekim):** Üç ölçüm de geçti. Ayrıca bir bulgu çıktı:
-AppContainer başlatması profil değişkenlerini (`USERPROFILE`,
-`LOCALAPPDATA` ve benzerleri) ister; bunlar yoksa başlatma 203 hatasıyla
-düşer. Temizlik doğrulandı.
+AppContainer başlatması profil ve sistem ortam değişkenlerini ister;
+bunlar yoksa başlatma 203 hatasıyla düşer. Ayrıntısı G1 raporunda. Temizlik doğrulandı.
 [Rapor](../bulgular/2026-10-14-kalfa-11a-g1.md).
 
 ### 4.2 Ham stdio sınırları
@@ -307,7 +306,13 @@ Her süreç kendi K'sıyla başlar ve onu saklar.
   kapanırken. Bulunan yeni `.git` ve yapılandırma dosyaları kabuktaki
   kuralla karantinaya alınır.
 
-**Kalan risk (kullanıcı kararına sunulur):** Kalfa dışındaki bir program
+**Kalan risk (kullanıcı kabul etti, 14 Ekim):** Kullanıcı bu riski
+güvendiği yerel MCP sunucuları için kabul etti. Yeni gizli dosyaların
+aşağıda belirtilen süre boyunca okunabileceğini anladığını açıkça belirtti.
+Verinin izinli ağ adreslerine ya da EVREN'e çıkabileceğini de anladığını
+söyledi.
+
+Kalfa dışındaki bir program
 (örneğin kullanıcının editörü) çalışma alanına gizli kalıba uyan bir dosya
 yazabilir. O zaman çalışan yalıtımlı sunucu bu dosyayı bir süre okuyabilir.
 Risk yalnız yalıtımlı sunucular için geçerlidir; tam erişimli sunucu zaten

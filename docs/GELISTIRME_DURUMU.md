@@ -279,8 +279,20 @@ geçti: borulu AppContainer süreci, 62 sn yaşam ve Job Object ile ağacın
 kapanışı, sunucuya özel yetenek SID'i ayrımı ölçüldü; temizlik doğrulandı.
 [G1 raporu](superpowers/bulgular/2026-10-14-kalfa-11a-g1.md).
 
-**Sıradaki tek iş:** Kullanıcı iki karar verecek: kalan riskin kabulü (§4.3)
-ve ürün uygulamasının onayı (plan 1.1a-1).
+Kullanıcı 14 Ekim'de üç karar verdi:
+- G1 sonucunu kabul etti.
+- §4.3'teki kalan riski, güvendiği yerel MCP sunucuları için kabul etti.
+- Plan 1.1a-1'in yazılmasını onayladı.
+
+Plan şurada: [1.1a-1](superpowers/plans/2026-10-14-kalfa-11a-1-etkilesimli-surec.md).
+Kapsamı:
+- `kalfa-sandbox`'a etkileşimli süreç,
+- sunucunun özel kökü ve Windows yetenek SID'i,
+- G1 kontrollerinin ürün başlatıcısının kabul testlerine taşınması,
+- Windows ve WSL doğrulaması.
+
+**Sıradaki tek iş:** Kullanıcının planı incelemesi. Ürün kodu ve planın
+iki platformda ön doğrulaması, inceleme sonrasındaki onaya bağlı.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
