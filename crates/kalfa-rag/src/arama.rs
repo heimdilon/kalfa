@@ -122,7 +122,19 @@ fn vektorle_ara(
             .then_with(|| x.1.cmp(y.1))
             .then(x.2.cmp(&y.2))
     });
+    // İlk ADAY parça adaydır. Sonuçlar dosyaya göre tekilleştiği için bu
+    // parçalar `n`'den az dosyadan geliyorsa, sonraki dosyaların en iyi
+    // parçası da eklenir (en çok `n - 1` belge). Böylece tek dosya adayları
+    // doldurduğunda da liste öteki dosyalarla dolabilir.
+    let mut dosyalar: BTreeSet<&str> = puanli.iter().take(ADAY).map(|p| p.1).collect();
+    let ek: Vec<_> = puanli
+        .iter()
+        .skip(ADAY)
+        .filter(|p| dosyalar.len() < n as usize && dosyalar.insert(p.1))
+        .copied()
+        .collect();
     puanli.truncate(ADAY);
+    puanli.extend(ek);
 
     // Her dosya bir kez okunur. Okunamayan, arada değişmiş ya da bayt aralığı
     // bozuk parça atlanır.
@@ -513,6 +525,35 @@ mod testler {
         assert!(!s.contains("a.rs:4-6"), "{s}");
         // Tekilleştirmenin doldurabilmesi için bütün adayların sırası istenir.
         assert_eq!(o.siralamalar.borrow()[0].1.len(), 3);
+    }
+
+    #[test]
+    fn adaylari_tek_dosya_doldurunca_sonraki_dosyalar_eklenir() {
+        let o = SahteOrtam::yeni();
+        // a.rs'in 50 parçasının hepsi sorguyla aynı yönde: ilk ADAY adayı
+        // doldurur. b.rs ve c.rs daha uzaktır.
+        let a: String = (0..150).map(|i| format!("alfa {i}\n")).collect();
+        let (durum, mut vektorler) = indeks_kur(
+            &o,
+            &[
+                ("a.rs", a.as_str()),
+                ("b.rs", "alfa b\n"),
+                ("c.rs", "alfa c\n"),
+            ],
+        );
+        for v in &mut vektorler {
+            v.2 = if v.0 == "a.rs" {
+                sorgu_vektoru("alfa")
+            } else {
+                sahte_vektor("baska")
+            };
+        }
+        let s = basarili(sonuclari_bul(&o, &arg("alfa", 2), &durum, vektorler));
+        assert!(s.starts_with("\"alfa\" için 2 sonuç"), "{s}");
+        assert!(s.contains("dosya:a.rs:"), "{s}");
+        assert!(s.contains("dosya:b.rs:1-1"), "{s}");
+        // Yalnızca eksik dosya sayısı kadar aday eklenir.
+        assert_eq!(o.siralamalar.borrow()[0].1.len(), ADAY + 1);
     }
 
     #[test]

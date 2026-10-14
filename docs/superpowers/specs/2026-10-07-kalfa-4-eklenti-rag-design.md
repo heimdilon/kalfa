@@ -945,7 +945,10 @@ kod.
 4. Dosyası okunamayan ya da arada değişmiş parça (satır aralığı artık
    tutmuyor) atlanır. Dosya sonraki çağrıda yeniden indekslenir.
 5. Sonuçlar dosyaya göre tekilleşir: her dosya en iyi sıradaki parçasıyla bir
-   kez gelir, liste `sonuc_sayisi`'na kadar sonraki dosyalarla dolar.
+   kez gelir, liste `sonuc_sayisi`'na kadar sonraki dosyalarla dolar. İlk 50
+   aday `sonuc_sayisi`'ndan az dosyadan geliyorsa (tek dosya adayları
+   doldurmuşsa), sonraki dosyaların en iyi parçası da adaya eklenir; en çok
+   `sonuc_sayisi - 1` belge.
    Yeniden sıralama sınıra takılıp kosinüs sırasına dönülünce de aynı kural
    geçerlidir. G5 tam ölçümünde aynı dosyanın parçaları iki sorguda beklenen
    dosyayı ilk beşin dışına itmişti; tekilleştirme ilk beşi 26/32'den 28/32'ye
