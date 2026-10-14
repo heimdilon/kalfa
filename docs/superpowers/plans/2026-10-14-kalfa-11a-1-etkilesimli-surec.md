@@ -3661,3 +3661,15 @@ eski seçimle ikisi de düştü, düzeltmeyle geçiyor. Bağımsız kaynak
 incelemesinde yeni engelleyici bulgu yok. İki platformun zorunlu ürün
 kontrolleri geçti; [ürün raporu](../bulgular/2026-10-14-kalfa-11a-1-urun.md)
 negatif kanıtı, sonuçları ve temizliği taşır.
+
+## Ürün sonrası CI güvenlik yaması
+
+14 Ekim'de mevcut Wasmtime 49.0.2 için yayımlanan 13 duyuru audit'i
+kırdı. AGENTS'ın sapma kuralıyla gerekçe PR'a yazıldı; kullanıcı gereken
+Windows/WSL paket indirmesini ve yeniden doğrulamayı onayladı. Yalnız iki
+mevcut pin 49.0.3'e ve 29 zorunlu aile paketi patch sürümüne alındı;
+yeni paket adı, özellik, Rust kaynak veya test değişikliği yok. Yayımlanan
+`2203bf9` ile Codex'in yerel `f6be234` ağacı eşit; yayımlanmış commit
+korundu. İki platformun workspace, eklenti, WASM ve e2e özellikli Rust
+kontrolleri geçti; yeni audit işi yeşil. Ayrıntı ve temizlik
+[güvenlik yaması raporunda](../bulgular/2026-10-14-wasmtime-4903-guvenlik-yamasi.md).

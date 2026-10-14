@@ -15,7 +15,10 @@ G1 geçti; §4.1 ve §4.3'teki ayrı kalan riskler kullanıcı tarafından
 kabul edildi. 1.1a-1 ürün uygulamasını Codex devraldı; süreç altyapısı
 `c1d464f` commit'inde iki platformun zorunlu kontrollerini geçti.
 [Ürün raporu](../bulgular/2026-10-14-kalfa-11a-1-urun.md) kanıtı taşır.
-MCP yöneticisi ve arayüz sonraki 1.1a-2 planının kapsamıdır.
+MCP yöneticisi ve arayüz sonraki 1.1a-2 planının kapsamıdır. Ürün
+sonrası audit engeli için mevcut Wasmtime ailesi 49.0.3'e yamalandı;
+[kapsam ve yeniden doğrulama](../bulgular/2026-10-14-wasmtime-4903-guvenlik-yamasi.md)
+ayrı kayıttadır.
 **Taban:** `main`, `04f16fc` (`v0.1.0` ön sürümü yayımlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §10, §12.2.
 

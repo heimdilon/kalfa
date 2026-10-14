@@ -338,9 +338,24 @@ Windows yalıtım 50/50, uyumluluk 24/24; WSL yalıtım 32/32, uyumluluk
 iki clippy iki platformda geçti. Bağımsız incelemede açık ürün engeli yok.
 [Ürün raporu](superpowers/bulgular/2026-10-14-kalfa-11a-1-urun.md).
 
-**Sıradaki tek iş:** Ürün kodu ve raporu içeren PR #19'un bu başındaki
-CI ve bağımsız inceleme sonuçlarını kapatmak. Yerel doğrulama tamamlandı;
-merge kullanıcı onayı gerektirir. Ardından 1.1a-2 planı yazılabilir.
+**Wasmtime güvenlik yaması (14–15 Ekim):** CI, bugün yayımlanan 13
+Wasmtime duyurusundan kırmızı oldu. Kullanıcı indirme/güncelleme ve
+Windows/WSL doğrulamasını açıkça onayladı. İki mevcut sabitleme 49.0.3;
+693 kayıt korunarak yalnız 29 Wasmtime/Pulley/Cranelift aile üyesi
+patch sürümü değişti. Claude'un yayımladığı `2203bf9`, Codex'in yerel
+`f6be234` karşılığıyla birebir; yayımlanan commit korundu.
+
+Codex doğrulaması: eklenti iki platformda 84/84, workspace Windows
+1.234/0/19 ve WSL 1.187/0/19, e2e özellikli Rust 191/0/0. fmt,
+workspace/WASM/e2e özellikli clippy iki platformda geçti. Audit işi
+13 Wasmtime bulgusunu artık göstermiyor; mevcut 7 uyarı aynı.
+`2203bf9` [CI koşusu](https://github.com/heimdilon/kalfa/actions/runs/38634667316)
+beş işiyle yeşil. Son belge başının denetimleri PR üzerinden izlenir.
+[Dar yama raporu](superpowers/bulgular/2026-10-14-wasmtime-4903-guvenlik-yamasi.md).
+Bu koşunun Windows test kökü (230 artık) ve WSL kaynak kopyası da silindi.
+
+**Sıradaki tek iş:** PR #19'un son başındaki CI kapısı yeşilken kullanıcı
+incelemesi ve merge onayı. Ardından 1.1a-2 planı yazılabilir.
 Claude'un ön doğrulama worktree'si/kopyası ve ortak derleme önbellekleri
 korunur. Codex WSL kaynak kopyası ve Windows'a özel bu test kökü silindi;
 eski artık dizinlere dokunulmadı.
