@@ -36,15 +36,14 @@
 <style>
   .mesaj {
     display: flex;
-    padding: 6px 4px;
   }
   .kullanici {
+    width: fit-content;
     margin-left: auto;
-    max-width: min(76%, 640px);
-    padding: 10px 14px;
-    background: color-mix(in srgb, var(--copper-400) 14%, var(--surface-raised));
-    border: var(--border-width) solid color-mix(in srgb, var(--border-accent) 45%, var(--border-default));
-    border-radius: var(--radius-xl);
+    max-width: min(80%, 640px);
+    padding: 9px 14px;
+    background: var(--surface-raised);
+    border-radius: 14px;
   }
   .govde {
     flex: 1;
@@ -66,13 +65,13 @@
     color: var(--text-muted);
   }
   .icerik {
-    font: var(--type-body);
+    font: var(--fw-regular) 14.5px / 1.65 var(--font-sans);
     color: var(--text-body);
     text-wrap: pretty;
   }
   .imlec {
     display: inline-block;
-    width: 8px;
+    width: 7px;
     height: 15px;
     margin-left: 2px;
     vertical-align: -2px;

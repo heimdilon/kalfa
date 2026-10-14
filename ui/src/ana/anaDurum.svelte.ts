@@ -39,6 +39,8 @@ export class AnaDurum {
   onay = $state<{ oturum: OturumId; islem: IslemId } | null>(null);
   /** Sağdaki bölünmüş değişiklik / inceleme bölmesi açık mı (varsayılan kapalı). */
   sagBolmeAcik = $state(false);
+  /** Soldaki kenar çubuğu açık mı (Ctrl+B ile gizlenir). */
+  kenarAcik = $state(true);
   /** Açık gönderim günlüğü (oturum kimliğiyle). */
   gunlukOturum = $state<OturumId | null>(null);
   gunlukAcik = $derived(this.gunlukOturum !== null);

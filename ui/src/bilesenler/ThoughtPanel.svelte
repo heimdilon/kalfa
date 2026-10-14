@@ -1,4 +1,7 @@
-<!-- Modelin düşünce dökümü. Kalfa bunu kapalı gösterir: düşünce sunulur, dayatılmaz. -->
+<!--
+  Modelin düşünce dökümü: tek satır. Akarken açık durur, bitince kapanır;
+  düşünce sunulur, dayatılmaz.
+-->
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { m } from '../dil/tr';
@@ -45,9 +48,9 @@
     {/if}
     <span class="metinler">
       <span class="baslik">{m('dusunce.baslik')}</span>
-      <span class="ozet">
-        {summary ?? (akista ? m('dusunce.suruyor') : m('dusunce.bitti'))}
-      </span>
+      {#if summary || akista}
+        <span class="ozet">{summary ?? m('dusunce.suruyor')}</span>
+      {/if}
     </span>
   </button>
   {#if gorunur}
@@ -56,74 +59,63 @@
 </section>
 
 <style>
-  .dusunce {
-    background: var(--surface-card);
-    border: var(--border-width) solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    transition: var(--transition-control);
-  }
-  .dusunce.akista {
-    border-left: 2px solid var(--copper-300);
-    background: color-mix(in srgb, var(--copper-400) 6%, var(--surface-card));
-  }
   button {
     display: flex;
     align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 8px 12px;
+    gap: 6px;
+    padding: 2px 0;
     background: transparent;
     border: none;
     cursor: pointer;
     text-align: left;
-    color: inherit;
+    color: var(--text-muted);
+    transition: var(--transition-control);
   }
   button:disabled {
     cursor: default;
   }
   button:hover:not(:disabled) {
-    background: var(--surface-raised);
+    color: var(--text-secondary);
   }
   .ok {
     display: inline-flex;
-    color: var(--text-muted);
   }
   .canli-nokta {
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     border-radius: var(--radius-pill);
-    background: var(--copper-200);
-    box-shadow: 0 0 8px var(--copper-300);
-    animation: kalfa-imlec 1s steps(2) infinite;
+    background: var(--action-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 25%, transparent);
+    animation: kalfa-imlec 1.2s ease-in-out infinite;
   }
   .metinler {
-    flex: 1;
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: 6px;
     min-width: 0;
   }
   .baslik {
-    font: var(--fw-semibold) var(--text-small) / 1.3 var(--font-sans);
-    color: var(--text-title);
+    font: var(--fw-medium) var(--text-small) / 1.3 var(--font-sans);
   }
   .akista .baslik {
-    color: var(--text-accent);
+    color: var(--text-secondary);
   }
   .ozet {
-    font: var(--type-meta);
-    color: var(--text-muted);
+    font: var(--type-small);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .ic {
-    padding: 10px 14px 12px 34px;
-    border-top: var(--border-width) solid var(--border-subtle);
+    margin: 6px 0 2px 7px;
+    padding: 2px 0 2px 14px;
+    border-left: 2px solid var(--border-default);
     font: var(--type-small);
-    color: var(--text-secondary);
+    color: var(--text-muted);
     max-height: 260px;
     overflow-y: auto;
+  }
+  .ic :global(:is(p, li)) {
+    color: inherit;
   }
 </style>

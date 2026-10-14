@@ -1,7 +1,7 @@
 <!--
-  Oturum listesi (1c tasarımı §5.4, §8.1): kayıtlardan okunan oturumlar, gün
-  gruplarıyla. Açık oturumun anlık hâli (çalışıyor, onay bekliyor, şart
-  bekliyor) kayıttaki son durumdan önce gelir.
+  Kenar çubuğunun üstü (1c tasarımı §5.4, §8.1): yeni oturum, arama ve
+  çalışma alanına göre gruplanan oturumlar. Açık oturumun anlık hâli
+  (çalışıyor, onay bekliyor, şart bekliyor) kayıttaki son durumdan önce gelir.
 -->
 <script lang="ts">
   import { SvelteSet } from 'svelte/reactivity';
@@ -12,19 +12,20 @@
   import { m } from '../dil/tr';
   import type { OturumSatiri } from '../ipc/tipler';
   import type { AnaDurum } from './anaDurum.svelte';
-  import { GUN_GRUBU_ADI, gruplara, satirBasligi, satirDurumu, zamanEtiketi } from './bicim';
+  import {
+    GUN_GRUBU_ADI,
+    gruplara,
+    projeAdi,
+    satirBasligi,
+    satirDurumu,
+    zamanEtiketi,
+  } from './bicim';
 
   let { durum }: { durum: AnaDurum } = $props();
 
   let arama = $state('');
   let tumunuGoster = $state(false);
   const kapaliProjeler = new SvelteSet<string>();
-
-  function projeAdi(yol: string | null): string {
-    if (!yol) return 'kalfa';
-    const parcalar = yol.replace(/\\/g, '/').split('/').filter(Boolean);
-    return parcalar.at(-1) ?? yol;
-  }
 
   /** Listeye henüz düşmemiş yeni oturumlar en üstte görünür. */
   const satirlar = $derived.by((): OturumSatiri[] => {
@@ -44,27 +45,20 @@
     return [...yeniler, ...durum.liste];
   });
 
-  const gruplar = $derived.by(() => {
+  const suzulmus = $derived.by(() => {
     const aranan = arama.trim().toLocaleLowerCase('tr-TR');
-    const suzulmus = aranan
-      ? satirlar.filter((s) =>
-          [satirBasligi(s), s.calisma_alani ?? ''].some((t) =>
-            t.toLocaleLowerCase('tr-TR').includes(aranan),
-          ),
-        )
-      : satirlar;
-    return gruplara(suzulmus, (s) => s.son_degisiklik_ms, Date.now());
+    if (!aranan) return satirlar;
+    return satirlar.filter((s) =>
+      [satirBasligi(s), s.calisma_alani ?? ''].some((t) =>
+        t.toLocaleLowerCase('tr-TR').includes(aranan),
+      ),
+    );
   });
 
+  // Gün grupları ekranda gösterilmez; ekran okuyucu için okunur.
+  const gruplar = $derived(gruplara(suzulmus, (s) => s.son_degisiklik_ms, Date.now()));
+
   const projeler = $derived.by(() => {
-    const aranan = arama.trim().toLocaleLowerCase('tr-TR');
-    const suzulmus = aranan
-      ? satirlar.filter((s) =>
-          [satirBasligi(s), s.calisma_alani ?? ''].some((t) =>
-            t.toLocaleLowerCase('tr-TR').includes(aranan),
-          ),
-        )
-      : satirlar;
     const harita = new Map<string, { ad: string; yol: string | null; ogeler: OturumSatiri[] }>();
     for (const s of suzulmus) {
       const anahtar = s.calisma_alani ?? '__varsayilan__';
@@ -72,11 +66,7 @@
       if (mevcut) {
         mevcut.ogeler.push(s);
       } else {
-        harita.set(anahtar, {
-          ad: projeAdi(s.calisma_alani),
-          yol: s.calisma_alani,
-          ogeler: [s],
-        });
+        harita.set(anahtar, { ad: projeAdi(s.calisma_alani), yol: s.calisma_alani, ogeler: [s] });
       }
     }
     const ham = [...harita.entries()].map(([anahtar, deger]) => ({ anahtar, ...deger }));
@@ -100,13 +90,34 @@
 </script>
 
 <aside class="liste" aria-label={m('liste.baslik')}>
-  <div class="ust">
-    <div class="marka-baslik">
-      <span class="kalfa-etiket">{m('uygulama.adi')}</span>
-      <h2>{m('liste.baslik')}</h2>
-    </div>
-    <IconButton icon="plus" label={m('liste.yeni')} onclick={() => durum.yeniOturum()} />
+  <div class="marka">
+    <button
+      type="button"
+      class="marka-dugme"
+      title={`${m('uygulama.adi')} — ${m('uygulama.slogan')}`}
+      onclick={() => durum.oturumlaraDon()}
+    >
+      <span class="amblem" aria-hidden="true"><Icon name="hexagon" size={13} /></span>
+      <span>{m('uygulama.adi')}</span>
+    </button>
+    <IconButton
+      icon="panel-left"
+      size="sm"
+      label={m('kenar.gizle')}
+      onclick={() => (durum.kenarAcik = false)}
+    />
   </div>
+
+  <button
+    type="button"
+    class="yeni"
+    aria-label={m('liste.yeni')}
+    onclick={() => durum.yeniOturum()}
+  >
+    <Icon name="square-pen" size={16} />
+    <span>{m('liste.yeni')}</span>
+    <kbd aria-hidden="true">Ctrl N</kbd>
+  </button>
 
   <div class="ara">
     <Input
@@ -120,12 +131,10 @@
 
   <div class="satirlar">
     {#if projeler.length > 0}
-      <div class="bolum-baslik">
-        <span>{m('liste.projeler')}</span>
-        {#if gruplar[0]}
-          <span class="grup">{m(GUN_GRUBU_ADI[gruplar[0].grup])}</span>
-        {/if}
-      </div>
+      <div class="bolum-baslik">{m('liste.projeler')}</div>
+      {#each gruplar as g (g.grup)}
+        <span class="gizli-erisilebilir">{m(GUN_GRUBU_ADI[g.grup])}</span>
+      {/each}
 
       {#each projeler as p (p.anahtar)}
         {@const kapali = kapaliProjeler.has(p.anahtar)}
@@ -138,14 +147,13 @@
             aria-expanded={!kapali}
             onclick={() => projeAcKapat(p.anahtar)}
           >
-            <Icon name={kapali ? 'chevron-right' : 'folder-open'} size={14} />
+            <Icon name={kapali ? 'folder' : 'folder-open'} size={14} />
             <span class="proje-metin">
               <span class="proje-adi">{p.ad}</span>
               {#if p.altYol}
                 <span class="proje-yol">{p.altYol}</span>
               {/if}
             </span>
-            <span class="proje-sayi">{p.ogeler.length}</span>
           </button>
 
           {#if !kapali}
@@ -186,10 +194,6 @@
           {/if}
         </div>
       {/each}
-
-      {#each gruplar.slice(1) as g (g.grup)}
-        <span class="gizli-erisilebilir">{m(GUN_GRUBU_ADI[g.grup])}</span>
-      {/each}
     {:else}
       <p class="bos">{arama.trim() ? m('liste.sonuc_yok') : m('liste.bos')}</p>
     {/if}
@@ -198,37 +202,67 @@
 
 <style>
   .liste {
-    width: 100%;
-    height: 100%;
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    background: var(--bg-panel);
     overflow: hidden;
   }
-  .ust {
+  .marka {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 14px 8px;
+    padding: 10px 8px 8px 10px;
   }
-  .marka-baslik {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    min-width: 0;
-  }
-  .kalfa-etiket {
-    font: var(--fw-semibold) 15px / 1 var(--font-sans);
+  .marka-dugme {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
     color: var(--text-title);
+    font: var(--fw-semibold) var(--text-body-size) / 1 var(--font-sans);
+    cursor: pointer;
   }
-  h2 {
-    margin: 0;
-    font: var(--type-meta);
+  .amblem {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    background: var(--action-primary);
+    color: var(--action-primary-fg);
+  }
+  .yeni {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 34px;
+    margin: 0 8px 6px;
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-title);
+    font: var(--fw-medium) var(--text-small) / 1 var(--font-sans);
+    text-align: left;
+    cursor: pointer;
+    transition: var(--transition-control);
+  }
+  .yeni:hover {
+    background: var(--surface-raised);
+  }
+  .yeni span {
+    flex: 1;
+  }
+  kbd {
+    font: var(--text-nano) / 1 var(--font-sans);
     color: var(--text-muted);
   }
   .ara {
-    padding: 0 12px 10px;
+    padding: 0 8px 8px;
   }
   .satirlar {
     flex: 1;
@@ -236,36 +270,28 @@
     padding: 0 8px 12px;
   }
   .bolum-baslik {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 8px 4px;
-    font: var(--type-meta);
-    color: var(--text-muted);
-  }
-  .grup {
-    font: var(--type-meta);
+    padding: 10px 10px 4px;
+    font: var(--fw-medium) var(--text-micro) / 1.3 var(--font-sans);
     color: var(--text-muted);
   }
   .proje-grubu {
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
   .proje-baslik {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     width: 100%;
-    padding: 6px 8px;
+    padding: 5px 10px;
     border: none;
     border-radius: var(--radius-md);
     background: transparent;
     color: var(--text-secondary);
-    font: var(--fw-medium) var(--text-small) / 1.2 var(--font-sans);
+    font: var(--type-small);
     cursor: pointer;
     text-align: left;
   }
   .proje-baslik:hover {
-    background: var(--surface-raised);
     color: var(--text-title);
   }
   .proje-metin {
@@ -288,18 +314,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .proje-sayi {
-    font: var(--type-meta);
-    color: var(--text-muted);
-  }
   .proje-icerik {
-    padding-left: 8px;
     display: flex;
     flex-direction: column;
     gap: 1px;
   }
-  /* Silme düğmesi satırın üstünde durur; seçili satırda, fare ya da odak
-     gelince görünür. */
+  /* Silme düğmesi satırın sağında durur; fare ya da odak gelince saatin
+     yerini alır. */
   .satir {
     position: relative;
   }
@@ -309,15 +330,18 @@
     top: 50%;
     transform: translateY(-50%);
     opacity: 0;
-    transition: var(--transition-control);
+    transition: opacity var(--dur-fast) var(--ease-standard);
   }
   .satir:hover .sil,
-  .satir:focus-within .sil,
-  .secili .sil {
+  .satir:focus-within .sil {
     opacity: 1;
   }
+  .satir:hover :global(.zaman),
+  .satir:focus-within :global(.zaman) {
+    visibility: hidden;
+  }
   .daha-fazla {
-    padding: 6px 10px;
+    padding: 6px 10px 6px 28px;
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -329,7 +353,7 @@
     color: var(--text-body);
   }
   .bos {
-    margin: 16px 8px;
+    margin: 16px 10px;
     font: var(--type-small);
     color: var(--text-muted);
   }

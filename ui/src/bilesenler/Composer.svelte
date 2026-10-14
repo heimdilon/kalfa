@@ -1,8 +1,8 @@
 <!--
-  Oturumun altındaki bakır çerçeveli giriş: mesaj, model ve izin kipi tek
-  çerçevede; kullanıcı ikisini görmeden gönderemez. Enter gönderir,
-  Shift+Enter yeni satır açar (1c tasarımı §9.5). Tur sürerken gönder
-  düğmesinin yerinde durdurma düğmesi durur.
+  Oturumun altındaki yüzen giriş kartı: mesaj, izin kipi ve model/efor tek
+  çerçevede; kullanıcı ikisini görmeden gönderemez. Model ve düşünce eforu
+  aynı balondan seçilir. Enter gönderir, Shift+Enter yeni satır açar (1c
+  tasarımı §9.5). Tur sürerken gönder düğmesinin yerinde durdurma düğmesi durur.
 -->
 <script lang="ts">
   import { EFOR_ADI, m } from '../dil/tr';
@@ -109,7 +109,6 @@
 <div class="composer-sarmal">
   <Textarea
     bind:value
-    accent
     rows={2}
     {placeholder}
     {disabled}
@@ -126,16 +125,6 @@
         options={modes}
         disabled={disabled || running}
         onchange={onmodechange}
-      />
-      <Select
-        size="sm"
-        icon="box"
-        tone="accent"
-        label={m('composer.model')}
-        value={model}
-        options={models}
-        disabled={disabled || running}
-        onchange={onmodelchange}
       />
       <span class="bosluk"></span>
       <div bind:this={eforKutu} class="efor-sarmal">
@@ -244,7 +233,7 @@
         <IconButton icon="square" label={m('composer.durdur')} variant="primary" onclick={oncancel} />
       {:else}
         <IconButton
-          icon="send"
+          icon="arrow-up"
           label={m('composer.gonder')}
           variant="primary"
           disabled={!gonderilebilir}
@@ -259,6 +248,27 @@
   .composer-sarmal {
     position: relative;
   }
+  .composer-sarmal :global(.metin-alani) {
+    padding: 12px 10px 8px 16px;
+    background: var(--surface-card);
+    border: var(--border-width) solid var(--border-default);
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+  .composer-sarmal :global(.metin-alani.metin-alani:focus-within) {
+    border: var(--border-width) solid var(--border-strong);
+  }
+  .composer-sarmal :global(.tetik.tetik) {
+    border-color: transparent;
+    background: transparent;
+    color: var(--text-secondary);
+  }
+  .composer-sarmal :global(.tetik.tetik:hover:not(:disabled)) {
+    background: var(--surface-raised);
+  }
+  .composer-sarmal :global(textarea) {
+    font: var(--fw-regular) 14.5px / 1.55 var(--font-sans);
+  }
   .bosluk {
     flex: 1;
   }
@@ -271,31 +281,26 @@
     align-items: center;
     gap: 6px;
     height: 28px;
-    padding: 0 10px;
-    background: var(--surface-raised);
-    border: var(--border-width) solid var(--border-default);
-    border-radius: var(--radius-pill);
-    color: var(--text-body);
+    padding: 0 8px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
     font: var(--type-small);
     cursor: pointer;
     transition: var(--transition-control);
   }
   .efor-tetik:hover:not(:disabled),
   .efor-tetik.acik {
-    border-color: var(--border-accent);
-    background: var(--surface-selected);
+    background: var(--surface-raised);
+    color: var(--text-body);
   }
   .efor-tetik:disabled {
     cursor: not-allowed;
     opacity: 0.55;
   }
-  .efor-model {
-    font-family: var(--font-mono);
-    font-size: var(--text-micro);
-    color: var(--text-secondary);
-  }
   .efor-deger {
-    font-weight: var(--fw-semibold);
+    font-weight: var(--fw-medium);
     color: var(--text-accent);
   }
   .efor-balon {

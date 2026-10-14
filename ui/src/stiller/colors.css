@@ -32,17 +32,18 @@
 --code-type:#6fc7c0;--code-com:#5c6469;--code-punct:#98a0a6;
 
 /* ══ Semantic aliases — dark (default) ═════════════════════════════════ */
---bg-app:var(--warm-850);
---bg-rail:var(--warm-900);
---bg-panel:var(--warm-900);
---surface-card:var(--warm-750);
---surface-raised:var(--warm-700);
---surface-sunken:var(--warm-800);
---surface-selected:var(--copper-tint);
---surface-selected-strong:var(--copper-tint-strong);
---border-subtle:#1f2529;
---border-default:var(--warm-600);
---border-strong:var(--warm-500);
+/* Yüzeyler nötr griye yakın; bakır yalnız birincil eylemde ve vurguda. */
+--bg-app:#161718;
+--bg-rail:#111213;
+--bg-panel:#111213;
+--surface-card:#1c1e20;
+--surface-raised:#232527;
+--surface-sunken:#131415;
+--surface-selected:#26292c;
+--surface-selected-strong:#2e3135;
+--border-subtle:#212427;
+--border-default:#2c2f33;
+--border-strong:#3b3f44;
 --border-accent:var(--copper-400);
 --text-title:#f0eeeb;
 --text-body:var(--warm-050);

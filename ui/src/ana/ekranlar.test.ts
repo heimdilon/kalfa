@@ -635,36 +635,47 @@ describe('tur özeti ve geri alma (aşama 3 tasarımı §5.11)', () => {
     expect(screen.queryByRole('heading', { name: 'Dosyaları incele' })).toBeNull();
   });
 
-  it('varsayılan kapalı sağ bölmede yüzen denetçi görünür; açılınca bölmeler boyutlandırılır', async () => {
+  it('inceleme bölmesi başlıktan açılır ve kapanır; tutamaçla boyutlandırılır', async () => {
     await ciz();
-    const denetci = screen.getByRole('complementary', { name: 'Oturum denetçisi' });
-    expect(denetci).toBeTruthy();
+    expect(screen.queryByRole('complementary', { name: 'Değişiklikler' })).toBeNull();
 
-    // Sol bölme tutamacı klavye ile en çok 300px'e kadar genişler.
-    const solTutamac = screen.getByRole('button', { name: 'Bölme genişliğini ayarla' });
-    for (let i = 0; i < 10; i++) {
-      await fireEvent.keyDown(solTutamac, { key: 'ArrowRight' });
-    }
-    expect(document.querySelector('.sol-genislik-300')).toBeTruthy();
-
-    // Sağ inceleme bölmesini aç.
     await fireEvent.click(screen.getByRole('button', { name: 'İnceleme bölmesini aç' }));
-    expect(screen.queryByRole('complementary', { name: 'Oturum denetçisi' })).toBeNull();
     expect(screen.getByRole('complementary', { name: 'Değişiklikler' })).toBeTruthy();
 
-    // Sağ bölme tutamacı klavye ile %50'ye (yarı yarıya) kadar çekilebilir.
-    const tutamaclar = screen.getAllByRole('button', { name: 'Bölme genişliğini ayarla' });
-    const sagTutamac = tutamaclar[1];
+    // Tutamaç klavye ile bölmeyi %50'ye (yarı yarıya) kadar genişletir.
+    const tutamac = screen.getByRole('button', { name: 'Bölme genişliğini ayarla' });
     for (let i = 0; i < 10; i++) {
-      await fireEvent.keyDown(sagTutamac, { key: 'ArrowLeft' });
+      await fireEvent.keyDown(tutamac, { key: 'ArrowLeft' });
     }
     expect(document.querySelector('.sag-oran-50')).toBeTruthy();
 
-    // Pointer sürüklemesi blur veya pointercancel ile temizlenir.
-    await fireEvent.pointerDown(solTutamac, { pointerId: 1 });
-    expect(solTutamac.classList.contains('etkin')).toBe(true);
+    // Pointer sürüklemesi blur ile temizlenir.
+    await fireEvent.pointerDown(tutamac, { pointerId: 1 });
+    expect(tutamac.classList.contains('etkin')).toBe(true);
     await fireEvent.blur(window);
-    expect(solTutamac.classList.contains('etkin')).toBe(false);
+    expect(tutamac.classList.contains('etkin')).toBe(false);
+
+    const konusma = screen.getByRole('region', { name: 'Konuşma' });
+    await fireEvent.click(within(konusma).getByRole('button', { name: 'İnceleme bölmesini kapat' }));
+    expect(screen.queryByRole('complementary', { name: 'Değişiklikler' })).toBeNull();
+  });
+
+  it('Ctrl+B kenar çubuğunu gizler; başlıktaki düğme geri açar', async () => {
+    await ciz();
+    await fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
+    expect(screen.queryByRole('complementary', { name: 'Oturumlar' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Kenar çubuğunu göster' }));
+    expect(screen.getByRole('complementary', { name: 'Oturumlar' })).toBeTruthy();
+  });
+
+  it('Ctrl+N yeni oturum açar, Ctrl+K aramaya odaklanır', async () => {
+    const { arka } = await ciz();
+    await fireEvent.keyDown(window, { key: 'n', ctrlKey: true });
+    await waitFor(() => expect(arka.komutlar('oturum_baslat')).toHaveLength(1));
+    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Oturumlarda ara…' })),
+    );
   });
 
   it('değişiklikler bölmesi tamamlanan tur diffini gösterir ve yanıtlanan onayları dışlar', async () => {

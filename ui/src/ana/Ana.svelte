@@ -1,10 +1,12 @@
 <!--
-  Ana pencere (1c tasarımı §8.1): menü, oturum listesi, konuşma ve en altta
-  durum çubuğu. Onay sayfası konuşmanın üstünde açılır. Menüden Ayarlar ya da
-  Eklentiler seçilince liste ve konuşmanın yerine o ekran gelir.
+  Ana pencere (1c tasarımı §8.1): solda kenar çubuğu (oturumlar ve menü),
+  ortada konuşma, istenirse sağda inceleme bölmesi; en altta durum çubuğu.
+  Onay sayfası konuşmanın üstünde açılır. Menüden Ayarlar ya da Eklentiler
+  seçilince konuşmanın yerine o ekran gelir. Ctrl+N yeni oturum açar, Ctrl+K
+  oturumlarda arar, Ctrl+B kenar çubuğunu gizler.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Button from '../bilesenler/Button.svelte';
   import DiffView from '../bilesenler/DiffView.svelte';
   import { diffCozumle } from '../bilesenler/diff';
@@ -28,38 +30,27 @@
     void durum.baslat();
   });
 
-  // Sol proje/oturum bölmesi: Codex'teki gibi dar sınırlar içinde (180px – 300px, 10px adımlarla).
-  let solGenislik = $state(240);
   // Sağ diff/inceleme bölmesi: %28'den %50'ye (yarı yarıya) kadar çekilebilir (2'şer puan adımlarla).
   let sagOran = $state(38);
-  let suruklenen = $state<'sol' | 'sag' | null>(null);
+  let suruklenen = $state(false);
   let govdeKutu = $state<HTMLDivElement>();
   let seciliDiffIndeksi = $state(0);
-
-  function solAdimSinifi(px: number): string {
-    const sinirli = Math.min(300, Math.max(180, Math.round(px / 10) * 10));
-    return `sol-genislik-${sinirli}`;
-  }
 
   function sagOranSinifi(oran: number): string {
     const sinirli = Math.min(50, Math.max(28, Math.round(oran / 2) * 2));
     return `sag-oran-${sinirli}`;
   }
 
-  function surukleBaslat(taraf: 'sol' | 'sag', e: PointerEvent) {
+  function surukleBaslat(e: PointerEvent) {
     e.preventDefault();
     (e.currentTarget as HTMLElement | null)?.setPointerCapture?.(e.pointerId);
-    suruklenen = taraf;
+    suruklenen = true;
   }
 
   function surukleHareket(e: PointerEvent) {
     if (!suruklenen || !govdeKutu) return;
     const dikdortgen = govdeKutu.getBoundingClientRect();
-    if (suruklenen === 'sol') {
-      // 48px en soldaki ikon şeridi düşülür; 180px ile 300px arasında sınırlanır.
-      const yeni = e.clientX - dikdortgen.left - 48;
-      solGenislik = Math.min(300, Math.max(180, yeni));
-    } else if (suruklenen === 'sag' && dikdortgen.width > 0) {
+    if (dikdortgen.width > 0) {
       const sagGenislik = dikdortgen.right - e.clientX;
       const yuzde = (sagGenislik / dikdortgen.width) * 100;
       sagOran = Math.min(50, Math.max(28, yuzde));
@@ -67,26 +58,35 @@
   }
 
   function surukleBitir() {
-    if (suruklenen) suruklenen = null;
+    if (suruklenen) suruklenen = false;
   }
 
-  function tutamacTus(taraf: 'sol' | 'sag', e: KeyboardEvent) {
-    if (taraf === 'sol') {
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        solGenislik = Math.max(180, solGenislik - 10);
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        solGenislik = Math.min(300, solGenislik + 10);
-      }
-    } else {
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        sagOran = Math.min(50, sagOran + 2);
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        sagOran = Math.max(28, sagOran - 2);
-      }
+  function tutamacTus(e: KeyboardEvent) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      sagOran = Math.min(50, sagOran + 2);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      sagOran = Math.max(28, sagOran - 2);
+    }
+  }
+
+  /** Ctrl+N, Ctrl+K ve Ctrl+B (macOS'ta Cmd). Açık bir pencere varken çalışmaz. */
+  async function kisayol(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    if (durum.onay || durum.gunlukOturum || durum.aktif?.geri_alma) return;
+    const tus = e.key.toLocaleLowerCase('tr-TR');
+    if (tus === 'n') {
+      e.preventDefault();
+      await durum.yeniOturum();
+    } else if (tus === 'b') {
+      e.preventDefault();
+      durum.kenarAcik = !durum.kenarAcik;
+    } else if (tus === 'k') {
+      e.preventDefault();
+      durum.kenarAcik = true;
+      await tick();
+      govdeKutu?.querySelector<HTMLInputElement>('.kenar input[type="search"]')?.focus();
     }
   }
 
@@ -167,52 +167,46 @@
 </script>
 
 <svelte:window
+  onkeydown={kisayol}
   onpointermove={surukleHareket}
   onpointerup={surukleBitir}
   onpointercancel={surukleBitir}
   onblur={surukleBitir}
 />
 
-<div class={['ana', { surukleniyor: suruklenen !== null }]}>
+<div class={['ana', { surukleniyor: suruklenen }]}>
   <div bind:this={govdeKutu} class="govde">
-    <Menu {durum} />
+    {#if durum.kenarAcik}
+      <div class="kenar">
+        <OturumListesi {durum} />
+        <Menu {durum} />
+      </div>
+    {/if}
     {#if durum.gorunum === 'ayarlar'}
       <Ayarlar {durum} />
     {:else if durum.gorunum === 'eklentiler'}
       <Eklentiler {durum} />
     {:else}
-      <div class={['sol-bolme-sarmal', solAdimSinifi(solGenislik)]}>
-        <OturumListesi {durum} />
-      </div>
-      <button
-        type="button"
-        aria-label={m('konusma.bolme_boyutlandir')}
-        class={['bolme-tutamaci', 'sol-tutamac', { etkin: suruklenen === 'sol' }]}
-        onpointerdown={(e) => surukleBaslat('sol', e)}
-        onlostpointercapture={surukleBitir}
-        onkeydown={(e) => tutamacTus('sol', e)}
-      ></button>
-
       <Konusma {durum} />
 
       {#if durum.sagBolmeAcik && durum.aktif}
         <button
           type="button"
           aria-label={m('konusma.bolme_boyutlandir')}
-          class={['bolme-tutamaci', 'sag-tutamac', { etkin: suruklenen === 'sag' }]}
-          onpointerdown={(e) => surukleBaslat('sag', e)}
+          class={['bolme-tutamaci', { etkin: suruklenen }]}
+          onpointerdown={surukleBaslat}
           onlostpointercapture={surukleBitir}
-          onkeydown={(e) => tutamacTus('sag', e)}
+          onkeydown={tutamacTus}
         ></button>
 
         <aside
           class={['sag-bolme', sagOranSinifi(sagOran)]}
-          aria-label={m('konusma.denetci.degisiklikler')}
+          aria-label={m('konusma.degisiklikler')}
         >
           <header class="sag-ust">
             <div class="sag-baslik">
               <Icon name="code" size={15} />
-              <span>{m('konusma.denetci.degisiklikler')}</span>
+              <span>{m('konusma.degisiklikler')}</span>
               <span class="sag-sayi">{sagBolmeDosyalari.length}</span>
             </div>
             <IconButton
@@ -322,51 +316,14 @@
     display: flex;
     min-height: 0;
   }
-  .sol-bolme-sarmal {
-    flex: 0 0 auto;
+  .kenar {
+    flex: 0 0 256px;
+    width: 256px;
     height: 100%;
     display: flex;
-    min-width: 180px;
-    max-width: 300px;
-  }
-  .sol-genislik-180 {
-    width: 180px;
-  }
-  .sol-genislik-190 {
-    width: 190px;
-  }
-  .sol-genislik-200 {
-    width: 200px;
-  }
-  .sol-genislik-210 {
-    width: 210px;
-  }
-  .sol-genislik-220 {
-    width: 220px;
-  }
-  .sol-genislik-230 {
-    width: 230px;
-  }
-  .sol-genislik-240 {
-    width: 240px;
-  }
-  .sol-genislik-250 {
-    width: 250px;
-  }
-  .sol-genislik-260 {
-    width: 260px;
-  }
-  .sol-genislik-270 {
-    width: 270px;
-  }
-  .sol-genislik-280 {
-    width: 280px;
-  }
-  .sol-genislik-290 {
-    width: 290px;
-  }
-  .sol-genislik-300 {
-    width: 300px;
+    flex-direction: column;
+    background: var(--bg-rail);
+    border-right: var(--border-width) solid var(--border-subtle);
   }
   .bolme-tutamaci {
     position: relative;
@@ -375,8 +332,8 @@
     padding: 0;
     border: none;
     cursor: col-resize;
-    background: var(--border-subtle);
-    transition: background 120ms ease;
+    background: linear-gradient(var(--border-subtle), var(--border-subtle)) center / 1px 100% no-repeat;
+    transition: background-color var(--dur-fast) var(--ease-standard);
     z-index: 15;
   }
   .bolme-tutamaci::after {
@@ -394,7 +351,7 @@
   .bolme-tutamaci:hover,
   .bolme-tutamaci.etkin,
   .bolme-tutamaci:focus-visible {
-    background: color-mix(in srgb, var(--copper-300) 45%, var(--border-subtle));
+    background-color: color-mix(in srgb, var(--copper-300) 35%, transparent);
     outline: none;
   }
   .bolme-tutamaci:hover::after,
@@ -452,7 +409,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 14px;
+    height: 46px;
+    flex: 0 0 auto;
+    padding: 0 12px 0 16px;
     border-bottom: var(--border-width) solid var(--border-subtle);
   }
   .sag-baslik {
@@ -495,7 +454,6 @@
   .sag-dosya.secili {
     background: var(--surface-selected);
     color: var(--text-title);
-    box-shadow: var(--shadow-accent-edge);
   }
   .sag-yol {
     flex: 1;
