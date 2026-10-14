@@ -229,7 +229,14 @@ Linux e2e (WSL Ubuntu 24.04, `kalfatest`, `xvfb-run`) bu başta **41/41**.
 Fedora ve Windows kurulum sınamaları geçti. Taslak sürümde `.deb`, `.rpm`,
 NSIS kurucusu ve `SHA256SUMS` var.
 
-**Sıradaki tek iş:** Kullanıcı `v0.1.0` taslak sürümünü yayımlar.
+Kullanıcı `v0.1.0`'ı ön sürüm olarak yayımladı (14 Ekim 18:14 TSİ).
+
+**MCP 1.1a (14 Ekim):** Kullanıcı MCP desteğini seçti; yerel stdio (1.1a)
+ve uzak HTTP/OAuth (1.1b) olarak bölündü. 1.1a tasarımı bölüm bölüm
+onaylandı: [tasarım](superpowers/specs/2026-10-14-kalfa-11a-mcp-yerel-design.md).
+
+**Sıradaki tek iş:** Kullanıcının yazılı 1.1a tasarımını incelemesi; onayla
+G1 (Windows borulu AppContainer prototipi) ve plan 1.1a-1.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

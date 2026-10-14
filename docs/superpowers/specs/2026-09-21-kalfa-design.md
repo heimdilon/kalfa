@@ -1356,6 +1356,11 @@ Savunma/kurumsal dağıtımda *katı*, günlük kodlamada *kapalı* mantıklıd�
 
 MCP desteği tasarımda yerini alır ama **v1'de yazılmaz.**
 
+> **14 Ekim:** v1.1 iki aşamaya bölündü: **1.1a** yerel stdio sunucuları
+> (varsayılan yalıtımlı; [tasarımı](2026-10-14-kalfa-11a-mcp-yerel-design.md)),
+> **1.1b** uzak Streamable HTTP ve OAuth. Aşağıdaki "Değerlendirilecek"
+> maddesi 1.1a'da karara bağlandı.
+
 Araç soyutlaması kolay kısımdır: `kalfa-mcp` crate'i `rmcp` (resmî Rust SDK,
 v3.4.0) üzerine oturur, stdio taşıması yeter. Sunucunun araçları aynı `Tool`
 trait'ine sarılır, **ajan döngüsü hiç değişmez.** Süreç yaşam döngüsü ve güvenlik
