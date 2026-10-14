@@ -62,8 +62,8 @@ toml = "1.1"
 url = "2.5"
 # Eklenti çalışma zamanı (aşama 4 tasarımı §5.2). Tam sürümle sabit: bileşen
 # API'si sürümler arasında değişiyor; yükseltme ayrı bir iştir.
-wasmtime = { version = "=49.0.2", default-features = false, features = ["runtime", "cranelift", "component-model", "async", "std"] }
-wasmtime-wasi = { version = "=49.0.2", default-features = false, features = ["p2"] }
+wasmtime = { version = "=49.0.3", default-features = false, features = ["runtime", "cranelift", "component-model", "async", "std"] }
+wasmtime-wasi = { version = "=49.0.3", default-features = false, features = ["p2"] }
 wit-bindgen = "0.62"
 uuid = { version = "1.26", features = ["v4", "serde"] }
 wiremock = "0.6.5"
