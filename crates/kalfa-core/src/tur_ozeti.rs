@@ -44,6 +44,8 @@ pub struct DosyaOzeti {
     /// Yazan çağrının sonucu bilinmiyor (Kalfa yazma sırasında kapandı).
     pub sonucu_bilinmiyor: bool,
     pub geri_alinabilir: GeriAlinabilirlik,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -94,6 +96,7 @@ pub struct YazilanDosya {
     pub eklenen: u32,
     pub silinen: u32,
     pub geri_alinabilir: GeriAlinabilirlik,
+    pub diff: Option<String>,
 }
 
 #[derive(Debug)]
@@ -101,6 +104,28 @@ struct Yazma {
     cagri: CagriId,
     durum: AracDurumu,
     dosyalar: Vec<YazilanDosya>,
+}
+
+/// Bir `TurOzeti` olayındaki bütün diff'lerin JSON dizgisi olarak bayt üst sınırı.
+/// Tekil `TurOzeti` olayının 8 MiB'lık olay aktarım bütçesini aşmasını önler.
+pub const AZAMI_TUR_OZETI_DIFF_BAYT: usize = 2 * 1024 * 1024;
+
+fn json_bayti(bayt: u8) -> usize {
+    match bayt {
+        b'"' | b'\\' | b'\n' | b'\r' | b'\t' | 8 | 12 => 2,
+        0..=31 => 6,
+        _ => 1,
+    }
+}
+
+fn yama_basligini_atla(diff: &str) -> &str {
+    if let Some(indeks) = diff.find("\n@@ ") {
+        let bas = &diff[..indeks];
+        if bas.starts_with("--- ") || bas.contains("\n--- ") {
+            return &diff[indeks + 1..];
+        }
+    }
+    diff
 }
 
 /// Tur boyunca özetin bilgisini toplar; turun başında sıfırlanır.
@@ -190,6 +215,17 @@ impl TurBiriktirici {
                         if o.geri_alinabilir == GeriAlinabilirlik::Evet {
                             o.geri_alinabilir = d.geri_alinabilir;
                         }
+                        if let Some(yeni_diff) = &d.diff {
+                            match &mut o.diff {
+                                Some(mevcut) => {
+                                    if !mevcut.ends_with('\n') {
+                                        mevcut.push('\n');
+                                    }
+                                    mevcut.push_str(yama_basligini_atla(yeni_diff));
+                                }
+                                None => o.diff = Some(yeni_diff.clone()),
+                            }
+                        }
                     }
                     None => dosyalar.push(DosyaOzeti {
                         yol: d.yol.clone(),
@@ -202,7 +238,35 @@ impl TurBiriktirici {
                         silinen: d.silinen,
                         sonucu_bilinmiyor: bilinmiyor,
                         geri_alinabilir: d.geri_alinabilir,
+                        diff: d.diff.clone(),
                     }),
+                }
+            }
+        }
+        let mut kalan_diff = AZAMI_TUR_OZETI_DIFF_BAYT;
+        for d in &mut dosyalar {
+            if let Some(diff) = &mut d.diff {
+                // JSON'un iki tırnağı ve kaçışları da bütçeye dahildir.
+                // Yalnız tam satırlar tutulur; UTF-8 karakterleri bölünmez.
+                let mut json_bayt = 2usize;
+                let mut kesim = 0;
+                for satir in diff.split_inclusive('\n') {
+                    let satir_bayt = satir.bytes().map(json_bayti).sum::<usize>();
+                    if json_bayt.saturating_add(satir_bayt) > kalan_diff {
+                        break;
+                    }
+                    json_bayt += satir_bayt;
+                    kesim += satir.len();
+                }
+                if kesim == diff.len() && json_bayt <= kalan_diff {
+                    kalan_diff -= json_bayt;
+                } else {
+                    if kesim > 0 && diff[..kesim].contains("@@ ") {
+                        diff.truncate(kesim);
+                    } else {
+                        d.diff = None;
+                    }
+                    kalan_diff = 0;
                 }
             }
         }

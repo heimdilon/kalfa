@@ -36,6 +36,6 @@
 --type-small:var(--fw-regular) var(--text-small)/var(--lh-normal) var(--font-sans);
 --type-label:var(--fw-semibold) var(--text-nano)/var(--lh-snug) var(--font-sans);
 --type-code:var(--fw-regular) var(--text-small)/1.65 var(--font-mono);
---type-meta:var(--fw-regular) var(--text-micro)/var(--lh-snug) var(--font-mono);
+--type-meta:var(--fw-regular) var(--text-micro)/var(--lh-snug) var(--font-sans);
 --type-doc:var(--fw-regular) 16px/var(--lh-relaxed) var(--font-serif);
 }

@@ -1,79 +1,75 @@
 <!--
-  Menü (1c tasarımı §8.1): Oturumlar, Eklentiler (aşama 4 tasarımı §14), Ayarlar
-  (aşama 2 tasarımı §10.4) ve "Anahtarı değiştir".
+  Menü (1c tasarımı §8.1): kenar çubuğunun altındaki gezinme. Eklentiler
+  (aşama 4 tasarımı §14), Gönderim günlüğü, "Anahtarı değiştir" ve Ayarlar
+  (aşama 2 tasarımı §10.4). Ayarlar ya da Eklentiler açıkken en üstte
+  "Oturumlar" konuşmaya döndürür.
 -->
 <script lang="ts">
-  import NavItem from '../bilesenler/NavItem.svelte';
-  import NavRail from '../bilesenler/NavRail.svelte';
+  import Icon from '../bilesenler/Icon.svelte';
+  import type { IkonAdi } from '../bilesenler/ikonlar';
   import { m } from '../dil/tr';
   import type { AnaDurum } from './anaDurum.svelte';
 
   let { durum }: { durum: AnaDurum } = $props();
 </script>
 
-<NavRail label={m('menu.ad')} class="menu">
-  {#snippet header()}
-    <div class="marka">{m('uygulama.adi')}</div>
-    <div class="slogan">{m('uygulama.slogan')}</div>
-  {/snippet}
-  <NavItem
-    icon="message-square"
-    active={durum.gorunum === 'oturumlar'}
-    onclick={() => durum.oturumlaraDon()}
+{#snippet oge(ikon: IkonAdi, etiket: string, etkin: boolean, onclick: () => void)}
+  <button
+    type="button"
+    class={['oge', { etkin }]}
+    aria-label={etiket}
+    aria-current={etkin ? 'page' : undefined}
+    {onclick}
   >
-    {m('menu.oturumlar')}
-  </NavItem>
-  <NavItem
-    icon="puzzle"
-    active={durum.gorunum === 'eklentiler'}
-    onclick={() => durum.eklentileriAc()}
-  >
-    {m('menu.eklentiler')}
-  </NavItem>
-  <NavItem
-    icon="settings"
-    active={durum.gorunum === 'ayarlar'}
-    onclick={() => durum.ayarlariAc()}
-  >
-    {m('menu.ayarlar')}
-  </NavItem>
-  <NavItem icon="key-round" onclick={() => durum.anahtariDegistir()}>
-    {m('menu.anahtar')}
-  </NavItem>
-  {#if durum.secili}
-    <NavItem
-      icon="send"
-      active={durum.gunlukAcik}
-      onclick={() => durum.gunluguAc()}
-    >
-      {m('menu.gunluk')}
-    </NavItem>
+    <Icon name={ikon} size={16} />
+    <span>{etiket}</span>
+  </button>
+{/snippet}
+
+<nav class="menu" aria-label={m('menu.ad')}>
+  {#if durum.gorunum !== 'oturumlar'}
+    {@render oge('message-square', m('menu.oturumlar'), false, () => durum.oturumlaraDon())}
   {/if}
-  {#snippet footer()}
-    <div class="cizgi"></div>
-    <div class="alt-not">{m('uygulama.alt_not')}</div>
-  {/snippet}
-</NavRail>
+  {@render oge('puzzle', m('menu.eklentiler'), durum.gorunum === 'eklentiler', () =>
+    durum.eklentileriAc(),
+  )}
+  {#if durum.secili}
+    {@render oge('send', m('menu.gunluk'), durum.gunlukAcik, () => durum.gunluguAc())}
+  {/if}
+  {@render oge('key-round', m('menu.anahtar'), false, () => durum.anahtariDegistir())}
+  {@render oge('settings', m('menu.ayarlar'), durum.gorunum === 'ayarlar', () => durum.ayarlariAc())}
+</nav>
 
 <style>
-  .marka {
-    font: var(--type-wordmark);
-    letter-spacing: var(--tracking-wordmark);
-    color: var(--text-title);
+  .menu {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 8px;
+    border-top: var(--border-width) solid var(--border-subtle);
   }
-  .slogan {
-    margin-top: 4px;
-    font: var(--type-tagline);
-    color: var(--text-muted);
-  }
-  .cizgi {
-    width: 34px;
-    height: 2px;
-    margin-bottom: 10px;
-    background: var(--copper-400);
-  }
-  .alt-not {
+  .oge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 32px;
+    padding: 0 10px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
     font: var(--type-small);
-    color: var(--text-muted);
+    text-align: left;
+    cursor: pointer;
+    transition: var(--transition-control);
+  }
+  .oge:hover {
+    background: var(--surface-raised);
+    color: var(--text-body);
+  }
+  .oge.etkin {
+    background: var(--surface-selected);
+    color: var(--text-title);
   }
 </style>

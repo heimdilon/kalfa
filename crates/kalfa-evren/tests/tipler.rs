@@ -275,3 +275,20 @@ fn dusunce_tokenlari_tamamlamaya_eklenmez() {
     );
     assert_eq!(u.butce_kullanimi(), Some((10, 20)));
 }
+
+#[test]
+fn dusunce_eforu_uygulanmasi_ve_serilestirilmesi() {
+    let mut istek = ChatRequest::new("glm-5.3", vec![ChatMessage::user("merhaba")]);
+    istek.efor_uygula(DusunceEforu::Orta);
+    let orta_json = serde_json::to_value(&istek).unwrap();
+    assert_eq!(orta_json["reasoning_effort"], "medium");
+    assert!(orta_json.get("chat_template_kwargs").is_none());
+
+    istek.efor_uygula(DusunceEforu::Kapali);
+    let kapali_json = serde_json::to_value(&istek).unwrap();
+    assert!(kapali_json.get("reasoning_effort").is_none());
+    assert_eq!(
+        kapali_json["chat_template_kwargs"],
+        json!({"enable_thinking": false})
+    );
+}

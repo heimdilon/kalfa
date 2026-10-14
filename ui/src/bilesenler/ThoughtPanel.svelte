@@ -1,4 +1,7 @@
-<!-- Modelin düşünce dökümü. Kalfa bunu kapalı gösterir: düşünce sunulur, dayatılmaz. -->
+<!--
+  Modelin düşünce dökümü: tek satır. Akarken açık durur, bitince kapanır;
+  düşünce sunulur, dayatılmaz.
+-->
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { m } from '../dil/tr';
@@ -8,74 +11,111 @@
     /** Özet satırı; verilmezse katalogdaki genel metin. */
     summary?: string;
     open?: boolean;
+    /** Model hâlâ düşünce üretiyorsa canlı akış görünümü açılır. */
+    akista?: boolean;
     class?: string;
     children?: Snippet;
   }
 
-  let { summary, open = $bindable(false), class: sinif, children }: Props = $props();
+  let {
+    summary,
+    open = $bindable(false),
+    akista = false,
+    class: sinif,
+    children,
+  }: Props = $props();
 
   const kimlik = $props.id();
+  const gorunur = $derived(open || akista);
+
+  function degistir() {
+    if (akista) return;
+    open = !open;
+  }
 </script>
 
-<section class={['dusunce', sinif]}>
+<section class={['dusunce', { akista, acik: gorunur }, sinif]}>
   <button
     type="button"
-    aria-expanded={open}
+    disabled={akista}
+    aria-expanded={gorunur}
     aria-controls={`${kimlik}-ic`}
-    onclick={() => (open = !open)}
+    onclick={degistir}
   >
-    <span class="ok"><Icon name={open ? 'chevron-down' : 'chevron-right'} size={15} /></span>
+    <span class="ok"><Icon name={gorunur ? 'chevron-down' : 'chevron-right'} size={15} /></span>
+    {#if akista}
+      <span class="canli-nokta" aria-hidden="true"></span>
+    {/if}
     <span class="metinler">
       <span class="baslik">{m('dusunce.baslik')}</span>
-      <span class="ozet">{summary ?? m('dusunce.ozet')}</span>
+      {#if summary || akista}
+        <span class="ozet">{summary ?? m('dusunce.suruyor')}</span>
+      {/if}
     </span>
   </button>
-  {#if open}
+  {#if gorunur}
     <div id={`${kimlik}-ic`} class="ic">{@render children?.()}</div>
   {/if}
 </section>
 
 <style>
-  .dusunce {
-    background: var(--surface-card);
-    border: var(--border-width) solid var(--border-subtle);
-    border-radius: var(--radius-xl);
-    overflow: hidden;
-  }
   button {
     display: flex;
     align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 12px 14px;
+    gap: 6px;
+    padding: 2px 0;
     background: transparent;
     border: none;
     cursor: pointer;
     text-align: left;
-    color: inherit;
+    color: var(--text-muted);
+    transition: var(--transition-control);
+  }
+  button:disabled {
+    cursor: default;
+  }
+  button:hover:not(:disabled) {
+    color: var(--text-secondary);
   }
   .ok {
     display: inline-flex;
-    color: var(--text-muted);
+  }
+  .canli-nokta {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--action-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 25%, transparent);
+    animation: kalfa-imlec 1.2s ease-in-out infinite;
   }
   .metinler {
-    flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
   }
   .baslik {
-    display: block;
-    font: var(--fw-semibold) var(--text-small) / 1.3 var(--font-sans);
-    color: var(--text-title);
+    font: var(--fw-medium) var(--text-small) / 1.3 var(--font-sans);
+  }
+  .akista .baslik {
+    color: var(--text-secondary);
   }
   .ozet {
-    display: block;
-    margin-top: 3px;
-    font: var(--type-meta);
-    color: var(--text-muted);
+    font: var(--type-small);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .ic {
-    padding: 12px 14px 14px 39px;
-    border-top: var(--border-width) solid var(--border-subtle);
+    margin: 6px 0 2px 7px;
+    padding: 2px 0 2px 14px;
+    border-left: 2px solid var(--border-default);
     font: var(--type-small);
-    color: var(--text-secondary);
+    color: var(--text-muted);
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .ic :global(:is(p, li)) {
+    color: inherit;
   }
 </style>

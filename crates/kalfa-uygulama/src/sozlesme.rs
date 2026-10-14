@@ -9,6 +9,7 @@ use kalfa_core::kimlik::{CagriId, OturumId};
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::protokol::OnayKarari;
 use kalfa_core::sart_kapisi::SartMetni;
+pub use kalfa_evren::tipler::DusunceEforu;
 use kalfa_sandbox::YalitimDurumu;
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +54,7 @@ pub enum OnarimSonucu {
 pub struct ModelSecenegi {
     pub kimlik: String,
     pub profil: ModelProfili,
+    pub eforlar: Vec<DusunceEforu>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -61,6 +63,7 @@ pub struct UygulamaDurumu {
     pub anahtar_deposu: DepoTuru,
     pub modeller: Vec<ModelSecenegi>,
     pub varsayilan_model: String,
+    pub varsayilan_efor: DusunceEforu,
     /// Bu çalıştırmada en son açılan ya da başlatılan oturum; yeniden
     /// yüklenen ana pencere onu kayıttan açar (1c tasarımı §5.6).
     pub son_oturum: Option<OturumId>,

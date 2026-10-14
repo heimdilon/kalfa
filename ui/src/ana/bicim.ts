@@ -103,6 +103,13 @@ export function satirDurumu(
   }
 }
 
+/** Çalışma alanının kısa adı: yolun son klasörü; yol yoksa "kalfa". */
+export function projeAdi(yol: string | null): string {
+  if (!yol) return 'kalfa';
+  const parcalar = yol.replace(/\\/g, '/').split('/').filter(Boolean);
+  return parcalar.at(-1) ?? yol;
+}
+
 /** Listede gösterilen başlık: ilk kullanıcı mesajı ya da dosya adı. */
 export function satirBasligi(satir: OturumSatiri): string {
   if (satir.baslik) return satir.baslik;

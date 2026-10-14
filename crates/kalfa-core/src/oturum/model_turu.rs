@@ -26,6 +26,9 @@ impl Oturum {
         mesajlar.extend(self.mesajlar.iter().cloned());
         let mut istek = ChatRequest::new(self.ayarlar.model.clone(), mesajlar);
         istek.tools = self.baglam.araclar.tanimlar(self.ayarlar.kip);
+        if let Some(efor) = self.ayarlar.efor {
+            istek.efor_uygula(efor);
+        }
         istek
     }
 

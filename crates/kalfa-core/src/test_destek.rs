@@ -407,10 +407,13 @@ impl Saglayici for SahteSaglayici {
     }
 }
 
-/// Sahte EVREN'in model kataloğu: bir sohbet, bir gömme, bir sıralama modeli.
+/// Sahte EVREN'in model kataloğu: sohbet, gömme ve sıralama modelleri.
 pub fn sahte_modeller() -> Vec<ModelInfo> {
     [
         ("glm-5.3", "chat"),
+        ("qwen3.8-flash-next", "chat"),
+        ("deepseek-v4-flash", "chat"),
+        ("auto", "chat"),
         ("qwen3-embedding-8b", "embedding"),
         ("qwen3-reranker-8b", "rerank"),
     ]
@@ -420,6 +423,7 @@ pub fn sahte_modeller() -> Vec<ModelInfo> {
         task: task.into(),
         modalities: Vec::new(),
         pricing: None,
+        eforlar: Vec::new(),
     })
     .collect()
 }

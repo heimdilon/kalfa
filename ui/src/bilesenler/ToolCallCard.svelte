@@ -1,7 +1,11 @@
+<!--
+  Araç çağrısı: tek satır ("Dosya okundu src/auth.rs · 48 satır"). Çıktısı
+  varsa satıra tıklanınca açılır; çalışırken ya da hata verince kendiliğinden
+  açık durur. Çıktı kapalıyken de belgede kalır.
+-->
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Icon from './Icon.svelte';
-  import IconTile from './IconTile.svelte';
   import type { IkonAdi } from './ikonlar';
 
   type Durum = 'running' | 'done' | 'failed' | 'denied' | 'unknown';
@@ -11,7 +15,7 @@
     tool: string;
     /** Tek aralıklı hedef: yol, desen. */
     target?: string;
-    /** Tek aralıklı özet: "412 satır · 18 KB". */
+    /** Kısa özet: "412 satır · 18 KB". */
     meta?: string;
     status?: Durum;
     /** Durumun ekran okuyucuya okunan adı. */
@@ -20,7 +24,7 @@
     class?: string;
     /** Çıktı önizlemesi; çoğunlukla bir CodeBlock. */
     children?: Snippet;
-    /** Başlığın altında rozetler (örneğin güvenlik denetçisinin, 3c). */
+    /** Satırın altında rozetler (örneğin güvenlik denetçisinin, 3c). */
     rozet?: Snippet;
   }
 
@@ -45,61 +49,81 @@
   };
 </script>
 
+{#snippet satir()}
+  <span class="ikon"><Icon name={icon} size={14} /></span>
+  <span class="ad">{tool}</span>
+  {#if target}<span class="hedef" title={target}>{target}</span>{/if}
+  <span class="bosluk"></span>
+  {#if meta}<span class="ozet">{meta}</span>{/if}
+  <span class={['durum', `d-${status}`]}>
+    <Icon
+      name={DURUM_IKONU[status]}
+      size={14}
+      title={statusLabel}
+      class={status === 'running' ? 'donen' : undefined}
+    />
+  </span>
+{/snippet}
+
 <section class={['arac', sinif]}>
-  <header>
-    <IconTile {icon} />
-    <div class="metinler">
-      <div class="ad">{tool}</div>
-      {#if target}<div class="hedef">{target}</div>{/if}
-      {#if meta}<div class="ozet">{meta}</div>{/if}
-      {#if rozet}<div class="rozetler">{@render rozet()}</div>{/if}
-    </div>
-    <span class={['durum', `d-${status}`]}>
-      <Icon
-        name={DURUM_IKONU[status]}
-        size={19}
-        title={statusLabel}
-        class={status === 'running' ? 'donen' : undefined}
-      />
-    </span>
-  </header>
-  {#if children}<div class="cikti">{@render children()}</div>{/if}
+  {#if children}
+    <details open={status === 'running' || status === 'failed'}>
+      <summary class="satir">{@render satir()}</summary>
+      <div class="cikti">{@render children()}</div>
+    </details>
+  {:else}
+    <div class="satir">{@render satir()}</div>
+  {/if}
+  {#if rozet}<div class="rozetler">{@render rozet()}</div>{/if}
 </section>
 
 <style>
-  .arac {
-    background: var(--surface-card);
-    border: var(--border-width) solid var(--border-subtle);
-    border-radius: var(--radius-xl);
-    overflow: hidden;
-  }
-  header {
+  .satir {
     display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 12px 14px;
+    align-items: center;
+    gap: 8px;
+    min-height: 26px;
+    padding: 2px 6px;
+    margin: 0 -6px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font: var(--type-small);
   }
-  .metinler {
-    flex: 1;
-    min-width: 0;
+  summary.satir {
+    list-style: none;
+    cursor: pointer;
+    transition: var(--transition-control);
   }
-  .rozetler {
-    margin-top: 6px;
+  summary.satir::-webkit-details-marker {
+    display: none;
+  }
+  summary.satir:hover {
+    background: var(--surface-card);
+    color: var(--text-body);
+  }
+  .ikon {
+    display: inline-flex;
+    color: var(--text-muted);
   }
   .ad {
-    font: var(--fw-semibold) var(--text-small) / 1.3 var(--font-sans);
-    color: var(--text-title);
+    flex: none;
   }
   .hedef {
-    margin-top: 3px;
-    font: var(--type-meta);
-    color: var(--text-secondary);
-    overflow-wrap: anywhere;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: var(--fw-regular) var(--text-micro) / 1.4 var(--font-mono);
+    color: var(--text-body);
+  }
+  .bosluk {
+    flex: 1;
   }
   .ozet {
-    margin-top: 6px;
+    flex: none;
     font: var(--type-meta);
     color: var(--text-muted);
+    white-space: nowrap;
   }
   .durum {
     display: inline-flex;
@@ -108,7 +132,7 @@
     color: var(--status-warn);
   }
   .d-done {
-    color: var(--status-ok);
+    color: var(--text-muted);
   }
   .d-failed,
   .d-denied {
@@ -118,6 +142,9 @@
     color: var(--text-muted);
   }
   .cikti {
-    padding: 0 14px 14px;
+    margin: 6px 0 4px 22px;
+  }
+  .rozetler {
+    margin: 2px 0 0 22px;
   }
 </style>

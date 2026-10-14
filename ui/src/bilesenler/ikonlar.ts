@@ -2,6 +2,7 @@
 // yeni bir ikon gerekince buraya eklenir. Adlar tasarım sistemindeki gibi
 // kebab-case'tir.
 import {
+  ArrowUp,
   AtSign,
   Ban,
   Box,
@@ -16,6 +17,7 @@ import {
   Coins,
   Copy,
   Cpu,
+  Ellipsis,
   ExternalLink,
   FileCheck,
   FilePen,
@@ -32,6 +34,7 @@ import {
   Lock,
   MessageSquare,
   Minus,
+  PanelLeft,
   Plus,
   Puzzle,
   RotateCcw,
@@ -42,6 +45,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Square,
+  SquarePen,
   SquareTerminal,
   Trash2,
   TriangleAlert,
@@ -51,6 +55,7 @@ import {
 } from '@lucide/svelte';
 
 export const IKONLAR = {
+  'arrow-up': ArrowUp,
   'at-sign': AtSign,
   ban: Ban,
   box: Box,
@@ -65,6 +70,7 @@ export const IKONLAR = {
   coins: Coins,
   copy: Copy,
   cpu: Cpu,
+  ellipsis: Ellipsis,
   'external-link': ExternalLink,
   'file-check': FileCheck,
   'file-pen': FilePen,
@@ -81,6 +87,7 @@ export const IKONLAR = {
   lock: Lock,
   'message-square': MessageSquare,
   minus: Minus,
+  'panel-left': PanelLeft,
   plus: Plus,
   puzzle: Puzzle,
   'rotate-ccw': RotateCcw,
@@ -91,6 +98,7 @@ export const IKONLAR = {
   'shield-alert': ShieldAlert,
   'shield-check': ShieldCheck,
   square: Square,
+  'square-pen': SquarePen,
   'square-terminal': SquareTerminal,
   'trash-2': Trash2,
   'triangle-alert': TriangleAlert,

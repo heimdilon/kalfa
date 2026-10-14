@@ -12,6 +12,7 @@ import type {
   ButceKarari,
   ButceSinirlari,
   DenetciDurumu,
+  DusunceEforu,
   CagriId,
   GunlukSinirDurumu,
   IslemId,
@@ -36,6 +37,10 @@ export class AnaDurum {
   hata = $state<string | null>(null);
   /** Açık onay sayfası. */
   onay = $state<{ oturum: OturumId; islem: IslemId } | null>(null);
+  /** Sağdaki bölünmüş değişiklik / inceleme bölmesi açık mı (varsayılan kapalı). */
+  sagBolmeAcik = $state(false);
+  /** Soldaki kenar çubuğu açık mı (Ctrl+B ile gizlenir). */
+  kenarAcik = $state(true);
   /** Açık gönderim günlüğü (oturum kimliğiyle). */
   gunlukOturum = $state<OturumId | null>(null);
   gunlukAcik = $derived(this.gunlukOturum !== null);
@@ -75,6 +80,7 @@ export class AnaDurum {
     await this.#dene(async () => {
       this.uygulama = await ipc.uygulamaDurumu();
     });
+    void this.#katalogEsitle();
     await this.#dene(async () => {
       this.denetci = await ipc.denetciKipi();
     });
@@ -105,8 +111,14 @@ export class AnaDurum {
   async yeniOturum(): Promise<void> {
     await this.#dene(async () => {
       const alan = await ipc.calismaAlaniSec();
-      if (!alan || !this.uygulama) return;
-      const acilis = await ipc.oturumBaslat(alan.kimlik, this.uygulama.varsayilan_model);
+      if (!alan) return;
+      // Arka uçtaki mevcut katalog yerel IPC ile okunur; yeni ağ isteği beklenmez.
+      const guncel = await ipc.uygulamaDurumu();
+      const model = guncel.modeller.some((m) => m.kimlik === guncel.varsayilan_model)
+        ? guncel.varsayilan_model
+        : (guncel.modeller[0]?.kimlik ?? guncel.varsayilan_model);
+      this.uygulama = { ...guncel, varsayilan_model: model };
+      const acilis = await ipc.oturumBaslat(alan.kimlik, model);
       await this.#kur(acilis);
       this.secili = acilis.oturum;
       this.gorunum = 'oturumlar';
@@ -138,7 +150,61 @@ export class AnaDurum {
     const oturum = this.secili;
     if (!oturum) return;
     const oldu = await this.#dene(() => ipc.modelDegistir(oturum, model));
-    if (oldu !== undefined) this.#uygula(oturum, { tip: 'ModelDegisti', model });
+    if (oldu !== undefined) {
+      this.#uygula(oturum, { tip: 'ModelDegisti', model });
+      const secenek = this.uygulama?.modeller.find((m) => m.kimlik === model);
+      const mevcutEfor =
+        this.ekranlar.get(oturum)?.ozet.efor ?? this.uygulama?.varsayilan_efor ?? 'orta';
+      const eforlar = secenek?.eforlar ?? [];
+      if (eforlar.length > 0 && !eforlar.includes(mevcutEfor)) {
+        const yeniEfor = eforlar.includes('orta') ? 'orta' : eforlar[0];
+        this.#uygula(oturum, { tip: 'EforDegisti', efor: yeniEfor });
+      }
+    }
+  }
+
+  async eforSec(efor: DusunceEforu): Promise<void> {
+    const oturum = this.secili;
+    if (!oturum) return;
+    const oldu = await this.#dene(() => ipc.eforDegistir(oturum, efor));
+    if (oldu !== undefined) this.#uygula(oturum, { tip: 'EforDegisti', efor });
+  }
+
+  async modelleriYenile(): Promise<void> {
+    const liste = await this.#dene(() => ipc.modelleriYenile());
+    if (liste && this.uygulama) {
+      const varsayilan_model =
+        liste.length > 0 && !liste.some((m) => m.kimlik === this.uygulama!.varsayilan_model)
+          ? liste[0].kimlik
+          : this.uygulama.varsayilan_model;
+      this.uygulama = { ...this.uygulama, modeller: liste, varsayilan_model };
+    }
+  }
+
+  async #katalogEsitle(): Promise<void> {
+    try {
+      const liste = await ipc.modelleriYenile();
+      if (this.uygulama && liste.length > 0) {
+        const varsayilan_model = liste.some((m) => m.kimlik === this.uygulama!.varsayilan_model)
+          ? this.uygulama.varsayilan_model
+          : liste[0].kimlik;
+        this.uygulama = { ...this.uygulama, modeller: liste, varsayilan_model };
+      }
+    } catch {
+      // Katalog alınamazsa (ör. çevrimdışı) mevcut uygulama durumu korunur.
+    }
+  }
+
+  sagBolmeyiAc(): void {
+    this.sagBolmeAcik = true;
+  }
+
+  sagBolmeyiKapat(): void {
+    this.sagBolmeAcik = false;
+  }
+
+  sagBolmeyiDegistir(): void {
+    this.sagBolmeAcik = !this.sagBolmeAcik;
   }
 
   /** Yükseltmede Rust yerel onay sorar; reddedilirse eski kip döner (1c tasarımı §6). */

@@ -342,6 +342,7 @@ fn durum_ozeti_kayittan_cikarilir() {
         durum_ozeti(&k.kayitlar),
         DurumOzeti {
             model: Some("auto".into()),
+            efor: None,
             kip: Some(Kip::Proje),
             yonlendirilen_model: Some("deepseek-v4-flash".into()),
             son_kredi: Some(gozlem),

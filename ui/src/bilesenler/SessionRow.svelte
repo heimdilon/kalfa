@@ -1,7 +1,7 @@
 <!--
-  295 px'lik oturum listesinde bir oturum. Nokta rengi durumu gösterir
-  (1c tasarımı §8.1): çalışıyor, onay ya da şart bekliyor, tamamlandı,
-  hata, yarım kaldı.
+  Kenar çubuğundaki oturum listesinde bir oturum. Nokta yalnızca dikkat
+  isteyen durumda görünür (1c tasarımı §8.1): çalışıyor, onay ya da şart
+  bekliyor, hata, yarım kaldı. Durumun adı her zaman ekran okuyucuya okunur.
 -->
 <script lang="ts">
   import type { HTMLButtonAttributes } from 'svelte/elements';
@@ -52,12 +52,13 @@
 
 <style>
   .oturum-satiri {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--space-1);
     width: 100%;
     text-align: left;
-    padding: var(--space-5) var(--space-6);
+    padding: 6px 10px 6px 32px;
     cursor: pointer;
     border: 0;
     border-radius: var(--radius-md);
@@ -70,7 +71,6 @@
   .etkin,
   .etkin:hover {
     background: var(--surface-selected);
-    box-shadow: var(--shadow-accent-edge);
   }
   .ust {
     display: flex;
@@ -79,20 +79,19 @@
     width: 100%;
   }
   .nokta {
+    position: absolute;
+    left: 15px;
+    top: 12px;
     width: 6px;
     height: 6px;
     border-radius: var(--radius-pill);
-    flex: 0 0 auto;
-    background: var(--text-muted);
   }
   .d-running {
-    background: var(--status-warn);
+    background: var(--action-primary);
+    animation: kalfa-imlec 1.2s ease-in-out infinite;
   }
   .d-waiting {
-    background: var(--text-accent);
-  }
-  .d-done {
-    background: var(--status-ok);
+    background: var(--status-warn);
   }
   .d-failed {
     background: var(--status-danger);
@@ -103,12 +102,13 @@
   .baslik {
     flex: 1;
     min-width: 0;
-    font: var(--fw-medium) var(--text-small) / 1.3 var(--font-sans);
-    color: var(--text-body);
+    font: var(--fw-regular) var(--text-small) / 1.35 var(--font-sans);
+    color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .oturum-satiri:hover .baslik,
   .etkin .baslik {
     color: var(--text-title);
   }
