@@ -1,10 +1,15 @@
 # Kalfa 1.1a — Yerel MCP sunucuları: Tasarım
 
 **Tarih:** 2026-10-14.
-**Durum:** Tasarım, r3. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
-§13'te iki incelemenin yanıtı var: Codex'in yerel incelemesi (`dd641a3`,
-altı bulgu) ve PR #19'daki satır içi Codex yorumları (15 bulgu). Yeniden
-incelemeye hazır. G1 ve uygulama, kullanıcının ayrı onayını bekliyor.
+**Durum:** Tasarım, r4. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
+§13'te üç incelemenin yanıtı var:
+
+- Codex'in yerel incelemesi (`dd641a3`, altı bulgu),
+- PR #19'daki satır içi Codex yorumları (15 bulgu),
+- Codex'in r3 yeniden incelemesi (`5dd79a4`, beş bulgu).
+
+Belge yeniden incelemeye hazır. G1 ve uygulama, kullanıcının ayrı onayını
+bekliyor.
 **Taban:** `main`, `04f16fc` (`v0.1.0` ön sürümü yayımlandı).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §10, §12.2.
 
@@ -28,15 +33,21 @@ Başarı (her madde §11'de bir testle karşılanır):
 - Başlatma izni verilmeden ya da yalnız İnceleme kipinde oturum varken
   sunucu süreci hiç oluşmaz (§5.1).
 - Koruma kümesi değişince (§4.3) sonraki çağrı yeni korumalarla başlatılmış
-  süreçte çalışır.
+  süreçte çalışır. Etkin çağrısı olan süreç dahil hiçbir süreç, 10 dk'dan
+  eski bir koruma denetimiyle çalışmayı sürdürmez.
+- Sunucu kodu çalışma alanındaysa, Kalfa o alana yazdıktan sonraki ilk
+  başlatma yeniden izin ister (§5.1.1).
 - Ham stdio sınırları (§4.2) ayrıştırmadan önce uygulanır. Sınırı aşan
   sunucu kontrollü kapanır, uygulama yanıt vermeye devam eder.
-- İptal ya da zaman aşımı sonrasında yan etki sürmez. Süreç ağacı
-  durdurulmadan çalışma alanı kilidi bırakılmaz (§7.3).
+- İptal ya da zaman aşımında, sunucu ne yanıt verirse versin süreç ağacı
+  durdurulur. Ağaç durup son denetim bitmeden çalışma alanı kilidi
+  bırakılmaz (§7.3).
 - Onay ve kısayollar §5.3'teki tarife bağlıdır. Tarif değişince eski onay
   yeni tarifle çalışmaz.
 - Araç tanımları denetçiden geçer. Katı kipte şüpheli ya da denetlenemeyen
   tanım modele gitmez (§6.2).
+- İçinde bilinen bir sır geçen araç tanımı; denetçiye, önbelleğe,
+  arayüze, JSONL kayda ve modele hiç ulaşmaz (§6.2).
 - MCP kendisi AppContainer profili ya da `S-1-15-2-` ACE'si bırakmaz.
   Çalışma alanı hazırlığı mevcut kurala tabidir (§5.6).
 - E2e: Ayarlar'dan test sunucusu eklenir, başlatma izni verilir, sohbette
@@ -60,9 +71,15 @@ Başarı (her madde §11'de bir testle karşılanır):
   ve tam erişimli sunucular aynı arayüzden başlar.
 
 **İnceleme sonrası değişen karar (§13, bulgu 4):** İlk sürümde "iptalde
-süreç öldürülmez" yazıyordu. r2'de iptal ve zaman aşımı, sınırlı
-beklemeden sonra süreç ağacını durdurur. Gerekçe: MCP iptali işbirliğine
-dayanır; aksi hâlde "iptal edildi" görünen işlem dosya yazmayı sürdürebilir.
+süreç öldürülmez" yazıyordu. r4'te iptal ve zaman aşımı, sunucunun
+yanıtından bağımsız olarak süreç ağacını **her durumda** durdurur; 2 sn
+yalnız kapanma payıdır (§7.3).
+
+- **Gerekçe:** MCP iptali işbirliğine dayanır. Sunucunun yanıtı yalnız
+  RPC verisidir, durdurmanın kanıtı olamaz. Aksi hâlde "iptal edildi"
+  görünen bir işlem dosya yazmayı sürdürebilir.
+- **Bedel:** Her iptalde sunucunun bellekteki durumu kaybolur.
+
 Bu değişiklik kullanıcının onayına sunulur.
 
 **Kapsam içinde:** stdio taşıması; MCP `tools` (`tools/list` sayfalamasıyla,
@@ -106,6 +123,15 @@ başlatma zaman aşımı (vars. 30 sn), çağrı zaman aşımı (vars. 120 sn)
     sunucunun ortamındaki `PATH`'te aranır.
   - Yerel dosya seçiciyle seçilmiş bir yürütülebilir dosya. Bu durumda yolu
     arka uç tutar; arayüz yalnız bir kimlik görür (§9).
+- **Çalışma dizini:** Sunucunun çalışma dizini çalışma alanı değil,
+  sunucuya özel bir dizindir:
+  - yalıtımlıda `<yalıtımın çalışma alanına özel ev dizini>/mcp/<sunucu>`,
+  - tam erişimde uygulama verisinde aynı adlı bir dizin.
+
+  Böylece `npx` ya da `uvx`, çalışma alanındaki `node_modules` ya da
+  `.venv` içinden kendiliğinden kod yüklemez. Çalışma alanının yolu sunucuya
+  yalnız açıkça, argümanda ya da ortam değerinde `${CALISMA_ALANI}` yer
+  tutucusuyla verilir. Kalfa yer tutucuyu başlatma anında çözer.
 - **Ortam:** §5.5'teki birleştirme kuralı geçerlidir.
 
 ## 4. Süreç ve taşıma
@@ -210,7 +236,22 @@ Her süreç kendi K'sıyla başlar ve onu saklar.
   Değişen K'lı süreç kapatılır. Yeniden başlatma bir sonraki çağrıda olur.
 - **Ayar değişince:** Gizli kalıplar, gizli sayılmayanlar, okunur dizinler
   ya da ağ listesi değişirse (`ayarlar.rs` `degistir`) o anda bütün çalışan
-  yalıtımlı sunucular kapatılır. Bekleyen çağrıları hata alır.
+  yalıtımlı sunucular kapatılır ve bekleyen çağrıları hata alır. Bu bir
+  politika (Π) değişikliği olduğu için başlatma izinleri ve kısayollar da
+  düşer (§5.3).
+- **Mutlak denetim yaşı:** Her süreç, K'sının son doğrulandığı anı (t_K)
+  saklar. Bir zamanlayıcı, t_K'dan en geç 10 dk sonra koruma denetimi
+  yapar. Zamanlayıcı sürecin durumuna bakmaz: keşif sürerken, onay
+  beklenirken ve bir çağrı çalışırken de denetler. Bu denetim kilit almaz,
+  yalnız tarar.
+  - K aynıysa t_K yenilenir.
+  - K değiştiyse süreç ağacı hemen durdurulur (§4.1). Etkin çağrı
+    "korumalar değişti, sunucu durduruldu" hatasıyla biter. Ardından son
+    denetim çalışır ve kilit bırakılır (§7.3).
+  - Çağrı zaman aşımı ne kadar uzun tutulursa tutulsun bu sınır uzamaz.
+- **Boşta kapanma:** Son çağrısından bu yana 10 dk çağrı almayan süreç
+  kapatılır (§4.1). Sonraki çağrıda izin geçerliyse onaysız yeniden başlar.
+  Çalışma alanı kodlu sunucuda ise yazma koşulu da aranır (§5.1.1).
 - **`.git` ve yapılandırma denetimi:** Kabuğun `komut_sonrasi_denetim`
   karşılığı şu anlarda çalışır: her çağrıdan sonra (iptal ve zaman aşımı
   dahil), her çağrıdan önce (son denetimden beri oluşanlar için) ve süreç
@@ -219,20 +260,38 @@ Her süreç kendi K'sıyla başlar ve onu saklar.
 
 **Kalan risk (kullanıcı kararına sunulur):** Kalfa dışındaki bir program
 (örneğin kullanıcının editörü) çalışma alanına gizli kalıba uyan bir dosya
-yazabilir. O zaman çalışan yalıtımlı sunucu dosyayı bir sonraki
-denetime kadar okuyabilir. Sonraki denetim şunlardan hangisi önce gelirse
-odur: bir sonraki çağrı, Kalfa'nın bir sonraki yazması ya da boşta kapanma.
+yazabilir. O zaman çalışan yalıtımlı sunucu bu dosyayı bir süre okuyabilir.
+Risk yalnız yalıtımlı sunucular için geçerlidir; tam erişimli sunucu zaten
+her dosyaya erişebilir.
 
-- **Pencere:** Kabukta bu pencere komutun süresidir (aşama 2 tasarımı
-  §7.2). MCP'de pencereyi en çok **10 dk boşta kapanma** sınırlar: çağrı
-  almayan yalıtımlı süreç kapatılır, sonraki çağrıda izin geçerliyse
-  onaysız yeniden başlar.
-- **Ağ ve okunabilirlik:** Ağ listesi boş sunucu okuduğunu dışarı
-  gönderemez. Dolu listede ise yalnız izinli hostlara çıkabilir. Windows'ta
-  ACL kesildiği andan sonra yeni açılışlar reddedilir; Linux'ta ise
-  bağlama, süreç yeniden başlayana kadar dosyayı görünür bırakır.
-- **Neden izleyici yok:** Bir dosya izleyicisi atomik bir sınır kurmadığı
-  için eklenmez.
+- **Süre (üst sınır):** Dosyanın yazıldığı andan sürecin durmasına kadar en
+  çok şu kadar geçer: **10 dk + bir koruma taraması + 2 sn kapanma payı +
+  ağacın öldürülmesi**.
+  - 10 dk, mutlak denetim yaşıdır. Çalışan çağrı, keşif ve onay bekleme bu
+    süreyi uzatmaz.
+  - Çoğu durumda süre daha kısadır. Kalfa'nın bir sonraki yazması, sonraki
+    çağrı ya da boşta kapanma daha önce denetler.
+  - Kabukta aynı pencere, komutun çalıştığı süredir (aşama 2 tasarımı
+    §7.2).
+- **Veri çıkış yolları:** Bu sürede okunan içerik iki yoldan dışarı
+  çıkabilir:
+  1. **Doğrudan ağ:** Ağ listesi boşsa bu yol yoktur. Doluysa sunucu yalnız
+     izinli hostlara çıkabilir.
+  2. **Stdout üzerinden EVREN'e:** Sunucu içeriği bir araç sonucuna
+     (`tools/call`) ya da bir araç tanımına (açıklama, şema) koyabilir.
+     Kalfa bunları denetçiye ve modele, yani EVREN'e gönderir:
+     `denetci.rs` denetlenen metni sağlayıcıya yollar, `model_turu.rs`
+     tanımları isteğe koyar. Denetçi metni yalnız sınıflandırır; gizli
+     dosya içeriğini tanıyıp yerelde engelleyen bir kapı değildir. Bu yol,
+     ağ listesi boş sunucuda da açıktır.
+- **Geri alınamazlık:** Süreci sonradan durdurmak, okunmuş ya da EVREN'e
+  gönderilmiş veriyi geri almaz.
+- **Platform farkı:** Windows'ta ACL kesildikten sonra dosyayı yeniden
+  açma girişimleri reddedilir. Linux'ta ise bağlama, süreç yeniden
+  başlayana kadar dosyayı görünür bırakır.
+- **Neden dosya izleyicisi yok:** Dosya izleyicisi atomik bir sınır
+  kurmadığı için eklenmez. Daha kısa bir üst sınır gerekiyorsa denetim yaşı
+  düşürülür. Bunun bedeli, büyük depolarda daha sık tarama yapılmasıdır.
 
 ## 5. Güvenlik
 
@@ -246,10 +305,12 @@ olabilir. Bu yüzden süreç ancak şu koşullar birlikte sağlanınca oluşur:
 2. O çalışma alanında **İnceleme dışı kipte en az bir oturum** açık olmalı.
    Yalnız İnceleme oturumları varsa süreç başlatılmaz; çalışıyorsa kapatılır.
 3. **Başlatma izni** bulunmalı. İzin şunlardan biridir:
-   - *Yalıtımlı:* (tanım özeti T, çalışma alanı) için verilmiş kalıcı izin.
-     Ayarlar'dan geri alınabilir; T değişince düşer.
+   - *Yalıtımlı:* (tanım özeti T, politika özeti Π, çalışma alanı) için
+     verilmiş kalıcı izin. Ayarlar'dan geri alınabilir; T ya da Π
+     değişince düşer.
    - *Tam erişimli:* T için verilen **yerel pencere** onayı. Uygulama
      açık kaldıkça geçerlidir; Kalfa kapatılıp açılınca yeniden sorulur.
+4. Sunucu kodu çalışma alanındaysa §5.1.1'in koşulu da sağlanmalı.
 
 İzin yoksa oturumda, model dışında bir **başlatma kartı** görünür:
 "`<sunucu>` bu çalışma alanında başlatılsın mı?". Karttaki bilgiler: erişim
@@ -258,7 +319,54 @@ türü, komut, ağ listesi ve "başladığı andan kapanana kadar, araç
 İzin verilene kadar sunucunun araçları modele sunulmaz.
 
 Çökme sonrası yeniden başlatma, boşta kapanmadan dönüş ve koruma
-yenilemesi (§4.3) mevcut izinle onaysız yapılır.
+yenilemesi (§4.3) mevcut izinle onaysız yapılır. İki istisna vardır, bu
+durumlarda yeniden izin istenir:
+
+- Π değişmişse,
+- §5.1.1'deki yazma koşulu artık sağlanmıyorsa.
+
+#### 5.1.1 Sunucu kodu ve başlatma güveni
+
+T, komutun çözülmüş yürütülebilir dosyasının özetini içerir. Ama `node`,
+`npx`, `uvx` ya da `python` gibi komutlarda bu dosya sunucunun kendisi
+değildir; onu yükleyen yorumlayıcı ya da başlatıcıdır. `node ./sunucu.js`
+tanımında `sunucu.js` değişse bile T aynı kalır. **Yalnız yorumlayıcının
+özeti, çalışan kodu sabitlemez.**
+
+Model yalnız çalışma alanına yazabilir:
+
+- dosya araçları çalışma alanıyla sınırlıdır,
+- yalıtımlı kabuk dışarı yazamaz,
+- yalıtımsız kabuk her çağrıda yerel onay ister.
+
+Bu yüzden güven, sunucu kodunun nerede durduğuna göre kurulur.
+
+- **Çalışma alanı kodlu sunucu:** Komut, argümanlardan biri ya da bir ortam
+  değeri çalışma alanının içini gösteriyorsa sunucu bu türdendir. Çalışma
+  dizini çalışma alanı olmadığından (§3) göreli yollar dışarıda çözülür. Bu
+  yüzden içeriyi gösteren bir yol ancak mutlak yolla ya da `${CALISMA_ALANI}`
+  yer tutucusuyla yazılabilir. Sunucunun türü kayıtta ve her başlatmada
+  belirlenebilir.
+- **Kodu çalışma alanı dışında olan sunucu:** T şunların içerik özetini
+  kapsar: komut dosyası, dosyaya çözülen her argüman ve dosyaya çözülen
+  her ortam yolu. Model bu dosyalara yerel onaysız yazamaz. Otomatik
+  yeniden başlatma serbesttir.
+- **Çalışma alanı kodlu sunucuda yazma kuşağı:** Her çalışma alanının bir
+  **yazma kuşağı** sayacı vardır. Sayacı şunların her biri artırır:
+  - Kalfa'nın o alana yazan her aracı (dosya araçları, kabuk),
+  - o alandaki her MCP çağrısı (sunucu çağrı sırasında yazmış olabilir).
+
+  Başlatma izni, son onaylı başlatmanın kuşağını saklar. Kuşak arttıysa
+  sonraki **her** başlatma yeniden izin ister: çökme, boşta kapanma ve
+  koruma yenilemesi sonrası başlatmalar da dahil. Yalıtımlı sunucuda izin
+  başlatma kartıyla, tam erişimde yerel pencereyle sorulur.
+- **Kalan sınır:**
+  - Sunucu programı çalışırken çalışma alanındaki dosyaları kendi
+    kararıyla kod olarak yüklerse bu sunucunun kendi davranışıdır; Kalfa
+    bunu sabitleyemez.
+  - `npx -y paket` gibi uzak paketlerde paket sürümü T'de yer almaz.
+    Arayüz sürüm sabitlemeyi önerir (`paket@1.2.3`). Sabitlenmemiş paket
+    güncellenince yeni kod aynı izinle çalışabilir.
 
 ### 5.2 Çağrı onayı
 
@@ -285,9 +393,15 @@ değerin kendisi hiçbir özete, kayda ya da loga yazılmaz.
   SHA-256'sı), argümanlar, **bütün** ortam (birleştirilmiş son ortamın
   ad-değer çiftleri; gizli değerler özetleriyle), çalışma kipi, ağ listesi
   (yalnız yalıtımlıda), çalışma alanı kimliği.
-- **Çalışma tarifi R** = T, yalıtım profilinin özeti P (`profil_ozeti`;
-  K'yı içerir) ve **kuşak N**. N her süreç başlatmada artan sayaçtır. R
-  süreç başlarken sabitlenir ve süreçte saklanır.
+- **Politika özeti Π** = yalıtım profilinin içerikten bağımsız kısmıdır.
+  Kullanıcı ayarı değişmedikçe Π de değişmez. Şunları içerir:
+  - arka uç ve sürüm,
+  - gizli kalıplar ve gizli sayılmayanlar,
+  - okunur dizinler.
+- **Çalışma tarifi R** = T, yalıtım profilinin özeti P ve **kuşak N**.
+  P, `profil_ozeti`'dir; Π'yi ve içerik kümesi K'yı içerir. N, her süreç
+  başlatmada artan bir sayaçtır. R süreç başlarken sabitlenir ve süreçte
+  saklanır.
 - **Araç tanım özeti D** = aracın modele giden adı, açıklaması (kesilmiş
   hâliyle), giriş şeması ve varsa çıkış şeması (`outputSchema`).
 
@@ -300,8 +414,15 @@ Bu özetler şöyle bağlanır:
   ya da D'yi değiştirir ve bekleyen onayı geçersiz kılar: düzenleme,
   kapatma, yeniden başlatma, koruma yenilemesi, aynı adlı aracın tanım
   değişikliği.
-- **Kısayol** T ve D'ye bağlanır. T ya da D değişince düşer.
-- **Başlatma izni** T ve çalışma alanına bağlanır.
+- **Kısayol** T, D ve Π'ye bağlanır; biri değişince düşer.
+  - Π'deki her değişiklik kısayolu düşürür, daralma da genişleme de. Böylece
+    okunur dizin eklemek ya da bir gizli kalıbı kaldırmak gibi
+    genişlemeler eski kısayolla otomatik onaylanmaz.
+  - Yalnız N ya da yalnız K (içerik) değişirse kısayol korunur. İçerik
+    değişimi aynı politikanın sonucudur ve yeni süreç güncel korumalarla
+    başlar.
+- **Başlatma izni** T, Π ve çalışma alanına bağlanır. Çalışma alanı kodlu
+  sunucuda ayrıca yazma kuşağına bağlanır (§5.1.1).
 
 ### 5.4 Çalışma alanı kilidi
 
@@ -363,6 +484,12 @@ eklenir:
     bölemez.
 - Sunucunun tanımı ya da gizli değerleri değişince stderr halkası
   temizlenir.
+- **Araç tanımları da** sır denetiminden geçer (§6.2, 0. adım). Sunucu bir
+  sırrı tanımda geri gönderirse araç kapatılır ve ham metin hiçbir yere
+  yazılmaz.
+- Sunucunun kendini tanıttığı metinler (`serverInfo`'daki ad ve sürüm,
+  `instructions`) modele gönderilmez. Arayüzde maskelenmiş olarak
+  gösterilir.
 
 ### 5.6 Windows çalışma alanı hazırlığı
 
@@ -419,8 +546,20 @@ göre doğrulamasını ister.
 
 `tools/list` ile gelen ad, açıklama ve giriş şeması modele gider. Bu, tool
 poisoning saldırılarının yüzeyidir. Bugün `AracKayitDefteri::tanimlar`
-tanımları denetimsiz verir (`kalfa-core/src/arac.rs`). MCP araçları için
-şu kapılar uygulanır:
+tanımları denetimsiz verir (`kalfa-core/src/arac.rs`). Tanımlar ayrıca
+JSONL kayda yazılır (`model_turu.rs`, `KayitOgesi::AracTanimlari`). MCP
+araçları için şu kapılar, bu sırayla uygulanır:
+
+0. **Sır denetimi (her şeyden önce):**
+   - Sunucunun gizli değerlerinden biri aracın tanımında herhangi bir
+     yerde alt dize olarak geçiyorsa araç **kapatılır**. Tanımın her yeri
+     şunlardır: ad, açıklama, `inputSchema` ile `outputSchema`'nın bütün
+     metin değerleri ve özellik adları.
+   - Maskeleme yapılmaz, araç kapatılır. Çünkü yapısal alanları (`enum`,
+     `default`, özellik adları) değiştirmek protokolü bozar.
+   - Kapatılan aracın ham tanımı şunların hiçbirine gitmez: denetçi, D
+     hesabı, önbellek, arayüz, JSONL kayıt, model. Ayarlar'da adı bile
+     görünmez; yalnız "araç #n: tanımında gizli değer var" yazar.
 
 1. **Biçim:**
    - Açıklama 1 KiB'de kesilir.
@@ -458,7 +597,8 @@ tanımları denetimsiz verir (`kalfa-core/src/arac.rs`). MCP araçları için
 
 - **Çalışma alanına bağlılık:** Yalıtım çalışma alanına özeldir; bu yüzden
   her (sunucu, çalışma alanı) çifti için bir süreç açılır. Tam erişimli
-  sunucular da aynı kuralla, çalışma alanında çalışır.
+  sunucular da aynı kurala uyar. İki türde de çalışma dizini, §3'teki
+  sunucuya özel dizindir.
 - **Başlatma:** §5.1'in koşulları sağlanınca süreç başlar. İstemci
   yetenekleri **boş** ilan edilir (`roots`, `sampling`, `elicitation` yok).
 - **Protokol dönemleri:** MCP 2026-07-28, `initialize` el sıkışmasını
@@ -531,19 +671,27 @@ görüntüdür:**
 
 **İptal ya da zaman aşımı:**
 
-1. Sunucuya `notifications/cancelled` gönderilir.
-2. En çok **2 sn** yanıt beklenir. Sunucu bu sürede o isteğe yanıt verirse
-   (sonuç ya da iptal hatası) süreç yaşar ve sonuç atılır.
-3. Yanıt yoksa süreç ağacı `kapat()` ile durdurulur. O kuşağın bütün
-   bekleyen çağrıları "sunucu durduruldu" hatasıyla biter.
-4. Ardından `komut_sonrasi_denetim` karşılığı çalışır.
+1. Sunucuya `notifications/cancelled` gönderilir. Bu yalnız kibar bir
+   uyarıdır; sunucunun doğru kapanmasına fırsat verir.
+2. Süreç ağacı **her durumda** `kapat()` ile durdurulur: stdin kapatılır,
+   2 sn kapanma payı tanınır, sonra ağaç öldürülür (§4.1).
+   - Sunucunun bu arada gönderdiği sonuç ya da iptal hatası durdurmanın
+     kanıtı sayılmaz. Bunlar sıradan RPC verisidir; sunucu yanıt verip arka
+     plandaki bir görevi ya da çocuk süreci çalıştırmayı sürdürebilir.
+   - Eski MCP döneminde iptal alan sunucunun yanıt göndermemesi önerilir.
+     Sessiz kalan uyumlu bir sunucu da aynı yoldan durdurulur. Durdurma
+     yanıta değil, `kapat()`'ın ağacın bittiğini doğrulamasına dayanır.
+3. O kuşağın bütün bekleyen çağrıları "sunucu durduruldu" hatasıyla biter.
+   Sunucunun gönderdiği geç sonuç atılır.
+4. Ardından `komut_sonrasi_denetim` karşılığı çalışır (§4.3).
 5. Kilit **ancak bundan sonra** bırakılır.
 
-Böylece "iptal edildi" ya da "zaman aşımı" denildiğinde yan etki
-sürmüyordur; bu, kabuktaki garantiyle aynıdır. Kilit (§5.4) tek çağrıya
-izin verdiği için başka bir oturumun aynı süreçte bekleyen çağrısı olmaz.
-Durdurulan süreç sonraki çağrıda izinle onaysız yeniden başlar. Bu
-yeniden başlatma, çökme sayacına sayılmaz.
+Böylece "iptal edildi" ya da "zaman aşımı" denildiğinde yan etki sürmez.
+Bu, kabuktaki garantinin aynısıdır. Kilit (§5.4) aynı anda tek çağrıya
+izin verdiği için başka bir oturumun aynı süreçte bekleyen bir çağrısı
+olamaz. Durdurulan süreç, sonraki çağrıda izinle onaysız yeniden başlar
+(§5.1.1'in yazma koşulu hariç). Bu yeniden başlatma çökme sayacına
+sayılmaz. Bedeli, sunucunun bellekteki durumunun kaybolmasıdır.
 
 ### 7.4 Çökme
 
@@ -656,6 +804,18 @@ argümanıyla seçilir.
 - Çağrılar arasında yeni `.git` ve yapılandırma dosyası oluşturan
   sunucunun dosyaları karantinaya alınmalı.
 - Boşta kapanma çalışmalı.
+- **Mutlak denetim yaşı** (sahte saatle, kısaltılmış yaş): Uzun ve etkin
+  bir çağrı sürerken dışarıdan bir gizli dosya oluşturulur.
+  - Süreç, denetim yaşı dolduktan sonra en geç bir tarama ve kapanma
+    payı içinde durmalı. Etkin çağrı "korumalar değişti" hatasıyla bitmeli.
+  - Keşif ve onay bekleme sırasında da aynı sınama yapılır.
+- **Stdout üzerinden çıkış** (yerel sahte sağlayıcı, EVREN yok): Ağ listesi
+  boş bir sunucu, sınama penceresinde okuduğu gizli dosyanın içeriğini önce
+  bir araç sonucuna, sonra ayrı olarak bir araç açıklamasına koyar.
+  - Bu test kalan riskin belgedeki tarifini doğrular: içerik sahte
+    sağlayıcıya ulaşır.
+  - Ulaşma, mutlak denetim yaşı dolduktan sonra yeni bir süreçle tekrar
+    edilememeli.
 
 **Sınırlar** (§4.2)
 - Satır sonusuz 4 MiB + 1 bayt.
@@ -667,11 +827,15 @@ argümanıyla seçilir.
 Uygulama yanıt vermeye devam etmeli; sunucu *Hata* olmalı ve süreç
 ağacının temizlendiği gözlenmeli.
 
-**İptal** (§7.3)
-- İptali yok sayıp gecikmeli dosya yazan sunucu; iptal ve zaman aşımı
-  ayrı ayrı denenir.
-- Durdurma tamamlandıktan sonra yeni yan etki olmamalı.
-- Kilit durdurmadan önce bırakılmamalı.
+**İptal** (§7.3) — iptal ve zaman aşımı her senaryoda ayrı ayrı denenir.
+- (a) İptal hatasını **hemen** gönderip gecikmeli yazmaya devam eden bir
+  çocuk süreç başlatan sunucu: Durdurma tamamlandıktan sonra işaret
+  dosyası oluşmamalı.
+- (b) İptali uygulayıp **hiç yanıt göndermeyen** uyumlu sunucu: Bu sunucu
+  da aynı yoldan durdurulmalı.
+- (c) İptali yok sayıp gecikmeli yazan sunucu: Yan etki olmamalı.
+- Her senaryoda kilit, ağaç durup son denetim bitmeden bırakılmamalı.
+  Bekleyen ikinci yazma aracı kilidi ancak bundan sonra alabilmeli.
 - İkinci oturumun sonraki çağrısı yeni süreçte çalışmalı.
 
 **Mühür** (§5.3)
@@ -684,6 +848,28 @@ ağacının temizlendiği gözlenmeli.
   - aynı adlı aracın şemasını değiştirmek.
 - Eski onay hiçbir durumda çalışmamalı. Kısayol T ya da D değişince
   düşmeli.
+- **Kısayol ve Π:** T ve D aynı kalırken şunlar ayrı ayrı denenir:
+  - (a) yeni bir okunur dizin eklemek,
+  - (b) bir gizli kalıbı kaldırmak,
+  - (c) yalnız kuşak N'yi değiştirmek (yeniden başlatma),
+  - (d) yalnız içeriği değiştirmek (yeni `.env`).
+
+  (a) ve (b)'de eski kısayol yeni erişimi otomatik onaylamamalı ve
+  başlatma izni yeniden sorulmalı. (c) ve (d)'de kısayol korunmalı.
+
+**Sunucu kodu** (§5.1.1)
+- Tam erişimde `node ${CALISMA_ALANI}/sunucu.js` tanımlanır. İlk başlatma
+  izninden sonra yalnız betik, normal dosya aracıyla değiştirilir. Araç
+  açıklaması ve şeması aynı kalır.
+  - Otomatik yeniden başlatma (çökme, boşta kapanma, koruma yenilemesi)
+    yeni başlangıç kodunu eski izinle çalıştırmamalı; yerel pencere
+    açılmalı.
+  - Aynı sınama yalıtımlıda başlatma kartıyla yapılır.
+- Çalışma alanı dışındaki bir betiğin içeriği değişince T değişmeli.
+- Göreli bir argüman çalışma alanında değil, sunucunun çalışma dizininde
+  çözülmeli.
+- Çalışma alanında `node_modules/.bin/<ad>` bulunan bir depoda `npx <ad>`
+  çalışma alanındaki dosyayı çalıştırmamalı.
 
 **Tanım denetimi** (§6.2)
 - ASCII enjeksiyon önce üst açıklamaya, sonra ayrı olarak
@@ -691,6 +877,13 @@ ağacının temizlendiği gözlenmeli.
 - Katı kipte model isteğinin `tools` alanında araç olmamalı.
 - `list_changed` sonrasında aynı sınama tekrarlanır.
 - Önbellek isabetinde denetçi isteği gitmemeli.
+- **Tanımda sır:** Bir test sırrını sırayla şu yerlerde geri gönderen
+  sunucu kullanılır: üst açıklama, iç içe açıklama, `default`, özellik
+  adı.
+  - Her durumda araç kapatılmalı.
+  - Ham değer şunların hiçbirinde bulunmamalı: sahte denetçi girdisi,
+    sahte model girdisi, önbellek, arayüz olayları, JSONL.
+  - Bu test, stderr ve sonuç maskelemesinden ayrıdır.
 
 **Protokol**
 - `notifications/initialized` gönderilmeli.
@@ -846,3 +1039,13 @@ r3'te koda karşı doğrulanıp çözüldü.
 | Açık seçilen tam erişim | `kip_uyusmasi(false, true)` reddi | Katılıyorum | §4.1: `CalistirmaKipi` tablosu |
 | Ortamın güvenli birleşimi | `ortam::uret` `TOKEN`/`KEY` adlarını düşürür | Katılıyorum | §5.5: iki adımlı birleştirme ve ayrılmış adlar |
 | Anahtarlı kimlik kasası | `SistemDeposu` tek yuvalı (`anahtar.rs`) | Katılıyorum | §5.5: `GizliKasa` |
+
+### 13.3 Codex'in r3 yeniden incelemesi (`INCELEME-5dd79a4.md`)
+
+| # | Bulgu | Karar | Çözüm |
+|---|---|---|---|
+| 1 | İptal yanıtı, ağacın durduğunu kanıtlamaz | Katılıyorum. Sessiz iptalin MCP'de önerildiği de doğru. | §7.3: ağaç her durumda `kapat()` ile durdurulur; 2 sn yalnız kapanma payıdır; kilit durdurma ve son denetimden sonra bırakılır. Testler (a), (b), (c). |
+| 2 | "En çok 10 dk" ve "ağsız sunucu dışarı gönderemez" desteksiz | Katılıyorum. `denetci.rs` metni sağlayıcıya gönderir; `model_turu.rs` tanımları isteğe koyar. | §4.3: durumdan bağımsız mutlak denetim yaşı; üst sınır "10 dk + tarama + 2 sn + öldürme"; stdout üzerinden EVREN'e çıkış yolu riske yazıldı. Testler: sahte saat ve sahte sağlayıcı. |
+| 3 | Başlatma güveni, yorumlayıcının arkasındaki kodu kapsamıyor | Katılıyorum | §3 ve §5.1.1: çalışma dizini çalışma alanı dışında; çalışma alanı kodlu sunucuda yazma kuşağı geçmeden otomatik yeniden başlatma yapılmaz; dışarıdaki dosya yolları T'de. Kalan sınır (sunucunun kendi yüklemesi, sabitlenmemiş paket) yazıldı. |
+| 4 | Sır maskelemesi araç tanımlarını kapsamıyor | Katılıyorum. `model_turu.rs` tanımları JSONL'ye yazar. | §6.2'nin 0. adımı: sır geçen araç her şeyden önce kapatılır; ham tanım hiçbir yere gitmez. §5.5'e `serverInfo` ve `instructions` eklendi. |
+| 5 | P değişimi her zaman daraltmaz | Katılıyorum | §5.3: Π (politika) tanımlandı; kısayol ve başlatma izni Π'ye bağlı. Π'deki her değişiklik ikisini de düşürür. Yalnız N ya da yalnız içerik değişirse korunur. |

@@ -256,7 +256,16 @@ Codex yorumu r3'te ele alındı:
 
 Yanıtlar tasarımın §13'ünde.
 
-**Sıradaki tek iş:** r2'nin yeniden incelenmesi. Kullanıcı ayrıca şu iki
+Codex'in r3 yeniden incelemesinden (`5dd79a4`) gelen beş bulgu r4'te
+çözüldü:
+- iptal ve zaman aşımında süreç ağacı her durumda durdurulur,
+- kalan riskin üst sınırı mutlak denetim yaşıyla tanımlandı ve stdout
+  üzerinden EVREN'e çıkış yolu da riske yazıldı,
+- çalışma alanındaki sunucu kodu için yazma kuşağı,
+- araç tanımında sır geçerse araç kapatılır,
+- kısayol ve başlatma izni politika özeti Π'ye bağlandı.
+
+**Sıradaki tek iş:** r4'ün yeniden incelenmesi. Kullanıcı ayrıca şu iki
 kararı verecek: iptalde süreci durdurma değişikliği (§2) ve çağrılar
 arasındaki kalan risk (§4.3). G1 ve uygulama, kullanıcının sonraki onayını
 bekliyor.
