@@ -33,6 +33,22 @@ jobs:
       - name: cargo fmt
         run: cargo fmt --all -- --check
 
+  # Cargo.lock'taki crate'ler RustSec duyurularına karşı denetlenir (üst
+  # belge §12.1). Açığı olan bir crate işi kırmızıya çevirir; bakımsız crate
+  # uyarısı yalnızca yazdırılır.
+  denetim:
+    name: Bağımlılık denetimi
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust araç zincirini kur (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: cargo-audit'i kur
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: cargo audit
+        run: cargo audit
+
   arayuz:
     name: Arayüz
     runs-on: ubuntu-24.04

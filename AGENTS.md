@@ -189,7 +189,10 @@ Bağlantı testleri Windows'ta sembolik bağlantı oluşturma izni ister.
 - **Kapsam:** Yukarıdaki varsayılan komutlar: `cargo fmt`, arayüz
   (`check`, `test`, `build`), üç clippy (düz, `e2e` özellikli ve eklentilerin
   `wasm32-wasip2`'si) ve iki `cargo test` (düz ve `e2e` özellikli). Rust işi
-  Linux'ta ve Windows'ta koşar.
+  Linux'ta ve Windows'ta koşar. Ayrıca `cargo audit` (sürümü `ci.yml`'de
+  sabit) `Cargo.lock`'u RustSec duyurularına karşı denetler; açığı olan crate
+  CI'ı kırmızıya çevirir. Bir duyuru bilerek kabul edilecekse gerekçesiyle
+  birlikte `.cargo/audit.toml`'a yazılır.
 - **Kapsam dışı:** Yalıtım testleri (bwrap, seccomp, AppContainer) ve uçtan
   uca testler. Bunlar yukarıdaki gibi yerelde koşturulur; yeşil CI onların
   yerini tutmaz.
