@@ -1,6 +1,6 @@
 # Kalfa geliştirme durumu
 
-Güncelleme: 2026-10-14; Windows sürüm akışı birleşti, depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
+Güncelleme: 2026-10-14; Windows sürüm akışı ve PR #8 arayüzü birleşti, depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
 **PR #8 — Codex ek düzeltmeleri (14 Ekim):** JSON boyutuna göre diff bütçesi,
@@ -10,6 +10,13 @@ arayüz 429/429, check/build temiz; Windows workspace 1 214/0/19, Ubuntu
 workspace 1 158/0/19, iki platformda e2e özellikli Rust 191/0/0. Workspace
 ve e2e özellikli clippy ile fmt temiz. Gerçek yalıtım/WebDriver yeniden koşmadı.
 [Doğrulama kaydı](superpowers/bulgular/2026-10-14-pr8-ek-duzeltmeler.md).
+
+**PR #8 birleşti (14 Ekim, `286a991`):** Arayüz Claude Code/Codex masaüstü
+düzenine geçti: tek kenar çubuğu (Ctrl+N yeni oturum, Ctrl+K arama, Ctrl+B
+gizle), ince başlık, ortalanmış konuşma, tek satır araç çağrısı ve düşünce,
+yüzen composer, nötr yüzeyler; durum çubuğu inceltildi. Rust ve IPC
+değişmedi. Arayüz 431/431, check 0 hata/uyarı, build temiz; CI dört işiyle
+yeşil. Gerçek WebDriver uçtan uca takımı bu düzen için koşmadı.
 
 ## Güncel devam noktası — 2026-10-12 18:44 TSİ
 
