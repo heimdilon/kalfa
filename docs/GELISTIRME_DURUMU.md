@@ -301,15 +301,30 @@ dördü de işlendi:
 - stdin'i bir aktarma görevi yazar; `kapat()` dışarıda tutulan yazıcıya
   rağmen stdin'i kapatır.
 
-Etkileşimli ağ testleri iki platformda eklendi. Plan kodu ayrı worktree'de
-iki platformda ön doğrulandı (`deneme/11a-1-on-dogrulama`, `a6a3a17`,
-yalnız yerel): Windows yalıtım 50/50, WSL yalıtım 32/32; AGENTS'ın bütün
-komutları iki platformda geçti.
+Etkileşimli ağ testleri iki platformda eklendi. Codex r2'yi inceledi
+(`INCELEME-PLAN-6205095`) ve üç açık buldu; plan r3'te düzeltildi:
+- İptal edilen ya da hata veren `kapat()` ve doğrudan bırakma: `Drop` stdin
+  görevini keser, torunları ve ağacı öldürür.
+- Linux torun taraması tam okunamazsa `Err` verir; torunlar `pidfd` ile
+  açılıp başlangıç zamanıyla doğrulanır.
+- Windows'ta var olan kök ilk değişiklikten önce denetlenir; ret hiçbir
+  şeyi değiştirmez.
+
+Plan kodu iki platformda yeniden ön doğrulandı
+(`deneme/11a-1-on-dogrulama`, `0eab968`, yalnız yerel): Windows yalıtım
+50/50, WSL yalıtım 32/32; AGENTS'ın bütün komutları iki platformda geçti.
 [Ön doğrulama raporu](superpowers/bulgular/2026-10-14-kalfa-11a-1-on-dogrulama.md).
+Bu işin Windows koşularının %TEMP%'e eklediği üç test dizini silindi; eski
+44 dizin ayrı görev.
+
+**Kullanıcı kararı bekleyen:** Linux tam erişimde kök kendiliğinden
+çıktıktan sonra yaşayan `setsid` torunu sahiplenilemiyor (tasarım r7
+§4.1). Bu istisna §4.3'teki risk kabulünden ayrı bir karar.
+
 Kullanıcı uygulama yöntemi olarak alt ajanlı yöntemi seçti (Haiku 5.5, en
 yüksek çaba).
 
-**Sıradaki tek iş:** Codex'in r2 planı, ön doğrulama kodunu ve raporu
+**Sıradaki tek iş:** Codex'in r3 planı, ön doğrulama kodunu ve raporu
 yeniden incelemesi. Ürün uygulaması o inceleme tamamlanınca başlar.
 Worktree (`C:\Users\kor_a\kalfa-11a1-on`, `target` 18 GB) ve WSL kopyası
 inceleme bitene kadar tutulur.

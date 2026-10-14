@@ -7,14 +7,14 @@
 > ve 4, Görev 2'nin arayüzleri sabitlenmeden başlamaz. Ajanlar aynı
 > worktree'de eşzamanlı düzenleme yapmaz.
 
-**Durum:** İncelemede (r2). Codex'in plan incelemesi
-(`INCELEME-PLAN-9d6b6b5`) işlendi. Ürün uygulaması, bu düzeltilmiş planın
-incelemesi tamamlanınca başlar.
+**Durum:** İncelemede (r3). Codex'in iki plan incelemesi
+(`INCELEME-PLAN-9d6b6b5`, `INCELEME-PLAN-6205095`) işlendi. Ürün
+uygulaması, bu düzeltilmiş planın incelemesi tamamlanınca başlar.
 
 **Ön doğrulama:** Bu plandaki kod blokları ayrı bir worktree'de iki
 platformda derlendi ve testleri koşturuldu:
 
-- Dal `deneme/11a-1-on-dogrulama`, commit `a6a3a17` (yalnız
+- Dal `deneme/11a-1-on-dogrulama`, commit `0eab968` (yalnız
   yerel; push edilmedi).
 - Kod blokları o commit'teki dosyalardan birebir alındı.
 - Sonuçlar [ön doğrulama raporunda](../bulgular/2026-10-14-kalfa-11a-1-on-dogrulama.md).
@@ -34,8 +34,9 @@ bağlamayla, Windows'ta yetenek SID'i ve korumalı DACL'le kabuktan ayırır.
 
 - `etkilesimli.rs` platformdan bağımsız parçaları taşır: istek, çalışma
   kipi, sunucu adı, özel kök ve ortam.
-- `agac.rs` ağacı öldürme ve bitişini doğrulama arayüzünü kazanır. Linux'ta
-  kök, torunlarının alt süreç toplayıcısıdır.
+- `agac.rs` ağacı öldürme ve bitişini doğrulama arayüzünü (`AgacDenetimi`)
+  kazanır. Linux'ta kök, torunlarının alt süreç toplayıcısıdır; torunlar
+  `pidfd` ile açılıp başlangıç zamanıyla doğrulanır.
 - `surec.rs`, mevcut `Cocuk`/`Agac` altyapısıyla bir `EtkilesimliSurec`
   üretir. stdin'e bir görev aktarır; `kapat()` bu görevi keser.
 - İki arka uç, kabuğun bwrap ve AppContainer kurulumunu yeniden kullanır.
@@ -92,6 +93,20 @@ bwrap/seccomp (mevcut). Yeni bağımlılık yok.
   süreç sayısı sıfırdır. Linux'ta süreç grubu boştur ve kök yaşarken
   bulunan bütün torunlar ölmüştür. Öldürme ya da doğrulama başarısızsa
   `Err` döner. Linux tam erişimin kalan sınırı tasarım §4.1'dedir.
+
+  `kapat()` iptal edilirse ya da hata verirse (ağaç doğrulanmadıysa) ve
+  süreç `kapat()`'sız bırakılırsa `Drop` temizlik yapar: stdin görevini
+  her durumda keser, kök toplanmadıysa torunları öldürür, ağacı öldürür.
+  Bu yolda bitiş doğrulanmaz; çağıran kilidi bırakmaz.
+- **Linux torun taraması:** `/proc` tam okunamazsa (açılamayan dizin,
+  okunamayan ya da ayrıştırılamayan kayıt) tarama hata döner; eksik tarama
+  "torun yok" sayılmaz. Kaydı olmayan süreç toplanmıştır ve atlanır. Her
+  torun `pidfd_open` ile açılır; açtıktan sonra okunan başlangıç
+  taramadakiyle aynı değilse numara başka bir sürece verilmiştir ve sinyal
+  gönderilmez. Sinyal `pidfd_send_signal` ile gider.
+- **Windows kök denetimi önce gelir:** Var olan `mcp`, kök, `ev`,
+  `gecici` ve `onbellek` ilk dosya, ACL ya da kayıt değişikliğinden önce
+  denetlenir. Ret hiçbir şeyi değiştirmez.
 - **Windows ACE'leri** ACE kaydına `<alan_kimligi>/mcp/<sunucu>`
   anahtarıyla girer. Sunucu kaldırılınca ya da çalışma alanı kaldırılınca
   geri alınır. Testler makinede Kalfa profili ya da `S-1-15-2-`/`S-1-15-3-`
@@ -135,12 +150,12 @@ olan görevde ayrı bir testle sabitlenmiştir:
 | Dosya | Sorumluluk |
 |---|---|
 | `crates/kalfa-sandbox/src/etkilesimli.rs` (yeni) | `CalistirmaKipi`, `EtkilesimliIstek`, `sunucu_adi_dogrula`, `sunucu_ozel`, `ayrilmis_mi`, `sunucu_ortami`, `mcp_kip_uyusmasi`, `KAPANMA_PAYI` |
-| `crates/kalfa-sandbox/src/agac.rs` | `baslat_etkilesimli` (Linux'ta alt süreç toplayıcı), `Agac::{torunlari_oldur, oldur_denetimli, bos_mu}`, `canli_torunlar`; Windows'ta `Is::{sonlandir_denetimli, etkin_surec_sayisi}` |
-| `crates/kalfa-sandbox/src/surec.rs` | `EtkilesimliSurec`, `KapanisSonucu`, `Surec::komutla_etkilesimli`, `tam_erisimle`, Windows için `EtkilesimliSurec::kaptan`; tam erişim birim testleri |
+| `crates/kalfa-sandbox/src/agac.rs` | `baslat_etkilesimli` (Linux'ta alt süreç toplayıcı), `AgacDenetimi` ve `Agac` için uygulaması; Linux'ta `SurecKaynagi`, `torunlari_oldur_ile`, `ProcFs` (`/proc` + `pidfd`); Windows'ta `Is::{sonlandir_denetimli, etkin_surec_sayisi}`; sahte kaynakla birim testleri |
+| `crates/kalfa-sandbox/src/surec.rs` | `EtkilesimliSurec`, `KapanisSonucu`, `agaci_oldur`, `bosalmayi_bekle`, `Surec::komutla_etkilesimli`, `tam_erisimle`, Windows için `EtkilesimliSurec::kaptan`; tam erişim, iptal ve sahte ağaç birim testleri |
 | `crates/kalfa-sandbox/src/lib.rs` | Modül, dışa açılan tipler, `Yalitici::baslat_etkilesimli` ve `sunucu_kokunu_kaldir` |
 | `crates/kalfa-sandbox/src/linux/mod.rs` | `KurIstegi`, `komut_kur`'un özel kök parametresi, `vekili_bagla`, Linux etkileşimli başlatma ve kaldırma |
 | `crates/kalfa-sandbox/src/windows/kap.rs` | Borulu stdin (`Kap::girdi`, `baslat_etkilesimli`) |
-| `crates/kalfa-sandbox/src/windows/yalitici.rs` | `ag_hazirla`, sunucu kökünün korumalı kurulumu ve ACE kaydı, Windows etkileşimli başlatma, kaldırma, `alani_kaldir`'da sunucu girdileri |
+| `crates/kalfa-sandbox/src/windows/yalitici.rs` | `ag_hazirla`, sunucu kökünün önce denetimi (`sunucu_kokunu_denetle`), korumalı kurulumu ve ACE kaydı, Windows etkileşimli başlatma, kaldırma, `alani_kaldir`'da sunucu girdileri |
 | `crates/kalfa-sandbox/tests/yalitim.rs` | Linux kabul testleri (G1 karşılıkları, ağlı sunucu) |
 | `crates/kalfa-sandbox/tests/yalitim/windows.rs` | Windows kabul testleri (G1 karşılıkları, korumalı kök, ağlı sunucu) |
 | `docs/GELISTIRME_DURUMU.md`, tasarım §4.1 | Sonuç |
@@ -402,8 +417,10 @@ pub use etkilesimli::{
 - Kullanır: Görev 1'in tipleri; mevcut `agac::{baslat, Agac}`, `Cocuk::ayir`, `program::coz`.
 - Üretir:
   - `pub(crate) fn agac::baslat_etkilesimli(komut: &mut Command) -> io::Result<(Child, Agac)>`
-  - `Agac::torunlari_oldur(&self) -> bool`, `Agac::oldur_denetimli(&self) -> io::Result<()>`,
-    `Agac::bos_mu(&self) -> io::Result<bool>`
+  - `pub(crate) trait AgacDenetimi { torunlari_oldur(&self) -> io::Result<bool>; oldur_denetimli(&self) -> io::Result<()>; bos_mu(&self) -> io::Result<bool> }`
+    ve `impl AgacDenetimi for Agac`
+  - Linux: `SurecBilgisi`, `trait SurecKaynagi`, `fn torunlari_oldur_ile<K: SurecKaynagi>(&K, kok: i32) -> io::Result<bool>`,
+    `ProcFs` (`/proc` ve `pidfd`)
   - Windows: `Is::sonlandir_denetimli(&self) -> io::Result<()>`, `Is::etkin_surec_sayisi(&self) -> io::Result<u32>`
   - `pub struct EtkilesimliSurec`. Yöntemleri:
     - `girdi_al(&mut self) -> Option<Box<dyn AsyncWrite + Send + Unpin>>`
@@ -414,10 +431,12 @@ pub use etkilesimli::{
     - `async kapat(self) -> io::Result<KapanisSonucu>`
   - `pub struct KapanisSonucu { pub kendiliginden: bool, pub cikis: Option<i32>, pub sure: Duration, pub ag: Option<vekil::AgOzeti> }`
   - `pub(crate) fn Surec::komutla_etkilesimli(komut: Command) -> Result<EtkilesimliSurec, BaslatmaHatasi>`
+  - `async fn agaci_oldur(&impl AgacDenetimi, kok_toplanmadi: bool, son: Instant) -> io::Result<()>`,
+    `async fn bosalmayi_bekle(&impl AgacDenetimi, son: Instant) -> io::Result<()>`
   - `pub(crate) fn tam_erisimle(istek: &EtkilesimliIstek, yalitim_dizini: &Path, git: &GitKimligi) -> Result<EtkilesimliSurec, BaslatmaHatasi>`
   - `Yalitici::baslat_etkilesimli` ve `Yalitici::sunucu_kokunu_kaldir` (varsayılanları hata döner)
 
-**Neden böyle (Codex bulgu 1 ve 4):**
+**Neden böyle (Codex r1 bulgu 1 ve 4, r2 bulgu 1 ve 2):**
 
 - Kök süreç beklenince ağacın bittiği kanıtlanmaz. Bitiş, Windows'ta işin
   etkin süreç sayısıyla, Linux'ta süreç grubunun boşalmasıyla doğrulanır.
@@ -425,9 +444,19 @@ pub use etkilesimli::{
   alt süreç toplayıcısı olur. Kök toplanmadan önce `/proc`'tan bulunan
   torunları dondurulup öldürülür. Toplanan kökün numarası başka bir sürece
   verilebileceği için tarama yalnız kök toplanmamışken yapılır.
+- Tarama tam yapılamazsa hata verir; eksik tarama "torun yok" sayılmaz.
+  Torunun numarası da yeniden kullanılabilir: her torun `pidfd` ile açılır,
+  başlangıç zamanı taramadakiyle karşılaştırılır, sinyal tutamaçla gider.
+  İşletim sistemi kapısı `SurecKaynagi` arkasındadır; hata ve numara
+  yeniden kullanımı sahte kaynakla sınanır.
 - stdin'in yazma ucu yalnız bir aktarma görevindedir. Dışarıya
-  `tokio::io::duplex`'in bir ucu verilir. `kapat()` görevi keserek boruyu
-  kapatır; dışarıdaki yazıcı o andan sonra hata alır.
+  `tokio::io::duplex`'in bir ucu verilir. `kapat()` ve `Drop` görevi
+  keserek boruyu kapatır; dışarıdaki yazıcı o andan sonra hata alır.
+- `dogrulandi` yalnız doğrulanmış kapanıştan sonra `true` olur. `kapat()`
+  iptal edilirse gelecek bırakılır ve `Drop` temizliği yapar.
+- Öldürme ve boşalma beklemesi `AgacDenetimi` üzerinden yazılır; hata,
+  zaman aşımı ve `[etkin > 0, etkin > 0, etkin = 0]` dizisi sahte ağaçla
+  sınanır.
 
 - [ ] **Adım 1: Düşen testleri yazın** (`surec.rs` sonu). Testler tam
   erişimi her platformda doğrudan `tam_erisimle` ile sınar:
@@ -762,6 +791,168 @@ mod tests {
             assert_eq!(Path::new(s), ozel.ev, "{m}");
         }
     }
+
+    /// Yaşayan tokio görevleri (`#[tokio::test]`'in kendi geleceği sayılmaz).
+    fn gorevler() -> usize {
+        tokio::runtime::Handle::current()
+            .metrics()
+            .num_alive_tasks()
+    }
+
+    /// Codex r2 1: `kapat` çağrılmadan bırakılan süreçte dışarıda tutulan
+    /// yazıcı varken stdin aktarma görevi de kesilir; sonraki yazma sınırlı
+    /// sürede hata alır.
+    #[tokio::test]
+    async fn etkilesimli_birakmada_stdin_gorevi_kesilir() {
+        let d = tempfile::tempdir().unwrap();
+        let (p, a) = yanki();
+        let once = gorevler();
+        let mut s = baslat(d.path(), p, &a);
+        let mut girdi = s.girdi_al().unwrap();
+        assert_eq!(gorevler(), once + 1, "stdin aktarma görevi başlamalı");
+        drop(s);
+        let son = Instant::now() + Duration::from_secs(2);
+        while gorevler() > once && Instant::now() < son {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(gorevler(), once, "aktarma görevi kaldı");
+        let yazma = tokio::time::timeout(Duration::from_secs(2), async {
+            let parca = vec![b'y'; 64 * 1024];
+            for _ in 0..64 {
+                girdi.write_all(&parca).await?;
+            }
+            Ok::<(), std::io::Error>(())
+        })
+        .await
+        .expect("yazma sınırlı sürede bitmeli");
+        assert!(yazma.is_err());
+    }
+
+    /// Codex r2 1: EOF'u yok sayan kök ve (Linux'ta kendi oturumundaki)
+    /// torun varken `kapat` iki saniyelik payda ve sonrasında iptal edilir.
+    /// Torun yaşamaz; stdin görevi kalmaz.
+    #[tokio::test]
+    async fn etkilesimli_kapat_iptal_edilince_agac_olur() {
+        let d = tempfile::tempdir().unwrap();
+        let (p, a): (&str, Vec<&str>) = if cfg!(windows) {
+            (
+                "powershell",
+                vec![
+                    "-NoProfile",
+                    "-Command",
+                    "$c = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\\timeout.exe') -ArgumentList @('/t','300','/nobreak') -PassThru -WindowStyle Hidden; [Console]::Out.WriteLine($c.Id); [Console]::Out.Flush(); Start-Sleep 300",
+                ],
+            )
+        } else {
+            (
+                "sh",
+                vec![
+                    "-c",
+                    "setsid sleep 300 </dev/null >/dev/null 2>&1 & echo $!; \
+                     trap '' TERM HUP; while :; do sleep 1; done",
+                ],
+            )
+        };
+        let once = gorevler();
+        for bekleme in [Duration::from_millis(300), Duration::from_millis(2050)] {
+            let mut s = baslat(d.path(), p, &a);
+            let pid: u32 = ilk_satir(&mut s).await.parse().unwrap();
+            let _temizlik = Temizlik(vec![pid]);
+            assert!(yasiyor(pid));
+            // Süre dolarsa kapanış geleceği bırakılır; 2050 ms'de kapanış
+            // bitmiş de olabilir. İki durumda da torun yaşamamalı.
+            let _ = tokio::time::timeout(bekleme, s.kapat()).await;
+            let son = Instant::now() + Duration::from_secs(3);
+            while (yasiyor(pid) || gorevler() > once) && Instant::now() < son {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            assert!(!yasiyor(pid), "{bekleme:?}: iptalden sonra torun yaşıyor");
+            assert_eq!(gorevler(), once, "{bekleme:?}: aktarma görevi kaldı");
+        }
+    }
+
+    /// Kapanış mantığının sahte ağacı: yanıtlar sırayla verilir.
+    #[derive(Default)]
+    struct SahteAgac {
+        torun: std::cell::RefCell<std::collections::VecDeque<std::io::Result<bool>>>,
+        oldurme_hatasi: bool,
+        bos: std::cell::RefCell<std::collections::VecDeque<std::io::Result<bool>>>,
+        bos_sorgusu: std::cell::Cell<usize>,
+    }
+
+    impl crate::agac::AgacDenetimi for SahteAgac {
+        fn torunlari_oldur(&self) -> std::io::Result<bool> {
+            self.torun.borrow_mut().pop_front().unwrap_or(Ok(false))
+        }
+
+        fn oldur_denetimli(&self) -> std::io::Result<()> {
+            if self.oldurme_hatasi {
+                Err(std::io::Error::other("sahte öldürme hatası"))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn bos_mu(&self) -> std::io::Result<bool> {
+            self.bos_sorgusu.set(self.bos_sorgusu.get() + 1);
+            self.bos.borrow_mut().pop_front().unwrap_or(Ok(false))
+        }
+    }
+
+    fn uzak() -> tokio::time::Instant {
+        tokio::time::Instant::now() + Duration::from_secs(5)
+    }
+
+    fn yakin() -> tokio::time::Instant {
+        tokio::time::Instant::now() + Duration::from_millis(50)
+    }
+
+    /// Windows'ta geciken bitiş `[etkin > 0, etkin > 0, etkin = 0]`:
+    /// bekleme son sıfırdan önce bitmez.
+    #[tokio::test]
+    async fn etkilesimli_bosalma_son_sifirdan_once_bitmez() {
+        let a = SahteAgac::default();
+        a.bos.borrow_mut().extend([Ok(false), Ok(false), Ok(true)]);
+        super::bosalmayi_bekle(&a, uzak()).await.unwrap();
+        assert_eq!(a.bos_sorgusu.get(), 3);
+    }
+
+    #[tokio::test]
+    async fn etkilesimli_bosalmayan_ya_da_denetlenemeyen_agac_hatadir() {
+        let a = SahteAgac::default();
+        let e = super::bosalmayi_bekle(&a, yakin()).await.unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::TimedOut);
+        let a = SahteAgac::default();
+        a.bos
+            .borrow_mut()
+            .push_back(Err(std::io::Error::other("sorgu")));
+        assert!(super::bosalmayi_bekle(&a, uzak()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn etkilesimli_oldurme_ve_tarama_hatasi_kapanisi_basarisiz_kilar() {
+        let a = SahteAgac {
+            oldurme_hatasi: true,
+            ..Default::default()
+        };
+        assert!(super::agaci_oldur(&a, true, uzak()).await.is_err());
+        let a = SahteAgac::default();
+        a.torun
+            .borrow_mut()
+            .push_back(Err(std::io::Error::other("tarama")));
+        assert!(super::agaci_oldur(&a, true, uzak()).await.is_err());
+        // Torunlar hiç bitmiyor.
+        let a = SahteAgac::default();
+        a.torun.borrow_mut().extend((0..10_000).map(|_| Ok(true)));
+        let e = super::agaci_oldur(&a, true, yakin()).await.unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::TimedOut);
+        // Kök toplandıysa torun taranmaz.
+        let a = SahteAgac::default();
+        a.torun
+            .borrow_mut()
+            .push_back(Err(std::io::Error::other("taranmamalı")));
+        super::agaci_oldur(&a, false, uzak()).await.unwrap();
+    }
 }
 ```
 
@@ -792,40 +983,46 @@ pub(crate) fn baslat_etkilesimli(komut: &mut Command) -> io::Result<(Child, Agac
 }
 ```
 
-  `impl Agac`'ın içinde, `oldur`'dan sonra:
+  `impl Agac`'tan sonra, Linux'un `Drop`'undan önce:
 
 ```rust
+/// Etkileşimli sürecin ağacını öldürme ve bitişini doğrulama (1.1a §4.1).
+/// `EtkilesimliSurec` bunu kullanır; testler sahtesini verir.
+pub(crate) trait AgacDenetimi {
     /// Linux'ta kökü durdurur, kökün yaşayan torunlarını dondurup öldürür.
     /// Torun bulduysa `true` döner; çağıran, `false` dönene kadar yineler.
-    /// Yalnız kök henüz toplanmamışken (`wait`) çağrılır: toplanan kökün
-    /// numarası başka bir sürece verilebilir. Windows'ta torunları iş
-    /// nesnesi kapsar; hep `false` döner.
-    pub(crate) fn torunlari_oldur(&self) -> bool {
-        #[cfg(unix)]
+    /// Tarama tam yapılamazsa hata döner: eksik tarama "torun yok" sayılmaz.
+    /// Yalnız kök henüz toplanmamışken (`wait`) çağrılır. Windows'ta
+    /// torunları iş nesnesi kapsar; hep `false` döner.
+    fn torunlari_oldur(&self) -> io::Result<bool>;
+    /// Ağacı öldürür ve hatayı bildirir. Linux'ta zaten boş grup hata değildir.
+    fn oldur_denetimli(&self) -> io::Result<()>;
+    /// Ağaçta yaşayan süreç kalmadı mı? Linux'ta süreç grubunda (zombiler
+    /// dahil) hiçbir süreç yoksa, Windows'ta işin etkin süreç sayısı sıfırsa.
+    fn bos_mu(&self) -> io::Result<bool>;
+}
+
+impl AgacDenetimi for Agac {
+    fn torunlari_oldur(&self) -> io::Result<bool> {
+        #[cfg(target_os = "linux")]
         {
-            // SAFETY: `kill` yalnızca sayı ve sinyal alır; süreç yoksa ESRCH
-            // döner.
+            // SAFETY: `kill` yalnızca sayı ve sinyal alır. Kök toplanmamış
+            // bir çocuktur; numarası ona aittir.
             unsafe {
                 libc::kill(self.grup, libc::SIGSTOP);
             }
-            let torunlar = canli_torunlar(self.grup);
-            for sinyal in [libc::SIGSTOP, libc::SIGKILL] {
-                for p in &torunlar {
-                    // SAFETY: yukarıdaki gibi.
-                    unsafe {
-                        libc::kill(*p, sinyal);
-                    }
-                }
-            }
-            !torunlar.is_empty()
+            torunlari_oldur_ile(
+                &ProcFs {
+                    kok: std::path::PathBuf::from("/proc"),
+                },
+                self.grup,
+            )
         }
-        #[cfg(windows)]
-        false
+        #[cfg(not(target_os = "linux"))]
+        Ok(false)
     }
 
-    /// Ağacı öldürür ve hatayı bildirir (1.1a §4.1). Linux'ta zaten boş
-    /// grup hata değildir.
-    pub(crate) fn oldur_denetimli(&self) -> io::Result<()> {
+    fn oldur_denetimli(&self) -> io::Result<()> {
         #[cfg(unix)]
         {
             // SAFETY: `durdur`'daki gibi.
@@ -841,9 +1038,7 @@ pub(crate) fn baslat_etkilesimli(komut: &mut Command) -> io::Result<(Child, Agac
         self.is.sonlandir_denetimli()
     }
 
-    /// Ağaçta yaşayan süreç kalmadı mı? Linux'ta süreç grubunda (zombiler
-    /// dahil) hiçbir süreç yoksa, Windows'ta işin etkin süreç sayısı sıfırsa.
-    pub(crate) fn bos_mu(&self) -> io::Result<bool> {
+    fn bos_mu(&self) -> io::Result<bool> {
         #[cfg(unix)]
         {
             // SAFETY: 0 sinyali yalnızca varlığı sınar.
@@ -861,47 +1056,348 @@ pub(crate) fn baslat_etkilesimli(komut: &mut Command) -> io::Result<(Child, Agac
         #[cfg(windows)]
         Ok(self.is.etkin_surec_sayisi()? == 0)
     }
-```
+}
 
-  `impl Agac`'tan sonra:
+/// `/proc/<pid>/stat`'tan okunan süreç kimliği.
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SurecBilgisi {
+    pub pid: i32,
+    pub ppid: i32,
+    /// Açılıştan beri saat tıkı (`starttime`). Numara başka bir sürece
+    /// verilirse değişir.
+    pub baslangic: u64,
+    pub zombi: bool,
+}
 
-```rust
-/// `kok`'ün zombi olmayan torunları (`/proc`'tan, kök hariç).
-#[cfg(unix)]
-fn canli_torunlar(kok: i32) -> Vec<i32> {
-    let mut surecler: Vec<(i32, i32)> = Vec::new();
-    if let Ok(dizin) = std::fs::read_dir("/proc") {
-        for girdi in dizin.flatten() {
-            let Some(pid) = girdi.file_name().to_str().and_then(|a| a.parse().ok()) else {
-                continue;
-            };
-            let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
-                continue;
-            };
-            // `pid (ad) durum ppid …`: ad parantez içerebilir; son `)`'den
-            // sonrası okunur.
-            let Some((_, geri)) = stat.rsplit_once(')') else {
-                continue;
-            };
-            let mut alanlar = geri.split_whitespace();
-            let durum = alanlar.next().unwrap_or("Z");
-            let Some(ppid) = alanlar.next().and_then(|p| p.parse().ok()) else {
-                continue;
-            };
-            if durum != "Z" && durum != "X" {
-                surecler.push((pid, ppid));
-            }
-        }
-    }
+/// Torun öldürmenin işletim sistemi kapısı; testler sahtesini verir.
+#[cfg(target_os = "linux")]
+pub(crate) trait SurecKaynagi {
+    type Tutamac;
+    /// Bütün süreçler. Tam okunamazsa hata döner.
+    fn tara(&self) -> io::Result<Vec<SurecBilgisi>>;
+    /// Süreci sabit bir başvuruyla açar; süreç yoksa `None`.
+    fn ac(&self, pid: i32) -> io::Result<Option<Self::Tutamac>>;
+    /// Açtıktan sonra yeniden okunan başlangıç; süreç yoksa `None`.
+    fn baslangic(&self, pid: i32) -> io::Result<Option<u64>>;
+    /// Açılan sürece sinyal; süreç bitmişse hata değildir.
+    fn sinyal(&self, tutamac: &Self::Tutamac, sinyal: i32) -> io::Result<()>;
+}
+
+/// `kok`'ün zombi olmayan torunlarını bulur. Her birini sabit başvuruyla
+/// açar ve başlangıcının taramadakiyle aynı olduğunu doğrular: tarama ile
+/// açma arasında numara başka bir sürece verildiyse asıl torun bitmiştir ve
+/// açılan süreç ilgisizdir; ona sinyal gönderilmez. Doğrulananlar dondurulur
+/// ve öldürülür. Torun bulduysa `true` döner.
+#[cfg(target_os = "linux")]
+pub(crate) fn torunlari_oldur_ile<K: SurecKaynagi>(k: &K, kok: i32) -> io::Result<bool> {
+    let surecler = k.tara()?;
     let mut agac = vec![kok];
+    let mut torunlar = Vec::new();
     let mut i = 0;
     while i < agac.len() {
         let ust = agac[i];
-        agac.extend(surecler.iter().filter(|(_, p)| *p == ust).map(|(c, _)| *c));
+        for s in surecler.iter().filter(|s| s.ppid == ust) {
+            if agac.contains(&s.pid) {
+                continue;
+            }
+            agac.push(s.pid);
+            if !s.zombi {
+                torunlar.push(*s);
+            }
+        }
         i += 1;
     }
-    agac.remove(0);
-    agac
+    let mut acik = Vec::new();
+    for s in &torunlar {
+        let Some(t) = k.ac(s.pid)? else {
+            continue;
+        };
+        if k.baslangic(s.pid)? == Some(s.baslangic) {
+            acik.push(t);
+        }
+    }
+    for sinyal in [libc::SIGSTOP, libc::SIGKILL] {
+        for t in &acik {
+            k.sinyal(t, sinyal)?;
+        }
+    }
+    Ok(!torunlar.is_empty())
+}
+
+/// Gerçek `/proc` ve `pidfd` (Linux 5.3+).
+#[cfg(target_os = "linux")]
+pub(crate) struct ProcFs {
+    pub kok: std::path::PathBuf,
+}
+
+#[cfg(target_os = "linux")]
+impl SurecKaynagi for ProcFs {
+    type Tutamac = std::os::fd::OwnedFd;
+
+    fn tara(&self) -> io::Result<Vec<SurecBilgisi>> {
+        let mut surecler = Vec::new();
+        for girdi in std::fs::read_dir(&self.kok)? {
+            let girdi = girdi?;
+            let Some(pid) = girdi.file_name().to_str().and_then(|a| a.parse().ok()) else {
+                continue;
+            };
+            if let Some(s) = stat_oku(&self.kok, pid)? {
+                surecler.push(s);
+            }
+        }
+        Ok(surecler)
+    }
+
+    fn ac(&self, pid: i32) -> io::Result<Option<Self::Tutamac>> {
+        use std::os::fd::FromRawFd;
+        // SAFETY: `pidfd_open` yalnız sayı alır; dönen tanımlayıcı hemen
+        // sahiplenilir.
+        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+        if fd < 0 {
+            let e = io::Error::last_os_error();
+            return match e.raw_os_error() {
+                Some(libc::ESRCH) => Ok(None),
+                _ => Err(e),
+            };
+        }
+        // SAFETY: `fd` az önce açıldı ve başka bir sahibi yok.
+        Ok(Some(unsafe {
+            std::os::fd::OwnedFd::from_raw_fd(fd as i32)
+        }))
+    }
+
+    fn baslangic(&self, pid: i32) -> io::Result<Option<u64>> {
+        Ok(stat_oku(&self.kok, pid)?.map(|s| s.baslangic))
+    }
+
+    fn sinyal(&self, tutamac: &Self::Tutamac, sinyal: i32) -> io::Result<()> {
+        use std::os::fd::AsRawFd;
+        // SAFETY: tanımlayıcı açık bir pidfd'dir; bilgi göstericisi boştur.
+        let r = unsafe {
+            libc::syscall(
+                libc::SYS_pidfd_send_signal,
+                tutamac.as_raw_fd(),
+                sinyal,
+                std::ptr::null::<libc::siginfo_t>(),
+                0,
+            )
+        };
+        if r < 0 {
+            let e = io::Error::last_os_error();
+            if e.raw_os_error() != Some(libc::ESRCH) {
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// `<kok>/<pid>/stat`. Kayıt yoksa süreç toplanmıştır: `None`. Başka okuma
+/// hatası ya da ayrıştırılamayan kayıt hatadır.
+#[cfg(target_os = "linux")]
+fn stat_oku(kok: &std::path::Path, pid: i32) -> io::Result<Option<SurecBilgisi>> {
+    let metin = match std::fs::read_to_string(kok.join(pid.to_string()).join("stat")) {
+        Ok(m) => m,
+        Err(e) if e.kind() == io::ErrorKind::NotFound || e.raw_os_error() == Some(libc::ESRCH) => {
+            return Ok(None);
+        }
+        Err(e) => return Err(e),
+    };
+    stat_ayristir(pid, &metin).map(Some).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{pid} sürecinin stat kaydı ayrıştırılamadı"),
+        )
+    })
+}
+
+/// `pid (ad) durum ppid … starttime …`: ad parantez içerebilir; son `)`'den
+/// sonrası okunur. `starttime` 22. alandır.
+#[cfg(target_os = "linux")]
+fn stat_ayristir(pid: i32, metin: &str) -> Option<SurecBilgisi> {
+    let (_, geri) = metin.rsplit_once(')')?;
+    let alanlar: Vec<&str> = geri.split_whitespace().collect();
+    let durum = *alanlar.first()?;
+    Some(SurecBilgisi {
+        pid,
+        ppid: alanlar.get(1)?.parse().ok()?,
+        baslangic: alanlar.get(19)?.parse().ok()?,
+        zombi: durum == "Z" || durum == "X",
+    })
+}
+```
+
+  Dosyanın sonuna Linux birim testleri:
+
+```rust
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    use super::*;
+
+    fn bilgi(pid: i32, ppid: i32, baslangic: u64, zombi: bool) -> SurecBilgisi {
+        SurecBilgisi {
+            pid,
+            ppid,
+            baslangic,
+            zombi,
+        }
+    }
+
+    /// Sahte süreç tablosu: taramadan sonra `simdiki` başlangıçlar okunur;
+    /// gönderilen sinyaller kaydedilir.
+    #[derive(Default)]
+    struct Sahte {
+        tablo: Vec<SurecBilgisi>,
+        simdiki: HashMap<i32, u64>,
+        tarama_hatasi: bool,
+        acma_hatasi: bool,
+        sinyaller: RefCell<Vec<(i32, i32)>>,
+    }
+
+    impl SurecKaynagi for Sahte {
+        type Tutamac = i32;
+
+        fn tara(&self) -> io::Result<Vec<SurecBilgisi>> {
+            if self.tarama_hatasi {
+                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            }
+            Ok(self.tablo.clone())
+        }
+
+        fn ac(&self, pid: i32) -> io::Result<Option<i32>> {
+            if self.acma_hatasi {
+                return Err(io::Error::from(io::ErrorKind::Unsupported));
+            }
+            Ok(self.simdiki.contains_key(&pid).then_some(pid))
+        }
+
+        fn baslangic(&self, pid: i32) -> io::Result<Option<u64>> {
+            Ok(self.simdiki.get(&pid).copied())
+        }
+
+        fn sinyal(&self, t: &i32, sinyal: i32) -> io::Result<()> {
+            self.sinyaller.borrow_mut().push((*t, sinyal));
+            Ok(())
+        }
+    }
+
+    /// Kök 10; 11 ve 12 torun (12 kendi oturumunda olabilir), 14 zombi
+    /// torun, 13 ilgisiz.
+    fn agac() -> Sahte {
+        let tablo = vec![
+            bilgi(11, 10, 100, false),
+            bilgi(12, 11, 101, false),
+            bilgi(13, 1, 102, false),
+            bilgi(14, 11, 103, true),
+        ];
+        let simdiki = tablo.iter().map(|s| (s.pid, s.baslangic)).collect();
+        Sahte {
+            tablo,
+            simdiki,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn etkilesimli_torunlar_dondurulup_oldurulur_ilgisize_dokunulmaz() {
+        let k = agac();
+        assert!(torunlari_oldur_ile(&k, 10).unwrap());
+        // Önce bütün torunlar durdurulur, sonra öldürülür.
+        let beklenen = vec![
+            (11, libc::SIGSTOP),
+            (12, libc::SIGSTOP),
+            (11, libc::SIGKILL),
+            (12, libc::SIGKILL),
+        ];
+        assert_eq!(*k.sinyaller.borrow(), beklenen);
+    }
+
+    #[test]
+    fn etkilesimli_numarasi_yeniden_kullanilan_toruna_sinyal_gitmez() {
+        let mut k = agac();
+        // 12 tarandıktan sonra bitti; numarası yeni bir sürece verildi.
+        k.simdiki.insert(12, 999);
+        assert!(torunlari_oldur_ile(&k, 10).unwrap());
+        assert!(k.sinyaller.borrow().iter().all(|(p, _)| *p != 12));
+        // 11 tarandıktan sonra toplandı: açılamaz, sinyal gitmez.
+        let mut k = agac();
+        k.simdiki.remove(&11);
+        torunlari_oldur_ile(&k, 10).unwrap();
+        assert!(k.sinyaller.borrow().iter().all(|(p, _)| *p != 11));
+    }
+
+    #[test]
+    fn etkilesimli_tarama_ve_acma_hatasi_basari_sayilmaz() {
+        let mut k = agac();
+        k.tarama_hatasi = true;
+        assert!(torunlari_oldur_ile(&k, 10).is_err());
+        let mut k = agac();
+        k.acma_hatasi = true;
+        assert!(torunlari_oldur_ile(&k, 10).is_err());
+        assert!(k.sinyaller.borrow().is_empty());
+    }
+
+    #[test]
+    fn etkilesimli_torunu_olmayan_kok_false_doner() {
+        let k = agac();
+        assert!(!torunlari_oldur_ile(&k, 13).unwrap());
+        assert!(k.sinyaller.borrow().is_empty());
+    }
+
+    fn stat_yaz(kok: &Path, pid: i32, metin: &str) {
+        std::fs::create_dir_all(kok.join(pid.to_string())).unwrap();
+        std::fs::write(kok.join(pid.to_string()).join("stat"), metin).unwrap();
+    }
+
+    fn stat_metni(pid: i32, ad: &str, durum: &str, ppid: i32, baslangic: u64) -> String {
+        // 22. alan `starttime`; arada 17 alan.
+        format!(
+            "{pid} ({ad}) {durum} {ppid} {} {baslangic} 0 0\n",
+            vec!["0"; 17].join(" ")
+        )
+    }
+
+    #[test]
+    fn etkilesimli_stat_parantezli_adla_ayristirilir() {
+        let s = stat_ayristir(7, &stat_metni(7, "a) (b", "S", 3, 4242)).unwrap();
+        assert_eq!(s, bilgi(7, 3, 4242, false));
+        assert!(
+            stat_ayristir(7, &stat_metni(7, "z", "Z", 3, 1))
+                .unwrap()
+                .zombi
+        );
+        assert!(stat_ayristir(7, "7 (kesik").is_none());
+        assert!(stat_ayristir(7, "7 (a) S x 0").is_none());
+    }
+
+    #[test]
+    fn etkilesimli_proc_okuma_hatalari_tarama_hatasidir() {
+        let d = tempfile::tempdir().unwrap();
+        let k = ProcFs {
+            kok: d.path().to_path_buf(),
+        };
+        stat_yaz(d.path(), 11, &stat_metni(11, "a", "S", 10, 5));
+        // Kaydı olmayan süreç toplanmıştır; atlanır.
+        std::fs::create_dir_all(d.path().join("12")).unwrap();
+        std::fs::create_dir_all(d.path().join("self")).unwrap();
+        assert_eq!(k.tara().unwrap(), vec![bilgi(11, 10, 5, false)]);
+        // Okunamayan kayıt (burada dizin) ve bozuk kayıt hatadır.
+        std::fs::create_dir_all(d.path().join("13/stat")).unwrap();
+        assert!(k.tara().is_err());
+        std::fs::remove_dir_all(d.path().join("13")).unwrap();
+        stat_yaz(d.path(), 14, "14 (bozuk");
+        assert!(k.tara().is_err());
+        // `/proc` açılamıyor.
+        let yok = ProcFs {
+            kok: d.path().join("yok"),
+        };
+        assert!(yok.tara().is_err());
+    }
 }
 ```
 
@@ -966,7 +1462,9 @@ pub struct EtkilesimliSurec {
     /// kullanır.
     ag_kapat: Option<AgKapatici>,
     agac: Agac,
-    kapandi: bool,
+    /// Yalnız `kapat` ağacın bitişini doğruladıktan sonra `true` olur.
+    /// İptal edilen ya da hata veren kapanışta `Drop` temizliği yapar.
+    dogrulandi: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1010,7 +1508,7 @@ impl EtkilesimliSurec {
             cikis: None,
             ag_kapat: None,
             agac,
-            kapandi: false,
+            dogrulandi: false,
         })
     }
 
@@ -1055,11 +1553,7 @@ impl EtkilesimliSurec {
     /// durduğunu varsayamaz.
     pub async fn kapat(mut self) -> std::io::Result<KapanisSonucu> {
         let bas = std::time::Instant::now();
-        self.kapandi = true;
-        drop(self.girdi.take());
-        if let Some(g) = self.girdi_gorevi.take() {
-            g.abort();
-        }
+        self.girdiyi_kes();
         let kendiliginden = self.cikis.is_some()
             || tokio::time::timeout(crate::etkilesimli::KAPANMA_PAYI, self.bitisi_bekle())
                 .await
@@ -1070,6 +1564,7 @@ impl EtkilesimliSurec {
             None => None,
         };
         sonuc?;
+        self.dogrulandi = true;
         Ok(KapanisSonucu {
             kendiliginden,
             cikis: self.cikis.flatten(),
@@ -1078,41 +1573,66 @@ impl EtkilesimliSurec {
         })
     }
 
+    /// stdin'i kapatır: aktarma görevi kesilir, dışarıdaki yazıcı hata alır.
+    fn girdiyi_kes(&mut self) {
+        drop(self.girdi.take());
+        if let Some(g) = self.girdi_gorevi.take() {
+            g.abort();
+        }
+    }
+
     async fn agaci_bitir(&mut self) -> std::io::Result<()> {
         let son = Instant::now() + OLUM_BEKLEMESI;
         // Kök toplanmadıysa numarası ona aittir; torunlar köke bağlıdır.
-        if self.cikis.is_none() {
-            while self.agac.torunlari_oldur() {
-                if Instant::now() >= son {
-                    return Err(zaman_asimi("torun süreçler öldürülemedi"));
-                }
-                tokio::time::sleep(YOKLAMA).await;
-            }
-        }
-        self.agac.oldur_denetimli()?;
+        agaci_oldur(&self.agac, self.cikis.is_none(), son).await?;
         tokio::time::timeout_at(son, self.bitisi_bekle())
             .await
             .map_err(|_| zaman_asimi("kök süreç öldürüldükten sonra bitmedi"))?;
-        while !self.agac.bos_mu()? {
+        bosalmayi_bekle(&self.agac, son).await
+    }
+}
+
+/// Kök toplanmadıysa önce torunları, sonra ağacı öldürür.
+async fn agaci_oldur(
+    agac: &impl AgacDenetimi,
+    kok_toplanmadi: bool,
+    son: Instant,
+) -> std::io::Result<()> {
+    if kok_toplanmadi {
+        while agac.torunlari_oldur()? {
             if Instant::now() >= son {
-                return Err(zaman_asimi("süreç ağacı öldürüldükten sonra boşalmadı"));
+                return Err(zaman_asimi("torun süreçler öldürülemedi"));
             }
             tokio::time::sleep(YOKLAMA).await;
         }
-        Ok(())
     }
+    agac.oldur_denetimli()
+}
+
+/// Ağaçta yaşayan süreç kalmayana kadar yoklar.
+async fn bosalmayi_bekle(agac: &impl AgacDenetimi, son: Instant) -> std::io::Result<()> {
+    while !agac.bos_mu()? {
+        if Instant::now() >= son {
+            return Err(zaman_asimi("süreç ağacı öldürüldükten sonra boşalmadı"));
+        }
+        tokio::time::sleep(YOKLAMA).await;
+    }
+    Ok(())
 }
 
 impl Drop for EtkilesimliSurec {
     fn drop(&mut self) {
-        if self.kapandi {
+        // `kapat` çağrılmadıysa (örneğin panik), iptal edildiyse ya da hata
+        // verdiyse: stdin görevi her durumda kesilir. Bitiş doğrulanmadıysa
+        // bekleyemeyiz, ama kök toplanmadıysa torunlar da öldürülür.
+        self.girdiyi_kes();
+        if self.dogrulandi {
             return;
         }
-        // `kapat` çağrılmadı (örneğin panik): bekleyemeyiz, ama kök
-        // toplanmadıysa torunlar da öldürülür.
         if self.cikis.is_none() {
             let son = std::time::Instant::now() + Duration::from_millis(500);
-            while self.agac.torunlari_oldur() && std::time::Instant::now() < son {
+            while matches!(self.agac.torunlari_oldur(), Ok(true)) && std::time::Instant::now() < son
+            {
                 std::thread::sleep(YOKLAMA);
             }
         }
@@ -1175,8 +1695,9 @@ pub(crate) fn tam_erisimle(
 ```
 
   `lib.rs`'te `pub use surec::{…}` satırına `EtkilesimliSurec` ve
-  `KapanisSonucu` eklenir. `Yalitici` trait'ine `baslat`'tan sonra şunlar
-  eklenir:
+  `KapanisSonucu` eklenir. `surec.rs`'in `use crate::agac::{self, Agac};`
+  satırı `use crate::agac::{self, Agac, AgacDenetimi};` olur. `Yalitici`
+  trait'ine `baslat`'tan sonra şunlar eklenir:
 
 ```rust
     /// MCP sunucusu gibi uzun yaşayan, borulu süreç (1.1a §4.1). Tokio
@@ -1199,8 +1720,9 @@ pub(crate) fn tam_erisimle(
 
 - [ ] **Adım 5: Geçtiğini görün:** İki platformda (Linux'ta WSL,
   `kalfatest`) `cargo test -p kalfa-sandbox --locked --lib surec::tests`.
-  Beklenen: Windows'ta 7, Linux'ta 8 test geçer (`setsid` testi yalnız
-  Linux'ta).
+  Beklenen: Windows'ta 12, Linux'ta 13 test geçer (`setsid` testi yalnız
+  Linux'ta). Linux'ta ayrıca
+  `cargo test -p kalfa-sandbox --locked --lib agac::tests`: 6 test geçer.
 - [ ] **Adım 6: Commit'leyin:** `sandbox: EtkilesimliSurec, doğrulanan ağaç kapanışı ve tam erişim`.
 
 ---
@@ -1817,8 +2339,12 @@ async fn etkilesimli_agli_sunucu_vekilden_cikar_ve_kapanista_temizlenir() {
 - `izin_ekle` mevcut ACL'i korur, `guvenli_dizin` mirası kesmez. Üst
   dizinden gelen bir paket ya da ortak araç yeteneği izni bu yüzden sunucu
   köküne inebilirdi. `mcp` ve kök `korumali_dizin_olustur` ile mirassız
-  kurulur. Var olan kök değiştirilmez, denetlenir; son olarak dört dizinin
-  ve `mcp`'nin DACL'inde izinli kimlik dışında kimlik olmadığı doğrulanır.
+  kurulur.
+- Var olan `mcp`, kök, `ev`, `gecici` ve `onbellek` ilk değişiklikten önce
+  denetlenir (`sunucu_kokunu_denetle`): bağlantı olmamalı, kök ve `mcp`'nin
+  mirası kesik olmalı, DACL'de izinli kimlik dışında kimlik olmamalı. Ret
+  dosyaları, ACL'leri ve ACE kaydını değiştirmez. Aynı denetim
+  hazırlığın sonunda bir kez daha yapılır.
 
 - [ ] **Adım 1: `kap.rs`'e borulu stdin.** `Kap`'a alan eklenir:
 
@@ -2143,41 +2669,96 @@ async fn etkilesimli_sunucu_koku_yetenek_sidiyle_ayrilir_ve_izinler_geri_alinir(
     k.temizle(&[baska]);
 }
 
-/// Codex 3: önceden var olan kök mirası açıksa ya da beklenmeyen bir
-/// kimliğe izin veriyorsa sunucu başlamaz; ACL'ye dokunulmaz.
+/// Reddin hiçbir şeyi değiştirmediğini ölçmek için: dizinlerin SDDL'i,
+/// dosya içerikleri ve ACE kaydı.
+fn anlik(dizinler: &[&Path], dosyalar: &[PathBuf], kayit: &Path) -> Vec<String> {
+    let mut v: Vec<String> = dizinler
+        .iter()
+        .map(|y| guvenlik::dacl_sddl(y).unwrap())
+        .collect();
+    v.extend(
+        dosyalar
+            .iter()
+            .map(|d| std::fs::read_to_string(d).unwrap_or_else(|e| format!("yok: {e}"))),
+    );
+    v.push(std::fs::read_to_string(kayit).unwrap());
+    v
+}
+
+/// Codex 3 (r1, r2): önceden var olan kök mirası açıksa ya da korumalı ama
+/// beklenmeyen bir kimliğe izin veriyorsa sunucu başlamaz. Ret, ilk
+/// değişiklikten önce gelir: SDDL'ler, dosyalar, ACE kaydı ve öbür
+/// sunucunun izinleri aynı kalır.
 #[tokio::test]
 async fn etkilesimli_guvenli_olmayan_mevcut_kok_reddedilir() {
     let k = kurgu();
     let alan = k.alan(&k.kok);
     let kimlik = alan_kimligi(&k.kok);
     let paket = guvenlik::profil_sidi(&format!("Kalfa.Alan.{kimlik}")).unwrap();
-    // Mirası açık kök.
-    let c = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &kimlik, "c");
+    let kayit = k.yalitim_dizini.join("ace-kaydi.jsonl");
+    let d = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &kimlik, "d");
+    let mcp = d.kok.parent().unwrap().to_path_buf();
     let s =
         k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "d", "exit 0"))
             .unwrap();
     s.kapat().await.unwrap();
-    std::fs::create_dir_all(&c.kok).unwrap();
+
+    // Mirası açık kök.
+    let c = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &kimlik, "c");
+    std::fs::create_dir_all(&c.ev).unwrap();
+    std::fs::write(c.ev.join(".gitconfig"), "ISARET-C").unwrap();
+    let dizinler = [mcp.as_path(), &c.kok, &c.ev, &d.kok, &d.ev];
+    let dosyalar = [c.ev.join(".gitconfig"), c.ev.join(".npmrc")];
+    let once = anlik(&dizinler, &dosyalar, &kayit);
     let hata =
         k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "c", "exit 0"))
             .err()
             .expect("mirası açık kök reddedilmeli");
     assert!(format!("{hata}").contains("mirası açık"), "{hata}");
-    assert!(!sid_var(&c.kok, &yetenek(&kimlik, "c")));
+    assert_eq!(anlik(&dizinler, &dosyalar, &kayit), once);
+
     // Korumalı ama `ev`'inde paket izni olan kök.
-    let d = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &kimlik, "d");
+    let e = kalfa_sandbox::sunucu_ozel(&k.yalitim_dizini, &kimlik, "e");
+    let s =
+        k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "e", "exit 0"))
+            .unwrap();
+    s.kapat().await.unwrap();
     let izin = Izin {
         sid: paket.clone(),
         maske: MASKE_OKU,
         miras: MIRAS_YOK,
     };
-    guvenlik::izin_ekle(&d.ev, &izin).unwrap();
+    guvenlik::izin_ekle(&e.ev, &izin).unwrap();
+    std::fs::write(e.ev.join(".gitconfig"), "ISARET-E").unwrap();
+    std::fs::write(e.ev.join("isaret.txt"), "ISARET").unwrap();
+    let dizinler = [
+        mcp.as_path(),
+        &e.kok,
+        &e.ev,
+        &e.gecici,
+        &e.onbellek,
+        &d.kok,
+        &d.ev,
+    ];
+    let dosyalar = [
+        e.ev.join(".gitconfig"),
+        e.ev.join(".npmrc"),
+        e.ev.join(".curlrc"),
+        e.ev.join("isaret.txt"),
+    ];
+    let once = anlik(&dizinler, &dosyalar, &kayit);
     let hata =
-        k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "d", "exit 0"))
+        k.y.baslat_etkilesimli(&etkilesimli_istek(&alan, "e", "exit 0"))
             .err()
             .expect("beklenmeyen izinli kök reddedilmeli");
     assert!(format!("{hata}").contains("beklenmeyen izin"), "{hata}");
-    guvenlik::izni_kaldir(&d.ev, &paket).unwrap();
+    assert_eq!(anlik(&dizinler, &dosyalar, &kayit), once);
+    // Tam erişim de aynı kökü reddeder.
+    let mut i = etkilesimli_istek(&alan, "e", "exit 0");
+    i.kip = kalfa_sandbox::CalistirmaKipi::TamErisim;
+    assert!(k.y.baslat_etkilesimli(&i).is_err());
+    assert_eq!(anlik(&dizinler, &dosyalar, &kayit), once);
+    guvenlik::izni_kaldir(&e.ev, &paket).unwrap();
     k.temizle(&[alan]);
 }
 
@@ -2512,8 +3093,8 @@ fn sunucu_yetenek_adi(alan: &str, sunucu: &str) -> String {
 /// Üst dizinlerden gelen paket ya da ortak yetenek izni sınırı aşamaz.
 /// Kökte yalnız listeleme, `ev`/`gecici`/`onbellek`'te miraslı değiştirme
 /// yalnız sunucunun yetenek SID'ine verilir; ACE'ler sunucu kaydına yazılır.
-/// Önceden var olan kök değiştirilmez, denetlenir: mirası açıksa ya da
-/// başka bir kimliğe izin veriyorsa başlatma reddedilir.
+/// Var olan kök ilk değişiklikten önce denetlenir: mirası açıksa ya da başka
+/// bir kimliğe izin veriyorsa başlatma reddedilir ve hiçbir şey değişmez.
 fn sunucu_kokunu_hazirla(
     ace: &mut AceKaydi,
     yalitim_dizini: &Path,
@@ -2524,8 +3105,7 @@ fn sunucu_kokunu_hazirla(
     git: &GitKimligi,
 ) -> io::Result<OzelDizinler> {
     let kayit = sunucu_kaydi(alan, sunucu);
-    let (mcp, ozel) = sunucu_kokunu_kur(yalitim_dizini, alan, sunucu)?;
-    let temel = temel_izinler(true)?;
+    let (mcp, ozel) = sunucu_kokunu_kur(ace, yalitim_dizini, alan, sunucu, yetenek)?;
     ozel.hazirla(git)?;
     let listele = Izin {
         sid: yetenek.clone(),
@@ -2553,13 +3133,54 @@ fn sunucu_kokunu_hazirla(
             .as_path(),
     )?;
     profil::guvenli_dizin(&ozel.kok, Path::new("ev/Roaming"))?;
+    // Son denetim, araya giren bir değişikliği yakalar.
+    sunucu_kokunu_denetle(ace, yalitim_dizini, alan, sunucu, yetenek)?;
+    Ok(ozel)
+}
 
-    let mut izinli: Vec<Sid> = temel.iter().map(|i| i.sid.clone()).collect();
-    izinli.push(yetenek.clone());
-    for yol in [&ozel.kok, &ozel.ev, &ozel.gecici, &ozel.onbellek] {
-        yalniz_izinli_kimlikler(yol, &izinli)?;
+/// `mcp` ve sunucunun kökü. Önce var olanlar denetlenir; sonra eksikler
+/// mirassız ve yalnız geliştirici, SYSTEM ve Administrators'la oluşturulur.
+fn sunucu_kokunu_kur(
+    ace: &AceKaydi,
+    yalitim_dizini: &Path,
+    alan: &str,
+    sunucu: &str,
+    yetenek: &Sid,
+) -> io::Result<(PathBuf, OzelDizinler)> {
+    let (mcp, ozel) = sunucu_kokunu_denetle(ace, yalitim_dizini, alan, sunucu, yetenek)?;
+    std::fs::create_dir_all(yalitim_dizini)?;
+    profil::guvenli_dizin(yalitim_dizini, Path::new(alan))?;
+    let temel = temel_izinler(true)?;
+    for yol in [&mcp, &ozel.kok] {
+        match guvenlik::korumali_dizin_olustur(yol, &temel) {
+            // Var olan dizin yukarıda denetlendi.
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
     }
-    // `mcp`'de aynı alanın öbür sunucularının listeleme izinleri de vardır.
+    Ok((mcp, ozel))
+}
+
+/// Var olan `mcp`, sunucu kökü ve özel alt dizinleri değiştirmeden denetler.
+/// Olmayan dizin geçer. Bağlantı, mirası açık kök ya da izinli kimlikler
+/// dışında bir kimlik hatadır. `mcp`'de aynı alanın öbür sunucularının
+/// kayıtlı listeleme izinleri de vardır.
+fn sunucu_kokunu_denetle(
+    ace: &AceKaydi,
+    yalitim_dizini: &Path,
+    alan: &str,
+    sunucu: &str,
+    yetenek: &Sid,
+) -> io::Result<(PathBuf, OzelDizinler)> {
+    let mcp = OzelDizinler::yol(yalitim_dizini, alan).kok.join("mcp");
+    let ozel = crate::sunucu_ozel(yalitim_dizini, alan, sunucu);
+    let mut izinli: Vec<Sid> = temel_izinler(true)?.into_iter().map(|i| i.sid).collect();
+    izinli.push(yetenek.clone());
+    mevcut_dizini_denetle(&ozel.kok, true, &izinli)?;
+    for yol in [&ozel.ev, &ozel.gecici, &ozel.onbellek] {
+        mevcut_dizini_denetle(yol, false, &izinli)?;
+    }
     let onek = format!("{alan}/mcp/");
     for girdi in ace.girdiler() {
         if let Girdi::Izin { alan, yol, sid, .. } = girdi
@@ -2569,46 +3190,24 @@ fn sunucu_kokunu_hazirla(
             izinli.push(Sid::metinden(sid)?);
         }
     }
-    yalniz_izinli_kimlikler(&mcp, &izinli)?;
-    Ok(ozel)
-}
-
-/// `mcp` ve sunucunun kökü: yoksa mirassız ve yalnız geliştirici, SYSTEM ve
-/// Administrators'la oluşturulur; varsa korumalı olduğu denetlenir.
-fn sunucu_kokunu_kur(
-    yalitim_dizini: &Path,
-    alan: &str,
-    sunucu: &str,
-) -> io::Result<(PathBuf, OzelDizinler)> {
-    std::fs::create_dir_all(yalitim_dizini)?;
-    let alan_koku = profil::guvenli_dizin(yalitim_dizini, Path::new(alan))?;
-    let mcp = alan_koku.join("mcp");
-    let ozel = crate::sunucu_ozel(yalitim_dizini, alan, sunucu);
-    let temel = temel_izinler(true)?;
-    for yol in [&mcp, &ozel.kok] {
-        korumali_kur(yol, &temel)?;
-    }
+    mevcut_dizini_denetle(&mcp, true, &izinli)?;
     Ok((mcp, ozel))
 }
 
-/// Dizini mirassız ve yalnız `izinler`le oluşturur. Varsa bağlantı olmadığı
-/// ve mirasının kesik olduğu denetlenir; ACL'ye dokunulmaz.
-fn korumali_kur(yol: &Path, izinler: &[Izin]) -> io::Result<()> {
-    match guvenlik::korumali_dizin_olustur(yol, izinler) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-            guvenlik::yeniden_ayristirma_izlemeden_ac(yol, true)?;
-            if guvenlik::mirasi_kesik_mi(yol)? {
-                Ok(())
-            } else {
-                Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    format!("{}: sunucu kökünün mirası açık", yol.display()),
-                ))
-            }
-        }
-        Err(e) => Err(e),
+fn mevcut_dizini_denetle(yol: &Path, korumali: bool, izinli: &[Sid]) -> io::Result<()> {
+    match std::fs::symlink_metadata(yol) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+        Ok(_) => {}
     }
+    guvenlik::yeniden_ayristirma_izlemeden_ac(yol, true)?;
+    if korumali && !guvenlik::mirasi_kesik_mi(yol)? {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{}: sunucu kökünün mirası açık", yol.display()),
+        ));
+    }
+    yalniz_izinli_kimlikler(yol, izinli)
 }
 
 /// Dizinin DACL'inde `izinli` dışında kimlik yoksa `Ok`.
@@ -2763,10 +3362,15 @@ fn yalniz_izinli_kimlikler(yol: &Path, izinli: &[Sid]) -> io::Result<()> {
         if istek.kip == crate::CalistirmaKipi::TamErisim {
             let ayar = self.ayar();
             // Kök iki kipte ortaktır; yalıtımlı başlatma onu korumalı bekler.
+            let kimlik = alan_kimligi(&istek.alan.kok);
+            let yetenek = guvenlik::yetenek_sidi(&sunucu_yetenek_adi(&kimlik, &istek.sunucu))
+                .map_err(yalitim_hatasi)?;
             sunucu_kokunu_kur(
+                &self.ace(),
                 &ayar.yalitim_dizini,
-                &alan_kimligi(&istek.alan.kok),
+                &kimlik,
                 &istek.sunucu,
+                &yetenek,
             )
             .map_err(yalitim_hatasi)?;
             return crate::surec::tam_erisimle(istek, &ayar.yalitim_dizini, &ayar.git);
@@ -2873,7 +3477,9 @@ cargo test -p kalfa-tools --features yalitim-testleri --locked --test uyumluluk
 
 ---
 
-## Codex bulgularının karşılığı (`INCELEME-PLAN-9d6b6b5`)
+## Codex bulgularının karşılığı
+
+### İlk inceleme (`INCELEME-PLAN-9d6b6b5`)
 
 | # | Bulgu | Karar | Planda | Kabul testi |
 |---|---|---|---|---|
@@ -2883,6 +3489,14 @@ cargo test -p kalfa-tools --features yalitim-testleri --locked --test uyumluluk
 | 4 | Dışarı verilen stdin yazıcısı `kapat()` tarafından kapatılamıyor | Katılıyorum | Görev 2: stdin aktarma görevi ve `duplex`; `kapat()` görevi keser. | `etkilesimli_kapat_disarida_tutulan_yaziciya_ragmen_eof_verir`, `etkilesimli_kapat_okumayan_sureci_ve_bloke_yazmayi_bitirir` |
 | — | `cargo test … etkilesimli sunucu tam_erisim` geçersiz | Katılıyorum | Bütün yeni testler `etkilesimli` içerir; her komut tek süzgeç alır. | — |
 | — | Windows stdin'inin `tokio::fs::File` ile sarılması | Ön doğrulamada ölçüldü | Bloke yazma, iptal, bırakma ve kapanış testleri iki platformda geçti. Bloke bir yazma, ağaç öldürülünce boru kapandığı için biter. | `etkilesimli_kapat_okumayan_sureci_ve_bloke_yazmayi_bitirir` |
+
+### İkinci inceleme (`INCELEME-PLAN-6205095`)
+
+| # | Bulgu | Karar | Planda | Kabul testi |
+|---|---|---|---|---|
+| 1 | Yarım kalan `kapat()` temizliği atlıyor; bırakma stdin görevini kesmiyor | Katılıyorum | Görev 2: `dogrulandi` yalnız doğrulanmış kapanıştan sonra; `Drop` stdin görevini her durumda keser ve doğrulanmamış ağaçta torunları ve ağacı öldürür. | `etkilesimli_kapat_iptal_edilince_agac_olur` (300 ms ve 2050 ms'de iptal; Linux'ta `setsid` torunu), `etkilesimli_birakmada_stdin_gorevi_kesilir` (görev sayısı ve sonraki yazmanın hatası) |
+| 2 | Linux torun taraması eksikliği başarı sayıyor; PID sabitlenmiyor | Katılıyorum | Görev 2: `SurecKaynagi`; tarama hatası `Err`; `pidfd_open` + başlangıç doğrulaması + `pidfd_send_signal`; öldürme ve boşalma `AgacDenetimi` ile. | `agac::tests` (sahte kaynakla numara yeniden kullanımı, tarama/açma hatası; sahte `/proc` ile okunamayan, bozuk ve eksik kayıt), sahte ağaçla `etkilesimli_bosalma_son_sifirdan_once_bitmez`, `…bosalmayan_ya_da_denetlenemeyen_agac_hatadir`, `…oldurme_ve_tarama_hatasi_kapanisi_basarisiz_kilar` |
+| 3 | Windows güvensiz kökü reddetmeden önce dosya ve ACL değiştiriyor | Katılıyorum | Görev 4: `sunucu_kokunu_denetle` ilk değişiklikten önce; kurulum yalnız eksikleri oluşturur. | `etkilesimli_guvenli_olmayan_mevcut_kok_reddedilir`: mirası açık ve korumalı-yabancı-SID kökler ayrı; SDDL'ler, dosyalar, ACE kaydı ve öbür sunucunun izinleri ret öncesi ve sonrası aynı; tam erişim de reddeder. |
 
 ## Ön doğrulamada plana işlenen değişiklikler
 
@@ -2951,8 +3565,9 @@ kapanışı, özel kök ve çalışma kipi.
   doğrulama commit'inden üretildi.
 - **Bilinen sınırlar:**
   - Linux tam erişimde, kök kendiliğinden çıktıktan sonra yaşayan
-    `setsid` torunu sahiplenilemez (tasarım §4.1).
-  - `etkilesimli_kapat_donunce_torun_yasamaz`, iki platformda
-    öldürmeden sonraki bekleme kaldırılınca da geçti. Torun hızlı öldüğü
-    için bu test doğrulama adımını tek başına ayırt etmez; doğrulama
-    sözleşmenin parçasıdır ve hata yolu `Err`'dir.
+    `setsid` torunu sahiplenilemez (tasarım §4.1). Bu istisna kullanıcının
+    ayrı kararını bekliyor; §4.3'teki risk kabulüne dahil değildir.
+  - `Drop` yolu bitişi doğrulamaz; iptal ve hata yolunda çağıran kilidi
+    bırakmaz (1.1a-2).
+  - `pidfd` Linux 5.3 gerektirir; yoksa tarama `Err` verir ve kapanış
+    başarısız sayılır.

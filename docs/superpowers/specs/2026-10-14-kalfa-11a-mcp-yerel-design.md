@@ -1,15 +1,15 @@
 # Kalfa 1.1a — Yerel MCP sunucuları: Tasarım
 
 **Tarih:** 2026-10-14.
-**Durum:** Tasarım, r6. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
+**Durum:** Tasarım, r7. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
 §13'te şu incelemelerin yanıtı var:
 
 - Codex'in yerel incelemesi (`dd641a3`, altı bulgu),
 - PR #19'daki satır içi Codex yorumları (15 bulgu),
 - Codex'in r3 yeniden incelemesi (`5dd79a4`, beş bulgu),
 - Codex'in r4 yeniden incelemesi (`e5080c2`, iki bulgu),
-- Codex'in plan 1.1a-1 incelemesinin tasarıma dokunan iki bulgusu
-  (`9d6b6b5`, §13.5).
+- Codex'in plan 1.1a-1 incelemelerinin tasarıma dokunan bulguları
+  (`9d6b6b5`, `6205095`; §13.5, §13.6).
 
 G1 geçti ve kalan risk kabul edildi (§4.1, §4.3). Plan 1.1a-1 ön
 doğrulandı ve yeniden incelemede; ürün uygulaması o incelemeden sonra
@@ -173,17 +173,29 @@ eklenir:
     (`PR_SET_CHILD_SUBREAPER`): kendi oturumunu açan (`setsid`) torun da
     kökün altında kalır ve öldürülür. Yalıtımlıda bwrap'ın PID ad alanı
     bütün ağacı ayrıca kapsar.
+  - Linux'ta torunlar `/proc`'tan bulunur. Tarama tam yapılamazsa
+    (açılamayan dizin, okunamayan ya da ayrıştırılamayan kayıt) `kapat()`
+    `Err` döner; eksik tarama "torun yok" sayılmaz. Her torun `pidfd` ile
+    açılır ve başlangıç zamanı taramadakiyle karşılaştırılır; numarası
+    başka bir sürece verilmişse sinyal gönderilmez.
   - Öldürme ya da doğrulama başarısızsa `Err` döner. Çağıran ağacın
     durduğunu varsayamaz ve kilidi bırakmaz (§7.3).
-  - Süreç `kapat()` çağrılmadan bırakılırsa (örneğin panik) ağaç yine
-    öldürülür; bu yolda bitiş doğrulanmaz.
+  - `kapat()` iptal edilirse ya da süreç `kapat()` çağrılmadan bırakılırsa
+    (örneğin panik) stdin kesilir, torunlar ve ağaç yine öldürülür; bu
+    yolda bitiş doğrulanmaz ve kilit bırakılmaz.
 - **Tam erişimin sınırı:** Tam erişimli sunucu kullanıcının yetkileriyle
   ağacın dışında süreç başlatabilir (Windows'ta WMI ya da Görev
   Zamanlayıcı, Linux'ta `systemd-run --user`). Linux'ta ayrıca kök
   kendiliğinden çıktıktan sonra yaşayan, kendi oturumunu açmış torunu init
   sahiplenir; Kalfa onu bulamaz. `kapat()` tam erişimde yalnız Kalfa'nın
   sahiplendiği ağacı (Job Object; süreç grubu ve kökün alt ağacı) doğrular.
-  Tam erişim uyarısı (§9) bunu kapsar. Yalıtımlıda bu sınır yoktur.
+  Yalıtımlıda bu sınır yoktur.
+
+  **Karar bekliyor:** Bu daralma §4.3'teki gizli dosya riskinin kabulünden
+  ayrı bir karardır; kullanıcı henüz onaylamadı. Onaylanırsa tam erişim
+  uyarısı (§9), sunucunun kendiliğinden çıkışında da geride süreç
+  kalabileceğini anlaşılır biçimde söyler. İptal ve tarama hataları bu
+  istisnaya girmez.
 - **Çalışma kipi açıkça seçilir.** Mevcut `kip_uyusmasi(false, true)`
   yalıtım hazırken yalıtımsız başlatmayı reddeder
   (`kalfa-sandbox/src/lib.rs`), çünkü kabukta yalıtımsız çalışma yalnız
@@ -628,7 +640,8 @@ eklenir:
     yalnız geliştirici, SYSTEM ve Administrators. Üst dizinlerden gelen
     paket ya da ortak araç yeteneği izni sınırı aşamaz. Var olan kök
     korumalı değilse ya da beklenmeyen bir kimliğe izin veriyorsa başlatma
-    reddedilir; ACL'ye dokunulmaz.
+    reddedilir. Denetim ilk değişiklikten önce yapılır: ret dosyaları,
+    ACL'leri ve ACE kaydını değiştirmez.
   - Ölçümü G1'dedir (§4.1).
   - Linux'ta aynı ayrım bağlamayla kurulur: özel kök yalnız o sunucunun
     bwrap'ına bağlanır.
@@ -1229,3 +1242,12 @@ bulgularının karşılığı" bölümündedir.
 |---|---|---|---|
 | 1 | `kapat()` ağacın bittiğini doğrulamıyor; Linux tam erişimde `setsid` torun gruptan çıkar | Katılıyorum. Kod doğrulandı: `agac.rs` öldürme sonuçlarını atıyor, `Cocuk::ayir` yalnız kökü bekliyor. | §4.1: `kapat()` `Result` döner; Windows'ta işin etkin süreç sayısı, Linux'ta süreç grubu ve kökün alt ağacı doğrulanır; kök alt süreç toplayıcısıdır. Tam erişimin kalan sınırı açıkça yazıldı. §7.3: `Err`'de kilit bırakılmaz. |
 | 3 | Windows özel kökü G1'deki korumalı DACL'i taşımıyor | Katılıyorum. Kod doğrulandı: `izin_ekle` mevcut ACL'i korur, `guvenli_dizin` mirası kesmez. | §5.6: `mcp` ve kök korumalı DACL'le kurulur; var olan güvensiz kök reddedilir. §3: kök iki kipte ortak ve korumalı. |
+
+### 13.6 Codex'in plan 1.1a-1 r2 incelemesi (`INCELEME-PLAN-6205095.md`)
+
+| # | Bulgu | Karar | Çözüm |
+|---|---|---|---|
+| 1 | Yarım kalan `kapat()` temizliği atlıyor; bırakma stdin görevini kesmiyor | Katılıyorum. Kod doğrulandı: bayrak ilk beklemeden önce yazılıyordu. | §4.1: iptal ve bırakmada stdin kesilir, torunlar ve ağaç öldürülür; kilit bırakılmaz. |
+| 2 | Linux torun taraması eksikliği başarı sayıyor; PID sabitlenmiyor | Katılıyorum | §4.1: tam olmayan tarama `Err`; `pidfd` ve başlangıç zamanıyla kimlik. |
+| 3 | Windows güvensiz kökü reddetmeden önce değiştiriyor | Katılıyorum | §5.6'daki "ACL'ye dokunulmaz" kuralı artık ilk değişiklikten önceki denetimle sağlanır (plan Görev 4). |
+| — | Linux tam erişim istisnası ayrı bir karar | Katılıyorum | §4.1: kullanıcı kararı bekliyor olarak işaretlendi. |
