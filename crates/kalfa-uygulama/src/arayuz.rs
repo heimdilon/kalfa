@@ -14,6 +14,12 @@ pub trait Iletisim: Send + Sync {
     /// Yerel klasör seçici; `baslangic` verilirse orada açılır. Vazgeçilirse
     /// `None`.
     async fn klasor_sec(&self, baslik: &str, baslangic: Option<&Path>) -> Option<PathBuf>;
+    /// Yerel dosya seçici; `baslangic` verilirse orada açılır. Vazgeçilirse
+    /// `None`.
+    async fn dosya_sec(&self, baslik: &str, baslangic: Option<&Path>) -> Option<PathBuf> {
+        let _ = (baslik, baslangic);
+        None
+    }
     /// Yerel onay kutusu; `tamam` düğmesi seçilirse `true`.
     async fn onayla(&self, baslik: &str, mesaj: &str, tamam: &str, vazgec: &str) -> bool;
 }

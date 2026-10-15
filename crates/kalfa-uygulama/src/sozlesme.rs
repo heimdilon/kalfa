@@ -346,3 +346,13 @@ pub struct GunlukSinirDurumu {
     /// Sınırın sıfırlanacağı an (RFC 3339), EVREN söylediyse.
     pub sifirlanma: Option<String>,
 }
+
+// --- MCP sunucu yapılandırma ve kayıt sözleşmesi (1.1a-2 Görev 3) ---
+pub use crate::mcp::ayarlar::{
+    McpAgKurali, McpKipi, McpKomut, McpOrtamDegiskeniDto, McpSunucuAyrintiDto, McpSunucuOzetiDto,
+};
+pub use crate::mcp::kasa::GizliKimlik;
+pub use crate::mcp::tanimlar::{
+    AtlananUrlSunucusuDto, IceAktarmaOnizlemeDto, IceAktarmaSunucuOnizlemeDto, SeciliKomutBilgisi,
+    TaslakKimligi,
+};

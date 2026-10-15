@@ -49,6 +49,7 @@ impl SaglayiciUretici for SahteUretici {
 #[derive(Default)]
 pub struct SahteIletisim {
     klasor: Mutex<Option<PathBuf>>,
+    dosya: Mutex<Option<PathBuf>>,
     /// Son klasör seçicinin başlangıç dizini.
     baslangic: Mutex<Option<PathBuf>>,
     onay: AtomicBool,
@@ -59,6 +60,10 @@ pub struct SahteIletisim {
 impl SahteIletisim {
     pub fn klasor_ver(&self, yol: &Path) {
         *self.klasor.lock().unwrap() = Some(yol.to_path_buf());
+    }
+
+    pub fn dosya_ver(&self, yol: &Path) {
+        *self.dosya.lock().unwrap() = Some(yol.to_path_buf());
     }
 
     pub fn onay_ver(&self, evet: bool) {
@@ -88,6 +93,11 @@ impl Iletisim for SahteIletisim {
     async fn klasor_sec(&self, _baslik: &str, baslangic: Option<&Path>) -> Option<PathBuf> {
         *self.baslangic.lock().unwrap() = baslangic.map(Path::to_path_buf);
         self.klasor.lock().unwrap().clone()
+    }
+
+    async fn dosya_sec(&self, _baslik: &str, baslangic: Option<&Path>) -> Option<PathBuf> {
+        *self.baslangic.lock().unwrap() = baslangic.map(Path::to_path_buf);
+        self.dosya.lock().unwrap().clone()
     }
 
     async fn onayla(&self, baslik: &str, mesaj: &str, _tamam: &str, _vazgec: &str) -> bool {

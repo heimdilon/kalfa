@@ -166,18 +166,22 @@ pub(crate) fn uret(
         .values()
         .map(|d| (d.ad.clone(), d.deger.clone()))
         .collect::<Vec<_>>();
+    let zorlanan_ozel = sunucu_ortami(&[], ozel);
     let zorlanmis = sunucu_ortami(&kaynak, ozel);
     let gizlilik: BTreeMap<String, bool> =
         gecici.iter().map(|(k, v)| (k.clone(), v.gizli)).collect();
     let mut son = BTreeMap::<String, OrtamDegeri>::new();
     for (ad, ham) in zorlanmis {
+        let ozel_kok_zorlamasi = zorlanan_ozel
+            .iter()
+            .any(|(z_ad, z_deger)| ayni_ad(z_ad, &ad) && z_deger == &ham);
         let deger = if ad.eq_ignore_ascii_case("PATH") {
             pathi_ozel_calisma_dizinine_gore_mutlak_yap(&ham, cwd)?
         } else {
             ham
         };
         let anahtar = anahtar(&ad);
-        let gizli = gizlilik.get(&anahtar).copied().unwrap_or(false);
+        let gizli = !ozel_kok_zorlamasi && gizlilik.get(&anahtar).copied().unwrap_or(false);
         son.insert(anahtar, OrtamDegeri { ad, deger, gizli });
     }
     Ok(SonOrtam {

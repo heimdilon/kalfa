@@ -52,6 +52,12 @@ struct Dosya {
     /// Yeni oturumların bütçe varsayılanı (5b tasarımı §9).
     #[serde(default, deserialize_with = "butce_oku")]
     oturum_butcesi: ButceSinirlari,
+    /// MCP sunucu tanımları ve yetim sır temizlik kuyruğu (1.1a-2 Görev 3).
+    #[serde(default)]
+    mcp: crate::mcp::ayarlar::McpAyarlar,
+    /// MCP ayarları için bellek içi monotonik CAS revizyonu.
+    #[serde(skip)]
+    mcp_revizyonu: u64,
 }
 
 /// Bozuk ya da geçersiz bütçe (tür hatası, sıfır, sınır üstü) yalnızca kendisini
@@ -248,6 +254,42 @@ impl Ayarlar {
         *dosya = yeni;
         *self.hata.lock().unwrap_or_else(|z| z.into_inner()) = None;
         Ok(())
+    }
+}
+
+impl crate::mcp::ayarlar::McpAyarlarDeposu for Ayarlar {
+    fn mcp_ayarlarini_oku(&self) -> (crate::mcp::ayarlar::McpAyarlar, u64) {
+        let dosya = self.kilit();
+        (dosya.mcp.clone(), dosya.mcp_revizyonu)
+    }
+
+    fn mcp_ayarlarini_kaydet(
+        &self,
+        yeni_mcp: &crate::mcp::ayarlar::McpAyarlar,
+        beklenen_revizyon: u64,
+    ) -> Result<u64, crate::mcp::ayarlar::McpDepoHatasi> {
+        let mut dosya = self.kilit();
+        if dosya.mcp_revizyonu != beklenen_revizyon {
+            return Err(crate::mcp::ayarlar::McpDepoHatasi::EsZamanliDegisiklik);
+        }
+        let mut yeni = dosya.clone();
+        yeni.mcp = yeni_mcp.clone();
+        yeni.mcp_revizyonu = dosya.mcp_revizyonu.saturating_add(1);
+        let metin = serde_json::to_vec_pretty(&yeni)
+            .map_err(|e| crate::mcp::ayarlar::McpDepoHatasi::Io(e.to_string()))?;
+        if let Some(ust) = self.yol.parent() {
+            std::fs::create_dir_all(ust)
+                .map_err(|e| crate::mcp::ayarlar::McpDepoHatasi::Io(e.to_string()))?;
+        }
+        let gecici = self.yol.with_extension("json.yeni");
+        std::fs::write(&gecici, metin)
+            .map_err(|e| crate::mcp::ayarlar::McpDepoHatasi::Io(e.to_string()))?;
+        std::fs::rename(&gecici, &self.yol)
+            .map_err(|e| crate::mcp::ayarlar::McpDepoHatasi::Io(e.to_string()))?;
+        let yeni_revizyon = yeni.mcp_revizyonu;
+        *dosya = yeni;
+        *self.hata.lock().unwrap_or_else(|z| z.into_inner()) = None;
+        Ok(yeni_revizyon)
     }
 }
 

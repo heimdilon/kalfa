@@ -538,18 +538,38 @@ impl CozulmusTanim {
 
     /// Yerel onay penceresinde gösterilir; sır ortam değerleri hiçbir zaman eklenmez.
     pub fn yerel_onay_metni(&self) -> String {
+        self.maskeli_yerel_onay_metni(&[])
+    }
+
+    /// Yerel onay metnini hem tanımdaki gizli ortam değerleriyle hem de verilen ek
+    /// sırlarla (örneğin kasadan okunan korunmuş sırlarla) maskeleyerek üretir.
+    /// Argümanlar `Debug` kaçışından önce ayrı ayrı maskelenir; birleştirilen komut
+    /// ve nihai metin de ayrıca maskelenir.
+    pub fn maskeli_yerel_onay_metni(&self, ek_sirlar: &[crate::maske::GizliDeger]) -> String {
+        let mut sirlar: Vec<crate::maske::GizliDeger> = ek_sirlar.to_vec();
+        for (_, deger, gizli) in self.ortam.ham_degerler() {
+            if gizli && let Ok(sir) = crate::maske::GizliDeger::yeni(deger.to_owned()) {
+                sirlar.push(sir);
+            }
+        }
         let kip = match self.kip {
             CalistirmaKipi::Yalitimli => "Yalıtımlı",
             CalistirmaKipi::TamErisim => "Tam erişim",
         };
-        let komut = std::iter::once(self.program.display().to_string())
-            .chain(self.argumanlar.iter().map(|a| format!("{a:?}")))
+        let program_metni =
+            crate::maske::maskele_metin(&self.program.display().to_string(), &sirlar);
+        let birlesik_komut = std::iter::once(program_metni)
+            .chain(self.argumanlar.iter().map(|a| {
+                let maskeli = crate::maske::maskele_metin(a, &sirlar);
+                format!("{maskeli:?}")
+            }))
             .collect::<Vec<_>>()
             .join(" ");
+        let komut = crate::maske::maskele_metin(&birlesik_komut, &sirlar);
+        let cwd_metni = crate::maske::maskele_metin(&self.cwd.display().to_string(), &sirlar);
         let mut metin = format!(
-            "Sunucu: {}\nKip: {kip}\nKomut: {komut}\nÇalışma dizini: {}\nOrtam adları:",
+            "Sunucu: {}\nKip: {kip}\nKomut: {komut}\nÇalışma dizini: {cwd_metni}\nOrtam adları:",
             self.ad,
-            self.cwd.display()
         );
         for (ad, _, gizli) in self.ortam.ham_degerler() {
             metin.push_str("\n- ");
@@ -568,12 +588,21 @@ impl CozulmusTanim {
                     if kural.ozel_ag { " (özel ağ)" } else { "" }
                 ));
             }
+        } else {
+            metin.push_str("\nAğ izinleri: sınırsız");
+            metin.push_str(
+                "\nUyarı: Hesabınızın erişebildiği her şeye erişir. Sunucu kendiliğinden kapansa da geride çalışan süreçler kalabilir.",
+            );
         }
         metin.push_str(&format!(
             "\nBaşlatma zaman aşımı: {} sn\nÇağrı zaman aşımı: {} sn",
             self.baslatma_zamani_asimi, self.cagri_zamani_asimi
         ));
-        metin
+        if let Some(uyari) = self.paket_surumu_uyarisi() {
+            metin.push('\n');
+            metin.push_str(uyari);
+        }
+        crate::maske::maskele_metin(&metin, &sirlar)
     }
 }
 
@@ -707,11 +736,14 @@ fn altinda(yol: &Path, kok: &Path) -> bool {
 /// ile Unix symlink/.. farklıdır. Eksik son dizinlerde mevcut bileşenleri
 /// sırayla çözer. Dangling symlink ve erişim hatası güvenli rettir.
 fn mutlak_kok(yol: &Path, cwd: &Path) -> Result<PathBuf, TanimHatasi> {
-    let baslangic = fs::canonicalize(cwd).map_err(|_| TanimHatasi::YolCozumlenemedi)?;
     let aday = if yol.is_absolute() {
         yol.to_path_buf()
     } else {
-        baslangic.join(yol)
+        match fs::canonicalize(cwd) {
+            Ok(baslangic) => baslangic.join(yol),
+            Err(e) if e.kind() == io::ErrorKind::NotFound && cwd.is_absolute() => cwd.join(yol),
+            Err(_) => return Err(TanimHatasi::YolCozumlenemedi),
+        }
     };
     match fs::canonicalize(&aday) {
         Ok(kanonik) => {
@@ -1443,5 +1475,49 @@ mod tests {
         fs::remove_file(&bag).unwrap();
         symlink(&iki, &bag).unwrap();
         assert!(!aday.kimlik_uyuyor(&acilan).unwrap());
+    }
+
+    #[test]
+    fn yerel_onay_metni_arguman_ve_kacisli_sirlari_maskeler() {
+        let kok = tempfile::tempdir().unwrap();
+        let proje = kok.path().join("proje");
+        let ozel = kalfa_sandbox::sunucu_ozel(kok.path(), "alan", "ornek");
+        let kabuk = OzelDizinler::yol(kok.path(), "kabuk");
+        for dizin in [
+            &proje,
+            &ozel.ev,
+            &ozel.gecici,
+            &ozel.onbellek,
+            &kabuk.ev,
+            &kabuk.gecici,
+            &kabuk.onbellek,
+        ] {
+            fs::create_dir_all(dizin).unwrap();
+        }
+        let ikili = std::env::current_exe().unwrap();
+        let kacisli_sir = "sir\"kacis\"deger99";
+        let tanim = McpTanim::varsayilan_zaman_asimlari(
+            "ornek".into(),
+            Komut::SeciliYurutulebilir {
+                kimlik: SeciliYurutulebilirKimligi::yeni(1),
+                argumanlar: vec![format!("--token={kacisli_sir}")],
+            },
+            vec![OrtamDegeri::gizli("API_KEY", kacisli_sir)],
+            CalistirmaKipi::TamErisim,
+            None,
+        )
+        .unwrap();
+        let cozulmus = tanim
+            .hazirla(&[], &ozel, &YazilabilirKokler::yeni(proje, kabuk), &|_| {
+                Ok(ikili.clone())
+            })
+            .unwrap();
+        let onay_metni = cozulmus.yerel_onay_metni();
+        assert!(
+            !onay_metni.contains("kacis"),
+            "yerel onay metni argümandaki kaçışlı sırrı maskelemeli: {onay_metni}"
+        );
+        assert!(onay_metni.contains("sınırsız"));
+        assert!(onay_metni.contains("geride çalışan süreçler kalabilir"));
     }
 }
