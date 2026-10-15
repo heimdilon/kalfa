@@ -48,6 +48,8 @@ jobs:
         run: cargo install cargo-audit --version 0.22.2 --locked
       - name: cargo audit
         run: cargo audit
+      - name: cargo audit (MCP ön doğrulaması)
+        run: cargo audit --file prototip/mcp-tasima/Cargo.lock
 
   arayuz:
     name: Arayüz
@@ -79,6 +81,28 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # G2 ayrı bir workspace; ana workspace komutları bu kaynağı kapsamaz.
+  mcp_tasima:
+    name: MCP taşıma ön doğrulaması (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust araç zincirini kur
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: prototip/mcp-tasima -> target
+      - name: MCP ön doğrulaması biçimi
+        run: cargo fmt --manifest-path prototip/mcp-tasima/Cargo.toml -- --check
+      - name: MCP ön doğrulaması clippy
+        run: cargo clippy --manifest-path prototip/mcp-tasima/Cargo.toml --all-targets --locked -- -D warnings
+      - name: MCP ön doğrulaması testleri
+        run: cargo test --manifest-path prototip/mcp-tasima/Cargo.toml --locked -- --test-threads=1
   rust:
     name: Rust (${{ matrix.os }})
     needs: arayuz
