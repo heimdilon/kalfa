@@ -10,6 +10,7 @@ pub mod calisma_alani;
 pub mod diff;
 pub mod duzenle;
 pub mod kabuk;
+pub mod koruma;
 pub mod listele;
 pub mod oku;
 pub mod yaz;

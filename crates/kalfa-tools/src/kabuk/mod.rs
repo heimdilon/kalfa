@@ -7,31 +7,26 @@
 
 pub mod cikti;
 
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use kalfa_core::arac::{
-    Arac, AracCiktisi, AracHatasi, CiktiGonderici, DegisiklikTuru, DosyaDegisiklikleri, Hazirlik,
-};
-use kalfa_core::git_koruma;
-use kalfa_core::izin::Siniflandirici;
+use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, CiktiGonderici, Hazirlik};
 use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
-use kalfa_core::protokol::{CiktiAkisi, VeriCikisi};
+use kalfa_core::protokol::VeriCikisi;
 use kalfa_core::yol::CalismaYolu;
-use kalfa_sandbox::git_denetimi::{GitDenetimi, yeni_git_denetle};
 use kalfa_sandbox::tarama::AdliGirdiler;
 use kalfa_sandbox::{
-    AlanBilgisi, BaslatmaHatasi, Bitis, CalistirmaIstegi, KomutBicimi, Korumali, Yalitici,
-    YalitimDurumu, ortam, program, tarama,
+    AlanBilgisi, BaslatmaHatasi, Bitis, CalistirmaIstegi, KomutBicimi, Yalitici, YalitimDurumu,
+    ortam, program,
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::calisma_alani::CalismaAlani;
+use crate::koruma::{self, SonDenetimSonucu};
 use cikti::{BasSonTampon, CANLI_SINIR, CanliAkis};
 
 pub const VARSAYILAN_SURE_SN: u64 = 120;
@@ -293,90 +288,14 @@ impl KabukAraci {
 
     /// Yalıtımın çalışma alanı bilgisi; her çalıştırmadan hemen önce üretilir
     /// (§7.2): gizli dosya taraması ve git yerleşimi.
-    ///
-    /// Her derinlikteki `.git` ve onların çalışma alanındaki `gitdir` ile
-    /// `commondir` hedefleri de salt okunurdur (güvenlik analizi Bulgu 1).
-    /// Gizli dizinlerin altındakiler listelenmez: onlara verilen açık okuma
-    /// izni (Windows) gizli dizinin içini gösterirdi; zaten görünmezler.
     async fn alan_bilgisi(&self) -> Result<AlanBilgisi, AracHatasi> {
-        let alan = self.alan.clone();
-        tokio::task::spawn_blocking(move || {
-            let kok = alan
-                .kok()
-                .canonicalize()
-                .map_err(|e| gecersiz(format!("Çalışma alanının yolu çözülemedi: {e}")))?;
-            let s = alan.siniflandirici();
-            let gizli = tarama::tara_ayrintili(
-                &kok,
-                &|yol, _dizin| {
-                    CalismaYolu::coz(&yol.to_string_lossy())
-                        .map(|y| s.gizli_mi(&y))
-                        .unwrap_or(false)
-                },
-                &git_adi_mi,
-                &|yol, dizin| yapilandirma_mi(s, yol, dizin),
-            );
-            let git = git_koruma::git_yerlesimi(&kok);
-            let mut korumali: Vec<Korumali> = git
-                .korumali
-                .into_iter()
-                .map(|k| Korumali {
-                    yol: k.yol,
-                    dizin: k.dizin,
-                })
-                .collect();
-            // Bağlantı olan `.git` izlenmez ve bağlanmaz (bilinen sınır).
-            for g in gizli.git.iter().filter(|g| !g.baglanti) {
-                korumali.push(Korumali {
-                    yol: g.yol.clone(),
-                    dizin: g.dizin,
-                });
-                for yol in git_koruma::yonlendirilen_dizinler(&g.yol, g.dizin, &kok) {
-                    korumali.push(Korumali { yol, dizin: true });
-                }
-            }
-            // Kendiliğinden çalışan yapılandırma da salt okunurdur (Bulgu 2).
-            for y in &gizli.yapilandirma {
-                korumali.push(Korumali {
-                    yol: y.yol.clone(),
-                    dizin: y.dizin,
-                });
-            }
-            korumali.retain(|k| {
-                !gizli.dizinler.iter().any(|d| k.yol.starts_with(d))
-                    && !gizli.dosyalar.contains(&k.yol)
-            });
-            korumali.sort_by(|a, b| a.yol.cmp(&b.yol));
-            korumali.dedup_by(|a, b| a.yol == b.yol);
-            Ok(AlanBilgisi {
-                kok,
-                gizli,
-                korumali,
-                git_dizinleri: git.dis_dizinler,
-            })
-        })
-        .await
-        .map_err(|e| gecersiz(format!("Gizli dosya taraması yarıda kaldı: {e}")))?
+        koruma::alan_bilgisi(self.alan.clone()).await
     }
-}
 
-impl KabukAraci {
     /// Çalışma alanındaki `.git` girdileri ve yapılandırma yolları;
     /// yalıtımsız komuttan önce.
     async fn adli_girdiler(&self) -> Result<AdliGirdiler, AracHatasi> {
-        let alan = self.alan.clone();
-        tokio::task::spawn_blocking(move || {
-            let kok = alan
-                .kok()
-                .canonicalize()
-                .map_err(|e| gecersiz(format!("Çalışma alanının yolu çözülemedi: {e}")))?;
-            let s = alan.siniflandirici();
-            Ok(tarama::adli_girdiler(&kok, &git_adi_mi, &|yol, dizin| {
-                yapilandirma_mi(s, yol, dizin)
-            }))
-        })
-        .await
-        .map_err(|e| gecersiz(format!("Git taraması yarıda kaldı: {e}")))?
+        koruma::adli_girdiler(self.alan.clone()).await
     }
 
     /// Komuttan sonra yeni `.git` girdilerini denetler ve tehlikelileri
@@ -384,84 +303,8 @@ impl KabukAraci {
     /// dosyalarını bildirir (Bulgu 2). Aynı taramanın görüntüsü komutun
     /// değiştirdiği dosyaları verir (aşama 3 tasarımı §5.4). Uyarıları, bir
     /// karantinanın başarısız olup olmadığını ve değişiklikleri döner.
-    async fn komut_sonrasi_denetim(&self, onceki: AdliGirdiler) -> KomutSonrasi {
-        let alan = self.alan.clone();
-        tokio::task::spawn_blocking(move || {
-            let kok = match alan.kok().canonicalize() {
-                Ok(k) => k,
-                Err(e) => return KomutSonrasi::denetlenemedi(e),
-            };
-            let damga = utc_damgasi(std::time::SystemTime::now());
-            let mut uyarilar = Vec::new();
-            let mut basarisiz = false;
-            let s = alan.siniflandirici();
-            let simdi = tarama::adli_girdiler(&kok, &git_adi_mi, &|yol, dizin| {
-                yapilandirma_mi(s, yol, dizin)
-            });
-            let degisiklikler = DosyaDegisiklikleri::olustur(
-                tarama::karsilastir(&onceki.goruntu, &simdi.goruntu)
-                    .into_iter()
-                    .map(|d| (d.yol, degisiklik_turu(d.tur))),
-                onceki.goruntu.eksik || simdi.goruntu.eksik,
-            );
-            for y in &simdi.yapilandirma {
-                let yeni = !onceki
-                    .yapilandirma
-                    .iter()
-                    .any(|o| y.yol == o.yol || (o.dizin && y.yol.starts_with(&o.yol)));
-                if yeni {
-                    let goreli = y.yol.strip_prefix(&kok).unwrap_or(&y.yol);
-                    uyarilar.push(format!(
-                        "Komut, kendiliğinden çalışabilecek bir yapılandırma dosyası \
-                         oluşturdu: `{}`. İnceleyin.",
-                        goreli.to_string_lossy().replace('\\', "/")
-                    ));
-                }
-            }
-            for g in simdi.git {
-                if onceki.git.iter().any(|o| o.yol == g.yol) {
-                    continue;
-                }
-                let GitDenetimi::Tehlikeli { nedenler } =
-                    yeni_git_denetle(&g.yol, g.dizin && !g.baglanti)
-                else {
-                    continue;
-                };
-                let nedenler = nedenler.join("; ");
-                let goreli = g
-                    .yol
-                    .strip_prefix(&kok)
-                    .ok()
-                    .and_then(|y| CalismaYolu::coz(&y.to_string_lossy()).ok());
-                let Some(yol) = goreli else {
-                    basarisiz = true;
-                    uyarilar.push(format!("{GIT_DENETLENEMEDI}: {}", g.yol.display()));
-                    continue;
-                };
-                match alan.karantinaya_al(&yol, &damga) {
-                    Ok(yeni) => uyarilar.push(format!(
-                        "Komut, git'in kendiliğinden kod çalıştırabileceği bir `.git` \
-                         oluşturdu: `{yol}` ({nedenler}). Güvenlik için `{yeni}` olarak \
-                         kenara alındı."
-                    )),
-                    Err(e) => {
-                        basarisiz = true;
-                        uyarilar.push(format!(
-                            "Komut, git'in kendiliğinden kod çalıştırabileceği bir `.git` \
-                             oluşturdu: `{yol}` ({nedenler}); karantinaya alınamadı ({e}). \
-                             Bu klasörde git çalıştırmadan önce `.git`'i inceleyip silin."
-                        ));
-                    }
-                }
-            }
-            KomutSonrasi {
-                uyarilar,
-                karantina_basarisiz: basarisiz,
-                degisiklikler: Some(degisiklikler),
-            }
-        })
-        .await
-        .unwrap_or_else(KomutSonrasi::denetlenemedi)
+    async fn komut_sonrasi_denetim(&self, onceki: AdliGirdiler) -> SonDenetimSonucu {
+        koruma::komut_sonrasi_denetim(self.alan.clone(), onceki).await
     }
 
     /// Çalışma alanını yalıtım için hazırlar (§9.4); ilerleme araç kartında
@@ -472,17 +315,7 @@ impl KabukAraci {
         onaylandi: bool,
         gonderici: &CiktiGonderici,
     ) -> Result<(), AracHatasi> {
-        let yalitici = self.yalitici.clone();
-        let alan = alan.clone();
-        let gonderici = gonderici.clone();
-        tokio::task::spawn_blocking(move || {
-            yalitici.alani_hazirla(&alan, onaylandi, &mut |satir| {
-                gonderici.gonder(CiktiAkisi::Standart, format!("{satir}\n"));
-            })
-        })
-        .await
-        .map_err(|e| gecersiz(format!("Çalışma alanının hazırlığı yarıda kaldı: {e}")))?
-        .map_err(|e| gecersiz(e.to_string()))
+        koruma::alani_hazirla(self.yalitici.clone(), alan, onaylandi, gonderici).await
     }
 }
 
@@ -628,12 +461,7 @@ impl Arac for KabukAraci {
             None
         };
         let onceki = match &mut alan {
-            Some(b) => AdliGirdiler {
-                git: b.gizli.git.clone(),
-                yapilandirma: b.gizli.yapilandirma.clone(),
-                // Yalıtıcı görüntüyü kullanmaz.
-                goruntu: std::mem::take(&mut b.gizli.goruntu),
-            },
+            Some(b) => koruma::alan_bilgisinden_adli_girdiler(b),
             None => self.adli_girdiler().await?,
         };
         let dizin = match (&alan, &istek.dizin) {
@@ -677,10 +505,11 @@ impl Arac for KabukAraci {
             .await;
         // Komut nasıl biterse bitsin yeni `.git` ve yapılandırma denetlenir.
         // İptalde uyarılar modele gidemez; karantina yine yapılır.
-        let KomutSonrasi {
+        let SonDenetimSonucu {
             uyarilar: guvenlik_uyarilari,
             karantina_basarisiz,
             degisiklikler,
+            ..
         } = self.komut_sonrasi_denetim(onceki).await;
         let durum = match sonuc.bitis {
             Bitis::Iptal => return Err(AracHatasi::Iptal),
@@ -728,76 +557,6 @@ impl Arac for KabukAraci {
             Err(AracHatasi::Basarisiz(cikti))
         }
     }
-}
-
-const GIT_DENETLENEMEDI: &str = "Komuttan sonra yeni `.git` denetlenemedi";
-
-/// Komuttan sonraki denetimin sonucu.
-struct KomutSonrasi {
-    uyarilar: Vec<String>,
-    karantina_basarisiz: bool,
-    /// Tarama yapılamadıysa `None`: değişiklikler bilinmiyor.
-    degisiklikler: Option<DosyaDegisiklikleri>,
-}
-
-impl KomutSonrasi {
-    fn denetlenemedi(e: impl std::fmt::Display) -> Self {
-        Self {
-            uyarilar: vec![format!("{GIT_DENETLENEMEDI}: {e}")],
-            karantina_basarisiz: true,
-            degisiklikler: None,
-        }
-    }
-}
-
-fn degisiklik_turu(tur: tarama::DegisiklikTuru) -> DegisiklikTuru {
-    match tur {
-        tarama::DegisiklikTuru::Eklendi => DegisiklikTuru::Eklendi,
-        tarama::DegisiklikTuru::Degisti => DegisiklikTuru::Degisti,
-        tarama::DegisiklikTuru::Silindi => DegisiklikTuru::Silindi,
-    }
-}
-
-/// Tarama için git'in dizin adı kuralı (çekirdekteki `git_bileseni_mi`).
-fn git_adi_mi(ad: &OsStr) -> bool {
-    git_koruma::git_bileseni_mi(&ad.to_string_lossy())
-}
-
-/// Tarama için yapılandırma kuralı (çekirdekteki sınıflandırıcı): dizin
-/// bütünüyle yapılandırma sayılıyorsa (`.vscode`) dizin, değilse dosya.
-fn yapilandirma_mi(s: &Siniflandirici, yol: &Path, dizin: bool) -> bool {
-    let Ok(y) = CalismaYolu::coz(&yol.to_string_lossy()) else {
-        return false;
-    };
-    if dizin {
-        s.yapilandirma_dizini_mi(&y)
-    } else {
-        s.yapilandirma_mi(&y)
-    }
-}
-
-/// Karantina adındaki UTC zaman damgası: `yyyymmddThhmmss`.
-fn utc_damgasi(an: std::time::SystemTime) -> String {
-    let sn = an
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |s| s.as_secs());
-    let (gun, gun_ici) = (sn / 86_400, sn % 86_400);
-    // Howard Hinnant'ın `civil_from_days` algoritması.
-    let z = gun as i64 + 719_468;
-    let cag = z.div_euclid(146_097);
-    let gun_cag = z.rem_euclid(146_097);
-    let yil_cag = (gun_cag - gun_cag / 1460 + gun_cag / 36_524 - gun_cag / 146_096) / 365;
-    let yil_gunu = gun_cag - (365 * yil_cag + yil_cag / 4 - yil_cag / 100);
-    let ay_p = (5 * yil_gunu + 2) / 153;
-    let gun_ay = yil_gunu - (153 * ay_p + 2) / 5 + 1;
-    let ay = if ay_p < 10 { ay_p + 3 } else { ay_p - 9 };
-    let yil = yil_cag + cag * 400 + i64::from(ay <= 2);
-    format!(
-        "{yil:04}{ay:02}{gun_ay:02}T{:02}{:02}{:02}",
-        gun_ici / 3600,
-        gun_ici % 3600 / 60,
-        gun_ici % 60
-    )
 }
 
 /// Eksik crate'te modele giden ek (A15, 2d-3).
@@ -1011,13 +770,13 @@ mod tests {
     #[test]
     fn utc_damgasi_bicimi() {
         use std::time::{Duration, UNIX_EPOCH};
-        assert_eq!(utc_damgasi(UNIX_EPOCH), "19700101T000000");
+        assert_eq!(koruma::utc_damgasi(UNIX_EPOCH), "19700101T000000");
         // 2026-09-28 13:45:07 UTC
         let an = UNIX_EPOCH + Duration::from_secs(1_790_603_107);
-        assert_eq!(utc_damgasi(an), "20260928T134507");
+        assert_eq!(koruma::utc_damgasi(an), "20260928T134507");
         // Artık gün: 2024-02-29 23:59:59 UTC
         let an = UNIX_EPOCH + Duration::from_secs(1_709_251_199);
-        assert_eq!(utc_damgasi(an), "20240229T235959");
+        assert_eq!(koruma::utc_damgasi(an), "20240229T235959");
     }
 
     #[test]
