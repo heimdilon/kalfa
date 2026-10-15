@@ -114,10 +114,10 @@ cargo fmt --all -- --check
 
 Değişikliğin dokunduğu yere göre ayrıca:
 
-- **`kalfa-mcp`:** Üretim istemcisinin test sunucusu özellikleri olmadan da derlendiğini doğrulayın:
+- **`kalfa-mcp`:** İstemci ve yerel test ikilisini yalnız üretim özellikleriyle derleyin:
 
   ```sh
-  cargo check -p kalfa-mcp --lib --locked
+  cargo check -p kalfa-mcp --lib --bins --locked
   ```
 
 - **`kalfa-uygulama` ya da `kalfa`:**

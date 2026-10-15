@@ -134,7 +134,7 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - name: MCP üretim istemcisini doğrula
-        run: cargo check -p kalfa-mcp --lib --locked
+        run: cargo check -p kalfa-mcp --lib --bins --locked
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo clippy (e2e özelliği)

@@ -43,11 +43,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             Some("server/discover") => {
                 if let Some(kimlik) = kimlik {
-                    let mut sonuc = DiscoverResult::new(
-                        vec![ProtocolVersion::V_2026_07_28],
-                        ServerCapabilities::builder().enable_tools().build(),
-                    )
-                    .with_server_info(Implementation::new("gizli-yansi", "1"));
+                    let mut yetenekler = ServerCapabilities::default();
+                    yetenekler.tools = Some(Default::default());
+                    let mut sonuc =
+                        DiscoverResult::new(vec![ProtocolVersion::V_2026_07_28], yetenekler)
+                            .with_server_info(Implementation::new("gizli-yansi", "1"));
                     sonuc.instructions = Some("gizli-yansi yönergesi".to_owned());
                     yazi(json!({
                         "jsonrpc": "2.0",
