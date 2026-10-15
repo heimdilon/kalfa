@@ -2847,8 +2847,13 @@ name = "kalfa-mcp"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "kalfa-core",
+ "kalfa-sandbox",
  "rmcp",
+ "same-file",
  "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
  "tokio",
  "tracing",
 ]
@@ -2975,6 +2980,7 @@ dependencies = [
  "futures-util",
  "kalfa-core",
  "kalfa-evren",
+ "kalfa-mcp",
  "kalfa-plugin",
  "kalfa-sandbox",
  "kalfa-tools",

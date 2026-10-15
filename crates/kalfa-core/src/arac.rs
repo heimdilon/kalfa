@@ -654,3 +654,182 @@ impl AracKayitDefteri {
         }
     }
 }
+
+// MCP çalışma tarifinin ayrı özet ve sayaç tipleri.
+// Bunlar yalnız SHA-256 özetleri ve sayaç taşır; ham komut/ortam verisi yoktur.
+
+macro_rules! mcp_ozet_tipi {
+    ($ad:ident) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub struct $ad([u8; 32]);
+
+        impl $ad {
+            pub const fn sha256(self) -> [u8; 32] {
+                self.0
+            }
+
+            pub const fn ozetten(ozet: [u8; 32]) -> Self {
+                Self(ozet)
+            }
+        }
+    };
+}
+
+mcp_ozet_tipi!(McpTanimOzeti); // T
+mcp_ozet_tipi!(McpPolitikaOzeti); // Π
+mcp_ozet_tipi!(McpKorumaOzeti); // K
+mcp_ozet_tipi!(McpYalitimProfiliOzeti); // P üretimine giren ham profil özeti
+mcp_ozet_tipi!(McpProfilOzeti); // P = Π + K + yalıtım profili
+mcp_ozet_tipi!(McpCalismaTarifiOzeti); // R = T + P + N
+mcp_ozet_tipi!(McpAracTanimOzeti); // D
+
+/// Her süreç başlangıcında artan sayaçtır; rastgele nonce veya yazma kuşağı değildir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct McpBaslatmaSayaci(u64); // N
+
+impl McpBaslatmaSayaci {
+    pub const fn yeni(deger: u64) -> Self {
+        Self(deger)
+    }
+
+    pub const fn deger(self) -> u64 {
+        self.0
+    }
+
+    pub const fn sonraki(self) -> Option<Self> {
+        match self.0.checked_add(1) {
+            Some(deger) => Some(Self(deger)),
+            None => None,
+        }
+    }
+}
+
+/// W'de yazma kaynaklı izin yenilemesi için ayrı sayaç; R'deki N ile karıştırılmaz.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct McpYazmaKusagi(u64);
+
+impl McpYazmaKusagi {
+    pub const fn yeni(deger: u64) -> Self {
+        Self(deger)
+    }
+
+    pub const fn deger(self) -> u64 {
+        self.0
+    }
+}
+
+/// Mühür için güvenli, tipleri ayrılmış çalışma tarifi. D her MCP aracı için
+/// ayrıdır; çağrı mührü daha sonra R, D ve argümanları birlikte bağlar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct McpTarifi {
+    tanim: McpTanimOzeti,
+    politika: McpPolitikaOzeti,
+    koruma: McpKorumaOzeti,
+    profil: McpProfilOzeti,
+    baslatma: McpBaslatmaSayaci,
+    calisma: McpCalismaTarifiOzeti,
+}
+
+impl McpTarifi {
+    pub fn yeni(
+        tanim: McpTanimOzeti,
+        politika: McpPolitikaOzeti,
+        koruma: McpKorumaOzeti,
+        yalitim: McpYalitimProfiliOzeti,
+        baslatma: McpBaslatmaSayaci,
+    ) -> Self {
+        let profil = McpProfilOzeti::birlestir(politika, koruma, yalitim);
+        let calisma = McpCalismaTarifiOzeti::ozetten(mcp_birlesik_ozet(
+            b"calisma-tarifi-v1",
+            &[
+                &tanim.sha256(),
+                &profil.sha256(),
+                &baslatma.deger().to_le_bytes(),
+            ],
+        ));
+        Self {
+            tanim,
+            politika,
+            koruma,
+            profil,
+            baslatma,
+            calisma,
+        }
+    }
+
+    pub const fn tanim(&self) -> McpTanimOzeti {
+        self.tanim
+    }
+
+    pub const fn politika(&self) -> McpPolitikaOzeti {
+        self.politika
+    }
+
+    pub const fn koruma(&self) -> McpKorumaOzeti {
+        self.koruma
+    }
+
+    pub const fn profil(&self) -> McpProfilOzeti {
+        self.profil
+    }
+
+    pub const fn baslatma(&self) -> McpBaslatmaSayaci {
+        self.baslatma
+    }
+
+    pub const fn calisma(&self) -> McpCalismaTarifiOzeti {
+        self.calisma
+    }
+}
+
+impl McpProfilOzeti {
+    pub fn birlestir(
+        politika: McpPolitikaOzeti,
+        koruma: McpKorumaOzeti,
+        yalitim: McpYalitimProfiliOzeti,
+    ) -> Self {
+        Self::ozetten(mcp_birlesik_ozet(
+            b"mcp-profil-v1",
+            &[&politika.sha256(), &koruma.sha256(), &yalitim.sha256()],
+        ))
+    }
+}
+
+fn mcp_birlesik_ozet(alan_adi: &[u8], parcalar: &[&[u8]]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut ozet = Sha256::new();
+    for parca in [b"kalfa-mcp-canonical-v1".as_slice(), alan_adi]
+        .into_iter()
+        .chain(parcalar.iter().copied())
+    {
+        ozet.update((parca.len() as u64).to_le_bytes());
+        ozet.update(parca);
+    }
+    ozet.finalize().into()
+}
+
+#[cfg(test)]
+mod mcp_tarif_testleri {
+    use super::*;
+
+    #[test]
+    fn mcp_tarifi_bilesenleri_degisince_profil_ve_calisma_ozeti_degistirilir() {
+        let t = McpTanimOzeti::ozetten([1; 32]);
+        let pi = McpPolitikaOzeti::ozetten([2; 32]);
+        let k = McpKorumaOzeti::ozetten([3; 32]);
+        let yalitim = McpYalitimProfiliOzeti::ozetten([4; 32]);
+        let n = McpBaslatmaSayaci::yeni(8);
+        let ilk = McpTarifi::yeni(t, pi, k, yalitim, n);
+        assert_eq!(ilk.profil(), McpProfilOzeti::birlestir(pi, k, yalitim));
+        for farkli in [
+            McpTarifi::yeni(McpTanimOzeti::ozetten([9; 32]), pi, k, yalitim, n),
+            McpTarifi::yeni(t, McpPolitikaOzeti::ozetten([9; 32]), k, yalitim, n),
+            McpTarifi::yeni(t, pi, McpKorumaOzeti::ozetten([9; 32]), yalitim, n),
+            McpTarifi::yeni(t, pi, k, McpYalitimProfiliOzeti::ozetten([9; 32]), n),
+            McpTarifi::yeni(t, pi, k, yalitim, n.sonraki().unwrap()),
+        ] {
+            assert_ne!(ilk.calisma(), farkli.calisma());
+        }
+        assert!(McpBaslatmaSayaci::yeni(u64::MAX).sonraki().is_none());
+    }
+}

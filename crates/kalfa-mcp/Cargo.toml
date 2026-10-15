@@ -7,12 +7,17 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+kalfa-core = { path = "../kalfa-core" }
+kalfa-sandbox = { path = "../kalfa-sandbox" }
+sha2.workspace = true
+same-file.workspace = true
 rmcp.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 
 [dev-dependencies]
+tempfile.workspace = true
 base64.workspace = true
 rmcp = { workspace = true, features = ["server"] }
 tokio = { workspace = true, features = ["process"] }

@@ -14,6 +14,7 @@ test-destek = ["kalfa-core/test-destek"]
 e2e = ["dep:futures-util", "kalfa-sandbox/e2e", "kalfa-core/test-destek"]
 
 [dependencies]
+kalfa-mcp = { path = "../kalfa-mcp" }
 async-trait.workspace = true
 futures-util = { workspace = true, optional = true }
 kalfa-core = { path = "../kalfa-core" }
