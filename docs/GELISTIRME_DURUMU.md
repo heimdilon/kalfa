@@ -378,10 +378,24 @@ Kullanıcının rmcp indirme ve “Yerel onaydan sonra dosya özeti alınsın”
 kararları geçerli; tasarım r9 §13.8 kaynaklıdır. Kayıt onayı öncesinde
 argüman/ortam dosyası içeriği okunamaz.
 
-**Sıradaki tek iş:** Görev 2 — tanım, kod kökleri, son ortam ve çalışan
-sürecin değişmez tarifi. Ortak main'e ürün kodu yazılmaz; PR #20'nin
-`codex/mcp-11a2-plan` worktree'sinde devam edilir. Ortak derleme
-önbellekleri ve başka ajanın doğrulama kopyaları korunur.
+**Görev2 tamamlandı (15 Ekim, `c4f12ab`):** Tanım, son ortam, W kökleri,
+seçici kimliği ve T/Π/K/P/N/R/D tipleri; native kayıt onayından sonra
+akış içerik özeti eklendi. NODE_OPTIONS, NODE_PATH ve Windows junction/..
+karşı örnekleri önce düştü, düzeltildi; son bağımsız inceleme kapalı.
+Windows workspace **1300/0/19**, WSL **1254/0/19**; e2e özellikli Rust
+**195/195** iki platformda. Client-only lib+bins, iki clippy/fmt temiz.
+[Görev2 raporu](superpowers/bulgular/2026-10-15-kalfa-11a-2-gorev2-urun.md).
+Görev1'in `1ede4c3` CI38745987451 koşusu yedi işiyle yeşil; yeni başın
+CI sonucu ayrıca izlenir. Gerçek yalıtım/UI/WebDriver bu görevde koşmadı.
+
+**Sıradaki tek iş:** Görev3 — ayar/kasa/native kayıt ve maskeleme. Kullanıcı
+Codex'in uygulamasını durdurup Antigravity'ye devretmek istedi; Codex son
+PR incelemesini devralacak. Görev3 yalnız ayrı yerel staging hazırlığıdır,
+ürüne bağlanmadı ve kabulü tamamlanmadı. Önce mevcut hazırlıkları inceleyip
+native onay/taslak kuşağı sınırlarını bağlayın. Ortak main'e ürün kodu
+yazılmaz; PR20'nin `codex/mcp-11a2-plan` worktree'si kullanılır. Ortak
+önbellekler ve başka ajanın doğrulama kopyaları korunur. Devir ayrıntısı
+varsa yerel iş takibinden okunur; genel devam merge/canlı deney onayı değildir.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

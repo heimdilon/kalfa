@@ -17,7 +17,9 @@ kabul edildi. 1.1a-1 ürün uygulamasını Codex devraldı; süreç altyapısı
 [Ürün raporu](../bulgular/2026-10-14-kalfa-11a-1-urun.md) kanıtı taşır.
 1.1a-2 uygulaması başladı: taşıma ve istemci (Görev 1) iki platformda
 doğrulandı; [ürün kaydı](../bulgular/2026-10-15-kalfa-11a-2-gorev1-urun.md)
-kapsamı belirtir. MCP yöneticisi ve arayüz sonraki görevlerde kalır. Ürün
+kapsamı belirtir. Tanım, kod kökleri ve tarif (Görev2) de `c4f12ab` ile
+iki platformda doğrulandı; [Görev2 kaydı](../bulgular/2026-10-15-kalfa-11a-2-gorev2-urun.md)
+sınırları belirtir. MCP yöneticisi ve arayüz sonraki görevlerde kalır. Ürün
 sonrası audit engeli için mevcut Wasmtime ailesi 49.0.3'e yamalandı;
 [kapsam ve yeniden doğrulama](../bulgular/2026-10-14-wasmtime-4903-guvenlik-yamasi.md)
 ayrı kayıttadır.
