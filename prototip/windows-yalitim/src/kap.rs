@@ -91,10 +91,10 @@ pub struct KapIstek<'a> {
 }
 
 /// Süreç öznitelik listesi; düşünce silinir.
-struct Oznitelikler(Vec<u64>);
+pub(crate) struct Oznitelikler(Vec<u64>);
 
 impl Oznitelikler {
-    fn yeni(sayi: u32) -> Sonuc<Oznitelikler> {
+    pub(crate) fn yeni(sayi: u32) -> Sonuc<Oznitelikler> {
         let mut boyut = 0usize;
         // SAFETY: önce boyut sorulur, sonra yeterli (8 bayt hizalı) tampon verilir.
         unsafe {
@@ -107,13 +107,13 @@ impl Oznitelikler {
         }
     }
 
-    fn ptr(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+    pub(crate) fn ptr(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
         self.0.as_mut_ptr() as _
     }
 
     /// # Safety
     /// `deger` liste kullanıldığı sürece yaşamalıdır.
-    unsafe fn ekle(&mut self, oznitelik: u32, deger: *const c_void, boyut: usize) -> Sonuc<()> {
+    pub(crate) unsafe fn ekle(&mut self, oznitelik: u32, deger: *const c_void, boyut: usize) -> Sonuc<()> {
         // SAFETY: çağıran değerin ömrünü garanti eder.
         let tamam = unsafe {
             UpdateProcThreadAttribute(

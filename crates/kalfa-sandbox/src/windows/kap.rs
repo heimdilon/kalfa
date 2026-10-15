@@ -4,7 +4,8 @@
 //!   SID'ini ve yetenekleri, tutamaç listesi yalnızca üç standart tutamacı
 //!   taşır.
 //! - Süreç askıda başlar, Job Object'e atanır, sonra sürdürülür.
-//! - Aracı süreç yoktur; standart girdi `NUL`'dur.
+//! - Aracı süreç yoktur. Kabukta standart girdi `NUL`'dur; etkileşimli
+//!   süreçte (1.1a §4.1) bir borudur.
 
 use std::ffi::c_void;
 use std::fs::File;
@@ -55,6 +56,8 @@ pub(crate) struct Kap {
     pub surec: OwnedHandle,
     pub cikti: File,
     pub hata: File,
+    /// Etkileşimli süreçte stdin'in yazma ucu; kabukta `None` (stdin `NUL`).
+    pub girdi: Option<File>,
 }
 
 /// Yükleyici hata kutularını kapatır. Kap bu kipi devralır; yoksa eksik bir
@@ -114,6 +117,31 @@ fn boru() -> io::Result<(OwnedHandle, OwnedHandle)> {
     if unsafe { SetHandleInformation(okuma.as_raw_handle() as HANDLE, HANDLE_FLAG_INHERIT, 0) } == 0
     {
         return Err(son_hata("SetHandleInformation"));
+    }
+    Ok((okuma, yazma))
+}
+
+/// stdin borusu: okuma ucu çocuğa geçer (tutamaç listesinde), yazma ucu
+/// Kalfa'da kalır ve miras alınmaz.
+fn girdi_borusu() -> io::Result<(OwnedHandle, OwnedHandle)> {
+    let sa = SECURITY_ATTRIBUTES {
+        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: null_mut(),
+        bInheritHandle: 1,
+    };
+    let mut okuma: HANDLE = null_mut();
+    let mut yazma: HANDLE = null_mut();
+    // SAFETY: çıktı tutamaçları hemen sahiplenilir.
+    unsafe {
+        if CreatePipe(&mut okuma, &mut yazma, &sa, 0) == 0 {
+            return Err(son_hata("CreatePipe(girdi)"));
+        }
+    }
+    let (okuma, yazma) = (sahiplen(okuma), sahiplen(yazma));
+    // SAFETY: tutamaç geçerlidir.
+    if unsafe { SetHandleInformation(yazma.as_raw_handle() as HANDLE, HANDLE_FLAG_INHERIT, 0) } == 0
+    {
+        return Err(son_hata("SetHandleInformation(girdi)"));
     }
     Ok((okuma, yazma))
 }
@@ -207,9 +235,23 @@ impl Drop for Oznitelikler {
 
 /// Komutu kapta başlatır ve işe atar. `is` düşünce ağaç ölür.
 pub(crate) fn baslat(istek: &KapIstegi, is: &Is) -> io::Result<Kap> {
+    baslat_ortak(istek, is, false)
+}
+
+/// Etkileşimli süreç: `baslat` gibi, stdin bir borudur (1.1a §4.1).
+pub(crate) fn baslat_etkilesimli(istek: &KapIstegi, is: &Is) -> io::Result<Kap> {
+    baslat_ortak(istek, is, true)
+}
+
+fn baslat_ortak(istek: &KapIstegi, is: &Is, borulu: bool) -> io::Result<Kap> {
     let (cikti_o, cikti_y) = boru()?;
     let (hata_o, hata_y) = boru()?;
-    let girdi = nul()?;
+    let (girdi, girdi_yazma) = if borulu {
+        let (okuma, yazma) = girdi_borusu()?;
+        (okuma, Some(yazma))
+    } else {
+        (nul()?, None)
+    };
 
     let mut yetenekler: Vec<SID_AND_ATTRIBUTES> = istek
         .yetenekler
@@ -303,6 +345,7 @@ pub(crate) fn baslat(istek: &KapIstegi, is: &Is) -> io::Result<Kap> {
         surec,
         cikti: File::from(cikti_o),
         hata: File::from(hata_o),
+        girdi: girdi_yazma.map(File::from),
     })
 }
 

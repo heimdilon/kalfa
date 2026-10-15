@@ -242,24 +242,31 @@ fn deneme(bwrap: &Path, ayar: &LinuxAyari) -> Result<(), String> {
         yalitim_dizini: gecici.path().join("yalitim"),
         ..ayar.clone()
     };
-    let istek = CalistirmaIstegi {
-        komut: KomutBicimi::Program {
-            program: "true".into(),
-            argumanlar: Vec::new(),
-        },
-        dizin: kok.clone(),
-        ortam: vec![("PATH".into(), "/usr/bin:/bin".into())],
-        ag: false,
-        ag_listesi: None,
-        alan: Some(AlanBilgisi {
-            kok,
-            gizli: Default::default(),
-            korumali: Vec::new(),
-            git_dizinleri: Vec::new(),
-        }),
+    let alan = AlanBilgisi {
+        kok: kok.clone(),
+        gizli: Default::default(),
+        korumali: Vec::new(),
+        git_dizinleri: Vec::new(),
     };
-    let (mut komut, _fdler, _vekil_kanali) =
-        komut_kur(bwrap, &ayar, &istek).map_err(|e| e.to_string())?;
+    let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, &alan_kimligi(&kok));
+    ozel.hazirla(&ayar.git).map_err(|e| e.to_string())?;
+    let komut = KomutBicimi::Program {
+        program: "true".into(),
+        argumanlar: Vec::new(),
+    };
+    let (mut komut, _fdler, _vekil_kanali) = komut_kur(
+        bwrap,
+        &ayar,
+        &KurIstegi {
+            komut: &komut,
+            dizin: &kok,
+            ortam: &[("PATH".into(), "/usr/bin:/bin".into())],
+            ag: false,
+            alan: &alan,
+            ozel: &ozel,
+        },
+    )
+    .map_err(|e| e.to_string())?;
     let cikti = komut.output().map_err(|e| e.to_string())?;
     if cikti.status.success() {
         Ok(())
@@ -300,75 +307,139 @@ impl LinuxYalitici {
         let bwrap = bwrap_yolu()
             .ok_or_else(|| BaslatmaHatasi::Yalitim("bwrap artık sistem yollarında yok".into()))?;
         let ayar = self.ayar();
-        let (komut, fdler, vekil_kanali) = komut_kur(bwrap, &ayar, istek)?;
+        let alan = istek
+            .alan
+            .as_ref()
+            .ok_or_else(|| BaslatmaHatasi::Yalitim("çalışma alanı bilgisi yok".into()))?;
+        let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, &alan_kimligi(&alan.kok));
+        ozel.hazirla(&ayar.git)?;
+        korumalilari_hazirla(&alan.korumali)?;
+        let (komut, fdler, vekil_kanali) = komut_kur(
+            bwrap,
+            &ayar,
+            &KurIstegi {
+                komut: &istek.komut,
+                dizin: &istek.dizin,
+                ortam: &istek.ortam,
+                ag: istek.ag,
+                alan,
+                ozel: &ozel,
+            },
+        )?;
         let mut surec = Surec::komutla(komut.into())?;
         // Bellek dosyaları ve çocuğun kanalı çocuğa geçti; buradaki kopyalar kapanabilir.
         drop(fdler);
-
-        if istek.ag {
-            let vekil_kanali = vekil_kanali.ok_or_else(|| {
-                BaslatmaHatasi::Yalitim("Ağlı çalıştırmada vekil kanalı oluşturulamadı".into())
-            })?;
-            let ayar_vekil = crate::vekil::VekilAyari {
-                liste: istek
-                    .ag_listesi
-                    .clone()
-                    .unwrap_or_else(|| crate::vekil::IzinListesi::yeni(&[], &[])),
-                cozucu: ayar
-                    .vekil_cozucu
-                    .clone()
-                    .unwrap_or_else(|| std::sync::Arc::new(crate::vekil::SistemCozucu)),
-                yerel_izin: ayar.vekil_yerel_izin,
-                ..Default::default()
-            };
-            let vekil = std::sync::Arc::new(crate::vekil::Vekil::baslat(ayar_vekil));
-            let vekil_icin = vekil.clone();
-            // Okuyucu ve kapatıcı aynı tanımlayıcıyı paylaşır; son sahibi
-            // bırakınca kapanır. Ham numarayla paylaşılsaydı kapatıcının
-            // kapattığı numara yeniden kullanılıp okuyucuya başka bir dosya
-            // olarak görünebilirdi.
-            let vekil_kanali = std::sync::Arc::new(vekil_kanali);
-            let okuyucu_kanali = vekil_kanali.clone();
-
-            tokio::task::spawn_blocking(move || {
-                loop {
-                    let fd = match crate::vekil::kanal::al(okuyucu_kanali.as_raw_fd()) {
-                        Ok(Some(fd)) => fd,
-                        Ok(None) => break,
-                        // Tek tanımlayıcılı olmayan ya da kesik ileti reddedilir;
-                        // kanal açık kaldıkça sonraki iletiler okunur (§8.5).
-                        Err(e) if e.kind() == io::ErrorKind::InvalidData => continue,
-                        Err(_) => break,
-                    };
-                    // Bağlı bir TCP soketi olmayan tanımlayıcı burada kapanır.
-                    if crate::vekil::kanal::dogrula(&fd).is_err() {
-                        continue;
-                    }
-                    let std_stream = std::net::TcpStream::from(fd);
-                    if std_stream.set_nonblocking(true).is_ok()
-                        && let Ok(tokio_stream) = tokio::net::TcpStream::from_std(std_stream)
-                    {
-                        vekil_icin.baglanti_ver(tokio_stream);
-                    }
-                }
-            });
-
-            let ag_kapatici: crate::surec::AgKapatici = Box::new(move || {
-                Box::pin(async move {
-                    // SAFETY: tanımlayıcı `vekil_kanali` yaşadıkça açıktır;
-                    // `shutdown` okuyucunun `recvmsg`'ini 0 ile döndürür.
-                    unsafe {
-                        libc::shutdown(vekil_kanali.as_raw_fd(), libc::SHUT_RDWR);
-                    }
-                    drop(vekil_kanali);
-                    vekil.bitir().await
-                })
-            });
-            surec.ag_kapat_ekle(ag_kapatici);
+        if let Some(kapat) = vekili_bagla(&ayar, vekil_kanali, istek.ag_listesi.clone()) {
+            surec.ag_kapat_ekle(kapat);
         }
-
         Ok(surec)
     }
+
+    /// Sunucuyu yalıtımda başlatır (1.1a §3, §4.1): kabuğun bwrap kurulumu,
+    /// ama özel kök, çalışma dizini (`ev`) ve ortam sunucunundur. Kabuğun
+    /// özel dizinleri sunucuya bağlanmaz.
+    fn sunucuyu_baslat(
+        &self,
+        istek: &crate::EtkilesimliIstek,
+    ) -> Result<crate::EtkilesimliSurec, BaslatmaHatasi> {
+        let bwrap = bwrap_yolu()
+            .ok_or_else(|| BaslatmaHatasi::Yalitim("bwrap artık sistem yollarında yok".into()))?;
+        let ayar = self.ayar();
+        let ozel = crate::sunucu_ozel(
+            &ayar.yalitim_dizini,
+            &alan_kimligi(&istek.alan.kok),
+            &istek.sunucu,
+        );
+        ozel.hazirla(&ayar.git)?;
+        korumalilari_hazirla(&istek.alan.korumali)?;
+        let ortam = crate::sunucu_ortami(&istek.ortam, &ozel);
+        let komut = KomutBicimi::Program {
+            program: istek.program.clone(),
+            argumanlar: istek.argumanlar.clone(),
+        };
+        let (komut, fdler, vekil_kanali) = komut_kur(
+            bwrap,
+            &ayar,
+            &KurIstegi {
+                komut: &komut,
+                dizin: &ozel.ev,
+                ortam: &ortam,
+                ag: istek.ag_listesi.is_some(),
+                alan: &istek.alan,
+                ozel: &ozel,
+            },
+        )?;
+        let mut surec = Surec::komutla_etkilesimli(komut.into())?;
+        drop(fdler);
+        if let Some(kapat) = vekili_bagla(&ayar, vekil_kanali, istek.ag_listesi.clone()) {
+            surec.ag_kapat_ekle(kapat);
+        }
+        Ok(surec)
+    }
+}
+
+/// Ağlı çalıştırmada vekili başlatır ve köprünün kanalına bağlar (§8.5).
+/// Kanal yoksa (ağsız) bir şey yapmaz. Dönen kapatıcı kanalı ve vekili
+/// kapatıp ağ özetini verir.
+fn vekili_bagla(
+    ayar: &LinuxAyari,
+    vekil_kanali: Option<OwnedFd>,
+    liste: Option<crate::vekil::IzinListesi>,
+) -> Option<crate::surec::AgKapatici> {
+    let vekil_kanali = vekil_kanali?;
+    let ayar_vekil = crate::vekil::VekilAyari {
+        liste: liste.unwrap_or_else(|| crate::vekil::IzinListesi::yeni(&[], &[])),
+        cozucu: ayar
+            .vekil_cozucu
+            .clone()
+            .unwrap_or_else(|| std::sync::Arc::new(crate::vekil::SistemCozucu)),
+        yerel_izin: ayar.vekil_yerel_izin,
+        ..Default::default()
+    };
+    let vekil = std::sync::Arc::new(crate::vekil::Vekil::baslat(ayar_vekil));
+    let vekil_icin = vekil.clone();
+    // Okuyucu ve kapatıcı aynı tanımlayıcıyı paylaşır; son sahibi
+    // bırakınca kapanır. Ham numarayla paylaşılsaydı kapatıcının
+    // kapattığı numara yeniden kullanılıp okuyucuya başka bir dosya
+    // olarak görünebilirdi.
+    let vekil_kanali = std::sync::Arc::new(vekil_kanali);
+    let okuyucu_kanali = vekil_kanali.clone();
+
+    tokio::task::spawn_blocking(move || {
+        loop {
+            let fd = match crate::vekil::kanal::al(okuyucu_kanali.as_raw_fd()) {
+                Ok(Some(fd)) => fd,
+                Ok(None) => break,
+                // Tek tanımlayıcılı olmayan ya da kesik ileti reddedilir;
+                // kanal açık kaldıkça sonraki iletiler okunur (§8.5).
+                Err(e) if e.kind() == io::ErrorKind::InvalidData => continue,
+                Err(_) => break,
+            };
+            // Bağlı bir TCP soketi olmayan tanımlayıcı burada kapanır.
+            if crate::vekil::kanal::dogrula(&fd).is_err() {
+                continue;
+            }
+            let std_stream = std::net::TcpStream::from(fd);
+            if std_stream.set_nonblocking(true).is_ok()
+                && let Ok(tokio_stream) = tokio::net::TcpStream::from_std(std_stream)
+            {
+                vekil_icin.baglanti_ver(tokio_stream);
+            }
+        }
+    });
+
+    let ag_kapatici: crate::surec::AgKapatici = Box::new(move || {
+        Box::pin(async move {
+            // SAFETY: tanımlayıcı `vekil_kanali` yaşadıkça açıktır;
+            // `shutdown` okuyucunun `recvmsg`'ini 0 ile döndürür.
+            unsafe {
+                libc::shutdown(vekil_kanali.as_raw_fd(), libc::SHUT_RDWR);
+            }
+            drop(vekil_kanali);
+            vekil.bitir().await
+        })
+    });
+    Some(ag_kapatici)
 }
 
 impl Yalitici for LinuxYalitici {
@@ -394,6 +465,36 @@ impl Yalitici for LinuxYalitici {
         match &istek.alan {
             Some(_) => self.yalitimli(istek),
             None => Surec::baslat(istek),
+        }
+    }
+
+    fn baslat_etkilesimli(
+        &self,
+        istek: &crate::EtkilesimliIstek,
+    ) -> Result<crate::EtkilesimliSurec, BaslatmaHatasi> {
+        crate::etkilesimli::sunucu_adi_dogrula(&istek.sunucu)?;
+        crate::mcp_kip_uyusmasi(istek.kip, self.durum().hazir_mi())?;
+        match istek.kip {
+            crate::CalistirmaKipi::TamErisim => {
+                let ayar = self.ayar();
+                crate::surec::tam_erisimle(istek, &ayar.yalitim_dizini, &ayar.git)
+            }
+            crate::CalistirmaKipi::Yalitimli => self.sunucuyu_baslat(istek),
+        }
+    }
+
+    fn sunucu_kokunu_kaldir(&self, alan_koku: &Path, sunucu: &str) -> Result<(), String> {
+        crate::etkilesimli::sunucu_adi_dogrula(sunucu).map_err(|e| e.to_string())?;
+        let kok = crate::sunucu_ozel(
+            &self.ayar().yalitim_dizini,
+            &alan_kimligi(alan_koku),
+            sunucu,
+        )
+        .kok;
+        match std::fs::remove_dir_all(&kok) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -554,24 +655,30 @@ fn bellek_dosyasi(veri: &[u8]) -> io::Result<OwnedFd> {
     Ok(OwnedFd::from(dosya))
 }
 
+/// `komut_kur`'un girdisi. `ozel`, kabukta çalışma alanının, etkileşimli
+/// süreçte sunucunun özel köküdür (1.1a §3); hazırlanmış olmalıdır.
+struct KurIstegi<'a> {
+    komut: &'a KomutBicimi,
+    dizin: &'a Path,
+    ortam: &'a [(String, String)],
+    ag: bool,
+    alan: &'a AlanBilgisi,
+    ozel: &'a OzelDizinler,
+}
+
 /// bwrap komutunu kurar. Dönen tanımlayıcılar komut başlayana kadar açık
 /// kalmalıdır.
 fn komut_kur(
     bwrap: &Path,
     ayar: &LinuxAyari,
-    istek: &CalistirmaIstegi,
+    istek: &KurIstegi,
 ) -> Result<(std::process::Command, Vec<OwnedFd>, Option<OwnedFd>), BaslatmaHatasi> {
-    let alan = istek
-        .alan
-        .as_ref()
-        .ok_or_else(|| BaslatmaHatasi::Yalitim("çalışma alanı bilgisi yok".into()))?;
-    let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, &alan_kimligi(&alan.kok));
-    ozel.hazirla(&ayar.git)?;
-    korumalilari_hazirla(&alan.korumali)?;
+    let alan = istek.alan;
+    let ozel = istek.ozel;
     let sistem = sistem_dizinleri();
     let okunur = ayar.okunur();
-    let registry = registry_secimi(istek.ag, &ozel, ayar);
-    let ortam = yalitim_ortami(&istek.ortam, &ozel, ayar);
+    let registry = registry_secimi(istek.ag, ozel, ayar);
+    let ortam = yalitim_ortami(istek.ortam, ozel, ayar);
 
     let (vekil_kanali, cocuk_kanali) = if istek.ag {
         let (v, c) = crate::vekil::kanal::kanal_cifti()
@@ -604,7 +711,7 @@ fn komut_kur(
     kokler.push(alan.kok.clone());
     kokler.push(ozel.kok.clone());
     kokler.extend(alan.git_dizinleri.iter().cloned());
-    let (program, argumanlar): (PathBuf, Vec<String>) = match &istek.komut {
+    let (program, argumanlar): (PathBuf, Vec<String>) = match istek.komut {
         KomutBicimi::Program {
             program,
             argumanlar,
@@ -627,8 +734,8 @@ fn komut_kur(
         okunur: &okunur,
         registry: registry.as_deref(),
         alan,
-        ozel: &ozel,
-        dizin: &istek.dizin,
+        ozel,
+        dizin: istek.dizin,
         ortam: &ortam,
         ag: istek.ag,
         kopru,

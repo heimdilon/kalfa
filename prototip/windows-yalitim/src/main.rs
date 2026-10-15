@@ -5,9 +5,12 @@
 //!   kalfa-prototip calistir      yalıtım kullanıcısı olarak; isteği stdin'den okur
 //!   kalfa-prototip ui-dene <h>   yalıtımın içinde P10 denemeleri
 //!   kalfa-prototip kap …         AppContainer ek prototipi (kap_olc.rs)
+//!   kalfa-prototip g1 olc [kök]  MCP 1.1a G1 ölçümü (g1.rs)
 
 #[cfg(windows)]
 mod calistir;
+#[cfg(windows)]
+mod g1;
 #[cfg(windows)]
 mod kap;
 #[cfg(windows)]
@@ -27,6 +30,7 @@ fn main() {
         Some("olc") => olc::ana(&a[2..]),
         Some("ui-dene") => ui::dene(&a[2..]),
         Some("kap") => kap_olc::ana(&a[2..]),
+        Some("g1") => g1::ana(&a[2..]),
         _ => {
             eprintln!(
                 "kullanım: kalfa-prototip olc [önek… | temizle] | kap [hazirla | olc [önek…] | sil]"

@@ -6,6 +6,7 @@
 //! `kalfa-core`'a bağlı değildir.
 
 mod agac;
+pub mod etkilesimli;
 pub mod git_denetimi;
 #[cfg(target_os = "linux")]
 pub mod linux;
@@ -24,8 +25,11 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
+pub use etkilesimli::{
+    CalistirmaKipi, EtkilesimliIstek, KAPANMA_PAYI, mcp_kip_uyusmasi, sunucu_ortami, sunucu_ozel,
+};
 pub use profil::{AlanBilgisi, GitKimligi, Korumali, OzelDizinler, alan_kimligi};
-pub use surec::{Akis, Bitis, CalismaSonucu, Surec};
+pub use surec::{Akis, Bitis, CalismaSonucu, EtkilesimliSurec, KapanisSonucu, Surec};
 pub use tarama::Tarama;
 pub use yalitimsiz::Yalitimsiz;
 
@@ -174,6 +178,23 @@ pub trait Yalitici: Send + Sync {
     }
 
     fn baslat(&self, istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi>;
+
+    /// MCP sunucusu gibi uzun yaşayan, borulu süreç (1.1a §4.1). Tokio
+    /// çalışma zamanının içinden çağrılır.
+    fn baslat_etkilesimli(
+        &self,
+        _istek: &EtkilesimliIstek,
+    ) -> Result<EtkilesimliSurec, BaslatmaHatasi> {
+        Err(BaslatmaHatasi::Yalitim(
+            "bu yalıtıcı etkileşimli süreç başlatamaz".into(),
+        ))
+    }
+
+    /// Sunucunun özel kökünü ve Windows'ta ona verilen izinleri kaldırır
+    /// (§3, §5.6).
+    fn sunucu_kokunu_kaldir(&self, _alan_koku: &Path, _sunucu: &str) -> Result<(), String> {
+        Err("bu yalıtıcı sunucu kökü kaldıramaz".into())
+    }
 
     /// Algılamayı yeniden çalıştırır (§8.3): Ayarlar'dan istenince ve
     /// yalıtım başlatılamayınca.

@@ -229,7 +229,136 @@ Linux e2e (WSL Ubuntu 24.04, `kalfatest`, `xvfb-run`) bu başta **41/41**.
 Fedora ve Windows kurulum sınamaları geçti. Taslak sürümde `.deb`, `.rpm`,
 NSIS kurucusu ve `SHA256SUMS` var.
 
-**Sıradaki tek iş:** Kullanıcı `v0.1.0` taslak sürümünü yayımlar.
+Kullanıcı `v0.1.0`'ı ön sürüm olarak yayımladı (14 Ekim 18:14 TSİ).
+
+**MCP 1.1a (14 Ekim):** Kullanıcı MCP desteğini seçti; yerel stdio (1.1a)
+ve uzak HTTP/OAuth (1.1b) olarak bölündü. 1.1a tasarımı bölüm bölüm
+onaylandı: [tasarım](superpowers/specs/2026-10-14-kalfa-11a-mcp-yerel-design.md).
+Codex incelemesinin (`dd641a3`) altı bulgusu r2'de çözüldü:
+- başlatma izni,
+- uzun yaşayan süreçte koruma yenilemesi ve kalan risk,
+- ham stdio sınırları,
+- iptalde süreç ağacının durdurulması,
+- tarif ve mühür,
+- araç tanımı denetimi.
+
+Bulgu 5'in bir alt maddesine kaynaklı gerekçeyle kısmen katılınmadı:
+kısayollar aynı tarifle yeniden başlatmada düşmez. PR #19'daki 15 satır içi
+Codex yorumu r3'te ele alındı:
+- tam erişimde ağ süzgeci yok,
+- iki MCP protokol dönemi,
+- yenilenebilir araç kaynağı,
+- `outputSchema` doğrulaması,
+- yolların arayüzden gelmemesi ve yerel onaylı kayıt,
+- açık seçilen çalışma kipi,
+- ortam birleştirme,
+- anahtarlı kimlik kasası.
+
+Yanıtlar tasarımın §13'ünde.
+
+Codex'in r3 yeniden incelemesinden (`5dd79a4`) gelen beş bulgu r4'te
+çözüldü:
+- iptal ve zaman aşımında süreç ağacı her durumda durdurulur,
+- kalan riskin üst sınırı mutlak denetim yaşıyla tanımlandı ve stdout
+  üzerinden EVREN'e çıkış yolu da riske yazıldı,
+- çalışma alanındaki sunucu kodu için yazma kuşağı,
+- araç tanımında sır geçerse araç kapatılır,
+- kısayol ve başlatma izni politika özeti Π'ye bağlandı.
+
+Codex'in r4 yeniden incelemesinden (`e5080c2`) gelen iki bulgu r5'te
+çözüldü:
+- Kod güveni artık modelin yazabildiği bütün kökleri (W) kapsıyor: proje,
+  kabuğun özel ev, geçici ve önbellek dizinleri. Her sunucunun kendi özel
+  kökü var; Windows'ta bu kök yetenek SID'iyle ayrılıyor.
+- Doğrulanamayan koruma taraması (hata, eksik yürüyüş, 30 sn aşımı) t_K'yı
+  yenilemiyor, süreci durduruyor.
+
+Kullanıcı, iptal ve zaman aşımında süreç ağacının her durumda
+durdurulmasını onayladı (14 Ekim). Yalnız G1'i yetkilendirdi. G1 Windows'ta
+geçti: borulu AppContainer süreci, 62 sn yaşam ve Job Object ile ağacın
+kapanışı, sunucuya özel yetenek SID'i ayrımı ölçüldü; temizlik doğrulandı.
+[G1 raporu](superpowers/bulgular/2026-10-14-kalfa-11a-g1.md).
+
+Kullanıcı 14 Ekim'de üç karar verdi:
+- G1 sonucunu kabul etti.
+- §4.3'teki kalan riski, güvendiği yerel MCP sunucuları için kabul etti.
+- Plan 1.1a-1'in yazılmasını onayladı.
+
+Plan şurada: [1.1a-1](superpowers/plans/2026-10-14-kalfa-11a-1-etkilesimli-surec.md).
+Kapsamı:
+- `kalfa-sandbox`'a etkileşimli süreç,
+- sunucunun özel kökü ve Windows yetenek SID'i,
+- G1 kontrollerinin ürün başlatıcısının kabul testlerine taşınması,
+- Windows ve WSL doğrulaması.
+
+Codex planı inceledi (`INCELEME-PLAN-9d6b6b5`, dört bulgu). Plan r2'de
+dördü de işlendi:
+- `kapat()` ağacın bittiğini doğrular ve `Result` döner. Linux'ta kök
+  torunlarının alt süreç toplayıcısıdır. Linux tam erişimin kalan sınırı
+  tasarım r6 §4.1'de açıkça yazıldı.
+- Windows'ta ağlı sunucu köprüyle ve aynı Job Object'te başlar.
+- Windows'ta sunucu kökü korumalı DACL'le kurulur.
+- stdin'i bir aktarma görevi yazar; `kapat()` dışarıda tutulan yazıcıya
+  rağmen stdin'i kapatır.
+
+Etkileşimli ağ testleri iki platformda eklendi. Codex r2'yi inceledi
+(`INCELEME-PLAN-6205095`) ve üç açık buldu; plan r3'te düzeltildi:
+- İptal edilen ya da hata veren `kapat()` ve doğrudan bırakma: `Drop` stdin
+  görevini keser, torunları ve ağacı öldürür.
+- Linux torun taraması tam okunamazsa `Err` verir; torunlar `pidfd` ile
+  açılıp başlangıç zamanıyla doğrulanır.
+- Windows'ta var olan kök ilk değişiklikten önce denetlenir; ret hiçbir
+  şeyi değiştirmez.
+
+Plan kodu iki platformda yeniden ön doğrulandı
+(`deneme/11a-1-on-dogrulama`, `0eab968`, yalnız yerel): Windows yalıtım
+50/50, WSL yalıtım 32/32; AGENTS'ın bütün komutları iki platformda geçti.
+[Ön doğrulama raporu](superpowers/bulgular/2026-10-14-kalfa-11a-1-on-dogrulama.md).
+Bu işin Windows koşularının %TEMP%'e eklediği üç test dizini silindi; eski
+44 dizin ayrı görev.
+
+**Ürün uygulaması (Codex):** Kullanıcı 14 Ekim'de §4.1 için doğrudan
+“Açık uyarıyla kabul et (önerim)”, sahiplik için “Codex devralsın (önerim)”
+yanıtını verdi. Tam erişimde doğal çıkışın `setsid` torun bırakabilmesi
+§4.3'ten ayrı kabul edildi; arayüz uyarısı tasarım §9'da. Son alt ajan
+tercihi GPT-6 Luna / max; önceki Haiku seçiminin yerine geçer.
+
+Codex'in r3 incelemesindeki kalan ara ebeveyn PID hatası düzeltildi.
+Yaprağın pidfd'si ve köke kadar bütün ara ebeveynlerin başlangıç kimliği
+doğrulanır; kayıp/değişmiş halka ilgisiz alt dalı sinyalden korur. Eski
+algoritmayla iki yeni regresyon düştü; yeni algoritmayla geçiyor.
+
+Ürün kodu `codex/mcp-etkilesimli` dalındaki `c1d464f` commit'inde.
+Dokuz sandbox dosyası değişti; yeni bağımlılık yok. Ön doğrulanmış
+0eab968 kodu ürün kaynaklarına taşındı; kalan PID düzeltmesi ayrı alt
+ajana, bağımsız inceleme başka bir alt ajana verildi. KALFA-19 sahipliği
+Codex'te. Windows ve WSL ürün doğrulaması tamamlandı:
+Windows yalıtım 50/50, uyumluluk 24/24; WSL yalıtım 32/32, uyumluluk
+16/16. Sandbox birimleri 109/109 ve 75/75; fmt, workspace testleri ve
+iki clippy iki platformda geçti. Bağımsız incelemede açık ürün engeli yok.
+[Ürün raporu](superpowers/bulgular/2026-10-14-kalfa-11a-1-urun.md).
+
+**Wasmtime güvenlik yaması (14–15 Ekim):** CI, bugün yayımlanan 13
+Wasmtime duyurusundan kırmızı oldu. Kullanıcı indirme/güncelleme ve
+Windows/WSL doğrulamasını açıkça onayladı. İki mevcut sabitleme 49.0.3;
+693 kayıt korunarak yalnız 29 Wasmtime/Pulley/Cranelift aile üyesi
+patch sürümü değişti. Claude'un yayımladığı `2203bf9`, Codex'in yerel
+`f6be234` karşılığıyla birebir; yayımlanan commit korundu.
+
+Codex doğrulaması: eklenti iki platformda 84/84, workspace Windows
+1.234/0/19 ve WSL 1.187/0/19, e2e özellikli Rust 191/0/0. fmt,
+workspace/WASM/e2e özellikli clippy iki platformda geçti. Audit işi
+13 Wasmtime bulgusunu artık göstermiyor; mevcut 7 uyarı aynı.
+`2203bf9` [CI koşusu](https://github.com/heimdilon/kalfa/actions/runs/38634667316)
+beş işiyle yeşil. Son belge başının denetimleri PR üzerinden izlenir.
+[Dar yama raporu](superpowers/bulgular/2026-10-14-wasmtime-4903-guvenlik-yamasi.md).
+Bu koşunun Windows test kökü (230 artık) ve WSL kaynak kopyası da silindi.
+
+**Sıradaki tek iş:** PR #19'un son başındaki CI kapısı yeşilken kullanıcı
+incelemesi ve merge onayı. Ardından 1.1a-2 planı yazılabilir.
+Claude'un ön doğrulama worktree'si/kopyası ve ortak derleme önbellekleri
+korunur. Codex WSL kaynak kopyası ve Windows'a özel bu test kökü silindi;
+eski artık dizinlere dokunulmadı.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

@@ -104,3 +104,17 @@ hesabıyla, AppContainer belirteciyle çalışır. Sonuçlar:
 | `agac.ps1` | Deneme ağacı ve izinleri |
 | `kur.ps1`, `geri-al.ps1`, `users-grubu.ps1`, `ortak.ps1` | Yönetici adımları |
 | `guvenlik-duvari.ps1` | Eski kurulumun güvenlik duvarı kuralını düzeltir (P5); `kur.ps1` kuralı artık doğru kurar |
+
+## MCP 1.1a G1 ölçümü
+
+Borulu AppContainer süreci, uzun yaşam ve Job Object kapanışı, sunucuya özel
+yetenek SID'i ayrımı (1.1a tasarımı §4.1). Yönetici gerekmez; profiller,
+ACE'ler ve test kökü sonunda silinir. Sonuçlar:
+[G1 raporu](../../docs/superpowers/bulgular/2026-10-14-kalfa-11a-g1.md).
+
+```powershell
+cargo build --offline
+.\target\debug\kalfa-prototip.exe g1 olc <boş bir kök dizini>
+```
+
+`KALFA_G1_SURE` uzun yaşam ölçümünün saniyesini değiştirir (varsayılan 60).
