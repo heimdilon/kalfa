@@ -8,7 +8,7 @@ Bu depodaki yönergeler AGENTS.md'dedir; Claude Code onu aşağıdaki içe aktar
 
 ### Issue tracker
 
-İş oluştururken, seçerken veya devrederken Jira `KALFA` akışını izleyin:
+İş oluştururken, seçerken veya devrederken yerel kılavuzdaki Jira akışını izleyin:
 [iş takibi](docs/agents/issue-tracker.md).
 
 ### Triage labels

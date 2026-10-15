@@ -1,31 +1,33 @@
 # İş takibi: Jira
 
-İşler, görev sahipliği, engeller ve devirler [Jira KALFA
-projesinde](https://heimdilon.atlassian.net/jira/software/projects/KALFA/boards/34)
-tutulur. Kod, tasarım, plan ve doğrulama kanıtları depoda ve
+İşler, görev sahipliği, engeller ve devirler bağlı Jira projesinde tutulur.
+Kod, tasarım, plan ve doğrulama kanıtları depoda ve
 [GitHub PR'larında](https://github.com/heimdilon/kalfa/pulls) kalır.
 
 ## Bağlantı ve başlangıç
 
-- Site: `https://heimdilon.atlassian.net`; proje anahtarı: `KALFA`.
+- Site, proje anahtarı, pano ve ortak giriş kaydı yerel
+  `.yerel/IS_TAKIBI.md` kılavuzundan okunur. Bu dosya depoya girmez;
+  kişisel Jira adreslerini veya belirli iş bağlantılarını açık belgelere
+  ve PR açıklamalarına kopyalamayın.
 - Bağlı Atlassian araçlarını kullanın. Site kimliğini oturumda erişilebilir
   kaynaklardan doğrulayın; kimlik bilgilerini depo dosyalarına yazmayın.
-- [KALFA-2](https://heimdilon.atlassian.net/browse/KALFA-2) ortak çalışma
-  açıklaması ve devir geçmişidir. Güncel işin açıklamasını ve son yorumlarını
-  ayrıca okuyun; sahipliği ve devam koşulunu bunlardan doğrulayın.
+- Yerel kılavuzdaki ortak çalışma açıklamasını ve güncel işin açıklamasıyla
+  son yorumlarını okuyun; sahipliği ve devam koşulunu bunlardan doğrulayın.
+  Yerel bağlantı bağlamı yoksa proje sahibinden alın; site veya iş tahmin etmeyin.
 - Teknik gerçek için `AGENTS.md`, `docs/GELISTIRME_DURUMU.md`, ilgili plan
-  ve `git log` esastır. Varsa `.yerel/IS_TAKIBI.md` yerel bağlantı ve devir
-  bağlamını tamamlar.
+  ve `git log` esastır. Yerel kılavuz bağlantı ve devir bağlamını tamamlar.
 
 ## İşlemler
 
-- **Oluşturma:** Önce KALFA'da aynı işi arayın; yoksa Türkçe başlık,
+- **Oluşturma:** Önce bağlı projede aynı işi arayın; yoksa Türkçe başlık,
   kapsam, kabul ölçütü, bağımlılıklar ve ilgili plan/PR bağlantısıyla açın.
   Beceri “issue tracker'a yayımla” diyorsa burada bir Jira işi oluşturun.
-- **Okuma:** `KALFA-<sayı>` anahtarıyla açıklamayı ve son yorumları okuyun.
+- **Okuma:** `<PROJE>-<sayı>` anahtarıyla açıklamayı ve son yorumları okuyun.
   Beceri “ilgili bileti getir” diyorsa bu Jira kaydını kullanın.
-- **Listeleme:** JQL'yi `project = KALFA` ile sınırlayın; ihtiyaç duyulan
-  durum ve etiket filtrelerini ekleyin, sonuçların bütün sayfalarını okuyun.
+- **Listeleme:** JQL'yi yerel kılavuzda doğrulanan `project = <PROJE>` ile
+  sınırlayın; ihtiyaç duyulan durum ve etiket filtrelerini ekleyin,
+  sonuçların bütün sayfalarını okuyun.
 - **Sahiplenme:** Aktif sahibi ve bağımlılıkları doğrulayın. Sahipsiz işe
   ajan adı, kapsam, dal/worktree, HEAD ve zaman içeren başlangıç yorumu
   bırakın; kendi `ajan-*` etiketinizi ekleyip Çalışılıyor durumuna geçirin.
@@ -49,6 +51,6 @@ Kurulum, indirme, canlı deney ve merge için `AGENTS.md` kuralları geçerlidir
 
 **PRs as a request surface: no.**
 
-GitHub PR'ı kod inceleme ve CI kanıtı taşır; ilgili Jira kaydına bağlantı
-verin. GitHub'daki `#<sayı>` ile Jira'daki `KALFA-<sayı>` farklı kayıtlardır;
-bağlantı veya açık proje anahtarıyla çözümleyin.
+GitHub PR'ı kod inceleme ve CI kanıtı taşır; PR bağlantısını ilgili Jira
+kaydına yazın. GitHub'daki `#<sayı>` ile Jira'daki `<PROJE>-<sayı>` farklı
+kayıtlardır; bağlantı veya açık proje anahtarıyla çözümleyin.

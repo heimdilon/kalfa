@@ -1,6 +1,6 @@
 # Triyaj etiketleri
 
-Becerilerin beş triyaj rolü Jira `KALFA` projesindeki şu etiketlere eşlenir:
+Becerilerin beş triyaj rolü bağlı Jira projesindeki şu etiketlere eşlenir:
 
 | Becerideki rol | Jira etiketi | Anlamı |
 | --- | --- | --- |
