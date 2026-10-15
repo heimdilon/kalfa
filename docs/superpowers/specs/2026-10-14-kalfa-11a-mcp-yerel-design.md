@@ -1,7 +1,7 @@
 # Kalfa 1.1a — Yerel MCP sunucuları: Tasarım
 
 **Tarih:** 2026-10-14.
-**Durum:** Tasarım, r8. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
+**Durum:** Tasarım, r9. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
 §13'te şu incelemelerin yanıtı var:
 
 - Codex'in yerel incelemesi (`dd641a3`, altı bulgu),
@@ -897,8 +897,13 @@ ayrıdır (üst belge §10.1).
   - Komut ya çıplak bir program adıdır ya da "Gözat" ile yerel dosya
     seçicisinden seçilir. Seçilen yolu arka uç tutar, arayüze bir kimlik
     döner.
-  - Argümanlar programa verilen metinlerdir; Kalfa onları yol olarak
-    açmaz.
+  - Argümanlar programa verilen metinlerdir; arayüze genel dosya okuma
+    yetkisi vermez. Kullanıcı, tam komut satırının gösterildiği yerel
+    kayıt penceresinde onay verdikten sonra arka uç, açıkça dosyaya
+    çözülen argüman/ortam yollarını yalnız §5.1.1 kod güveni hesabı için
+    açıp özetleyebilir. İlk yerel kayıt onayından önce içerik okunmaz;
+    okunan içerik arayüze ya da modele verilmez. Onaylı kayıt sonrasında
+    her başlatmada özet yenilenir; T değişmişse eski izinle başlanmaz.
   - Ele geçirilmiş bir arayüzün sessizce sunucu tanımlamasını önlemek için
     **her kayıt** (ekleme, düzenleme, içe aktarma) yerel pencerede
     onaylanır. Pencere, arka ucun çözdüğü tam komut satırını, çalışma
@@ -1265,3 +1270,25 @@ bulgularının karşılığı" bölümündedir.
 | Yeniden kullanılan ara ebeveynin ilgisiz alt dalı sinyal hedefi oluyor | Yaprak pidfd ve bütün ebeveyn zincirinin başlangıç kimliği doğrulanıyor. Kayıp/değişmiş dal sonraki taramaya bırakılıyor; iki karşı örnek testi eklendi. |
 | Linux tam erişimin doğal çıkışta torun bırakması | Kullanıcı bu oturumda açık uyarıyla kabul etti; §4.1 ve §9 güncellendi. Yalıtımlı kipin güvencesi korunur. |
 | Ürün uygulamasının devri | Kullanıcı “Codex devralsın (önerim)” yanıtını verdi; alt ajan tercihi GPT-6 Luna / max. KALFA-19, `codex/mcp-etkilesimli` dalı. |
+
+### 13.8 Plan 1.1a-2 ön doğrulaması ve yol açıklaması (15 Ekim)
+
+PR #19 kullanıcı onayıyla squash birleşti (`cf4e5f3`). 1.1a-2 planı ve
+G2 ön doğrulaması ayrı iştir; ürün yöneticisi/arayüzü henüz yazılmadı.
+
+§5.1.1'in argüman dosyası özeti ile §9'un "yol olarak açmaz" cümlesi
+çelişiyordu. Kullanıcı bu oturumda açıklama sorusuna doğrudan
+“Yerel onaydan sonra dosya özeti alınsın” dedi. §9 bu dar karar ile
+netleştirildi. Kaynak insanın kendi yanıtıdır; §4.1/§4.3 kabulü veya
+başka bir ajanın özeti bu kararın yerine kullanılmadı.
+
+G2, rmcp 3.5.1 özel Transport arayüzünü ve eski/yeni protokol dönemini
+Windows/WSL'de sınadı. SDK içi yanıt cache'i ham tanımı tutabileceği
+ve tracing yükleri sır içerebildiği için, §5.5–§6.2'nin uygulanmasında
+SDK cache'i ilk listeleme öncesi kapatılır; SDK'nin ham tracing olayları
+log katmanlarına geçirilmez. Liste bildirimleri Kalfa'da tek yenileme
+bayrağına indirilir; sınırsız SDK işleyici görevi üretilmez. Bunlar yeni
+bir güvenlik gevşemesi değil mevcut sınırların somut bağlantı koşullarıdır.
+
+[Plan](../plans/2026-10-15-kalfa-11a-2-mcp.md) ve
+[G2 raporu](../bulgular/2026-10-15-kalfa-11a-2-on-dogrulama.md).

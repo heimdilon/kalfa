@@ -354,8 +354,24 @@ beş işiyle yeşil. Son belge başının denetimleri PR üzerinden izlenir.
 [Dar yama raporu](superpowers/bulgular/2026-10-14-wasmtime-4903-guvenlik-yamasi.md).
 Bu koşunun Windows test kökü (230 artık) ve WSL kaynak kopyası da silindi.
 
-**Sıradaki tek iş:** PR #19'un son başındaki CI kapısı yeşilken kullanıcı
-incelemesi ve merge onayı. Ardından 1.1a-2 planı yazılabilir.
+**1.1a-1 birleşti (15 Ekim):** PR #19, kullanıcının açık squash onayıyla
+`cf4e5f3` olarak main'e birleşti; birleşen ağaç doğrulanan `7a2dbf8` ile
+birebir aynı. PR CI `38640288792` beş işiyle yeşil. Codex'in ürün
+worktree'si arşivlenip kaldırıldı; KALFA-19 Bitti.
+
+**1.1a-2 planı (Codex, KALFA-20):**
+[12 görevli plan](superpowers/plans/2026-10-15-kalfa-11a-2-mcp.md) ve
+[G2 ön doğrulaması](superpowers/bulgular/2026-10-15-kalfa-11a-2-on-dogrulama.md)
+inceleme için hazırlandı. Ürün crate/yönetici/arayüz kodu henüz yok.
+Özel rmcp 3.5.1 taşıması Windows/WSL'de 7/7; clippy/fmt temiz. SDK
+cache'ini kapatma karşı örneği, düzeltme kaldırılınca iki testte düştü.
+Kullanıcı yeni rmcp bağımlılık indirmesini ve iki platform deneyini
+onayladı. §5.1.1/§9 argüman yolu çelişkisini de “Yerel onaydan sonra
+dosya özeti alınsın” yanıtıyla netleştirdi; tasarım r9 §13.8 kayıtlıdır.
+
+**Sıradaki tek iş:** 1.1a-2 planının bağımsız incelemesi ve PR kontrol
+kapısı; sonra planın uygulamaya devri. G2 tam ürün güvenliği kabulü
+sayılmaz; kapanış/kilit/bütçe/denetim/e2e testleri planın görevlerindedir.
 Claude'un ön doğrulama worktree'si/kopyası ve ortak derleme önbellekleri
 korunur. Codex WSL kaynak kopyası ve Windows'a özel bu test kökü silindi;
 eski artık dizinlere dokunulmadı.
