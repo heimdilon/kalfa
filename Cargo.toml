@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/kalfa-evren",
+    "crates/kalfa-mcp",
     "crates/kalfa-core",
     "crates/kalfa-sandbox",
     "crates/kalfa-tools",
@@ -31,6 +32,8 @@ debug = "line-tables-only"
 
 [workspace.dependencies]
 async-trait = "0.1.92"
+rmcp = { version = "=3.5.1", default-features = false, features = ["client"] }
+tracing = "0.1.44"
 base64 = "0.22"
 bytes = "1.12"
 cap-fs-ext = "4.0.3"
