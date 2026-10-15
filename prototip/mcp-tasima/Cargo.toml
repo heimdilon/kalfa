@@ -1,0 +1,18 @@
+[package]
+name = "kalfa-mcp-tasima-on-dogrulama"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+license = "Apache-2.0"
+authors = ["Orkun Koray Güngör"]
+
+[workspace]
+
+[dependencies]
+rmcp = { version = "=3.5.1", default-features = false, features = ["client"] }
+serde_json = "1.0.151"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "test-util"] }
+
+[dev-dependencies]
+rmcp = { version = "=3.5.1", default-features = false, features = ["client", "server"] }
