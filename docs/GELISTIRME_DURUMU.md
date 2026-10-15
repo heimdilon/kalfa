@@ -359,22 +359,29 @@ Bu koşunun Windows test kökü (230 artık) ve WSL kaynak kopyası da silindi.
 birebir aynı. PR CI `38640288792` beş işiyle yeşil. Codex'in ürün
 worktree'si arşivlenip kaldırıldı; KALFA-19 Bitti.
 
-**1.1a-2 planı (Codex, KALFA-20):**
-[12 görevli plan](superpowers/plans/2026-10-15-kalfa-11a-2-mcp.md) ve
-[G2 ön doğrulaması](superpowers/bulgular/2026-10-15-kalfa-11a-2-on-dogrulama.md)
-inceleme için hazırlandı. Ürün crate/yönetici/arayüz kodu henüz yok.
-Özel rmcp 3.5.1 taşıması Windows/WSL'de 7/7; clippy/fmt temiz. SDK
-cache'ini kapatma karşı örneği, düzeltme kaldırılınca iki testte düştü.
-Kullanıcı yeni rmcp bağımlılık indirmesini ve iki platform deneyini
-onayladı. §5.1.1/§9 argüman yolu çelişkisini de “Yerel onaydan sonra
-dosya özeti alınsın” yanıtıyla netleştirdi; tasarım r9 §13.8 kayıtlıdır.
+**1.1a-2 ürün uygulaması (15 Ekim, Codex; PR #20 taslak):**
+[12 görevli planın](superpowers/plans/2026-10-15-kalfa-11a-2-mcp.md)
+inceleme ve G2 kapısı tamamlandı; kullanıcı devam talimatı verdi.
+Görev 1 (KALFA-21) `kalfa-mcp` ürün crate'ini ekler: rmcp 3.5.1 istemcisi,
+ayrıştırma öncesi 4 MiB sınırı, 64 öğeli kuyruklar, ölümcül hata kanalı,
+abonelik yaşamı, cache/log kapıları ve gerçek yerel test sunucusu.
+Bağımsız incelemedeki iki kapanış bulgusu önce düşen testlerle düzeltildi.
+MCP henüz araç defterine/arayüze bağlı değildir.
 
-**Sıradaki tek iş:** 1.1a-2 planının bağımsız incelemesi ve PR kontrol
-kapısı; sonra planın uygulamaya devri. G2 tam ürün güvenliği kabulü
-sayılmaz; kapanış/kilit/bütçe/denetim/e2e testleri planın görevlerindedir.
-Claude'un ön doğrulama worktree'si/kopyası ve ortak derleme önbellekleri
-korunur. Codex WSL kaynak kopyası ve Windows'a özel bu test kökü silindi;
-eski artık dizinlere dokunulmadı.
+Windows ve WSL hedefli **37/37**; workspace Windows **1271/0/19**,
+WSL `kalfatest` **1224/0/19**; client-only derleme, workspace clippy/fmt
+iki platformda temiz. [Ürün doğrulama raporu](superpowers/bulgular/2026-10-15-kalfa-11a-2-gorev1-urun.md).
+Bu görevde gerçek yalıtım, arayüz ve WebDriver yeniden koşmadı; sonraki
+görevlerin kabul kapıları korunur. Canlı EVREN ya da PR merge'i yok.
+
+Kullanıcının rmcp indirme ve “Yerel onaydan sonra dosya özeti alınsın”
+kararları geçerli; tasarım r9 §13.8 kaynaklıdır. Kayıt onayı öncesinde
+argüman/ortam dosyası içeriği okunamaz.
+
+**Sıradaki tek iş:** Görev 2 — tanım, kod kökleri, son ortam ve çalışan
+sürecin değişmez tarifi. Ortak main'e ürün kodu yazılmaz; PR #20'nin
+`codex/mcp-11a2-plan` worktree'sinde devam edilir. Ortak derleme
+önbellekleri ve başka ajanın doğrulama kopyaları korunur.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
