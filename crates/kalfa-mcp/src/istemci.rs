@@ -1,5 +1,7 @@
 //! Özel izleme iş parçacığında çalışan, sınırlı MCP istemcisi.
-use crate::tasima::{KUYRUK, SinirliTasima, TasimaHatasi, TasimaKontrol, YenilemeDurumu};
+use crate::tasima::{
+    IC_ISARET_CONTENT_ALANI_VAR, KUYRUK, SinirliTasima, TasimaHatasi, TasimaKontrol, YenilemeDurumu,
+};
 use rmcp::model::{
     CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, PaginatedRequestParams,
     ProtocolVersion, ServerResult, SubscriptionFilter, Tool,
@@ -21,6 +23,14 @@ const AZAMI_SAYFA: usize = 10;
 const AZAMI_ARAC: usize = 128;
 const AZAMI_TANIM: usize = 256 * 1024;
 
+/// Ham JSON-RPC `result.content` alanının taşıma katmanında saptanan varlığı.
+/// İç _meta işareti bu tipe dönüştürülmeden önce tüketilir.
+#[derive(Clone, Debug, PartialEq)]
+pub struct McpAracCevabi {
+    pub sonuc: CallToolResult,
+    pub content_alani_var: bool,
+}
+
 #[derive(Clone)]
 pub enum McpHatasi {
     UzakRpc(RpcHatasi),
@@ -35,18 +45,43 @@ pub enum McpHatasi {
 }
 
 /// Ham uzak hatayı yalnız açıkça isteyen denetçiye veren kapalı taşıyıcı.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RpcHatasi {
     kod: i32,
     metin: String,
     veri: Option<serde_json::Value>,
 }
 
+impl RpcHatasi {
+    pub fn yeni(kod: i32, metin: impl Into<String>, veri: Option<serde_json::Value>) -> Self {
+        Self {
+            kod,
+            metin: metin.into(),
+            veri,
+        }
+    }
+
+    /// Uzak RPC metnini yalnız açıkça isteyen denetçiye verir; Debug bu alanı yazmaz.
+    pub fn parcalari(&self) -> (i32, &str, Option<&serde_json::Value>) {
+        (self.kod, &self.metin, self.veri.as_ref())
+    }
+
+    pub fn kod(&self) -> i32 {
+        self.kod
+    }
+}
+
+impl fmt::Debug for RpcHatasi {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RpcHatasi").field("kod", &self.kod).finish()
+    }
+}
+
 impl McpHatasi {
     /// Uzak RPC metnini denetçiye verir; Debug ve Display bu alanı yazmaz.
     pub fn uzak_rpc(&self) -> Option<(i32, &str, Option<&serde_json::Value>)> {
         match self {
-            Self::UzakRpc(hata) => Some((hata.kod, &hata.metin, hata.veri.as_ref())),
+            Self::UzakRpc(hata) => Some(hata.parcalari()),
             _ => None,
         }
     }
@@ -77,7 +112,7 @@ impl fmt::Display for McpHatasi {
             Self::Kapali => f.write_str("MCP istemcisi kapalı"),
             Self::Iptal => f.write_str("MCP işlemi kapatılırken iptal edildi"),
             Self::AracListesiUzun => f.write_str("MCP araç listesi sayfa sınırını aştı"),
-            Self::AracSayisi => f.write_str("MCP araç sayısı sınırı aşıldı"),
+            Self::AracSayisi => f.write_str("MCP araç sayısı sınırı aştı"),
             Self::TanimBoyutu => f.write_str("MCP araç tanımı bayt sınırını aştı"),
             Self::DesteklenmeyenCevap => {
                 f.write_str("MCP sunucusu desteklenmeyen yanıt biçimi döndürdü")
@@ -93,7 +128,7 @@ enum Komut {
     AracCagir {
         ad: String,
         argumanlar: rmcp::model::JsonObject,
-        yanit: oneshot::Sender<Result<CallToolResult, McpHatasi>>,
+        yanit: oneshot::Sender<Result<McpAracCevabi, McpHatasi>>,
     },
 }
 
@@ -191,6 +226,17 @@ impl McpIstemcisi {
         ad: impl Into<String>,
         argumanlar: rmcp::model::JsonObject,
     ) -> impl Future<Output = Result<CallToolResult, McpHatasi>> + Send + 'static {
+        let cevap = self.arac_cagir_cevabi(ad, argumanlar);
+        async move { cevap.await.map(|cevap| cevap.sonuc) }
+    }
+
+    /// Taşımanın ham yanıtından çıkan alan-varlığı bilgisini sonuçla birlikte
+    /// verir. Var olan `arac_cagir` API'si geriye dönük uyum için korunur.
+    pub fn arac_cagir_cevabi(
+        &self,
+        ad: impl Into<String>,
+        argumanlar: rmcp::model::JsonObject,
+    ) -> impl Future<Output = Result<McpAracCevabi, McpHatasi>> + Send + 'static {
         let komutlar = self.komutlar.clone();
         let ad = ad.into();
         async move {
@@ -432,8 +478,8 @@ async fn arac_cagir(
     argumanlar: rmcp::model::JsonObject,
     kapat: &mut watch::Receiver<bool>,
     hata: &mut watch::Receiver<Option<TasimaHatasi>>,
-    yanit: &mut oneshot::Sender<Result<CallToolResult, McpHatasi>>,
-) -> Result<CallToolResult, McpHatasi> {
+    yanit: &mut oneshot::Sender<Result<McpAracCevabi, McpHatasi>>,
+) -> Result<McpAracCevabi, McpHatasi> {
     if yanit.is_closed() {
         return Err(McpHatasi::Iptal);
     }
@@ -481,12 +527,28 @@ async fn arac_cagir(
             Err(McpHatasi::Iptal)
         }
         sonuc = &mut istek.rx => match sonuc {
-            Ok(Ok(ServerResult::CallToolResult(sonuc))) => Ok(sonuc),
+            Ok(Ok(ServerResult::CallToolResult(sonuc))) => ic_isareti_tuket(sonuc),
             Ok(Ok(_)) => Err(McpHatasi::DesteklenmeyenCevap),
             Ok(Err(hata)) => Err(uzak_hata(hata)),
             Err(_) => Err(McpHatasi::Baglanti),
         }
     }
+}
+
+pub(crate) fn ic_isareti_tuket(mut sonuc: CallToolResult) -> Result<McpAracCevabi, McpHatasi> {
+    let content_alani_var = sonuc
+        .meta
+        .as_mut()
+        .and_then(|meta| meta.remove(IC_ISARET_CONTENT_ALANI_VAR))
+        .and_then(|isaret| isaret.as_bool())
+        .ok_or(McpHatasi::DesteklenmeyenCevap)?;
+    if sonuc.meta.as_ref().is_some_and(|meta| meta.is_empty()) {
+        sonuc.meta = None;
+    }
+    Ok(McpAracCevabi {
+        sonuc,
+        content_alani_var,
+    })
 }
 
 fn arac_tanim_bayti(arac: &Tool) -> Result<usize, McpHatasi> {

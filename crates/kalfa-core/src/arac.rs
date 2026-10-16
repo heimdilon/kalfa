@@ -775,7 +775,9 @@ impl AracKayitDefteri {
 
 macro_rules! mcp_ozet_tipi {
     ($ad:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(
+            Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+        )]
         #[serde(transparent)]
         pub struct $ad([u8; 32]);
 
@@ -1144,6 +1146,96 @@ fn mcp_birlesik_ozet(alan_adi: &[u8], parcalar: &[&[u8]]) -> [u8; 32] {
     ozet.finalize().into()
 }
 
+/// Ham şema ve jsonschema hata ayrıntısını dışarı vermeyen derleme hatası.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct McpJsonSemasiHatasi;
+
+impl std::fmt::Display for McpJsonSemasiHatasi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("MCP JSON Schema güvenli biçimde derlenemedi.")
+    }
+}
+
+impl std::error::Error for McpJsonSemasiHatasi {}
+
+/// Derlenmiş MCP şeması. Validator alanı kasıtlı olarak özel kalır.
+pub struct McpJsonSemasi {
+    validator: jsonschema::Validator,
+}
+
+impl std::fmt::Debug for McpJsonSemasi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("McpJsonSemasi").finish_non_exhaustive()
+    }
+}
+
+impl McpJsonSemasi {
+    /// Harici başvuru derleyiciye ulaşmadan reddedilir.
+    pub fn derle(sema: &Value) -> Result<Self, McpJsonSemasiHatasi> {
+        if !sema.is_object() || harici_ref_var_mi(sema) {
+            return Err(McpJsonSemasiHatasi);
+        }
+
+        let validator = jsonschema::validator_for(sema).map_err(|_| McpJsonSemasiHatasi)?;
+        Ok(Self { validator })
+    }
+
+    /// Değerin derlenmiş şemaya uyup uymadığını hata metni üretmeden döndürür.
+    pub fn uygun_mu(&self, deger: &Value) -> bool {
+        self.validator.is_valid(deger)
+    }
+}
+
+fn harici_ref_var_mi(sema: &Value) -> bool {
+    let Some(nesne) = sema.as_object() else {
+        return false;
+    };
+
+    // `$id` (Draft 4: `id`) başvuru tabanını değiştirerek `#fragment` ref'ini
+    // bile dış kaynağa yönlendirebilir. Bu dar API'de taban tanımları kapalıdır.
+    for anahtar in ["$id", "id"] {
+        if matches!(nesne.get(anahtar), Some(Value::String(deger)) if !deger.is_empty()) {
+            return true;
+        }
+    }
+
+    for anahtar in ["$ref", "$dynamicRef", "$recursiveRef"] {
+        if let Some(Value::String(ref_degeri)) = nesne.get(anahtar)
+            && !ref_degeri.starts_with('#')
+        {
+            return true;
+        }
+    }
+
+    for (anahtar, alt) in nesne {
+        match anahtar.as_str() {
+            "const" | "default" | "enum" | "examples" => {}
+            "$defs" | "definitions" | "properties" | "patternProperties" | "dependentSchemas"
+            | "dependencies" => {
+                if let Some(alt_nesne) = alt.as_object()
+                    && alt_nesne.values().any(harici_ref_var_mi_deger)
+                {
+                    return true;
+                }
+            }
+            _ if harici_ref_var_mi_deger(alt) => {
+                return true;
+            }
+            _ => {}
+        }
+    }
+
+    false
+}
+
+fn harici_ref_var_mi_deger(deger: &Value) -> bool {
+    match deger {
+        Value::Object(_) => harici_ref_var_mi(deger),
+        Value::Array(diziler) => diziler.iter().any(harici_ref_var_mi_deger),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod mcp_tarif_testleri {
     use super::*;
@@ -1213,6 +1305,98 @@ mod mcp_tarif_testleri {
         assert!(json.contains("api.example.test:443"));
         assert!(!json.contains("baslatma"), "N kartta ayrı alan olarak yok");
         assert!(!json.contains("koruma"), "K kartta ayrı alan olarak yok");
+    }
+
+    #[test]
+    fn yerel_fragment_basvurusu_derlenir_ve_calistirilir() {
+        let sema = serde_json::json!({
+            "$defs": { "sayi": { "type": "integer", "minimum": 1 } },
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "adet": { "$ref": "#/$defs/sayi" }
+            },
+            "required": ["adet"]
+        });
+        let derlenmis = McpJsonSemasi::derle(&sema).unwrap();
+
+        assert!(derlenmis.uygun_mu(&serde_json::json!({"adet": 2})));
+        assert!(!derlenmis.uygun_mu(&serde_json::json!({"adet": 0})));
+    }
+
+    #[test]
+    fn ag_ve_dosya_refleri_hata_ayrintisi_tasimadan_reddedilir() {
+        for ref_degeri in [
+            "https://ornek.invalid/secret.json",
+            "file:///C:/private/schema.json",
+            "../schema.json",
+        ] {
+            let sema = serde_json::json!({ "$ref": ref_degeri });
+            let hata = McpJsonSemasi::derle(&sema).unwrap_err();
+
+            assert_eq!(hata, McpJsonSemasiHatasi);
+            assert!(!format!("{hata:?}").contains(ref_degeri));
+        }
+    }
+
+    #[test]
+    fn ic_ice_sema_dis_refleri_de_cozucuye_ulasmaz() {
+        for sema in [
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "alan": { "$ref": "../private/schema.json" }
+                }
+            }),
+            serde_json::json!({
+                "type": "object",
+                "$defs": {
+                    "grup": {
+                        "alt": { "$ref": "https://ornek.invalid/sema.json" }
+                    }
+                },
+                "$ref": "#/$defs/grup/alt"
+            }),
+            serde_json::json!({
+                "type": "object",
+                "ozel": { "$id": "https://ornek.invalid/taban/", "type": "string" },
+                "$ref": "#/ozel"
+            }),
+        ] {
+            assert!(McpJsonSemasi::derle(&sema).is_err());
+        }
+    }
+
+    #[test]
+    fn dis_id_local_fragment_basvurusunu_disari_yonlendiremez() {
+        let sema = serde_json::json!({
+            "$id": "https://ornek.invalid/uzak.json",
+            "$defs": {"sayi": {"type": "integer"}},
+            "$ref": "#/$defs/sayi"
+        });
+
+        assert!(McpJsonSemasi::derle(&sema).is_err());
+    }
+
+    #[test]
+    fn sema_olmayan_ornek_verideki_ref_metni_yanlis_eslesmez() {
+        let sema = serde_json::json!({
+            "type": "object",
+            "examples": [{ "$ref": "https://ornek.invalid/yalnizca-ornek" }]
+        });
+
+        assert!(McpJsonSemasi::derle(&sema).is_ok());
+    }
+
+    #[test]
+    fn derleme_hatasi_ham_sema_metnini_tasima_yolu_acmaz() {
+        let sema = serde_json::json!({
+            "type": "gecersiz-tur-adini-ham-hata-ile-gosterme"
+        });
+        let hata = McpJsonSemasi::derle(&sema).unwrap_err();
+
+        assert_eq!(hata, McpJsonSemasiHatasi);
+        assert!(!format!("{hata:?}").contains("gecersiz-tur"));
     }
 }
 

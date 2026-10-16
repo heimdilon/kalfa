@@ -408,11 +408,21 @@ e2e özellikli Rust **250/251**, gerçek yalıtım **50/32**,
 uyumluluk **24/16**, gerçek stdio kabulü **4/4** iki platformda; clippy/fmt temiz.
 [Görev 6 raporu](superpowers/bulgular/2026-10-16-kalfa-11a-2-gorev6-urun.md).
 
-**Sıradaki iş (devir):** Görev 7 — tanım ve sonuç güvenlik kapıları.
-Kullanıcı mevcut görevi bitirip handoff istedi; yeni ürün görevi başlatılmadı.
-G7 staging taslakları derlenmiş/doğrulanmış ürün sayılmaz. UI/WebDriver ve
-tam MCP kabulü Görev 11–12 kapsamındadır; bu görevde koşulmadı.
-Görev 6–12 için yeni plan onayı gerekmez. Ürün yalnız PR20'nin
+**Görev 7 tamamlandı (16 Ekim):** MCP araç tanımı sır taraması (5 konum, yalnız
+sıra numarasıyla ret), boyut/UTF-8/görünmez Unicode/harici `$ref` ve `$id`
+kapıları, `D` özeti (çıkış şeması dahil), `(D, denetçi_modeli)` kalıcı önbelleği,
+ilk sunan oturumun `ButceTalepci`/iptal bağlantısı ile sonuç/hata/stderr
+maskeleme ve `outputSchema` doğrulama kapıları bağlandı. Ayrıca yönetici
+olmayan Windows CI kullanıcısında görülen `gercek_surec_testleri` derleme kilidi
+ve DACL okuma bayrağı düzeltildi. Bağımsız bulgular kapalı. Windows/WSL
+workspace **1427/1382**, e2e özellikli Rust **255/256**, WSL gerçek yalıtım
+**32/32**, uyumluluk **16/16**, gerçek stdio kabulü **4/4** iki platformda;
+clippy/fmt temiz.
+[Görev 7 raporu](superpowers/bulgular/2026-10-16-kalfa-11a-2-gorev7-urun.md).
+
+**Sıradaki tek iş:** Görev 8 — Tek tur görüntüsü ve bütçe olay akışı.
+UI/WebDriver ve tam MCP kabulü Görev 11–12 kapsamındadır; bu görevde koşulmadı.
+Görev 8–12 için yeni plan onayı gerekmez. Ürün yalnız PR20'nin
 `codex/mcp-11a2-plan` worktree'sinde geliştirilir; ortak main korunur.
 PR taslak ve kullanıcı kararı olmadan birleşmez; yeni indirme, Cargo
 dosyası değişikliği, sistem ayarı ve canlı EVREN yapılmaz.

@@ -59,6 +59,10 @@ impl SahteG7 {
                 ..AracCiktisi::default()
             })
         });
+        let rpc_hata_donusturucu =
+            Arc::new(|rpc: &kalfa_mcp::istemci::RpcHatasi| {
+                kalfa_mcp::sonuc::uzak_rpc_hatasini_donustur(rpc, "mcp__g6-gercek__ornek", &[])
+            });
         McpG7AracKarti {
             hazirlik,
             sunum: kalfa_mcp::arac::McpAracSunumu {
@@ -72,6 +76,7 @@ impl SahteG7 {
             },
             // Ham RMCP yanıtı hiçbir zaman test çıktısına taşınmaz.
             sonuc_donusturucu,
+            rpc_hata_donusturucu,
         }
     }
 }
@@ -92,12 +97,6 @@ impl McpG7AracKaynagi for SahteG7 {
         aktif_tarif: McpTarifi,
     ) -> Result<McpG7AracKarti, AracHatasi> {
         Ok(self.kart(kimlik, aktif_tarif))
-    }
-
-    fn content_alani_var(&self, _cagri: CagriId) -> Option<bool> {
-        // Yalnız `modern` başarı testinde kullanılır. İptal testleri başarı
-        // sonucuna girmez ve bu sahte G7 değeri ham SDK yanıtı değildir.
-        Some(true)
     }
 }
 
@@ -196,12 +195,8 @@ impl GercekKurulum {
             Some((secili_kimlik, sunucu_ikilisi)),
         );
 
-        let ev = std::env::var_os("USERPROFILE")
-            .or_else(|| std::env::var_os("HOME"))
-            .map(PathBuf::from)
-            .unwrap_or_else(|| test.proje_koku.clone());
         let yalitici = kalfa_sandbox::platform_yaliticisi(PlatformAyari {
-            ev,
+            ev: test.veri_dizini.clone(),
             yalitim_dizini: test.yalitim_dizini.clone(),
             ek_okunur: Vec::new(),
             kalfa_araclari: Vec::new(),
@@ -226,8 +221,9 @@ impl GercekKurulum {
             // G5'nin gerçek süreç launcher'ı seçilsin.
             surec_baslatici: None,
             saat: Some(test.saat.clone()),
-            // Gerçek süreç, test makinesinin gerekli sistem ortamını alır.
-            sistem_ortami: None,
+            // Yönetici olmayan CI görevinde runneradmin'in okunamayan PATH
+            // dizinlerine takılmamak için kontrollü test ortamı verilir.
+            sistem_ortami: Some(test.sistem_ortami.clone()),
         });
 
         let oturum = OturumId::yeni();

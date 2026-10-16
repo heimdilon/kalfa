@@ -165,6 +165,8 @@ pub enum YoneticiHatasi {
     SunucuCoktu,
     #[error("sunucu durdurulamadı: {0}")]
     SunucuDurdurulamadi(String),
+    #[error("uzak MCP araç hatası ({})", .0.kod())]
+    UzakRpc(kalfa_mcp::istemci::RpcHatasi),
     #[error("{0}")]
     SunucuHatasi(String),
 }
@@ -178,6 +180,7 @@ struct CalisanKusak {
     kod_guveni: KodGuveni,
     kip: CalistirmaKipi,
     ag_ozeti: Option<String>,
+    sirlar: Vec<kalfa_mcp::maske::GizliDeger>,
     t_k_ani_ms: AtomicU64,
     son_cagri_ani_ms: AtomicU64,
     etkin_cagri_sayisi: AtomicUsize,
@@ -1372,6 +1375,7 @@ impl McpYoneticisi {
                 kod_guveni: hazir.kod_guveni,
                 kip: hazir.kip,
                 ag_ozeti,
+                sirlar: hazir.sirlar.clone(),
                 t_k_ani_ms: AtomicU64::new(simdi_ms),
                 son_cagri_ani_ms: AtomicU64::new(simdi_ms),
                 etkin_cagri_sayisi: AtomicUsize::new(0),
@@ -1572,6 +1576,48 @@ impl McpYoneticisi {
         sonuc
     }
 
+    /// Çalışan süreçte `tools/list` çağrısı yapıp ham listeyi aynı adımda G7
+    /// sır ve biçim kapılarından geçirir.
+    pub async fn denetlenmis_araclari_listele(
+        self: &Arc<Self>,
+        alan_kimligi: &str,
+        sunucu: &str,
+        beklenen_kusak: McpBaslatmaSayaci,
+    ) -> Result<kalfa_mcp::kesif::McpG7KesifSonucu, YoneticiHatasi> {
+        let calisan = self.aktif_kusak_bul(alan_kimligi, sunucu, beklenen_kusak)?;
+        let ham = self
+            .araclari_listele(alan_kimligi, sunucu, beklenen_kusak)
+            .await?;
+        Ok(kalfa_mcp::kesif::arac_tanimlarini_denetle(
+            sunucu,
+            ham,
+            &calisan.sirlar,
+        ))
+    }
+
+    /// Çalışan kuşağın etkin sırlarını döner.
+    pub fn aktif_kusagin_sirlari(
+        &self,
+        alan_kimligi: &str,
+        sunucu: &str,
+        beklenen_kusak: McpBaslatmaSayaci,
+    ) -> Result<Vec<kalfa_mcp::maske::GizliDeger>, YoneticiHatasi> {
+        let calisan = self.aktif_kusak_bul(alan_kimligi, sunucu, beklenen_kusak)?;
+        Ok(calisan.sirlar.clone())
+    }
+
+    /// Çalışan kuşağın araç listesi yenileme durumunu döner.
+    pub fn aktif_kusagin_yenileme_durumu(
+        &self,
+        alan_kimligi: &str,
+        sunucu: &str,
+        beklenen_kusak: McpBaslatmaSayaci,
+    ) -> Option<Arc<kalfa_mcp::tasima::YenilemeDurumu>> {
+        self.aktif_kusak_bul(alan_kimligi, sunucu, beklenen_kusak)
+            .ok()
+            .and_then(|calisan| calisan.ucu.yenileme_durumu())
+    }
+
     /// Çalışan süreçte `tools/call` çağrısı yapar (§5.1.1, §7.3).
     ///
     /// - Çağrıdan önce çalışma alanı koruma özetini (`K`) doğrular.
@@ -1588,6 +1634,30 @@ impl McpYoneticisi {
         arac_adi: &str,
         argumanlar: JsonObject,
     ) -> Result<CallToolResult, YoneticiHatasi> {
+        self.arac_cagir_cevabi(
+            alan_kimligi,
+            kok,
+            sunucu,
+            beklenen_tarif,
+            arac_adi,
+            argumanlar,
+        )
+        .await
+        .map(|cevap| cevap.sonuc)
+    }
+
+    /// Çalışan süreçte `tools/call` çağrısı yapar ve taşımanın ham `content`
+    /// alanı varlık bilgisiyle birlikte cevabı döner. Uzak JSON-RPC protokol
+    /// hataları `YoneticiHatasi::UzakRpc` olarak korunur.
+    pub async fn arac_cagir_cevabi(
+        self: &Arc<Self>,
+        alan_kimligi: &str,
+        kok: &Path,
+        sunucu: &str,
+        beklenen_tarif: &McpTarifi,
+        arac_adi: &str,
+        argumanlar: JsonObject,
+    ) -> Result<kalfa_mcp::istemci::McpAracCevabi, YoneticiHatasi> {
         let _ = self.aktif_tarifli_kusak_bul(alan_kimligi, sunucu, beklenen_tarif)?;
         self.sunucu_korumasini_denetle(alan_kimligi, sunucu, kok)
             .await?;
@@ -1604,10 +1674,11 @@ impl McpYoneticisi {
                 Err(calisan.iptal_hatasi())
             }
             res = async {
-                calisan.ucu.arac_cagir(ad, argumanlar).await
+                calisan.ucu.arac_cagir_cevabi(ad, argumanlar).await
             } => {
                 match res {
                     Ok(cikti) => Ok(cikti),
+                    Err(McpHatasi::UzakRpc(rpc)) => Err(YoneticiHatasi::UzakRpc(rpc)),
                     Err(McpHatasi::Baglanti | McpHatasi::Kapali) => {
                         if !calisan.iptal.is_cancelled() {
                             self.beklenmeyen_cikis_bildir(alan_kimligi, sunucu, calisan.kusak, kok);

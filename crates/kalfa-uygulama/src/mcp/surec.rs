@@ -23,14 +23,14 @@ use std::time::{Duration, Instant};
 use kalfa_core::arac::{
     McpBaslatmaSayaci, McpKorumaOzeti, McpPolitikaOzeti, McpTanimOzeti, McpTarifi,
 };
-use kalfa_mcp::istemci::{McpHatasi, McpIstemcisi};
+use kalfa_mcp::istemci::{McpAracCevabi, McpHatasi, McpIstemcisi};
 use kalfa_mcp::maske::{GizliDeger, StderrHalkasi, maskele_metin};
 use kalfa_mcp::ortam::OrtamDegeri;
 use kalfa_mcp::tanim::{
     AgIzinKurali, CozulmusTanim, KodGuveni, Komut, McpTanim, SeciliYurutulebilirKimligi,
     TanimHatasi, YazilabilirKokler,
 };
-use kalfa_mcp::tasima::{SinirliTasima, TasimaHatasi};
+use kalfa_mcp::tasima::{SinirliTasima, TasimaHatasi, YenilemeDurumu};
 use kalfa_mcp::{CallToolResult, JsonObject, Tool};
 use kalfa_sandbox::{
     AlanBilgisi, BaslatmaHatasi, CalistirmaKipi, EtkilesimliIstek, EtkilesimliSurec, KapanisSonucu,
@@ -417,6 +417,28 @@ pub trait McpSurecUcu: Send + Sync {
         argumanlar: JsonObject,
     ) -> Pin<Box<dyn Future<Output = Result<CallToolResult, McpHatasi>> + Send + 'a>>;
 
+    /// Ham JSON-RPC yanıtındaki `content` alanı varlığıyla birlikte çağrı cevabını döner.
+    /// Gerçek süreç ucu bu metodu doğrudan sınırlı taşımanın işaretiyle uygular.
+    fn arac_cagir_cevabi<'a>(
+        &'a self,
+        ad: String,
+        argumanlar: JsonObject,
+    ) -> Pin<Box<dyn Future<Output = Result<McpAracCevabi, McpHatasi>> + Send + 'a>> {
+        Box::pin(async move {
+            let sonuc = self.arac_cagir(ad, argumanlar).await?;
+            let content_alani_var = !sonuc.content.is_empty() || sonuc.structured_content.is_none();
+            Ok(McpAracCevabi {
+                sonuc,
+                content_alani_var,
+            })
+        })
+    }
+
+    /// Sürecin araç listesi yenileme durumunu döner.
+    fn yenileme_durumu(&self) -> Option<Arc<YenilemeDurumu>> {
+        None
+    }
+
     fn bitisi_bekle<'a>(&'a self) -> Pin<Box<dyn Future<Output = Option<i32>> + Send + 'a>>;
 
     /// İstemci/taşıma ve çocuk süreci kapatıp ağacın durduğunu doğrular.
@@ -468,6 +490,7 @@ impl Default for GercekMcpSurecBaslatici {
 
 struct GercekMcpSurecUcu {
     istemci: tokio::sync::Mutex<Option<McpIstemcisi>>,
+    yenileme: Mutex<Option<Arc<YenilemeDurumu>>>,
     tasima: tokio::sync::Mutex<
         Option<(
             SinirliTasima,
@@ -511,6 +534,10 @@ impl McpSurecUcu for GercekMcpSurecUcu {
                 Err(_) => return Err(McpHataNedeni::ElSikismaZamanAsimi),
             };
 
+            *self
+                .yenileme
+                .lock()
+                .unwrap_or_else(|hata| hata.into_inner()) = Some(istemci.yenileme_durumu());
             let mut kilit = self.istemci.lock().await;
             *kilit = Some(istemci);
             Ok(())
@@ -549,6 +576,30 @@ impl McpSurecUcu for GercekMcpSurecUcu {
         })
     }
 
+    fn arac_cagir_cevabi<'a>(
+        &'a self,
+        ad: String,
+        argumanlar: JsonObject,
+    ) -> Pin<Box<dyn Future<Output = Result<McpAracCevabi, McpHatasi>> + Send + 'a>> {
+        Box::pin(async move {
+            let istek = {
+                let kilit = self.istemci.lock().await;
+                let Some(istemci) = kilit.as_ref() else {
+                    return Err(McpHatasi::Kapali);
+                };
+                istemci.arac_cagir_cevabi(ad, argumanlar)
+            };
+            istek.await
+        })
+    }
+
+    fn yenileme_durumu(&self) -> Option<Arc<YenilemeDurumu>> {
+        self.yenileme
+            .lock()
+            .unwrap_or_else(|hata| hata.into_inner())
+            .clone()
+    }
+
     fn bitisi_bekle<'a>(&'a self) -> Pin<Box<dyn Future<Output = Option<i32>> + Send + 'a>> {
         Box::pin(async move {
             let mut kilit = self.surec.lock().await;
@@ -563,6 +614,10 @@ impl McpSurecUcu for GercekMcpSurecUcu {
         Box::pin(async move {
             // İptal/flush ve stdin sonrası bekleme birlikte en çok iki saniyedir.
             let son = tokio::time::Instant::now() + kalfa_sandbox::etkilesimli::KAPANMA_PAYI;
+            *self
+                .yenileme
+                .lock()
+                .unwrap_or_else(|hata| hata.into_inner()) = None;
             let istemci = self.istemci.lock().await.take();
             if let Some(mut istemci) = istemci {
                 istemci.kapat().await;
@@ -676,6 +731,7 @@ impl McpSurecBaslatici for GercekMcpSurecBaslatici {
 
         Ok(Arc::new(GercekMcpSurecUcu {
             istemci: tokio::sync::Mutex::new(None),
+            yenileme: Mutex::new(None),
             tasima: tokio::sync::Mutex::new(tasima),
             hazirlik_hatasi,
             istemci_etkin: el_sikisma,

@@ -30,7 +30,7 @@ use crate::denetci::{DenetimKipi, GuvenlikDenetcisi};
 use crate::geri_alma::{
     GeriAlmaDizini, GeriYukleyici, OTURUM_ALT_SINIRI, OTURUM_SINIRI, OncekiHalDeposu,
 };
-use crate::gonderim::{EklentiKullanimi, GunlukToken};
+use crate::gonderim::{EklentiKullanimi, GunlukToken, IstekSonucu};
 use crate::izin::{Kip, Siniflandirici};
 use crate::kayit::{KayitOgesi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
@@ -824,11 +824,27 @@ pub struct OturumTutamaci {
     kapanis: watch::Receiver<bool>,
     bekleyen_onaylar: BekleyenOnaylar,
     bekleyen_govdeler: BekleyenGovdeler,
+    butce_talepci: ButceTalepci,
 }
 
 impl OturumTutamaci {
     pub fn oturum_id(&self) -> OturumId {
         self.oturum
+    }
+
+    /// Bu oturumun bütçe talep göndericisi. MCP araç tanımı denetçisi gibi
+    /// tur kapsamlı yardımcılar izin ve gönderim günlüğünü buradan iletir.
+    pub fn butce_talepci(&self) -> ButceTalepci {
+        self.butce_talepci.clone()
+    }
+
+    /// Süren turun iptal belirteci; aktif tur yoksa `None`.
+    pub fn aktif_tur_iptal_belirteci(&self) -> Option<CancellationToken> {
+        self.aktif_tur
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .as_ref()
+            .map(|(_, belirtec)| belirtec.clone())
     }
 
     /// Onay bekleyen bir öğe. Yerel iletişim kutusu gösterdiği komutu
@@ -1252,7 +1268,7 @@ impl Oturum {
             butce: baglam_girdisi.butce,
             butce_hatasi: None,
             butce_talep_alici,
-            butce_talepci,
+            butce_talepci: butce_talepci.clone(),
             butce_kuyrugu: VecDeque::new(),
             butce_karti: None,
         };
@@ -1265,6 +1281,7 @@ impl Oturum {
                 kapanis: kapanis_rx,
                 bekleyen_onaylar,
                 bekleyen_govdeler,
+                butce_talepci,
             },
             olay_rx,
             kapanis_tx,
@@ -1433,6 +1450,7 @@ impl Oturum {
         .await;
         let mut neden = self.tur_dongusu().await;
         *self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()) = None;
+        self.iptal.cancel();
         // Tur bitti: bekleyen bütçe talepleri izinsiz kapanır; sonuçlanmamış
         // denemeler bilinmeyen sayılır (5b tasarımı §4.1).
         self.butce_kuyrugunu_bosalt();
@@ -1792,13 +1810,88 @@ impl Oturum {
         }
     }
 
-    /// Bütçe kanalının mesajı (5b tasarımı §4.1, §7): izin talebi ya da bir ağ
-    /// denemesinin bitişi. Bitiş, aynı çağıranın sonraki talebinden önce gelir.
+    /// Bütçe kanalının mesajı (5b tasarımı §4.1, §7): izin talebi, bir ağ
+    /// denemesinin bitişi ya da denetçi gönderim günlüğü. Bitiş, aynı çağıranın
+    /// sonraki talebinden önce gelir.
     async fn butce_talebi_geldi(&mut self, mesaj: ButceMesaji) {
         match mesaj {
             ButceMesaji::Talep(talep) => self.izin_talebi_geldi(talep).await,
             ButceMesaji::Bitis { islem, kullanim } => self.deneme_bitti(islem, kullanim).await,
+            ButceMesaji::DenetimGunlugu {
+                girdi,
+                model,
+                yanit,
+                tamam,
+            } => {
+                let kaydedildi = self.denetim_gunlugu_isle(girdi, model, *yanit).await;
+                let _ = tamam.send(kaydedildi);
+            }
         }
+    }
+
+    async fn denetim_gunlugu_isle(
+        &mut self,
+        girdi: crate::denetci::DenetimGirdisi,
+        model: String,
+        yanit: crate::denetci::DenetimYaniti,
+    ) -> bool {
+        if self.tur.is_none()
+            || self.iptal.is_cancelled()
+            || self.kapandi
+            || self.kayit_hatasi.is_some()
+            || self.butce_hatasi.is_some()
+        {
+            return false;
+        }
+        let yeni = vec![crate::gonderim::GonderilenOge {
+            kaynak: girdi.kaynak,
+            sira: None,
+            bayt: girdi.icerik.len() as u64,
+        }];
+        let model = Some(model);
+        for deneme in &yanit.denemeler {
+            match (&deneme.meta, &deneme.sonuc) {
+                (Some(meta), _) => {
+                    self.istek_kaydet(
+                        "denetci",
+                        meta,
+                        model.clone(),
+                        yeni.clone(),
+                        0,
+                        deneme.sonuc.clone(),
+                        Some(deneme.islem),
+                    )
+                    .await;
+                }
+                (None, IstekSonucu::Hata { asama, mesaj }) => {
+                    self.istek_kaydet_hata(
+                        "denetci",
+                        model.clone(),
+                        yeni.clone(),
+                        0,
+                        *asama,
+                        mesaj.clone(),
+                        Some(deneme.islem),
+                    )
+                    .await;
+                }
+                (None, _) => {}
+            }
+        }
+        if let Some(u) = &yanit.kullanim {
+            let (istem, tamamlama, dusunce) =
+                (u.prompt_tokens, u.completion_tokens, u.reasoning_tokens());
+            self.kaydet(KayitOgesi::Kullanim {
+                istem,
+                tamamlama,
+                dusunce,
+            })
+            .await;
+        }
+        !self.iptal.is_cancelled()
+            && !self.kapandi
+            && self.kayit_hatasi.is_none()
+            && self.butce_hatasi.is_none()
     }
 
     /// Yardımcının bir denemesinin bitişi. Kimlik hâlâ sonuçlanmamışsa tek bitiş
@@ -1963,6 +2056,9 @@ impl Oturum {
                     let _ = talep.yanit.send(None);
                 }
                 ButceMesaji::Bitis { islem, kullanim } => self.deneme_bitti(islem, kullanim).await,
+                ButceMesaji::DenetimGunlugu { tamam, .. } => {
+                    let _ = tamam.send(false);
+                }
             }
         }
         let acik = self

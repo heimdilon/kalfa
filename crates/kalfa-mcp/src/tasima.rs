@@ -5,6 +5,7 @@ use rmcp::model::{
     RequestId, ServerJsonRpcMessage, ServerNotification, ServerRequest,
 };
 use rmcp::transport::Transport;
+use serde_json::Value;
 use std::collections::{HashSet, VecDeque};
 use std::io;
 use std::sync::{
@@ -21,6 +22,7 @@ pub const KUYRUK: usize = 64;
 pub const EN_AZ_YENILEME: Duration = Duration::from_secs(5);
 pub const YOKLAMA_ARALIGI: Duration = Duration::from_secs(30);
 const GECMIS_ABONELIK_SINIRI: usize = 64;
+pub(crate) const IC_ISARET_CONTENT_ALANI_VAR: &str = "__kalfa_internal_v1_content_alani_var";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TasimaHatasi {
@@ -58,6 +60,7 @@ impl std::error::Error for TasimaHatasi {}
 
 struct AbonelikKimlikleri {
     giden: HashSet<RequestId>,
+    arac_cagrilari: HashSet<RequestId>,
     beklenen_onaylar: HashSet<RequestId>,
     onaylananlar: VecDeque<RequestId>,
     aktif_abonelikler: HashSet<RequestId>,
@@ -67,6 +70,7 @@ impl AbonelikKimlikleri {
     pub(crate) fn yeni() -> Self {
         Self {
             giden: HashSet::new(),
+            arac_cagrilari: HashSet::new(),
             beklenen_onaylar: HashSet::new(),
             onaylananlar: VecDeque::new(),
             aktif_abonelikler: HashSet::new(),
@@ -85,6 +89,9 @@ impl AbonelikKimlikleri {
             if istek.request.method() == "subscriptions/listen" {
                 self.beklenen_onaylar.insert(istek.id.clone());
             }
+            if istek.request.method() == "tools/call" {
+                self.arac_cagrilari.insert(istek.id.clone());
+            }
         } else if let ClientJsonRpcMessage::Notification(bildirim) = item
             && let ClientNotification::CancelledNotification(iptal) = &bildirim.notification
         {
@@ -95,6 +102,7 @@ impl AbonelikKimlikleri {
 
     fn yanit_alindi(&mut self, id: &RequestId) -> bool {
         let bulundu = self.giden.remove(id);
+        self.arac_cagrilari.remove(id);
         self.beklenen_onaylar.remove(id);
         self.aktif_abonelikler.remove(id);
         bulundu
@@ -103,6 +111,7 @@ impl AbonelikKimlikleri {
     fn giden_iptali(&mut self, id: Option<&RequestId>) {
         if let Some(id) = id {
             self.giden.remove(id);
+            self.arac_cagrilari.remove(id);
             self.beklenen_onaylar.remove(id);
             self.aktif_abonelikler.remove(id);
         }
@@ -130,6 +139,67 @@ impl AbonelikKimlikleri {
             Err(TasimaHatasi::BeklenmeyenAbonelikAck)
         }
     }
+
+    fn arac_cagrisi_mi(&self, id: &RequestId) -> bool {
+        self.arac_cagrilari.contains(id)
+    }
+}
+
+fn arac_cagrisi_yanitina_isaret_ekle(ileti: &mut Value, kimlikler: &AbonelikKimlikleri) -> bool {
+    let Some(rpc) = ileti.as_object_mut() else {
+        return false;
+    };
+    if rpc.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
+        || rpc.contains_key("method")
+        || rpc.contains_key("error")
+    {
+        return false;
+    }
+    let Some(id) = rpc
+        .get("id")
+        .and_then(|id| serde_json::from_value::<RequestId>(id.clone()).ok())
+    else {
+        return false;
+    };
+    if !kimlikler.arac_cagrisi_mi(&id) {
+        return false;
+    }
+    let Some(sonuc) = rpc.get_mut("result").and_then(Value::as_object_mut) else {
+        return false;
+    };
+    if sonuc
+        .get("resultType")
+        .is_some_and(|tur| tur.as_str() != Some("complete"))
+    {
+        return false;
+    }
+
+    let content_alani_var = sonuc.contains_key("content");
+    let meta_gecerli = sonuc.get("_meta").is_some_and(Value::is_object);
+    let call_tool_result = content_alani_var
+        || sonuc.contains_key("structuredContent")
+        || sonuc.contains_key("isError")
+        || meta_gecerli;
+    if !call_tool_result {
+        return false;
+    }
+
+    let meta = sonuc
+        .entry("_meta".to_owned())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if meta.is_null() {
+        *meta = Value::Object(serde_json::Map::new());
+    }
+    let Some(meta) = meta.as_object_mut() else {
+        return false;
+    };
+    // Bu değer taşıma tarafından ham yanıttan hesaplanır. Sunucunun aynı
+    // anahtardaki _meta değeri güven kaynağı değildir ve daima ezilir.
+    meta.insert(
+        IC_ISARET_CONTENT_ALANI_VAR.to_owned(),
+        Value::Bool(content_alani_var),
+    );
+    true
 }
 
 /// Yenileme bayrağı ile listenin son başarılı okuma zamanını birlikte tutar.
@@ -286,7 +356,24 @@ impl SinirliTasima {
                         }
                     }
                 };
-                let ileti: ServerJsonRpcMessage = match serde_json::from_slice(&ham) {
+                let mut ham_json: Value = match serde_json::from_slice(&ham) {
+                    Ok(ileti) => ileti,
+                    Err(_) => {
+                        ilk_hatayi_yaz(&okuma_hata, TasimaHatasi::BozukJson);
+                        break;
+                    }
+                };
+                let isaretleme = okuma_kimlik
+                    .lock()
+                    .map(|kimlikler| arac_cagrisi_yanitina_isaret_ekle(&mut ham_json, &kimlikler));
+                match isaretleme {
+                    Ok(_) => {}
+                    Err(_) => {
+                        ilk_hatayi_yaz(&okuma_hata, TasimaHatasi::GirdiCikti);
+                        break;
+                    }
+                }
+                let ileti: ServerJsonRpcMessage = match serde_json::from_value(ham_json) {
                     Ok(ileti) => ileti,
                     Err(_) => {
                         ilk_hatayi_yaz(&okuma_hata, TasimaHatasi::BozukJson);
@@ -682,6 +769,94 @@ mod tests {
             kimlikler.giden_istegi_ekle(&istek),
             Err(TasimaHatasi::YinelenenIstekKimligi)
         );
+    }
+
+    fn arac_cagrisi_kimlikleri() -> (AbonelikKimlikleri, RequestId) {
+        let mut kimlikler = AbonelikKimlikleri::yeni();
+        let istek: ClientJsonRpcMessage = serde_json::from_str(
+            r#"{"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"ornek"}}"#,
+        )
+        .unwrap();
+        let id = match &istek {
+            ClientJsonRpcMessage::Request(istek) => istek.id.clone(),
+            _ => panic!("test girdisi araç çağrısı olmalı"),
+        };
+        kimlikler.giden_istegi_ekle(&istek).unwrap();
+        (kimlikler, id)
+    }
+
+    fn tasima_cevabini_tiple(sonuc: Value) -> crate::istemci::McpAracCevabi {
+        let (kimlikler, _) = arac_cagrisi_kimlikleri();
+        let mut ileti = serde_json::json!({"jsonrpc":"2.0", "id":17, "result":sonuc});
+        assert!(arac_cagrisi_yanitina_isaret_ekle(&mut ileti, &kimlikler));
+        let ileti: ServerJsonRpcMessage = serde_json::from_value(ileti).unwrap();
+        let rmcp::model::ServerJsonRpcMessage::Response(yanit) = ileti else {
+            panic!("yanıt olmalı");
+        };
+        let rmcp::model::ServerResult::CallToolResult(sonuc) = yanit.result else {
+            panic!("araç sonucu olmalı");
+        };
+        crate::istemci::ic_isareti_tuket(sonuc).unwrap()
+    }
+
+    #[test]
+    fn content_alani_yokken_tasima_false_isaretini_tasiyip_tuketir() {
+        let cevap = tasima_cevabini_tiple(serde_json::json!({
+            "structuredContent": {"durum":"tamam"}
+        }));
+        assert!(!cevap.content_alani_var);
+        assert!(cevap.sonuc.content.is_empty());
+        assert_eq!(
+            cevap.sonuc.structured_content,
+            Some(serde_json::json!({"durum":"tamam"}))
+        );
+        assert!(cevap.sonuc.meta.is_none());
+    }
+
+    #[test]
+    fn acik_bos_content_alani_varligini_korur() {
+        let cevap = tasima_cevabini_tiple(serde_json::json!({
+            "content": [],
+            "structuredContent": {"durum":"kullanilmaz"}
+        }));
+        assert!(cevap.content_alani_var);
+        assert!(cevap.sonuc.content.is_empty());
+        assert_eq!(
+            cevap.sonuc.structured_content,
+            Some(serde_json::json!({"durum":"kullanilmaz"}))
+        );
+        assert!(cevap.sonuc.meta.is_none());
+    }
+
+    #[test]
+    fn sahte_meta_isareti_ham_content_varligina_gore_ezilir() {
+        let absent = tasima_cevabini_tiple(serde_json::json!({
+            "structuredContent": {"durum":"tamam"},
+            "_meta": {"__kalfa_internal_v1_content_alani_var": true, "sunucu": "deger"}
+        }));
+        assert!(!absent.content_alani_var);
+        assert_eq!(
+            absent
+                .sonuc
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("sunucu")),
+            Some(&Value::String("deger".to_owned()))
+        );
+        assert!(
+            !absent
+                .sonuc
+                .meta
+                .as_ref()
+                .is_some_and(|meta| meta.contains_key(IC_ISARET_CONTENT_ALANI_VAR))
+        );
+
+        let present = tasima_cevabini_tiple(serde_json::json!({
+            "content": [],
+            "_meta": {"__kalfa_internal_v1_content_alani_var": false}
+        }));
+        assert!(present.content_alani_var);
+        assert!(present.sonuc.meta.is_none());
     }
 
     #[derive(Default)]

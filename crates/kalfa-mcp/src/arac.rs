@@ -24,6 +24,7 @@ const GUVENLI_CAGRI_HATASI: &str = "MCP çağrısı güvenli biçimde tamamlanam
 
 /// Uzak araçtan G7 tanım denetimi geçmiş, model ve kullanıcı yüzeyinde
 /// gösterilmesine izin verilen alanlar. Ham RMCP `Tool` nesnesi burada tutulmaz.
+#[derive(Clone, PartialEq, Eq)]
 pub struct McpAracSunumu {
     pub ad: String,
     pub aciklama: String,
@@ -32,6 +33,7 @@ pub struct McpAracSunumu {
 
 /// App yöneticisinin çağrı için ihtiyaç duyduğu, UI'ya verilmeyen kimlikler.
 /// Sunucu ve uzak araç adları, tanım denetiminde onaylanmış kart etiketleridir.
+#[derive(Clone, PartialEq, Eq)]
 pub struct McpAracKimligi {
     alan_kimligi: String,
     kok: PathBuf,
@@ -86,6 +88,10 @@ pub struct McpAracCagriIstegi {
 /// RMCP sonucu yalnız çağrı worker'ı içindeki bu closure'a verilir.
 pub type McpAracSonucDonusturucu =
     Arc<dyn Fn(CallToolResult, bool) -> Result<AracCiktisi, AracHatasi> + Send + Sync>;
+
+/// G7'nin her çağrı için bağladığı zorunlu sır maskeli JSON-RPC protokol hatası dönüşümü.
+pub type McpAracRpcHataDonusturucu =
+    Arc<dyn Fn(&crate::istemci::RpcHatasi) -> AracHatasi + Send + Sync>;
 
 /// Uygulama yöneticisiyle tek dikiş. Her metot zorunludur; varsayılan izin,
 /// güncellik veya temizlik davranışı yoktur.

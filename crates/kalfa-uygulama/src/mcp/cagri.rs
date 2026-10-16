@@ -18,8 +18,8 @@ use kalfa_core::arac::{
 use kalfa_core::kilit::KilitSeti;
 use kalfa_core::kimlik::CagriId;
 use kalfa_mcp::arac::{
-    McpArac, McpAracCagriIstegi, McpAracKimligi, McpAracSonucDonusturucu, McpAracSunumu,
-    McpAracYurutucusu,
+    McpArac, McpAracCagriIstegi, McpAracKimligi, McpAracRpcHataDonusturucu,
+    McpAracSonucDonusturucu, McpAracSunumu, McpAracYurutucusu,
 };
 use kalfa_sandbox::tarama::CancellationToken;
 use tokio::sync::{oneshot, watch};
@@ -60,17 +60,17 @@ pub(crate) enum McpCagriRpcHatasi {
     Iletisim,
 }
 
-/// G7'nin güncel, denetlenmiş araç kartı. D, sunum ve sonuç sanitizer'ı
-/// zorunludur; ham RMCP tanımı veya varsayılan dönüştürme yolu yoktur.
+/// G7'nin güncel, denetlenmiş araç kartı. D, sunum, sonuç sanitizer'ı ve
+/// uzak JSON-RPC protokol hatası sanitizer'ı zorunludur; ham RMCP tanımı veya
+/// varsayılan dönüştürme yolu yoktur.
 pub struct McpG7AracKarti {
     pub hazirlik: McpAracHazirligi,
     pub sunum: McpAracSunumu,
     pub sonuc_donusturucu: McpAracSonucDonusturucu,
+    pub rpc_hata_donusturucu: McpAracRpcHataDonusturucu,
 }
 
 /// G7 adapter'ı her kart ve sonuç için gerçek doğrulanmış kaynağı sağlar.
-/// `content_alani_var` ham RPC result nesnesinden, aynı `CagriId`'ye bağlı
-/// taşıma cevabından gelmelidir; bilinmiyorsa `None` fail-closed kalır.
 #[async_trait]
 pub trait McpG7AracKaynagi: Send + Sync {
     /// D güncellemesi aynı kapının yazma kilidini kullanır. Guard, son
@@ -86,8 +86,6 @@ pub trait McpG7AracKaynagi: Send + Sync {
         kimlik: &McpAracKimligi,
         aktif_tarif: McpTarifi,
     ) -> Result<McpG7AracKarti, AracHatasi>;
-
-    fn content_alani_var(&self, cagri: CagriId) -> Option<bool>;
 }
 
 /// G5 adapter'ının RPC sonucuyla birlikte verdiği aynı kuşağın tarama tabanı.
@@ -210,7 +208,6 @@ pub(crate) struct McpCagriDefteri {
 /// Worker'a verilen tek kullanımlık RPC girdisi. Argümanlar manager kaydında
 /// veya hata durumunda tutulmaz; yalnız bağımsız RPC future'ı yaşarken vardır.
 pub(crate) struct McpCagriRpcGirdisi {
-    pub cagri: CagriId,
     pub kimlik: Arc<McpAracKimligi>,
     pub hazirlik: McpAracHazirligi,
     pub argumanlar: serde_json::Map<String, serde_json::Value>,
@@ -250,7 +247,6 @@ impl McpCagriDefteri {
         Ok((
             kayit,
             McpCagriRpcGirdisi {
-                cagri,
                 kimlik,
                 hazirlik,
                 argumanlar,
@@ -562,9 +558,9 @@ impl McpCagriArkaUcu for McpCagriG5ArkaUcu {
             .lock()
             .map_err(|_| McpCagriRpcHatasi::Iletisim)?
             .clone();
-        let sonuc = self
+        let sonuc = match self
             .yonetici
-            .arac_cagir(
+            .arac_cagir_cevabi(
                 &kayit.alan_kimligi,
                 &kayit.kok,
                 &kayit.sunucu,
@@ -573,15 +569,11 @@ impl McpCagriArkaUcu for McpCagriG5ArkaUcu {
                 girdi.argumanlar,
             )
             .await
-            .map_err(|_| McpCagriRpcHatasi::Iletisim)?;
-
-        // Ham taşıma metaverisi yoksa `content` alanı boş varsayılmaz. G7
-        // closure'ı çalıştırmadan fail-closed dönülür ve çağrı cleanup'a girer.
-        let content_alani_var = self
-            .g7
-            .content_alani_var(girdi.cagri)
-            .ok_or(McpCagriRpcHatasi::Iletisim)?;
-        let sonuc = (kart.sonuc_donusturucu)(sonuc, content_alani_var);
+        {
+            Ok(cevap) => (kart.sonuc_donusturucu)(cevap.sonuc, cevap.content_alani_var),
+            Err(super::YoneticiHatasi::UzakRpc(rpc)) => Err((kart.rpc_hata_donusturucu)(&rpc)),
+            Err(_) => return Err(McpCagriRpcHatasi::Iletisim),
+        };
         Ok(McpCagriRpcCevabi {
             sonuc,
             adli_girdiler,
@@ -911,7 +903,6 @@ impl McpAracYurutucusu for McpCagriYurutucusu {
                 return Err(AracHatasi::OnayEskidi);
             }
             let girdi = McpCagriRpcGirdisi {
-                cagri: istek.cagri,
                 kimlik: istek.kimlik,
                 hazirlik: istek.hazirlik,
                 argumanlar: istek.argumanlar,
