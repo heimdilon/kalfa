@@ -16,7 +16,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             .next()
             .ok_or_else(|| io::Error::other("yanıt kimliği verilmedi"))?;
         let kimlik: Value = serde_json::from_str(&kimlik)?;
-        thread::sleep(Duration::from_millis(200));
+        let isaret = args.next();
+        let gecikme_ms = args
+            .next()
+            .and_then(|deger| deger.parse::<u64>().ok())
+            .unwrap_or(200);
+        thread::sleep(Duration::from_millis(gecikme_ms));
+        if let Some(yol) = isaret {
+            std::fs::write(yol, b"gecikmeli torun yazdi")?;
+        }
         yazi(json!({
             "jsonrpc": "2.0",
             "id": kimlik,
@@ -24,6 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }))?;
         return Ok(());
     }
+    let ek_argumanlar: Vec<String> = args.collect();
 
     let stdin = io::stdin();
     let mut bekleyen_istek = None;
@@ -151,13 +160,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }))?,
                         "delayed-child-write" => {
                             let kimlik = serde_json::to_string(&kimlik)?;
-                            Command::new(std::env::current_exe()?)
+                            let mut komut = Command::new(std::env::current_exe()?);
+                            komut
                                 .arg("--cocuk-yaz")
                                 .arg(kimlik)
                                 .stdin(Stdio::null())
                                 .stdout(Stdio::inherit())
-                                .stderr(Stdio::null())
-                                .spawn()?;
+                                .stderr(Stdio::null());
+                            if let Some(isaret) = ek_argumanlar.first() {
+                                komut
+                                    .arg(isaret)
+                                    .arg(ek_argumanlar.get(1).map(String::as_str).unwrap_or("200"));
+                            }
+                            komut.spawn()?;
                         }
                         "secret-error" => yazi(json!({
                             "jsonrpc":"2.0",

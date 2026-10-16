@@ -561,6 +561,8 @@ impl McpSurecUcu for GercekMcpSurecUcu {
         &'a self,
     ) -> Pin<Box<dyn Future<Output = std::io::Result<KapanisSonucu>> + Send + 'a>> {
         Box::pin(async move {
+            // İptal/flush ve stdin sonrası bekleme birlikte en çok iki saniyedir.
+            let son = tokio::time::Instant::now() + kalfa_sandbox::etkilesimli::KAPANMA_PAYI;
             let istemci = self.istemci.lock().await.take();
             if let Some(mut istemci) = istemci {
                 istemci.kapat().await;
@@ -569,7 +571,7 @@ impl McpSurecUcu for GercekMcpSurecUcu {
             drop(tasima);
             let surec = self.surec.lock().await.take();
             let sonuc = match surec {
-                Some(surec) => surec.kapat().await,
+                Some(surec) => surec.kapat_kadar(son).await,
                 None => Err(std::io::Error::other(
                     "süreç sahibi olmadan kapanış doğrulanamaz",
                 )),

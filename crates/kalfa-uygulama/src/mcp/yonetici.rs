@@ -55,8 +55,12 @@ use crate::yalitim::YalitimAyarlari;
 
 const IZIN_DOSYASI_ADI: &str = "mcp_izinleri.json";
 
+#[path = "cagri.rs"]
+mod cagri;
 #[path = "zamanlayici.rs"]
 mod zamanlayici;
+use cagri::{McpCagriDefteri, McpCagriKapanisSonucu};
+pub use cagri::{McpG7AracKarti, McpG7AracKaynagi};
 const TAM_ERISIM_BASLATMA_BASLIGI: &str = "Tam sistem erişimli MCP sunucusunu başlat";
 
 /// `(alan_kimligi, sunucu)` birleşik anahtarı.
@@ -355,6 +359,7 @@ pub struct McpYoneticisi {
     koruma_denetleyicisi: Arc<dyn KorumaDenetleyicisi>,
     surec_baslatici: Arc<dyn McpSurecBaslatici>,
     saat: Arc<dyn SaatKaynagi>,
+    cagri_defteri: Arc<McpCagriDefteri>,
     durum: Mutex<YoneticiDurumu>,
 }
 
@@ -424,6 +429,7 @@ impl McpYoneticisi {
                 .surec_baslatici
                 .unwrap_or_else(|| Arc::new(GercekMcpSurecBaslatici::yeni())),
             saat: b.saat.unwrap_or_else(|| Arc::new(SistemSaati::yeni())),
+            cagri_defteri: Arc::new(McpCagriDefteri::default()),
             durum: Mutex::new(YoneticiDurumu {
                 alanlar,
                 yuvalar: BTreeMap::new(),
@@ -941,6 +947,11 @@ impl McpYoneticisi {
 
     /// `(alan_kimligi, sunucu)` için sunucu durumunu döner.
     pub fn sunucu_durumu(&self, alan_kimligi: &str, sunucu: &str) -> McpSunucuDurumu {
+        if self.cagri_defteri.alan_engelli(alan_kimligi) {
+            return McpSunucuDurumu::hata(McpHataNedeni::Durdurulamadi {
+                detay: "MCP çağrısının kapanışı veya son denetimi doğrulanamadı; çalışma alanı engelli.".into(),
+            });
+        }
         let d = self.durum();
         d.yuvalar
             .get(&McpAnahtari::yeni(alan_kimligi, sunucu))
@@ -1020,6 +1031,12 @@ impl McpYoneticisi {
         kullanici_istegi: bool,
     ) -> Result<(McpBaslatmaSayaci, McpTarifi), YoneticiHatasi> {
         let anahtar = McpAnahtari::yeni(alan_kimligi, sunucu);
+        if self.cagri_defteri.alan_engelli(alan_kimligi) {
+            return Err(YoneticiHatasi::SunucuDurdurulamadi(
+                "MCP çağrısının kapanışı veya son denetimi doğrulanamadı; çalışma alanı engelli."
+                    .into(),
+            ));
+        }
         let baslatma_revizyonu = self
             .durum()
             .yuvalar
@@ -2087,6 +2104,7 @@ impl McpYoneticisi {
         kok: Option<PathBuf>,
     ) -> Result<(), YoneticiHatasi> {
         let kapat_sonucu = kusak.ucu.kapat().await;
+        let surec_kapandi = kapat_sonucu.is_ok();
 
         let mut son_denetim_basarili = true;
         if let Some(kok_yolu) = kok {
@@ -2106,34 +2124,47 @@ impl McpYoneticisi {
             son_denetim_basarili = denetim.mcp_icin_basarili_mi();
         }
 
-        let mut d = self.durum();
-        if let Some(yuva) = d.yuvalar.get_mut(&anahtar) {
-            yuva.aktif_kapanis_sayisi = yuva.aktif_kapanis_sayisi.saturating_sub(1);
-            let bildirim = Arc::clone(&yuva.kapanis_bildirimi);
-            let sonuc = match (kapat_sonucu, son_denetim_basarili) {
-                (Err(hata), _) => {
-                    let detay = hata.to_string();
-                    yuva.durdurulamadi_hatasi = Some(detay.clone());
-                    yuva.durum = McpSunucuDurumu::hata(McpHataNedeni::Durdurulamadi {
-                        detay: detay.clone(),
-                    });
-                    Err(YoneticiHatasi::SunucuDurdurulamadi(detay))
-                }
-                (Ok(_), false) => {
-                    let detay = "son denetim tamamlanamadı veya karantina başarısız".to_owned();
-                    yuva.durdurulamadi_hatasi = Some(detay.clone());
-                    yuva.durum = McpSunucuDurumu::hata(McpHataNedeni::Durdurulamadi {
-                        detay: detay.clone(),
-                    });
-                    Err(YoneticiHatasi::SunucuDurdurulamadi(detay))
-                }
-                (Ok(_), true) => Ok(()),
-            };
-            drop(d);
-            bildirim.notify_waiters();
-            return sonuc;
-        }
-        Ok(())
+        let sonuc = {
+            let mut d = self.durum();
+            if let Some(yuva) = d.yuvalar.get_mut(&anahtar) {
+                yuva.aktif_kapanis_sayisi = yuva.aktif_kapanis_sayisi.saturating_sub(1);
+                let bildirim = Arc::clone(&yuva.kapanis_bildirimi);
+                let sonuc = match (kapat_sonucu, son_denetim_basarili) {
+                    (Err(hata), _) => {
+                        let detay = hata.to_string();
+                        yuva.durdurulamadi_hatasi = Some(detay.clone());
+                        yuva.durum = McpSunucuDurumu::hata(McpHataNedeni::Durdurulamadi {
+                            detay: detay.clone(),
+                        });
+                        Err(YoneticiHatasi::SunucuDurdurulamadi(detay))
+                    }
+                    (Ok(_), false) => {
+                        let detay = "son denetim tamamlanamadı veya karantina başarısız".to_owned();
+                        yuva.durdurulamadi_hatasi = Some(detay.clone());
+                        yuva.durum = McpSunucuDurumu::hata(McpHataNedeni::Durdurulamadi {
+                            detay: detay.clone(),
+                        });
+                        Err(YoneticiHatasi::SunucuDurdurulamadi(detay))
+                    }
+                    (Ok(_), true) => Ok(()),
+                };
+                drop(d);
+                bildirim.notify_waiters();
+                sonuc
+            } else {
+                Ok(())
+            }
+        };
+        self.cagri_defteri.surec_kapanisini_bildir(
+            &anahtar.alan_kimligi,
+            &anahtar.sunucu,
+            kusak.kusak,
+            McpCagriKapanisSonucu {
+                surec_kapandi,
+                son_denetim_basarili,
+            },
+        );
+        sonuc
     }
 
     async fn yuva_kapanislarini_bekle(&self, anahtar: &McpAnahtari) {
@@ -2317,6 +2348,9 @@ fn izin_dosyasini_yaz(yol: &Path, dosya: &KaliciIzinDosyasi) -> std::io::Result<
 
 #[cfg(test)]
 mod tests {
+    mod gercek_surec_testleri {
+        include!("gercek_surec_testleri.rs");
+    }
     use super::*;
     use std::future::Future;
     use std::pin::Pin;

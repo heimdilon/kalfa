@@ -1,7 +1,7 @@
 # Kalfa 1.1a — Yerel MCP sunucuları: Tasarım
 
 **Tarih:** 2026-10-14.
-**Durum:** Tasarım, r9. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
+**Durum:** Tasarım, r10. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
 §13'te şu incelemelerin yanıtı var:
 
 - Codex'in yerel incelemesi (`dd641a3`, altı bulgu),
@@ -173,6 +173,11 @@ eklenir:
   geçerlidir.
 - `kapat()` önce stdin'i kapatır, 2 sn bekler, sonra süreç ağacını her
   durumda öldürür ve bitişini doğrular.
+  - MCP kapanışında iptal bildiriminin yazımı/flush'ı için en çok 100 ms
+    kullanılır. Bu süre ve stdin sonrası kibar bekleme aynı iki saniyelik
+    deadline'ı paylaşır (`kapat_kadar`); yeni bir iki saniyelik pay açılmaz.
+    Varsayılan `kapat()` sözleşmesi korunur. Süre dolunca doğrulanan ağaç
+    öldürme yolu çalışır; §4.3'ün toplam üst sınırı genişlemez.
   - stdin'e Kalfa'daki bir görev aktarır. `kapat()` bu görevi keser; stdin,
     dışarıya verilen yazıcı hâlâ tutulsa bile kapanır.
   - `Ok` döndüğünde ağaçta yaşayan süreç yoktur. Windows'ta Job Object'in
@@ -831,7 +836,8 @@ görüntüdür:**
 1. Sunucuya `notifications/cancelled` gönderilir. Bu yalnız kibar bir
    uyarıdır; sunucunun doğru kapanmasına fırsat verir.
 2. Süreç ağacı **her durumda** `kapat()` ile durdurulur: stdin kapatılır,
-   2 sn kapanma payı tanınır, sonra ağaç öldürülür (§4.1).
+   iptal/flush ile stdin sonrası bekleme toplam en çok 2 sn kapanma
+   payını paylaşır, sonra ağaç öldürülür (§4.1).
    - Sunucunun bu arada gönderdiği sonuç ya da iptal hatası durdurmanın
      kanıtı sayılmaz. Bunlar sıradan RPC verisidir; sunucu yanıt verip arka
      plandaki bir görevi ya da çocuk süreci çalıştırmayı sürdürebilir.
@@ -1296,3 +1302,16 @@ bir güvenlik gevşemesi değil mevcut sınırların somut bağlantı koşullar�
 
 [Plan](../plans/2026-10-15-kalfa-11a-2-mcp.md) ve
 [G2 raporu](../bulgular/2026-10-15-kalfa-11a-2-on-dogrulama.md).
+### 13.9 Görev 6 ürün incelemesi (16 Ekim)
+
+Gerçek actor izin bağlantısı, RPC öncesi hazırlık hatasının rezervasyon
+temizliği ve iptal bildiriminin taşıma kapanışıyla yarışı karşı örneklerle
+doğrulandı. Hepsi düzeltildi. Cancel bildiriminin kuyruğa konması yerine
+fiziksel `write_all`/`flush` makbuzu beklenir; tıkanmada zorunlu kapanış
+sürer. Bu protokol aşaması aynı iki saniyelik deadline'dan harcanır:
+§4.3 risk kabulü değiştirilmez veya genişletilmez. Ağaç/son denetim hatası
+guard'ı çözmez. Bu açıklama yeni bir risk kabulü değildir.
+
+[Görev 6 ürün raporu](../bulgular/2026-10-16-kalfa-11a-2-gorev6-urun.md)
+iki platform, bağımsız inceleme ve RED/GREEN kanıtlarını sınırlarıyla taşır.
+Kullanıcı bu görevin sonunda devir istedi; Görev 7 ürünü başlatılmadı.

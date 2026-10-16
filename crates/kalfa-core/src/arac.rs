@@ -2,10 +2,11 @@
 //! izin açısından fark yoktur: ikisi de bu trait'in arkasındadır.
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use async_trait::async_trait;
+pub use async_trait::async_trait;
 use kalfa_evren::YanitMeta;
 use kalfa_evren::tipler::ToolDef;
 use serde::{Deserialize, Serialize};
@@ -89,6 +90,9 @@ pub struct Hazirlik {
     /// Eklenti aracının tarifi (aşama 4 tasarımı §8.1). Mühre girer: onaydan
     /// sonra güncellenen eklentinin çağrısı çalışmaz.
     pub eklenti: Option<EklentiTarifi>,
+    /// MCP aracının güvenli kart özeti ve R/D mühür girdileri. Ham komut,
+    /// ortam değişkeni, sır ve dosya yolu bu alana konmaz.
+    pub mcp: Option<McpAracHazirligi>,
     /// Araç çağrı boyunca kilit tutmaz; dosyaya kendisi dokunurken o yolun
     /// kilidini kısa süre alır (aşama 4 tasarımı §8.3, karar 5). Uzun bir
     /// eklenti çağrısı aynı çalışma alanındaki komutları bekletmez.
@@ -320,6 +324,8 @@ pub enum AracHatasi {
         "İzin kipi veya hedefin izin koşulları değişti; işlem yapılmadı. Gerekirse yeniden dene."
     )]
     PolitikaDegisti,
+    #[error("Araç çağrısı güvenli biçimde tamamlanamadı; çalışma alanı kullanılamıyor.")]
+    SonucIsleme,
     #[error("İptal edildi.")]
     Iptal,
     #[error("{0}")]
@@ -477,6 +483,11 @@ impl AracOrtami {
         self.cikti.clone()
     }
 
+    /// MCP çağrı kaydının model argümanlarından bağımsız kimliği.
+    pub fn cagri_kimligi(&self) -> Option<CagriId> {
+        self.ic.as_ref().map(|(cagri, _, _)| *cagri)
+    }
+
     /// Talebi oturuma iletir ve cevabı bekler. Oturum kapandıysa `Iptal`.
     pub async fn gonderim_izni(&self, talep: GonderimTalebi) -> GonderimYaniti {
         let Some((cagri, tx, _)) = &self.ic else {
@@ -584,6 +595,110 @@ pub trait Arac: Send + Sync {
         self.calistir_akisli(argumanlar, hazirlik, iptal, ortam.cikti())
             .await
     }
+
+    /// Kilidi çağrı boyunca varsayılan olarak bu future tutar. MCP sarmalayıcısı
+    /// aynı sahipli kilidi ilk RPC await'inden önce yönetici çağrı kaydına
+    /// devretmek için bu metodu override eder; core MCP türlerini tanımaz.
+    async fn calistir_kilitli(
+        &self,
+        argumanlar: &Value,
+        hazirlik: &Hazirlik,
+        iptal: CancellationToken,
+        ortam: AracOrtami,
+        kilit: Option<crate::kilit::KilitSeti>,
+    ) -> Result<AracCiktisi, AracHatasi> {
+        let _kilit = kilit;
+        self.calistir_ortamli(argumanlar, hazirlik, iptal, ortam)
+            .await
+    }
+
+    /// MCP, ilk kilitli hazırlık await'inden önce guard'ı yöneticiye taşır.
+    /// Öteki araçlar aynı guard'ı normal yürütme future'ına bırakır.
+    fn kilidi_devral(
+        &self,
+        _cagri: CagriId,
+        _hazirlik: &Hazirlik,
+        _iptal: CancellationToken,
+        kilit: Option<crate::kilit::KilitSeti>,
+    ) -> Result<Option<crate::kilit::KilitSeti>, AracHatasi> {
+        Ok(kilit)
+    }
+
+    /// Core, araç sonucunu denetleyip kaydettikten sonra çağrıyı kapatır.
+    /// MCP yöneticisi burada çalışma alanının son koruma denetimini yapar ve
+    /// yalnız doğrulanmış kapanışta çağrı kaydını/kilidini çözer. Hata
+    /// yöneticideki kaydı ve kilidi korumalıdır.
+    async fn sonuc_isleme_bitti(&self, _cagri: CagriId) -> Result<(), AracHatasi> {
+        Ok(())
+    }
+
+    /// Sonuç denetimi tamamlanmadan çağrı future'ı bırakılırsa yönetici
+    /// bağımsız cleanup başlatır. Cleanup başarılı olmadan kaydı/kilidi çözmez.
+    fn sonuc_isleme_iptal(&self, _cagri: CagriId) {}
+
+    /// Onay eskidiği için araç yeniden hazırlanacaksa cleanup'ın bitmesini
+    /// bekler. Yönetici bu metodu cleanup ve çağrı kilidi bırakma tamamlanınca
+    /// dönecek şekilde uygular. Varsayılan yalnızca iptal kancasını çağırıp
+    /// başarısız döner; cleanup tamamlandığı kanıtlanmadan taze onaya geçilmez.
+    async fn sonuc_isleme_iptal_ve_bekle(&self, cagri: CagriId) -> Result<(), AracHatasi> {
+        self.sonuc_isleme_iptal(cagri);
+        Err(AracHatasi::SonucIsleme)
+    }
+}
+
+/// Core'un sonuç işlemesi bitene kadar yönetici çağrı kaydını açık tutar.
+/// Düşürülürse yöneticiye eşzamanlı iptal/cleanup bildirimi gider.
+pub struct AracTamamlama {
+    arac: Arc<dyn Arac>,
+    cagri: CagriId,
+    tamamlandi: bool,
+}
+
+impl AracTamamlama {
+    pub fn yeni(arac: Arc<dyn Arac>, cagri: CagriId) -> Self {
+        Self {
+            arac,
+            cagri,
+            tamamlandi: false,
+        }
+    }
+
+    /// Başarıda yönetici kaydı kapatılır. Hata ayrıntısı atılır; core yalnız
+    /// güvenli ve sabit bir hata üretir. Bekleyen future bırakılırsa `Drop`
+    /// iptal yolunu çağırır; tamamlanma hatasında yönetici kaydı korunur.
+    pub async fn tamamla(mut self) -> Result<(), AracHatasi> {
+        let sonuc = self.arac.sonuc_isleme_bitti(self.cagri).await;
+        self.tamamlandi = true;
+        sonuc.map_err(|_| AracHatasi::SonucIsleme)
+    }
+
+    /// Bu çağrıyı sonuç olarak kapatmadan cleanup yapar ve bittiğini bekler.
+    /// Future bırakılırsa ikinci bir cleanup kancası çağırmamak için sahiplik
+    /// önce tüketilir; yönetici kendi cleanup görevini sürdürür.
+    pub async fn iptal_ve_bekle(mut self) -> Result<(), AracHatasi> {
+        self.tamamlandi = true;
+        self.arac
+            .sonuc_isleme_iptal_ve_bekle(self.cagri)
+            .await
+            .map_err(|_| AracHatasi::SonucIsleme)
+    }
+}
+
+impl std::fmt::Debug for AracTamamlama {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AracTamamlama")
+            .field("cagri", &self.cagri)
+            .field("tamamlandi", &self.tamamlandi)
+            .finish()
+    }
+}
+
+impl Drop for AracTamamlama {
+    fn drop(&mut self) {
+        if !self.tamamlandi {
+            self.arac.sonuc_isleme_iptal(self.cagri);
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -660,7 +775,8 @@ impl AracKayitDefteri {
 
 macro_rules! mcp_ozet_tipi {
     ($ad:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[serde(transparent)]
         pub struct $ad([u8; 32]);
 
         impl $ad {
@@ -803,6 +919,218 @@ impl McpProfilOzeti {
     }
 }
 
+/// Yalıtım kipinin MCP sunucusu için özeti. Tam erişim her çağrıda yerel
+/// onay gerektirir; bu değer kullanıcı kartında açıkça gösterilir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum McpErisim {
+    Yalitimli,
+    TamErisim,
+}
+
+/// Kartta gösterilecek sunucu veya araç etiketi. Yalnız görünür ad alır;
+/// yol/komut biçimi ve kontrol karakterleri reddedilir. Sır taraması çağrı
+/// sonucunu işlerken ayrıca yapılır. Hata girdiyi geri yansıtmaz.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpKartEtiketi(String);
+
+impl McpKartEtiketi {
+    pub fn yeni(ad: &str) -> Result<Self, &'static str> {
+        let temiz = ad.trim();
+        let guvenli_karakterler = temiz
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.'));
+        if temiz.is_empty() || temiz != ad || temiz.len() > 128 || !guvenli_karakterler {
+            return Err("MCP kart etiketi güvenli bir görünen ad değil.");
+        }
+        Ok(Self(temiz.to_string()))
+    }
+
+    pub fn gorunen(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for McpKartEtiketi {
+    type Error = &'static str;
+
+    fn try_from(deger: String) -> Result<Self, Self::Error> {
+        Self::yeni(&deger)
+    }
+}
+
+impl<'de> Deserialize<'de> for McpKartEtiketi {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let ad = String::deserialize(deserializer)?;
+        Self::yeni(&ad).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Serialize for McpKartEtiketi {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+/// Ağ kartında yalnızca host ve isteğe bağlı port saklanabilir; URL, kullanıcı
+/// bilgisi, yol, sorgu veya sır içeremez.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpAgHostu(String);
+
+impl McpAgHostu {
+    pub fn yeni(host: &str) -> Result<Self, &'static str> {
+        if host.trim() != host
+            || host.is_empty()
+            || host.len() > 260
+            || host.chars().any(char::is_control)
+            || host
+                .chars()
+                .any(|c| matches!(c, '/' | '\\' | '@' | '?' | '#' | '%'))
+            || host.contains("://")
+        {
+            return Err("MCP ağ kartı yalnızca host ve isteğe bağlı port içerebilir.");
+        }
+        let (ad, port) = if let Some(kalan) = host.strip_prefix('[') {
+            let Some((ipv6, son)) = kalan.split_once(']') else {
+                return Err("MCP ağ hostu geçersiz.");
+            };
+            if ipv6.parse::<std::net::Ipv6Addr>().is_err() {
+                return Err("MCP ağ hostu geçersiz.");
+            }
+            let port = if son.is_empty() {
+                None
+            } else if let Some(port) = son.strip_prefix(':') {
+                Some(port)
+            } else {
+                return Err("MCP ağ hostu geçersiz.");
+            };
+            (ipv6, port)
+        } else if host.parse::<IpAddr>().is_ok() {
+            (host, None)
+        } else if let Some((ad, port)) = host.rsplit_once(':') {
+            if ad.contains(':') {
+                return Err("IPv6 MCP ağ hostu köşeli ayraçla yazılmalıdır.");
+            }
+            (ad, Some(port))
+        } else {
+            (host, None)
+        };
+        if let Some(port) = port
+            && !port.parse::<u16>().is_ok_and(|deger| deger != 0)
+        {
+            return Err("MCP ağ hostunun portu geçersiz.");
+        }
+        let dns = ad.len() <= 253
+            && !ad.is_empty()
+            && ad.split('.').all(|etiket| {
+                !etiket.is_empty()
+                    && etiket.len() <= 63
+                    && !etiket.starts_with('-')
+                    && !etiket.ends_with('-')
+                    && etiket
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            });
+        if ad.parse::<IpAddr>().is_err() && !dns {
+            return Err("MCP ağ hostu geçersiz.");
+        }
+        Ok(Self(host.to_ascii_lowercase()))
+    }
+
+    pub fn gorunen(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for McpAgHostu {
+    type Error = &'static str;
+
+    fn try_from(deger: String) -> Result<Self, Self::Error> {
+        Self::yeni(&deger)
+    }
+}
+
+impl Serialize for McpAgHostu {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+/// MCP onay kartına gidecek ağ özeti. Hostlar doğrulanmış ayrı tiptir;
+/// `Sinirsiz` sınırsız erişimi, `Kapali` ağ erişimi olmadığını belirtir.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kip")]
+pub enum McpAgKarti {
+    Kapali,
+    Sinirli { hostlar: Vec<McpAgHostu> },
+    Sinirsiz,
+}
+
+impl McpAgKarti {
+    pub fn ag_kullaniliyor(&self) -> bool {
+        match self {
+            Self::Kapali => false,
+            Self::Sinirli { hostlar } => !hostlar.is_empty(),
+            Self::Sinirsiz => true,
+        }
+    }
+}
+
+/// MCP çağrısı için UI'ya güvenle gösterilebilen hazırlık. R, D, adlar,
+/// oturum kipi, erişim kipi, ağ özeti ve ilk çağrı bilgisi taşır; ham süreç
+/// yapılandırması veya gizli değer taşıyan alan içermez.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpAracHazirligi {
+    pub sunucu: McpKartEtiketi,
+    pub arac: McpKartEtiketi,
+    pub kip: Kip,
+    pub erisim: McpErisim,
+    pub ag: McpAgKarti,
+    pub ilk_cagri: bool,
+    pub tarif: McpTarifi,
+    pub arac_tanimi: McpAracTanimOzeti,
+}
+
+impl Serialize for McpAracHazirligi {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct GuvenliKart<'a> {
+            sunucu: &'a McpKartEtiketi,
+            arac: &'a McpKartEtiketi,
+            kip: Kip,
+            erisim: McpErisim,
+            ag: &'a McpAgKarti,
+            ilk_cagri: bool,
+            /// R ve D; T/Π/K/P/N bileşenleri veya ham süreç girdileri değil.
+            calisma_tarifi_ozeti: String,
+            arac_tanimi_ozeti: String,
+        }
+
+        GuvenliKart {
+            sunucu: &self.sunucu,
+            arac: &self.arac,
+            kip: self.kip,
+            erisim: self.erisim,
+            ag: &self.ag,
+            ilk_cagri: self.ilk_cagri,
+            calisma_tarifi_ozeti: hex::encode(self.tarif.calisma().sha256()),
+            arac_tanimi_ozeti: hex::encode(self.arac_tanimi.sha256()),
+        }
+        .serialize(serializer)
+    }
+}
+
 fn mcp_birlesik_ozet(alan_adi: &[u8], parcalar: &[&[u8]]) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut ozet = Sha256::new();
@@ -839,5 +1167,141 @@ mod mcp_tarif_testleri {
             assert_ne!(ilk.calisma(), farkli.calisma());
         }
         assert!(McpBaslatmaSayaci::yeni(u64::MAX).sonraki().is_none());
+    }
+
+    #[test]
+    fn mcp_kart_etiketi_ve_ag_hostu_yol_url_ve_kontrol_karakterini_almaz() {
+        assert!(McpKartEtiketi::yeni("sunucu 1").is_ok());
+        assert!(McpKartEtiketi::yeni(r"C:\Users\koray\ayar.json").is_err());
+        assert!(McpKartEtiketi::yeni("https://example.test/token").is_err());
+        let uzun_gecerli_ad = "a".repeat(48);
+        assert_eq!(
+            McpKartEtiketi::yeni(&uzun_gecerli_ad).unwrap().gorunen(),
+            uzun_gecerli_ad.as_str()
+        );
+        assert!(McpKartEtiketi::yeni("sunucu\nadi").is_err());
+        assert!(serde_json::from_str::<McpKartEtiketi>(r#""C:/secret/token""#).is_err());
+
+        assert_eq!(
+            McpAgHostu::yeni("API.Example.test:443").unwrap().gorunen(),
+            "api.example.test:443"
+        );
+        assert!(McpAgHostu::yeni("https://user:pass@example.test/secret").is_err());
+        assert!(McpAgHostu::yeni("example.test/path").is_err());
+
+        let kart = McpAracHazirligi {
+            sunucu: McpKartEtiketi::yeni("sunucu 1").unwrap(),
+            arac: McpKartEtiketi::yeni("dosya-oku").unwrap(),
+            kip: Kip::Proje,
+            erisim: McpErisim::Yalitimli,
+            ag: McpAgKarti::Sinirli {
+                hostlar: vec![McpAgHostu::yeni("api.example.test:443").unwrap()],
+            },
+            ilk_cagri: true,
+            tarif: McpTarifi::yeni(
+                McpTanimOzeti::ozetten([1; 32]),
+                McpPolitikaOzeti::ozetten([2; 32]),
+                McpKorumaOzeti::ozetten([3; 32]),
+                McpYalitimProfiliOzeti::ozetten([4; 32]),
+                McpBaslatmaSayaci::yeni(5),
+            ),
+            arac_tanimi: McpAracTanimOzeti::ozetten([6; 32]),
+        };
+        let json = serde_json::to_string(&kart).unwrap();
+        assert!(json.contains("calisma_tarifi_ozeti"));
+        assert!(json.contains("arac_tanimi_ozeti"));
+        assert!(json.contains("api.example.test:443"));
+        assert!(!json.contains("baslatma"), "N kartta ayrı alan olarak yok");
+        assert!(!json.contains("koruma"), "K kartta ayrı alan olarak yok");
+    }
+}
+
+#[cfg(test)]
+mod kilitli_arac_testleri {
+    use super::*;
+    use crate::kilit::KilitYoneticisi;
+    use crate::yol::CalismaYolu;
+    use std::time::Duration;
+    use tokio::sync::Notify;
+
+    struct BekleyenArac {
+        basladi: Arc<Notify>,
+        devam: Arc<Notify>,
+    }
+
+    #[async_trait]
+    impl Arac for BekleyenArac {
+        fn ad(&self) -> &str {
+            "kilit_bekleyen"
+        }
+        fn aciklama(&self) -> &str {
+            "test aracı"
+        }
+        fn parametre_semasi(&self) -> Value {
+            serde_json::json!({"type": "object"})
+        }
+        fn yazar_mi(&self) -> bool {
+            false
+        }
+        async fn hazirla(&self, _argumanlar: &Value) -> Result<Hazirlik, AracHatasi> {
+            Ok(Hazirlik::default())
+        }
+        async fn calistir(
+            &self,
+            _argumanlar: &Value,
+            _hazirlik: &Hazirlik,
+            _iptal: CancellationToken,
+        ) -> Result<AracCiktisi, AracHatasi> {
+            self.basladi.notify_one();
+            self.devam.notified().await;
+            Ok(AracCiktisi::default())
+        }
+    }
+
+    #[tokio::test]
+    async fn varsayilan_kilitli_arac_await_sirasinda_yazma_kilidini_tutar() {
+        let kok = tempfile::tempdir().unwrap();
+        let yonetici = KilitYoneticisi::yeni();
+        let kilitler = yonetici.al(kok.path()).unwrap();
+        let hedef = CalismaYolu::coz("rapor.txt").unwrap();
+        let kilit = kilitler.al(&[], std::slice::from_ref(&hedef), false).await;
+        let basladi = Arc::new(Notify::new());
+        let devam = Arc::new(Notify::new());
+        let arac = Arc::new(BekleyenArac {
+            basladi: basladi.clone(),
+            devam: devam.clone(),
+        });
+        let is = tokio::spawn(async move {
+            arac.calistir_kilitli(
+                &serde_json::json!({}),
+                &Hazirlik::default(),
+                CancellationToken::new(),
+                AracOrtami::bos(),
+                Some(kilit),
+            )
+            .await
+        });
+
+        basladi.notified().await;
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(25),
+                kilitler.al(&[], std::slice::from_ref(&hedef), false)
+            )
+            .await
+            .is_err(),
+            "araç await ederken aynı yolun yazma kilidi tutulmalı"
+        );
+        devam.notify_one();
+        assert!(is.await.unwrap().is_ok());
+        assert!(
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                kilitler.al(&[], std::slice::from_ref(&hedef), false)
+            )
+            .await
+            .is_ok(),
+            "varsayılan çağrı bitince kilit bırakılmalı"
+        );
     }
 }

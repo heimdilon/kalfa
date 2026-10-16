@@ -7,7 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::arac::Hazirlik;
+use crate::arac::{
+    Hazirlik, McpAracTanimOzeti, McpErisim, McpKartEtiketi, McpPolitikaOzeti, McpTanimOzeti,
+};
 use crate::izin::Karar;
 use crate::kabuk::{KabukBicimi, YalitimOzeti};
 
@@ -22,6 +24,15 @@ pub enum KisayolTeklifi {
     Dosya { arac: String, dizin: String },
     /// `program`'ı `dizin`'de yalıtımlı ve ağsız çalıştırma; argümanlar serbest.
     Kabuk { program: String, dizin: String },
+    /// Yalıtımlı MCP aracına izin. T/D/Π değişince kapsam düşer; N veya K
+    /// tek başına kapsamı değiştirmez. Tek çağrı mührü bunlardan daha dardır.
+    Mcp {
+        sunucu: McpKartEtiketi,
+        arac: McpKartEtiketi,
+        tanim: McpTanimOzeti,
+        arac_tanimi: McpAracTanimOzeti,
+        politika: McpPolitikaOzeti,
+    },
 }
 
 impl KisayolTeklifi {
@@ -41,6 +52,21 @@ impl KisayolTeklifi {
                     && &k.dizin == dizin
                     && !k.ag
                     && matches!(k.yalitim, YalitimOzeti::Yalitimli { .. })
+            }),
+            KisayolTeklifi::Mcp {
+                sunucu,
+                arac: mcp_arac,
+                tanim,
+                arac_tanimi,
+                politika,
+            } => h.mcp.as_ref().is_some_and(|mcp| {
+                mcp.erisim == McpErisim::Yalitimli
+                    && arac == format!("mcp__{}__{}", sunucu.gorunen(), mcp_arac.gorunen())
+                    && mcp.sunucu.gorunen() == sunucu.gorunen()
+                    && mcp.arac.gorunen() == mcp_arac.gorunen()
+                    && mcp.tarif.tanim() == *tanim
+                    && mcp.arac_tanimi == *arac_tanimi
+                    && mcp.tarif.politika() == *politika
             }),
         }
     }
@@ -70,6 +96,18 @@ pub fn teklif(arac: &str, h: &Hazirlik, karar: &Karar) -> Option<KisayolTeklifi>
         return k.program.clone().map(|program| KisayolTeklifi::Kabuk {
             program,
             dizin: k.dizin.clone(),
+        });
+    }
+    if let Some(mcp) = &h.mcp {
+        if mcp.erisim != McpErisim::Yalitimli {
+            return None;
+        }
+        return Some(KisayolTeklifi::Mcp {
+            sunucu: mcp.sunucu.clone(),
+            arac: mcp.arac.clone(),
+            tanim: mcp.tarif.tanim(),
+            arac_tanimi: mcp.arac_tanimi,
+            politika: mcp.tarif.politika(),
         });
     }
     if !DOSYA_ARACLARI.contains(&arac) || h.yazilan.len() != 1 {

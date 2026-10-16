@@ -160,6 +160,15 @@ pub fn muhur_hesapla(
                 .as_bytes(),
         );
     }
+    // MCP: R çalışan süreç tarifini, D araç tanımını bağlar. Argümanlar
+    // yukarıda ayrıca mühürlenmiştir; karta hiçbir ham süreç girdisi girmez.
+    if let Some(mcp) = &hazirlik.mcp {
+        let calisma = mcp.tarif.calisma().sha256();
+        let arac_tanimi = mcp.arac_tanimi.sha256();
+        alan(&mut h, b"mcp-v1");
+        alan(&mut h, &calisma);
+        alan(&mut h, &arac_tanimi);
+    }
     if hazirlik.kilitsiz {
         alan(&mut h, b"kilitsiz");
     }

@@ -399,9 +399,19 @@ gerçek yalıtım **50/32**, uyumluluk **24/16**, client/clippy/fmt temiz.
 İki eski A15 ret beklentisi indirmeyen gerçek arşiv açma testine çevrildi;
 son koşuda yeni paket gerekmedi. Bu Rust kontrolleri UI/WebDriver değildir.
 
-**Sıradaki tek iş:** Görev 6 — MCP çağrı izni/mühür ve doğrulanan temizlik
-boyunca manager'ın sahip olduğu çalışma alanı kilidi. Core ve worker
-hazırlıkları yerel staging'dedir; henüz ürüne alınmış/derlenmiş sayılmaz.
+**Görev 6 tamamlandı (16 Ekim):** Gerçek actor izin matrisi, R/D mührü,
+T/D/Π kısayolu ve manager-owned çağrı kilidi bağlandı. Cleanup/drop/hata
+yolları doğrulanan kapanış ve son taramayı bekler; hatada alan engellenir.
+İptal bildirimi flush makbuzu alır; aynı iki saniyelik kapanma payı korunur.
+Bağımsız bulgular kapalı. Windows/WSL workspace **1389/1344**,
+e2e özellikli Rust **250/251**, gerçek yalıtım **50/32**,
+uyumluluk **24/16**, gerçek stdio kabulü **4/4** iki platformda; clippy/fmt temiz.
+[Görev 6 raporu](superpowers/bulgular/2026-10-16-kalfa-11a-2-gorev6-urun.md).
+
+**Sıradaki iş (devir):** Görev 7 — tanım ve sonuç güvenlik kapıları.
+Kullanıcı mevcut görevi bitirip handoff istedi; yeni ürün görevi başlatılmadı.
+G7 staging taslakları derlenmiş/doğrulanmış ürün sayılmaz. UI/WebDriver ve
+tam MCP kabulü Görev 11–12 kapsamındadır; bu görevde koşulmadı.
 Görev 6–12 için yeni plan onayı gerekmez. Ürün yalnız PR20'nin
 `codex/mcp-11a2-plan` worktree'sinde geliştirilir; ortak main korunur.
 PR taslak ve kullanıcı kararı olmadan birleşmez; yeni indirme, Cargo

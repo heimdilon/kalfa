@@ -213,15 +213,20 @@ impl McpIstemcisi {
 
     pub async fn kapat(&mut self) {
         self.kapat.send_replace(true);
-        // Nazik iptal dolu kuyrukta beklese de zorunlu kapanış ilerleyebilmeli.
-        self.tasima_kontrol.kapat();
         if let Some(is_parcacigi) = self.is_parcacigi.take() {
             self.birlestirme = Some(tokio::task::spawn_blocking(move || is_parcacigi.join()));
         }
         // Tutamak await boyunca nesnede kalır; yarım kalan kapanış yeniden beklenebilir.
-        if let Some(birlestirme) = self.birlestirme.as_mut() {
+        if let Some(birlestirme) = self.birlestirme.as_mut()
+            && tokio::time::timeout(Duration::from_millis(100), &mut *birlestirme)
+                .await
+                .is_err()
+        {
+            // Dolu kuyruk veya okumayan sunucu zorunlu kapanışı tutamaz.
+            self.tasima_kontrol.kapat();
             let _ = birlestirme.await;
         }
+        self.tasima_kontrol.kapat();
         self.birlestirme = None;
     }
 }

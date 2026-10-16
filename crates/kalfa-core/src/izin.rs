@@ -6,6 +6,7 @@ use std::sync::{Arc, RwLock};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
 
+use crate::arac::{McpAgKarti, McpErisim};
 use crate::git_koruma;
 use crate::kabuk::{KabukTarifi, YalitimOzeti};
 use crate::yol::CalismaYolu;
@@ -24,6 +25,10 @@ dizinindeki dosyaları okuyabilir ve ağa erişebilir.";
 pub const AGLI_KABUK_UYARISI: &str = "Komut ağa erişebilecek. Dosya yalıtımı sürer.";
 pub const ALAN_HAZIRLIGI_UYARISI: &str = "Kalfa bu klasörün izinlerine yalıtım için giriş \
 ekleyecek. Klasörü ayarlardan kaldırınca geri alınır.";
+pub const MCP_ILK_CAGRI_UYARISI: &str = "Bu MCP sunucusu bu çalışma alanında ilk kez çağrılacak.";
+pub const MCP_AG_UYARISI: &str = "Bu MCP sunucusu ağ erişimi kullanabilecek.";
+pub const MCP_TAM_ERISIM_UYARISI: &str =
+    "MCP sunucusu yalıtım olmadan, hesabınızın yetkileriyle çalışacak.";
 pub const YAPILANDIRMA_UYARISI: &str = "Bu dosyayı IDE'niz, git ya da paket yöneticiniz \
 Kalfa'nın yalıtımı dışında kendiliğinden çalıştırabilir.";
 
@@ -355,6 +360,107 @@ pub fn karar_ver(kip: Kip, islem: Islem, sinif: YolSinifi, coklu_baglanti: bool)
                 Karar::Serbest
             }
         }
+    }
+}
+
+/// MCP çağrısının izin kararı (11a-2 tasarımı §5.2). Tam erişim her çağrıda
+/// yerel onay ister; Serbest kipte yalıtımlı çağrı yalnız ilk kullanım veya
+/// ağ erişimi varsa oturum onayına yükselir.
+pub fn mcp_karari(kip: Kip, erisim: McpErisim, ilk_cagri: bool, ag: &McpAgKarti) -> Karar {
+    match (kip, erisim) {
+        (Kip::Inceleme, _) => Karar::Yasak {
+            neden: "İnceleme kipinde MCP araçları sunulmaz.".to_string(),
+        },
+        (_, McpErisim::TamErisim) => Karar::YerelOnayli {
+            uyarilar: vec![MCP_TAM_ERISIM_UYARISI.to_string()],
+        },
+        (Kip::Siki | Kip::Proje, McpErisim::Yalitimli) => Karar::Onayli {
+            uyarilar: Vec::new(),
+        },
+        (Kip::Serbest, McpErisim::Yalitimli) => {
+            let mut uyarilar = Vec::new();
+            if ilk_cagri {
+                uyarilar.push(MCP_ILK_CAGRI_UYARISI.to_string());
+            }
+            if ag.ag_kullaniliyor() {
+                uyarilar.push(MCP_AG_UYARISI.to_string());
+            }
+            if uyarilar.is_empty() {
+                Karar::Serbest
+            } else {
+                Karar::Onayli { uyarilar }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod mcp_izin_testleri {
+    use super::*;
+
+    fn yerel(uyari: &str) -> Karar {
+        Karar::YerelOnayli {
+            uyarilar: vec![uyari.to_string()],
+        }
+    }
+
+    #[test]
+    fn mcp_izin_matrisi_dort_kip_iki_erisim() {
+        let ag = McpAgKarti::Kapali;
+        let onay = Karar::Onayli {
+            uyarilar: Vec::new(),
+        };
+        for (kip, yalitimli, tam_erisim) in [
+            (
+                Kip::Inceleme,
+                Karar::Yasak {
+                    neden: "İnceleme kipinde MCP araçları sunulmaz.".into(),
+                },
+                Karar::Yasak {
+                    neden: "İnceleme kipinde MCP araçları sunulmaz.".into(),
+                },
+            ),
+            (Kip::Siki, onay.clone(), yerel(MCP_TAM_ERISIM_UYARISI)),
+            (Kip::Proje, onay.clone(), yerel(MCP_TAM_ERISIM_UYARISI)),
+            (Kip::Serbest, Karar::Serbest, yerel(MCP_TAM_ERISIM_UYARISI)),
+        ] {
+            assert_eq!(
+                mcp_karari(kip, McpErisim::Yalitimli, false, &ag),
+                yalitimli,
+                "yalıtımlı: {kip:?}"
+            );
+            assert_eq!(
+                mcp_karari(kip, McpErisim::TamErisim, false, &ag),
+                tam_erisim,
+                "tam erişim: {kip:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn serbest_mcp_ilk_cagri_ve_ag_icin_onay_ister() {
+        assert_eq!(
+            mcp_karari(
+                Kip::Serbest,
+                McpErisim::Yalitimli,
+                true,
+                &McpAgKarti::Kapali
+            ),
+            Karar::Onayli {
+                uyarilar: vec![MCP_ILK_CAGRI_UYARISI.to_string()]
+            }
+        );
+        assert_eq!(
+            mcp_karari(
+                Kip::Serbest,
+                McpErisim::Yalitimli,
+                false,
+                &McpAgKarti::Sinirsiz
+            ),
+            Karar::Onayli {
+                uyarilar: vec![MCP_AG_UYARISI.to_string()]
+            }
+        );
     }
 }
 

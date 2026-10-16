@@ -13,7 +13,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 
 pub const CERCEVE: usize = 4 * 1024 * 1024;
@@ -218,11 +218,26 @@ impl TasimaKontrol {
     }
 }
 
+// İptal bildiriminin kuyruğa konması yeterli değildir: stdin kapanmadan
+// önce yazma/flush makbuzu beklenir. Diğer iletiler aynı sınırlı kuyruktadır.
+struct GidenIleti {
+    ileti: ClientJsonRpcMessage,
+    yazildi: Option<oneshot::Sender<()>>,
+}
+
+impl From<ClientJsonRpcMessage> for GidenIleti {
+    fn from(ileti: ClientJsonRpcMessage) -> Self {
+        Self {
+            ileti,
+            yazildi: None,
+        }
+    }
+}
 /// Ham stdout doğrudan SDK'ye verilmez; çerçeveleme ve ayrıştırma burada yapılır.
 pub struct SinirliTasima {
     pub yenileme: Arc<YenilemeDurumu>,
     gelen: mpsc::Receiver<ServerJsonRpcMessage>,
-    giden: mpsc::Sender<ClientJsonRpcMessage>,
+    giden: mpsc::Sender<GidenIleti>,
     hata: watch::Receiver<Option<TasimaHatasi>>,
     hata_gonder: watch::Sender<Option<TasimaHatasi>>,
     kimlikler: Arc<Mutex<AbonelikKimlikleri>>,
@@ -237,7 +252,7 @@ impl SinirliTasima {
         W: AsyncWrite + Unpin + Send + 'static,
     {
         let (gelen_gonder, gelen) = mpsc::channel(KUYRUK);
-        let (giden, mut giden_al) = mpsc::channel::<ClientJsonRpcMessage>(KUYRUK);
+        let (giden, mut giden_al) = mpsc::channel::<GidenIleti>(KUYRUK);
         let (hata_gonder, hata) = watch::channel(None);
         let (kapat_gonder, _kapat_al) = watch::channel(false);
         let kimlikler = Arc::new(Mutex::new(AbonelikKimlikleri::yeni()));
@@ -343,7 +358,7 @@ impl SinirliTasima {
                                 Some(istek.id),
                             )
                         };
-                        if okuma_giden.try_send(yanit).is_err() {
+                        if okuma_giden.try_send(yanit.into()).is_err() {
                             ilk_hatayi_yaz(&okuma_hata, TasimaHatasi::IletiSeli);
                             break;
                         }
@@ -402,7 +417,7 @@ impl SinirliTasima {
                         None => break,
                     }
                 };
-                let mut ham = match serde_json::to_vec(&item) {
+                let mut ham = match serde_json::to_vec(&item.ileti) {
                     Ok(ham) if ham.len() <= CERCEVE => ham,
                     Ok(_) => {
                         ilk_hatayi_yaz(&yazma_hata, TasimaHatasi::Cerceve);
@@ -426,6 +441,9 @@ impl SinirliTasima {
                 if yazim.is_err() {
                     ilk_hatayi_yaz(&yazma_hata, TasimaHatasi::GirdiCikti);
                     break;
+                }
+                if let Some(yazildi) = item.yazildi {
+                    let _ = yazildi.send(());
                 }
             }
         });
@@ -539,7 +557,28 @@ impl Transport<RoleClient> for SinirliTasima {
                 ilk_hatayi_yaz(&hata, kesinti);
                 return Err(io::Error::other("MCP taşıma sınırı aşıldı"));
             }
-            permit.send(item);
+            let (yazildi, makbuz) = if matches!(
+                &item,
+                ClientJsonRpcMessage::Notification(bildirim)
+                    if matches!(bildirim.notification, ClientNotification::CancelledNotification(_))
+            ) {
+                let (gonder, al) = oneshot::channel();
+                (Some(gonder), Some(al))
+            } else {
+                (None, None)
+            };
+            permit.send(GidenIleti {
+                ileti: item,
+                yazildi,
+            });
+            if let Some(makbuz) = makbuz {
+                tokio::select! {
+                    biased;
+                    _ = hata_bekle(hata_dinle) => return Err(io::Error::other("MCP iptali yazılamadı")),
+                    _ = kapat_bekle(kapat) => return Err(io::Error::other("MCP iptali yazılamadı")),
+                    sonuc = makbuz => sonuc.map_err(|_| io::Error::other("MCP iptali yazılamadı"))?,
+                }
+            }
             Ok(())
         }
     }
@@ -648,6 +687,7 @@ mod tests {
     #[derive(Default)]
     struct YazmaKapisi {
         dur: std::sync::atomic::AtomicBool,
+        flush_dur: std::sync::atomic::AtomicBool,
         uyandir: Mutex<Option<std::task::Waker>>,
         bekliyor: tokio::sync::Notify,
     }
@@ -675,7 +715,13 @@ mod tests {
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
         ) -> std::task::Poll<io::Result<()>> {
-            std::pin::Pin::new(&mut self.get_mut().yazici).poll_flush(cx)
+            let bu = self.get_mut();
+            if bu.kapi.flush_dur.load(Ordering::SeqCst) {
+                *bu.kapi.uyandir.lock().unwrap() = Some(cx.waker().clone());
+                bu.kapi.bekliyor.notify_one();
+                return std::task::Poll::Pending;
+            }
+            std::pin::Pin::new(&mut bu.yazici).poll_flush(cx)
         }
         fn poll_shutdown(
             self: std::pin::Pin<&mut Self>,
@@ -732,12 +778,12 @@ mod tests {
             .unwrap();
         kapi.dur.store(true, Ordering::SeqCst);
         let dolgu = ClientJsonRpcMessage::response(ClientResult::empty(()), RequestId::Number(-1));
-        giden.send(dolgu.clone()).await.unwrap();
+        giden.send(dolgu.clone().into()).await.unwrap();
         tokio::time::timeout(Duration::from_secs(3), kapi.bekliyor.notified())
             .await
             .unwrap();
         for _ in 0..KUYRUK {
-            giden.try_send(dolgu.clone()).unwrap();
+            giden.try_send(dolgu.clone().into()).unwrap();
         }
         cagri.abort();
         let _ = cagri.await;
@@ -756,6 +802,43 @@ mod tests {
         assert!(
             sonuc.is_ok(),
             "dolu kuyruktaki nazik iptal zorunlu kapanışı tutmamalı"
+        );
+    }
+    #[tokio::test]
+    async fn iptal_yazma_makbuzu_flush_bitmeden_tamamlanmaz() {
+        let (_sunucu, boru) = tokio::io::duplex(8192);
+        let (okuma, yazma) = tokio::io::split(boru);
+        let kapi = Arc::new(YazmaKapisi::default());
+        kapi.flush_dur.store(true, Ordering::SeqCst);
+        let (mut tasima, _hata) = SinirliTasima::yeni(
+            okuma,
+            KapiliYazici {
+                yazici: yazma,
+                kapi: kapi.clone(),
+            },
+        );
+        let iptal: ClientJsonRpcMessage = serde_json::from_value(serde_json::json!({
+            "jsonrpc":"2.0", "method":"notifications/cancelled", "params":{"requestId":7}
+        }))
+        .unwrap();
+        let gonderim = tokio::spawn(tasima.send(iptal));
+        tokio::time::timeout(Duration::from_secs(2), kapi.bekliyor.notified())
+            .await
+            .unwrap();
+        let erken_bitti = gonderim.is_finished();
+        kapi.flush_dur.store(false, Ordering::SeqCst);
+        if let Some(uyandir) = kapi.uyandir.lock().unwrap().take() {
+            uyandir.wake();
+        }
+        tokio::time::timeout(Duration::from_secs(2), gonderim)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        tasima.close().await.unwrap();
+        assert!(
+            !erken_bitti,
+            "iptal kuyruğa alınırken değil flush bittikten sonra tamamlanmalı"
         );
     }
 }

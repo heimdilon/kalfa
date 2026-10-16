@@ -1,4 +1,5 @@
 //! Yerel MCP için sınırlı stdio ve ham günlük üretmeyen SDK istemcisi.
+pub mod arac;
 pub mod istemci;
 pub mod tasima;
 
