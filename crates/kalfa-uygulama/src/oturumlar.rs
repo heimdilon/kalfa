@@ -626,13 +626,18 @@ impl Uygulama {
             .map(|acik| acik.kip_kilidi.clone())
             .ok_or_else(KomutHatasi::oturum_yok)?;
         let _kip_nobeti = kip_kilidi.lock().await;
-        let (tutamac, eski) = {
+        let (tutamac, eski, alan_kimligi, alan_yolu) = {
             let ic = self.ic();
             let acik = ic
                 .oturumlar
                 .get(&oturum)
                 .ok_or_else(KomutHatasi::oturum_yok)?;
-            (acik.tutamac.clone(), acik.kip)
+            (
+                acik.tutamac.clone(),
+                acik.kip,
+                acik.calisma_alani_kimligi.clone(),
+                acik.calisma_alani.clone(),
+            )
         };
         if kip == eski {
             return Ok(eski);
@@ -656,6 +661,8 @@ impl Uygulama {
         if let Some(acik) = self.ic().oturumlar.get_mut(&oturum) {
             acik.kip = kip;
         }
+        self.mcp
+            .oturum_kipi_guncelle(&alan_kimligi, Some(&alan_yolu), oturum, Some(kip));
         Ok(kip)
     }
 
@@ -767,7 +774,7 @@ impl Uygulama {
         !self.ic().kapaniyor.is_empty()
     }
 
-    /// Kapanmakta olan bütün oturumların görevlerini bekler.
+    /// Kapanmakta olan bütün oturumların görevlerini ve açık MCP süreçlerini bekler.
     pub async fn kapananlari_bekle(&self) {
         let kapananlar: Vec<(OturumId, OturumTutamaci)> = self
             .ic()
@@ -776,6 +783,7 @@ impl Uygulama {
             .map(|(oturum, kapanan)| (*oturum, kapanan.tutamac.clone()))
             .collect();
         self.kapanislari_bekle(kapananlar).await;
+        self.mcp.tumunu_kapat_ve_bekle().await;
     }
 
     fn kapatmaya_basla(&self, oturum: OturumId) -> Option<OturumTutamaci> {
@@ -791,6 +799,12 @@ impl Uygulama {
             );
             acik
         };
+        self.mcp.oturum_kipi_guncelle(
+            &acik.calisma_alani_kimligi,
+            Some(&acik.calisma_alani),
+            oturum,
+            None,
+        );
         acik.tutamac.iptal_et();
         if let Some((gorev, _)) = &acik.kopru {
             // Paketleyici ve içindeki olay alıcısı bırakılır; oturum görevi
@@ -825,15 +839,22 @@ impl Uygulama {
     }
 
     fn tabloya_ekle(&self, oturum: OturumId, acik: AcikOturum) -> Result<(), Box<AcikOturum>> {
-        let mut ic = self.ic();
-        if ic
-            .yalitim_kaldirma_rezervleri
-            .contains(&acik.calisma_alani_kimligi)
+        let alan_kimligi = acik.calisma_alani_kimligi.clone();
+        let alan_yolu = acik.calisma_alani.clone();
+        let kip = acik.kip;
         {
-            return Err(Box::new(acik));
+            let mut ic = self.ic();
+            if ic
+                .yalitim_kaldirma_rezervleri
+                .contains(&acik.calisma_alani_kimligi)
+            {
+                return Err(Box::new(acik));
+            }
+            ic.son_oturum = Some(oturum);
+            ic.oturumlar.insert(oturum, acik);
         }
-        ic.son_oturum = Some(oturum);
-        ic.oturumlar.insert(oturum, acik);
+        self.mcp
+            .oturum_kipi_guncelle(&alan_kimligi, Some(&alan_yolu), oturum, Some(kip));
         Ok(())
     }
 
@@ -855,8 +876,18 @@ impl Uygulama {
         let siniflandirici = Arc::new(
             Siniflandirici::yeni_ayarla(kok, self.ayarlar.gizli_ayarlari()).map_err(ic_hata)?,
         );
-        let alan = AracAlani::ac(siniflandirici.clone())?;
         let alan_kimligi = CalismaAlaniKaydi::kimlik(kok);
+        let yazma_bildirimi = crate::mcp::yonetici::AlanYazmaBildirimi::yeni(
+            self.mcp.clone(),
+            alan_kimligi.clone(),
+            kok.to_path_buf(),
+        );
+        let (yazma_basladi, yazma_bitti) = yazma_bildirimi.bildirim_cifti();
+        let alan = AracAlani::ac_bildirimli(
+            siniflandirici.clone(),
+            Some(yazma_basladi),
+            Some(yazma_bitti),
+        )?;
         let guven = Arc::new(AlanGuveni {
             kayit: self.alanlar.clone(),
             kimlik: alan_kimligi.clone(),

@@ -25,7 +25,8 @@ use kalfa_core::izin::Siniflandirici;
 use kalfa_core::protokol::CiktiAkisi;
 use kalfa_core::yol::CalismaYolu;
 use kalfa_sandbox::git_denetimi::{GitDenetimi, yeni_git_denetle};
-use kalfa_sandbox::tarama::{self, AdliGirdiler, KorumaTaramaHatasi, TaramaSecenekleri};
+use kalfa_sandbox::tarama;
+pub use kalfa_sandbox::tarama::{AdliGirdiler, KorumaTaramaHatasi, TaramaSecenekleri};
 use kalfa_sandbox::{AlanBilgisi, Korumali, Yalitici};
 
 use crate::calisma_alani::CalismaAlani;

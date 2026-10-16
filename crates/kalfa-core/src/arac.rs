@@ -684,7 +684,7 @@ mcp_ozet_tipi!(McpCalismaTarifiOzeti); // R = T + P + N
 mcp_ozet_tipi!(McpAracTanimOzeti); // D
 
 /// Her süreç başlangıcında artan sayaçtır; rastgele nonce veya yazma kuşağı değildir.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct McpBaslatmaSayaci(u64); // N
 
 impl McpBaslatmaSayaci {
@@ -696,6 +696,10 @@ impl McpBaslatmaSayaci {
         self.0
     }
 
+    pub const fn ileri(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+
     pub const fn sonraki(self) -> Option<Self> {
         match self.0.checked_add(1) {
             Some(deger) => Some(Self(deger)),
@@ -705,7 +709,7 @@ impl McpBaslatmaSayaci {
 }
 
 /// W'de yazma kaynaklı izin yenilemesi için ayrı sayaç; R'deki N ile karıştırılmaz.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct McpYazmaKusagi(u64);
 
 impl McpYazmaKusagi {
@@ -715,6 +719,10 @@ impl McpYazmaKusagi {
 
     pub const fn deger(self) -> u64 {
         self.0
+    }
+
+    pub const fn ileri(self) -> Self {
+        Self(self.0.saturating_add(1))
     }
 }
 

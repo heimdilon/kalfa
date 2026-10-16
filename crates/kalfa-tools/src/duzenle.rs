@@ -193,7 +193,9 @@ impl Arac for DosyaDuzenle {
         }
         let metin = metni_coz(&yol, &veri)?;
         let d = uygula(&metin, a)?;
-        self.alan.yaz(&yol, d.yeni.as_bytes())?;
+        let sonuc = self.alan.yaz(&yol, d.yeni.as_bytes());
+        self.alan.yazma_bitisini_bekle().await?;
+        sonuc?;
         Ok(AracCiktisi {
             icerik: format!("`{yol}` dosyasında {} değişiklik yapıldı.", d.adet),
             kaynak: format!("dosya:{yol}"),

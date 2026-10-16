@@ -487,12 +487,25 @@ impl Arac for KabukAraci {
             ag_listesi,
             alan,
         };
-        let surec = self.yalitici.baslat(&calistirma).map_err(|e| {
-            if matches!(e, BaslatmaHatasi::Yalitim(_)) {
-                self.yalitici.yeniden_algila();
+        struct KabukYazmaBitisKoruma<'a>(&'a CalismaAlani);
+        impl Drop for KabukYazmaBitisKoruma<'_> {
+            fn drop(&mut self) {
+                self.0.yazma_bitti_bildir();
             }
-            gecersiz(e.to_string())
-        })?;
+        }
+        self.alan.yazma_basladi_bildir();
+        let _yazma_bitis = KabukYazmaBitisKoruma(&self.alan);
+        let surec = match self.yalitici.baslat(&calistirma) {
+            Ok(surec) => surec,
+            Err(e) => {
+                if matches!(e, BaslatmaHatasi::Yalitim(_)) {
+                    self.yalitici.yeniden_algila();
+                }
+                drop(_yazma_bitis);
+                self.alan.yazma_bitisini_bekle().await?;
+                return Err(gecersiz(e.to_string()));
+            }
+        };
         // Komut başladı; çalışma alanındaki ilk onay kaydedilir.
         self.guven.guvenildi();
         let mut tampon = BasSonTampon::default();
@@ -511,6 +524,8 @@ impl Arac for KabukAraci {
             degisiklikler,
             ..
         } = self.komut_sonrasi_denetim(onceki).await;
+        drop(_yazma_bitis);
+        self.alan.yazma_bitisini_bekle().await?;
         let durum = match sonuc.bitis {
             Bitis::Iptal => return Err(AracHatasi::Iptal),
             Bitis::Cikti(Some(kod)) => format!("Çıkış kodu: {kod}"),

@@ -531,6 +531,54 @@ impl CozulmusTanim {
         self.komut_tipi
     }
 
+    pub const fn calistirma_kipi(&self) -> CalistirmaKipi {
+        self.kip
+    }
+
+    pub fn ag_kurallari(&self) -> &[AgIzinKurali] {
+        &self.ag
+    }
+
+    pub const fn baslatma_zamani_asimi(&self) -> Duration {
+        Duration::from_secs(self.baslatma_zamani_asimi as u64)
+    }
+
+    pub const fn cagri_zamani_asimi(&self) -> Duration {
+        Duration::from_secs(self.cagri_zamani_asimi as u64)
+    }
+
+    /// Çözülmüş tanımdan etkileşimli süreç başlatma isteği üretir.
+    pub fn etkilesimli_istek(
+        &self,
+        alan: kalfa_sandbox::AlanBilgisi,
+    ) -> Result<kalfa_sandbox::EtkilesimliIstek, TanimHatasi> {
+        let program = yol_metni(&self.program)?.to_owned();
+        let ag_listesi = if self.kip == CalistirmaKipi::TamErisim || self.ag.is_empty() {
+            None
+        } else {
+            let kurallar: Vec<kalfa_sandbox::vekil::HostKurali> = self
+                .ag
+                .iter()
+                .map(|k| kalfa_sandbox::vekil::HostKurali {
+                    host: k.host().to_owned(),
+                    port: k.port(),
+                    ozel_ag: k.ozel_ag(),
+                    kaynak: kalfa_sandbox::vekil::HostKaynagi::Kullanici,
+                })
+                .collect();
+            Some(kalfa_sandbox::vekil::IzinListesi::dogrudan(&kurallar))
+        };
+        Ok(kalfa_sandbox::EtkilesimliIstek {
+            program,
+            argumanlar: self.argumanlar.clone(),
+            ortam: self.ortam.ham_ciftler(),
+            kip: self.kip,
+            sunucu: self.ad.clone(),
+            alan,
+            ag_listesi,
+        })
+    }
+
     /// npx/uvx ile çözülen paket kodu tanım özetine içerik olarak girmez.
     pub fn paket_surumu_uyarisi(&self) -> Option<&'static str> {
         paket_surumu_uyarisi(&self.program)

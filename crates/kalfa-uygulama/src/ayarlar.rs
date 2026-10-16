@@ -360,6 +360,7 @@ impl Uygulama {
                 d.ek_gizli_kaliplar.push(k);
             }
         })?;
+        self.mcp.politika_degisti();
         Ok(self.ayarlar.gizli_gorunumu())
     }
 
@@ -382,6 +383,7 @@ impl Uygulama {
         }
         self.ayarlar
             .degistir(|d| d.ek_gizli_kaliplar.retain(|x| x != &k))?;
+        self.mcp.politika_degisti();
         Ok(self.ayarlar.gizli_gorunumu())
     }
 
@@ -407,6 +409,7 @@ impl Uygulama {
                 d.gizli_sayilmayanlar.push(k);
             }
         })?;
+        self.mcp.politika_degisti();
         Ok(self.ayarlar.gizli_gorunumu())
     }
 
@@ -418,6 +421,7 @@ impl Uygulama {
         let k = kalip.trim().replace('\\', "/");
         self.ayarlar
             .degistir(|d| d.gizli_sayilmayanlar.retain(|x| x != &k))?;
+        self.mcp.politika_degisti();
         Ok(self.ayarlar.gizli_gorunumu())
     }
 

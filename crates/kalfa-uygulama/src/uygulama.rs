@@ -21,7 +21,7 @@ use crate::evren::{DegisirSaglayici, SaglayiciUretici};
 use crate::modeller;
 use crate::oturumlar::{AcikOturum, KapananOturum};
 use crate::sozlesme::{AnahtarNedeni, BaglantiDurumu, ModelSecenegi, SartPenceresiDurumu};
-use crate::yalitim::{Dinleyici, YalitimAyarlari, YalitimKaynagi, yalitici_kur};
+use crate::yalitim::{Dinleyici, McpDinleyici, YalitimAyarlari, YalitimKaynagi, yalitici_kur};
 
 /// Uygulamayı kurmak için gerekenler; Tauri katmanı ya da test verir.
 pub struct Bilesenler {
@@ -78,6 +78,9 @@ pub struct Uygulama {
     /// Eklentiler: `eklentiler.json`, motor, yükleme önbelleği (aşama 4
     /// tasarımı §13).
     pub(crate) eklentiler: EklentiYoneticisi,
+    /// MCP sır kasası ve çalışma alanına bağlı MCP süreç yöneticisi (1.1a-2).
+    pub(crate) mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa>,
+    pub(crate) mcp: Arc<crate::mcp::yonetici::McpYoneticisi>,
     ic: Mutex<IcDurum>,
 }
 
@@ -110,6 +113,7 @@ impl Uygulama {
             kalfa_core::denetci::YapilandirilmisSiniflandirici::yeni(evren.clone()),
         );
         let yalitim_dinleyici = Dinleyici::default();
+        let mcp_dinleyici = McpDinleyici::default();
         // Uygulama başına bir kez: eklentilerin EVREN yolu, oturumların
         // paylaştığı sağlayıcıyı ve şart kapısını kullanır.
         let eklentiler = EklentiYoneticisi::yeni(
@@ -125,7 +129,27 @@ impl Uygulama {
             b.kalfa_araclari,
             &yalitim_ayarlari,
             yalitim_dinleyici.clone(),
+            mcp_dinleyici.clone(),
         );
+        let mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa> =
+            Arc::new(crate::mcp::kasa::SistemGizliKasasi::yeni());
+        let mcp = crate::mcp::yonetici::McpYoneticisi::yeni(
+            crate::mcp::yonetici::McpYoneticiBilesenleri {
+                veri_dizini: b.veri_dizini.clone(),
+                yalitim_dizini: b.yalitim_dizini.clone(),
+                ayarlar: ayarlar.clone(),
+                mcp_depo: ayarlar.clone(),
+                kasa: mcp_kasa.clone(),
+                iletisim: b.iletisim.clone(),
+                yalitici: yalitici.clone(),
+                yalitim_ayarlari: yalitim_ayarlari.clone(),
+                koruma_denetleyicisi: None,
+                surec_baslatici: None,
+                saat: None,
+                sistem_ortami: None,
+            },
+        );
+        *mcp_dinleyici.lock().unwrap_or_else(|z| z.into_inner()) = Some(Arc::downgrade(&mcp));
         Arc::new(Self {
             oturum_dizini: dizin::oturum_dizini(&b.veri_dizini),
             kasa: b.kasa,
@@ -145,6 +169,8 @@ impl Uygulama {
             yalitim_dinleyici,
             alanlar: Arc::new(CalismaAlaniKaydi::yeni(&b.veri_dizini)),
             eklentiler,
+            mcp_kasa,
+            mcp,
             veri_dizini: b.veri_dizini,
             ev_dizini: b.ev_dizini,
             geri_alma_dizini: b.geri_alma_dizini,
@@ -172,6 +198,16 @@ impl Uygulama {
     /// Uygulama genelindeki tek şart kapısı.
     pub fn sart_kapisi(&self) -> &Arc<SartKapisi> {
         &self.kapi
+    }
+
+    /// Uygulama genelindeki MCP süreç yöneticisi.
+    pub fn mcp_yoneticisi(&self) -> &Arc<crate::mcp::yonetici::McpYoneticisi> {
+        &self.mcp
+    }
+
+    /// Uygulama genelindeki MCP sır kasası.
+    pub fn mcp_kasasi(&self) -> &Arc<dyn crate::mcp::kasa::GizliKasa> {
+        &self.mcp_kasa
     }
 
     /// Açık oturum sayısı (testler ve tanılama için).

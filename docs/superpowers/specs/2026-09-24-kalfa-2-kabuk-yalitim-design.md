@@ -722,11 +722,13 @@ Kalfa her çalıştırmadan önce çalışma alanına özel en küçük yapılan
     (yüzlerce MB), çalışma alanının ihtiyacı ağla bir kez indirilir. bwrap
     0.9.0'da `--overlay` yoktur.
   - Windows'ta registry bağlanamaz: aynı dizini iki yerde göstermenin yolu
-    yoktur. Çalışma alanına özel registry boş başlar (2c, P9) ve **kapta
-    doldurulamaz** (2d-1, A15). cargo indirdiği paketi açarken hedef dizini
-    kanonikleştirir. DOS yol adı Mount Manager'a erişim ister, AppContainer'da
-    bu "Erişim engellendi" verir. Ağlı `cargo fetch` bile düşer. Bağımlılıksız
-    derleme çalışır.
+    yoktur. Çalışma alanına özel registry boş başlar (2c, P9). 2d-1'de
+    Cargo'nun paket açması DOS yolu çözümünde düşüyordu (A15). **16 Ekim
+    2026, Rust 1.98.1 ölçümünde bu Cargo sınırı yoktur:** önceden indirilmiş
+    arşiv ve indeks kopyasıyla `cargo fetch --offline` özel registry/src
+    altında yeni kaynak ağacı oluşturdu; CONNECT üretmedi. Genel DOS yolu
+    API ölçümü bundan ayrı kalır. Ağ izinleri ve geliştiricinin registry'sine
+    yazma yasağı değişmez.
   - Windows'ta ağsız komut geliştiricinin registry'siyle derler (2d-3, A15'in
     gelişmiş yolu). `~/.cargo\bin` okunur dizinlerdeyse `CARGO_HOME`
     geliştiricinin `.cargo`'sudur ve `CARGO_NET_OFFLINE=true` verilir.
@@ -1232,16 +1234,20 @@ da tam hedefi taşır.
 - **Yolun DOS adı çözülemez.** `GetFinalPathNameByHandleW`, DOS ve GUID hacim
   adlarıyla kapta her yolda "Erişim engellendi" veriyor (Mount Manager'a
   erişim ister); NT ve hacimsiz adlarla çalışıyor. Rust'ın `canonicalize`'ı
-  DOS adını ister. Bu yüzden cargo kapta crate açamaz: crates.io bağımlılığı
-  Windows yalıtımında indirilemez (A15). Ağsız komut geliştiricinin önceden
-  indirdiği crate'lerle derler (§7.4); yeni bağımlılık için geliştirici
-  yalıtım dışında `cargo fetch` çalıştırır.
+  DOS adını ister. Bu ölçüm Cargo'nun güncel davranışına tek başına kanıt
+  değildir: 16 Ekim 2026'da Rust 1.98.1 ile Cargo özel registry'ye arşivi
+  açtı (A15, §7.4). Yeni kabul testi mevcut önbellekten ve ağsızdır; yeni
+  paket indirme gerektirmez. Kullanıcının registry'si salt okunur kalır.
 - **Aynı sınıftan (A16):** Python her açılışta `Failed to find real location
   of …\python.exe` uyarısını basar (`getpath`'ten, Kalfa'nın
   `sitecustomize.py`'sinden önce gelir; `sys.prefix` doğrudur). Node'un
   `fs.realpathSync.native`'i `EPERM` verir; `fs.realpathSync`, npm ve örnek
   projeler etkilenmez. Python'un `os.path.realpath`'i ve `0o700` geçici
   dizinleri Kalfa'nın `sitecustomize.py`'siyle düzelir.
+  16 Ekim 2026 sistem pip kabulü `--no-index`, `--isolated` ve boş config ile
+  paket indirmeden AC/Temp temizleme uyarısını ve gerçekten kalan `pip-*`
+  dizinini ölçer. Genel `ERROR` artık A16 kanıtı sayılmaz. Bu kontrol paket
+  kurmanın başarı veya başarısızlığını ölçmez.
 - **`~/.cargo\config.toml` kapta uygulanmaz:** dosya okunamaz ve cargo onu yok
   sayar (2d-3'te ölçüldü). Oradaki ayarlar (ör. `target-dir`, bağlayıcı)
   yalıtımlı derlemede geçerli değildir.
@@ -1633,7 +1639,9 @@ Hiçbiri `/sys`'e ihtiyaç duymadı (A4). Rustup vekili
 - git: kullanıcının Git for Windows'u hiçbir dizin açılmadan Program
   Files'tan bulunur; worktree'de `status`, `diff`, `log` çalışır.
 - cargo: örnek crate, geliştiricinin registry'siyle ağsız `cargo test`
-  (§7.4); `build.rs` MSVC ile C derler (A12). Ağlı `cargo fetch` A15'e takılır.
+  (§7.4); `build.rs` MSVC ile C derler (A12). 2d ölçümündeki A15 başarısızlığı,
+  16 Ekim 2026 Rust 1.98.1 kabulünde özel registry'ye ağsız arşiv açma ve
+  sahte DNS üzerinden Cargo CONNECT testleriyle güncellendi.
 - Kalfa'nın Python ve Node'u (`KALFA_TEST_ARAC_ZINCIRI`, kurucunun
   `araclar\`'ının kopyası): `where` önce Kalfa'nınkini gösterir;
   `os.path.realpath` doğru; `python -m venv`, venv'de ağlı `pip install
@@ -1733,7 +1741,7 @@ Plan ya da prototip aşamasında cevaplanacaklar:
 | A12 | AppContainer'da C derleyen `build.rs` (`cl.exe`, `INCLUDE`) çalışıyor mu? | 2d-1: evet; MSVC dizini `PATH`'in başında olmalı ve kabın `TEMP`'i kurulmalı (§9.3) |
 | A13 | AppContainer'da `privateNetworkClientServer` ile LAN hedefi; `openssh-ssh-agent` ve `docker_engine` boruları | 2d-1: ölçülmedi; geliştiricinin makinesinde LAN hedefi, ssh-agent ve Docker yok. Yetenek verilmez (§9.3); 2d-2'de ya da ilk ihtiyaçta ölçülür |
 | A14 | Kabın içinden başka bir paket SID'iyle süreç başlatılabiliyor mu? | 2c: hayır, `ERROR_INVALID_PARAMETER`; aynı paketle başlatılabiliyor (§9.3) |
-| A15 | Windows'ta ağsız derlemede geliştiricinin cargo registry'si nasıl kullanılır? `CARGO_HOME`'u doğrudan vermek çalıştı ama 12 sn sürdü | 2d-1: çalışma alanına özel registry kapta doldurulamıyor (cargo'nun paket açması DOS yol adı istiyor, §9.6). Bilinen sınır (§7.4). 2026-09-27: Rust gelişmiş özellik oldu (§9.8); kısıtlı belirteçte A15 yok ama Schannel çalışmıyor (§9.7). 2d-3: ağsız komut geliştiricinin `.cargo`'suyla derler, kapa yalnızca `registry` ve `git` açılır (0,7 sn); ağlıda sınır sürer (§7.4, §9.6) |
+| A15 | Windows'ta ağsız derlemede geliştiricinin cargo registry'si nasıl kullanılır? `CARGO_HOME`'u doğrudan vermek çalıştı ama 12 sn sürdü | 2d-1: çalışma alanına özel registry kapta doldurulamıyor (cargo'nun paket açması DOS yol adı istiyor, §9.6). Bilinen sınır (§7.4). 2026-09-27: Rust gelişmiş özellik oldu (§9.8); kısıtlı belirteçte A15 yok ama Schannel çalışmıyor (§9.7). 2d-3: ağsız komut geliştiricinin `.cargo`'suyla derler, kapa yalnızca `registry` ve `git` açılır (0,7 sn); ağlıda sınır sürüyordu (§7.4, §9.6). 16 Ekim 2026, Rust 1.98.1: eski genel Cargo ret iddiası güncel değildir; mevcut arşiv/indeksten özel registry/src açılması ve sıfır CONNECT doğrulandı. Boş sahte DNS ile Cargo CONNECT yolu ayrıca ölçüldü; yeni kabul testi çevrimiçi paket indirmeyi sınamaz |
 | A16 | A15'in sınıfı: kapta DOS yol adı isteyen öteki araçlar. Python `realpath` sessizce yanlış yol döndürüyor, açılışta "Failed to find real location" uyarısı veriyor; Node `realpathSync.native` EPERM (2026-09-27). Kalfa'nın getireceği Python'la `pip`, `venv` ve `pytest`; yaygın Node araçları | 2d-3 ([ölçüm](../bulgular/2026-09-27-kalfa-2d-3-a16.md)): Kalfa'nın `sitecustomize.py`'siyle `realpath`, `venv`, `pip` ve `pytest` çalışıyor; npm etkilenmiyor. Açılış uyarısı ve `realpathSync.native` bilinen sınır (§9.6) |
 
 ---

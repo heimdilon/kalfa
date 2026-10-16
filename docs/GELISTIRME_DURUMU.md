@@ -388,14 +388,24 @@ Windows workspace **1300/0/19**, WSL **1254/0/19**; e2e özellikli Rust
 Görev1'in `1ede4c3` CI38745987451 koşusu yedi işiyle yeşil; yeni başın
 CI sonucu ayrıca izlenir. Gerçek yalıtım/UI/WebDriver bu görevde koşmadı.
 
-**Sıradaki tek iş:** Görev3 — ayar/kasa/native kayıt ve maskeleme. Kullanıcı
-Codex'in uygulamasını durdurup Antigravity'ye devretmek istedi; Codex son
-PR incelemesini devralacak. Görev3 yalnız ayrı yerel staging hazırlığıdır,
-ürüne bağlanmadı ve kabulü tamamlanmadı. Önce mevcut hazırlıkları inceleyip
-native onay/taslak kuşağı sınırlarını bağlayın. Ortak main'e ürün kodu
-yazılmaz; PR20'nin `codex/mcp-11a2-plan` worktree'si kullanılır. Ortak
-önbellekler ve başka ajanın doğrulama kopyaları korunur. Devir ayrıntısı
-varsa yerel iş takibinden okunur; genel devam merge/canlı deney onayı değildir.
+**Görev 3–5 tamamlandı (16 Ekim):** Antigravity'nin ayar/kasa/maske ve
+ortak koruma uygulamaları `e2962a9` / `e75822f`. Kullanıcının doğrudan
+devriyle Codex (KALFA-24), süreç yöneticisini bağımsız inceleme ve önce
+düşen regresyonlarla tamamladı: RPC/başlatma/drop yarışları, gerçek
+zamanlayıcı, korumalı kök ve yazma sonrası denetim beklemesi düzeltildi.
+Windows/WSL workspace **1354/1309**, e2e özellikli Rust **234/235**;
+gerçek yalıtım **50/32**, uyumluluk **24/16**, client/clippy/fmt temiz.
+[Görev 5 raporu](superpowers/bulgular/2026-10-16-kalfa-11a-2-gorev5-urun.md).
+İki eski A15 ret beklentisi indirmeyen gerçek arşiv açma testine çevrildi;
+son koşuda yeni paket gerekmedi. Bu Rust kontrolleri UI/WebDriver değildir.
+
+**Sıradaki tek iş:** Görev 6 — MCP çağrı izni/mühür ve doğrulanan temizlik
+boyunca manager'ın sahip olduğu çalışma alanı kilidi. Core ve worker
+hazırlıkları yerel staging'dedir; henüz ürüne alınmış/derlenmiş sayılmaz.
+Görev 6–12 için yeni plan onayı gerekmez. Ürün yalnız PR20'nin
+`codex/mcp-11a2-plan` worktree'sinde geliştirilir; ortak main korunur.
+PR taslak ve kullanıcı kararı olmadan birleşmez; yeni indirme, Cargo
+dosyası değişikliği, sistem ayarı ve canlı EVREN yapılmaz.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

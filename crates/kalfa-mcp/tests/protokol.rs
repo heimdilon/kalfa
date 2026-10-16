@@ -402,3 +402,23 @@ async fn iptalin_uc_sunucu_davranisinda_istemci_kapanir() {
             .unwrap();
     }
 }
+
+#[tokio::test]
+async fn baslatma_suresi_istemcide_25_saniyeyle_kesilmez() {
+    let mut cocuk = ProcessCommand::new(env!("CARGO_BIN_EXE_kalfa-mcp-test-sunucusu"))
+        .arg("slow-initialize")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let (tasima, hata) =
+        SinirliTasima::yeni(cocuk.stdout.take().unwrap(), cocuk.stdin.take().unwrap());
+    let mut istemci =
+        tokio::time::timeout(Duration::from_secs(30), McpIstemcisi::yeni(tasima, hata))
+            .await
+            .expect("tanımdaki 30 saniye dolmadı")
+            .expect("26 saniyede hazır olan sunucu 25 saniyede kesilmemeli");
+    istemci_kapat(&mut istemci, &mut cocuk).await;
+}

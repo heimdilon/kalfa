@@ -157,9 +157,11 @@ impl McpIstemcisi {
             tasima_kontrol,
             yenileme,
         };
-        let hazir = match tokio::time::timeout(Duration::from_secs(25), hazir_al).await {
-            Ok(Ok(hazir)) => hazir,
-            Ok(Err(_)) | Err(_) => Err(McpHatasi::Baglanti),
+        // Başlatma süresini sunucu tanımı belirler; çağıran bu geleceği
+        // o süreyle sınırlar. İkinci bir sabit tavan geçerli tanımı daraltmaz.
+        let hazir = match hazir_al.await {
+            Ok(hazir) => hazir,
+            Err(_) => Err(McpHatasi::Baglanti),
         };
         match hazir {
             Ok(()) => Ok(istemci),
@@ -170,30 +172,39 @@ impl McpIstemcisi {
         }
     }
 
-    pub async fn araclari_listele(&self) -> Result<Vec<Tool>, McpHatasi> {
-        let (yanit_gonder, yanit_al) = oneshot::channel();
-        self.komutlar
-            .send(Komut::AraclariListele(yanit_gonder))
-            .await
-            .map_err(|_| McpHatasi::Kapali)?;
-        yanit_al.await.map_err(|_| McpHatasi::Kapali)?
+    pub fn araclari_listele(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Tool>, McpHatasi>> + Send + 'static {
+        let komutlar = self.komutlar.clone();
+        async move {
+            let (yanit_gonder, yanit_al) = oneshot::channel();
+            komutlar
+                .send(Komut::AraclariListele(yanit_gonder))
+                .await
+                .map_err(|_| McpHatasi::Kapali)?;
+            yanit_al.await.map_err(|_| McpHatasi::Kapali)?
+        }
     }
 
-    pub async fn arac_cagir(
+    pub fn arac_cagir(
         &self,
         ad: impl Into<String>,
         argumanlar: rmcp::model::JsonObject,
-    ) -> Result<CallToolResult, McpHatasi> {
-        let (yanit_gonder, yanit_al) = oneshot::channel();
-        self.komutlar
-            .send(Komut::AracCagir {
-                ad: ad.into(),
-                argumanlar,
-                yanit: yanit_gonder,
-            })
-            .await
-            .map_err(|_| McpHatasi::Kapali)?;
-        yanit_al.await.map_err(|_| McpHatasi::Kapali)?
+    ) -> impl Future<Output = Result<CallToolResult, McpHatasi>> + Send + 'static {
+        let komutlar = self.komutlar.clone();
+        let ad = ad.into();
+        async move {
+            let (yanit_gonder, yanit_al) = oneshot::channel();
+            komutlar
+                .send(Komut::AracCagir {
+                    ad,
+                    argumanlar,
+                    yanit: yanit_gonder,
+                })
+                .await
+                .map_err(|_| McpHatasi::Kapali)?;
+            yanit_al.await.map_err(|_| McpHatasi::Kapali)?
+        }
     }
 
     pub fn yenileme_durumu(&self) -> Arc<YenilemeDurumu> {

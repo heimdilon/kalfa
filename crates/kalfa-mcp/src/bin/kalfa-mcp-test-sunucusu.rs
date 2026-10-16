@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let yontem = ileti.get("method").and_then(Value::as_str);
         let kimlik = ileti.get("id").cloned();
         match yontem {
-            Some("server/discover") if kip == "legacy" => {
+            Some("server/discover") if matches!(kip.as_str(), "legacy" | "slow-initialize") => {
                 if let Some(kimlik) = kimlik {
                     yazi(
                         json!({"jsonrpc":"2.0","id":kimlik,"error":{"code":-32601,"message":"eski uç"}}),
@@ -57,6 +57,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             Some("initialize") => {
+                if kip == "slow-initialize" {
+                    thread::sleep(Duration::from_secs(26));
+                }
                 if ileti.pointer("/params/capabilities") != Some(&json!({})) {
                     return Err(io::Error::other("istemci yetenekleri boş olmalı").into());
                 }

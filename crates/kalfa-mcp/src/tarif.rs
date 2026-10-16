@@ -156,6 +156,93 @@ pub fn tanim_ozeti(
     Ok(McpTanimOzeti::ozetten(h.finalize().into()))
 }
 
+/// Π: Çalışma alanı dışındaki yalıtım arka ucu / sürümü, gizli kalıp kuralları
+/// ve ek okunur dizinleri kanonik olarak özetler.
+pub fn politika_ozeti(
+    yalitim_durumu: &kalfa_sandbox::YalitimDurumu,
+    gizli_ayarlari: &kalfa_core::izin::GizliAyarlari,
+    ek_okunur_dizinler: &[PathBuf],
+) -> McpPolitikaOzeti {
+    let mut h = Sha256::new();
+    alan(&mut h, b"kalfa-mcp-politika-v1");
+    match yalitim_durumu {
+        kalfa_sandbox::YalitimDurumu::Hazir { arka_uc, surum } => {
+            alan(&mut h, &[1]);
+            alan(&mut h, arka_uc.as_bytes());
+            alan(&mut h, surum.as_bytes());
+        }
+        kalfa_sandbox::YalitimDurumu::Yok {
+            neden,
+            talimat,
+            ayrinti,
+        } => {
+            alan(&mut h, &[0]);
+            alan(&mut h, format!("{neden:?}").as_bytes());
+            alan(&mut h, talimat.as_bytes());
+            alan(&mut h, ayrinti.as_bytes());
+        }
+    }
+    let mut ek_kaliplar = gizli_ayarlari.ek_kaliplar();
+    ek_kaliplar.sort();
+    ek_kaliplar.dedup();
+    alan(&mut h, b"ek_gizli_kaliplar");
+    alan(&mut h, &(ek_kaliplar.len() as u64).to_le_bytes());
+    for kalip in &ek_kaliplar {
+        alan(&mut h, kalip.as_bytes());
+    }
+    let mut istisnalar = gizli_ayarlari.istisnalar();
+    istisnalar.sort();
+    istisnalar.dedup();
+    alan(&mut h, b"gizli_sayilmayanlar");
+    alan(&mut h, &(istisnalar.len() as u64).to_le_bytes());
+    for istisna in &istisnalar {
+        alan(&mut h, istisna.as_bytes());
+    }
+    let mut sirali_okunur: Vec<String> = ek_okunur_dizinler
+        .iter()
+        .map(|d| d.to_string_lossy().into_owned())
+        .collect();
+    sirali_okunur.sort();
+    sirali_okunur.dedup();
+    alan(&mut h, b"okunur_dizinler");
+    alan(&mut h, &(sirali_okunur.len() as u64).to_le_bytes());
+    for dizin in &sirali_okunur {
+        alan(&mut h, dizin.as_bytes());
+    }
+    McpPolitikaOzeti::ozetten(h.finalize().into())
+}
+
+/// Çalışma kipini, yalıtıcı profil özetini ve çalışma alanı profil özetini
+/// `McpYalitimProfiliOzeti` içine bağlar.
+pub fn yalitim_profili_ozeti(
+    yalitici: &dyn kalfa_sandbox::Yalitici,
+    kip: kalfa_sandbox::CalistirmaKipi,
+    alan_bilgisi: &kalfa_sandbox::AlanBilgisi,
+    ag_ozeti: Option<&str>,
+) -> McpYalitimProfiliOzeti {
+    let mut h = Sha256::new();
+    alan(&mut h, b"kalfa-mcp-yalitim-profili-v1");
+    alan(
+        &mut h,
+        &[match kip {
+            kalfa_sandbox::CalistirmaKipi::Yalitimli => 1,
+            kalfa_sandbox::CalistirmaKipi::TamErisim => 2,
+        }],
+    );
+    let yalitici_ozeti = yalitici
+        .profil_ozeti(ag_ozeti.is_some(), ag_ozeti)
+        .unwrap_or_default();
+    alan(&mut h, yalitici_ozeti.as_bytes());
+    alan(&mut h, alan_bilgisi.kok.as_os_str().as_encoded_bytes());
+    if let Some(ag) = ag_ozeti {
+        alan(&mut h, &[1]);
+        alan(&mut h, ag.as_bytes());
+    } else {
+        alan(&mut h, &[0]);
+    }
+    McpYalitimProfiliOzeti::ozetten(h.finalize().into())
+}
+
 /// P = Π + K + yalıtım profili. Görev 4/5 doğrulanmış girdileri sağlayacaktır;
 /// bu fonksiyon mevcut özetleri tek canonical profile bağlar.
 pub fn profil_ozeti(

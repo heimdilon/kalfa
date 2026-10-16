@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use ignore::{WalkBuilder, WalkState};
-use tokio_util::sync::CancellationToken;
+pub use tokio_util::sync::CancellationToken;
 
 /// Görüntüye girebilecek en çok girdi; aşılırsa görüntü eksiktir.
 pub const GORUNTU_AZAMI_GIRDI: usize = 500_000;
