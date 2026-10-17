@@ -1,6 +1,6 @@
 # MCP 1.1a-2 Görev 12 — İki platformda kabul
 
-Durum: kabul testleri ve bulunan ürün hatasının düzeltmesi tamam; birleştirme
+Durum: tamam; kabul testleri, ürün hatasının düzeltmesi ve iki platform doğrulaması bitti. Birleştirme
 kararı kullanıcıda. Dal `codex/mcp-11a2-plan`, PR #20. Uygulayan: Claude.
 
 ## 1. Gerçek yalıtımla kabul (plan 1)
@@ -176,3 +176,26 @@ Ortam: worktree'de `node_modules` yoktu. Hiçbir şey indirilmedi:
   WSL'de kopya. Kilit dosyaları aynıdır.
 
 Loglar: `.yerel/mcp-tasarim-inceleme/11A2-CLAUDE-g12-E2E-{WINDOWS,WSL}.log`.
+
+## 6. Doğrulama komutları (plan 4)
+
+Aynı ağaç (`07376d4`) iki platformda:
+
+| Komut | Windows | Ubuntu 24.04 (WSL2, `kalfatest`) |
+|---|---|---|
+| `cargo fmt --all -- --check` | temiz | temiz |
+| `cargo clippy --workspace --all-targets` | temiz | temiz |
+| `cargo clippy -p kalfa -p kalfa-uygulama --features e2e` | temiz | temiz |
+| `cargo test --workspace` | **1450** geçti, 19 ignore | **1405** geçti, 19 ignore |
+| `cargo test -p kalfa-uygulama -p kalfa --features e2e` | **269** | **270** |
+| `kalfa-sandbox --features yalitim-testleri --test yalitim` | 50 | 32 |
+| `kalfa-tools --features yalitim-testleri --test uyumluluk` | 24 | 16 |
+| `kalfa-mcp --features yalitim-testleri --test yalitim` | 3 | 3 |
+| G2 (`prototip/mcp-tasima`) test/clippy/fmt | 7, temiz | 7, temiz |
+| Arayüz `check`/`test`/`build` | 0/0, 459/459 (Görev 12 arayüze dokunmaz) | — |
+| Gerçek WebDriver e2e | 43/43 | 43/43 |
+
+İlk Linux workspace koşusunda `kalfa-plugin`
+`bellek_siniri_cagriyi_durdurur_sonraki_calisir` düştü. O sırada Windows
+takımı ve e2e aynı makinede koşuyordu. Dal `kalfa-plugin`'e dokunmaz; test
+tek başına 3/3 geçti ve yük yokken workspace koşusu yukarıdadır.

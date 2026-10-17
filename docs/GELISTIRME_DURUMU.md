@@ -467,12 +467,22 @@ Windows/WSL workspace **1447/1402**, e2e özellikli Rust **267/268**;
 fmt/clippy temiz.
 [Görev 11 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev11-urun.md).
 
-**Sıradaki tek iş:** Görev 12 — iki platformda tam kabul ve kapanış
-(gerçek yalıtım sunucusu, §11 matrisi, WebDriver e2e, rapor).
-Gerçek WebDriver e2e ve tam MCP kabulü Görev 12 kapsamındadır; bu görevde
-koşulmadı.
-Görev 8–12 için yeni plan onayı gerekmez. Ürün yalnız PR20'nin
-`codex/mcp-11a2-plan` worktree'sinde geliştirilir; ortak main korunur.
+**Görev 12 tamamlandı (17 Ekim, Claude):** Test sunucusu gerçek
+yalıtımda (AppContainer, bwrap) ağsız/ağlı/sonradan gelen gizli dosya
+senaryolarıyla sınandı; tam erişime çevrilince üçü de düştü. §11 matrisi
+testlere bağlandı. Sonradan gelen gizli dosyanın çağrı sırasında sonuç
+yoluyla sağlayıcıya ulaştığı (kabul edilmiş risk), çağrılar arasında
+tanım yoluyla ulaşmadığı ölçüldü. Kabul testi bir eşzamanlılık hatası
+buldu: süren koruma taraması başlatma doğrulamasını düşürüyor, araçlar
+sonraki turda yayımdan çıkıyordu; bekleyen denetimle düzeltildi. Gerçek
+WebDriver e2e Windows/WSL **43/43** (yeni `13-mcp`); workspace
+**1450/1405**, e2e özellikli Rust **269/270**, MCP yalıtımı 3/3;
+fmt/clippy temiz.
+[Görev 12 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev12-kabul.md).
+
+**Sıradaki tek iş:** PR #20'nin incelemesi ve kullanıcının birleştirme
+kararı. Birleştirme açık onay ister; onaydan sonra worktree ve WSL
+kopyası kaldırılır.
 PR taslak ve kullanıcı kararı olmadan birleşmez; yeni indirme, Cargo
 dosyası değişikliği, sistem ayarı ve canlı EVREN yapılmaz.
 
