@@ -1174,7 +1174,7 @@ impl McpYoneticisi {
             let guncel_pi = self.guncel_politika_ozeti();
             if calisan.tanim_ozeti == hazir.tanim_ozeti && calisan.politika_ozeti == guncel_pi {
                 match self
-                    .sunucu_korumasini_denetle(alan_kimligi, sunucu, kok)
+                    .sunucu_korumasini_bekleyerek_denetle(alan_kimligi, sunucu, kok)
                     .await
                 {
                     Ok(()) => {
@@ -1827,6 +1827,31 @@ impl McpYoneticisi {
         sunucu: &str,
         kok: &Path,
     ) -> Result<(), YoneticiHatasi> {
+        self.korumayi_denetle(alan_kimligi, sunucu, kok, false)
+            .await
+    }
+
+    /// Başlatma doğrulaması ve çağrı hazırlığı için: aynı kuşakta süren
+    /// tarama (zamanlayıcı ya da başka bir çağıran) varsa bitişini bekler ve
+    /// kilidi bırakmadan kendi taramasını yapar. Yarışı hata saymak, aynı
+    /// turda keşif ile çağrı hazırlığını birbirine düşürüyordu (Görev 12
+    /// kabulü). Zamanlayıcı beklemez: süren tarama t_K değerini zaten yeniler.
+    pub async fn sunucu_korumasini_bekleyerek_denetle(
+        self: &Arc<Self>,
+        alan_kimligi: &str,
+        sunucu: &str,
+        kok: &Path,
+    ) -> Result<(), YoneticiHatasi> {
+        self.korumayi_denetle(alan_kimligi, sunucu, kok, true).await
+    }
+
+    async fn korumayi_denetle(
+        self: &Arc<Self>,
+        alan_kimligi: &str,
+        sunucu: &str,
+        kok: &Path,
+        bekle: bool,
+    ) -> Result<(), YoneticiHatasi> {
         let anahtar = McpAnahtari::yeni(alan_kimligi, sunucu);
         let calisan = {
             let d = self.durum();
@@ -1838,8 +1863,13 @@ impl McpYoneticisi {
 
         // Aynı kuşaktaki eşzamanlı taramalar yaş bilgisini geriye taşıyamaz.
         // Etkin taramanın sonucu gelmeden çağrının hazırlığı başarılı sayılmaz.
-        let Ok(_koruma) = calisan.koruma_kilidi.try_lock() else {
-            return Err(YoneticiHatasi::BaslatmaYarisi);
+        let _koruma = if bekle {
+            calisan.koruma_kilidi.lock().await
+        } else {
+            let Ok(kilit) = calisan.koruma_kilidi.try_lock() else {
+                return Err(YoneticiHatasi::BaslatmaYarisi);
+            };
+            kilit
         };
         let _bildirim = KorumaBildirimi(&calisan.zamanlayici_bildirimi);
 
@@ -3969,6 +3999,51 @@ mod tests {
         devam.notify_one();
         assert_eq!(baslat.await.unwrap(), Err(YoneticiHatasi::BaslatmaYarisi));
         assert_eq!(test.baslatici.sayac(), 0);
+    }
+
+    #[tokio::test]
+    async fn suren_koruma_taramasi_baslatma_dogrulamasini_dusurmez() {
+        // Görev 12 kabulünde bulundu: çalışan kuşağın taraması sürerken gelen
+        // doğrulama "yarış" diye düşüyordu; keşif işi bunu "başlamadı" sayıp
+        // sunucunun araçlarını her turda yayımdan çekiyordu.
+        let test = TestOrtami::kur();
+        test.harici_sunucu_ekle("harici", McpKipi::Yalitimli);
+        let _oturum = test.siki_oturum_ac();
+        let (a, k) = (test.alan_kimligi.clone(), test.proje_koku.clone());
+        let kart = test
+            .yonetici
+            .baslatma_karti_olustur(&a, &k, "harici")
+            .unwrap();
+        test.yonetici
+            .baslatma_izni_yanitla(&kart.istek_kimligi, &a, &k, true)
+            .await
+            .unwrap();
+        let (kusak, _) = test
+            .yonetici
+            .baslat_veya_dogrula(&a, &k, "harici")
+            .await
+            .unwrap();
+        let calisan = test
+            .yonetici
+            .durum()
+            .yuvalar
+            .get(&McpAnahtari::yeni(&a, "harici"))
+            .and_then(|y| y.calisan.clone())
+            .unwrap();
+        let tarama = calisan.koruma_kilidi.lock().await;
+        let y = test.yonetici.clone();
+        let (a2, k2) = (a.clone(), k.clone());
+        let gorev = tokio::spawn(async move { y.baslat_veya_dogrula(&a2, &k2, "harici").await });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!gorev.is_finished(), "süren tarama bitmeden sonuç verilmez");
+        drop(tarama);
+        let (sonraki, _) = gorev.await.unwrap().unwrap();
+        assert_eq!(sonraki, kusak, "aynı kuşak doğrulanır");
+        assert_eq!(test.baslatici.sayac(), 1, "ikinci süreç başlamaz");
+        test.yonetici
+            .sunucuyu_durdur_ve_bekle(&a, "harici")
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

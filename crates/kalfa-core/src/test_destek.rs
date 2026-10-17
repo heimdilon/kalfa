@@ -44,6 +44,9 @@ pub enum SahteYanit {
     Askida(Vec<AkisOlayi>),
     /// `akis()` doğrudan hata döner (HTTP hatası gibi).
     Hata(EvrenError),
+    /// Yanıt bu kadar bekledikten sonra gelir: tur gerçek bir model gibi
+    /// sürer (ör. tura bağlı arka plan işleri tamamlanabilsin).
+    Gecikmeli(std::time::Duration, Box<SahteYanit>),
 }
 
 /// Başarılı bir yanıtın geçerli kullanımı (5b tasarımı §6): istem 10, tamamlama 5.
@@ -235,6 +238,12 @@ impl SahteSaglayici {
         self.istekler.lock().unwrap().clone()
     }
 
+    /// Senaryonun sonuna yanıt ekler; tur sayısı önceden bilinmeyen
+    /// testler her turdan önce kendi yanıtını koyar.
+    pub fn senaryoya_ekle(&self, yanit: SahteYanit) {
+        self.senaryo.lock().unwrap().push_back(yanit);
+    }
+
     pub fn sohbet_ekle(&self, yanit: SahteSohbet) {
         self.sohbet_senaryo.lock().unwrap().push_back(yanit);
     }
@@ -265,18 +274,23 @@ impl Saglayici for SahteSaglayici {
             istekler.push(istek);
             istekler.len()
         };
-        let yanit = self
+        let mut yanit = self
             .senaryo
             .lock()
             .unwrap()
             .pop_front()
             .expect("sahte senaryoda yanıt kalmadı");
+        while let SahteYanit::Gecikmeli(sure, ic) = yanit {
+            tokio::time::sleep(sure).await;
+            yanit = *ic;
+        }
         let meta = YanitMeta {
             istek_id: Some(format!("sahte-{sira}")),
             yonlendirilen_model: Some(model),
             ..Default::default()
         };
         match yanit {
+            SahteYanit::Gecikmeli(..) => unreachable!("gecikme yukarıda açıldı"),
             SahteYanit::Akis(olaylar) => Ok(SaglayiciAkisi {
                 meta,
                 olaylar: Box::pin(stream::iter(olaylar)),

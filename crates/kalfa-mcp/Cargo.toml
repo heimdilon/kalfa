@@ -6,6 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[features]
+# Gerçek yalıtımla MCP kabulü (`tests/yalitim.rs`, 1.1a-2 Görev 12). Yalıtım
+# yoksa atlanmaz, başarısız olur.
+yalitim-testleri = ["kalfa-sandbox/yalitim-testleri"]
+
 [dependencies]
 kalfa-core = { path = "../kalfa-core" }
 kalfa-sandbox = { path = "../kalfa-sandbox" }

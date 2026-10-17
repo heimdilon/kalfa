@@ -1,7 +1,7 @@
 # Kalfa 1.1a — Yerel MCP sunucuları: Tasarım
 
 **Tarih:** 2026-10-14.
-**Durum:** Tasarım, r10. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
+**Durum:** Tasarım, r10; §13.10 Görev 12 kabulünün yanıtı. Kullanıcı ilk sürümü bölüm bölüm onayladı (14 Ekim).
 §13'te şu incelemelerin yanıtı var:
 
 - Codex'in yerel incelemesi (`dd641a3`, altı bulgu),
@@ -1315,3 +1315,23 @@ guard'ı çözmez. Bu açıklama yeni bir risk kabulü değildir.
 [Görev 6 ürün raporu](../bulgular/2026-10-16-kalfa-11a-2-gorev6-urun.md)
 iki platform, bağımsız inceleme ve RED/GREEN kanıtlarını sınırlarıyla taşır.
 Kullanıcı bu görevin sonunda devir istedi; Görev 7 ürünü başlatılmadı.
+
+### 13.10 Görev 12 kabulü (17 Ekim)
+
+Gerçek süreçli kabul testi bir eşzamanlılık hatası buldu. Aynı kuşakta
+süren koruma taraması varken başlatma doğrulaması ve çağrı hazırlığı
+`BaslatmaYarisi` alıp bunu "korumalar değişti" ya da "onay eskidi"
+sayıyordu. Sonuçta sunucunun araçları keşiften sonraki turda yayımdan
+düşüyor ve çağrı reddediliyordu. Bu iki yol artık süren taramayı bekleyip
+kendi taramasını yapar. Zamanlayıcı yine atlar. §4.3 ve §5.1 değişmedi.
+
+§4.3'teki kalan risk ölçüldü:
+
+- Çağrının içinde gelen gizli dosya içeriği sonuçla sahte sağlayıcıya
+  ulaşır.
+- İki çağrı arasında gelen dosya, sonraki başlatma doğrulamasında süreci
+  yeniden başlatır; açıklama yolu modele ulaşmaz.
+- Yeni süreç dosyayı iki OS'ta da okuyamaz.
+
+Bu bir ölçümdür, yeni risk kabulü değildir.
+[Görev 12 kabul raporu](../bulgular/2026-10-17-kalfa-11a-2-gorev12-kabul.md).

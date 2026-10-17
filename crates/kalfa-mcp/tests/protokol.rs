@@ -422,3 +422,30 @@ async fn baslatma_suresi_istemcide_25_saniyeyle_kesilmez() {
             .expect("26 saniyede hazır olan sunucu 25 saniyede kesilmemeli");
     istemci_kapat(&mut istemci, &mut cocuk).await;
 }
+
+/// Görev 12 yoklama sunucusu: açıklama değişince liste değişikliği
+/// bildirilir ve yeniden listeleme yeni açıklamayı verir.
+#[tokio::test]
+async fn sinama_aciklama_degisince_liste_degisimi_bildirilir() {
+    let dizin = tempfile::tempdir().unwrap();
+    let dosya = dizin.path().join("not.txt");
+    std::fs::write(&dosya, "YENI-ACIKLAMA").unwrap();
+    let (mut istemci, mut cocuk, _gunluk) = istemci_baslat("sinama").await;
+    let baslangic = std::time::Instant::now();
+    let argumanlar =
+        serde_json::from_value(serde_json::json!({"islem":"aciklamaya_koy","yol":dosya})).unwrap();
+    istemci.arac_cagir("dene", argumanlar).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !istemci
+            .yenileme_durumu()
+            .yenileme_gerekli(baslangic + Duration::from_secs(5))
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("liste değişikliği bildirilmeli");
+    let araclar = istemci.araclari_listele().await.unwrap();
+    assert_eq!(araclar[0].description.as_deref(), Some("YENI-ACIKLAMA"));
+    istemci_kapat(&mut istemci, &mut cocuk).await;
+}

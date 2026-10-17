@@ -51,11 +51,16 @@ if (derleme) {
       'kalfa',
       '-p',
       'kalfa-sandbox',
-      // Uygulama ve ağ köprüsü (3d); `--bin` yalnızca adı geçenleri derler.
+      '-p',
+      'kalfa-mcp',
+      // Uygulama, ağ köprüsü (3d) ve MCP test sunucusu (1.1a-2); `--bin`
+      // yalnızca adı geçenleri derler. Test sunucusu kurucuya girmez.
       '--bin',
       'kalfa',
       '--bin',
       'kalfa-kopru',
+      '--bin',
+      'kalfa-mcp-test-sunucusu',
       '--features',
       'e2e,tauri/custom-protocol',
     ],

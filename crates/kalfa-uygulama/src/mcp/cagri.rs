@@ -428,7 +428,7 @@ impl McpCagriG5ArkaUcu {
 
     async fn guncel_kart(&self, kimlik: &McpAracKimligi) -> Result<McpG7AracKarti, AracHatasi> {
         self.yonetici
-            .sunucu_korumasini_denetle(
+            .sunucu_korumasini_bekleyerek_denetle(
                 kimlik.alan_kimligi(),
                 kimlik.sunucu().gorunen(),
                 kimlik.kok(),
