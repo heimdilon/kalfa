@@ -482,11 +482,14 @@ izin, silme/yeniden adlandırma temizliği, kasa temizliği, içe aktarma ve
 form) testleriyle düzeltildi.
 [Görev 12 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev12-kabul.md).
 
-**Sıradaki tek iş:** PR #20'nin incelemesi ve kullanıcının birleştirme
-kararı. Birleştirme açık onay ister; onaydan sonra worktree ve WSL
-kopyası kaldırılır.
-PR taslak ve kullanıcı kararı olmadan birleşmez; yeni indirme, Cargo
-dosyası değişikliği, sistem ayarı ve canlı EVREN yapılmaz.
+**1.1a-2 birleşti (17 Ekim):** PR #20, kullanıcının açık squash onayıyla
+ve CI'ın yedi işi yeşilken birleşti: main `bfe198a`. Birleşmeden önce Codex
+PR incelemesinin yedi bulgusu `20ec2ce` ile düzeltildi. PR worktree'si ve
+WSL kopyası kaldırıldı. **Yerel MCP (1.1a) tamamlandı.**
+
+**Sıradaki tek iş:** Sıradaki işi kullanıcı seçer. MCP'nin kalan parçası
+1.1b'dir (uzak Streamable HTTP ve OAuth, 1.1a tasarımı §2); tasarımı henüz
+yazılmadı. Yeni tasarım ya da plan kullanıcı onayı olmadan başlamaz.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
