@@ -366,6 +366,12 @@ fn kur(
         ev_dizini: dizin.join("ev"),
         yalitim,
     });
+    // MCP tanımı PATH'in her dizinini çözer; CI'da testleri koşan kullanıcı
+    // yöneticinin PATH'ini taşır ve erişemediği dizin tanımı kapatır.
+    uygulama.mcp.sistem_ortamini_degistir(vec![(
+        "PATH".to_owned(),
+        dizin.to_string_lossy().into_owned(),
+    )]);
     TestUygulamasi {
         uygulama,
         saglayici,

@@ -864,6 +864,11 @@ impl McpYoneticisi {
         self.durum().sistem_ortami.clone()
     }
 
+    /// Test düzeneği için: süreç ortamı yerine sabit ortam.
+    pub(crate) fn sistem_ortamini_degistir(&self, ortam: Vec<(String, String)>) {
+        self.durum().sistem_ortami = ortam;
+    }
+
     pub fn yalitim_dizini(&self) -> &Path {
         &self.yalitim_dizini
     }

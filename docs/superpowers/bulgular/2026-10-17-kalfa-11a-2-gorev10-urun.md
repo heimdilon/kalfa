@@ -82,3 +82,14 @@ Doğrulama (yerel `.yerel/mcp-tasarim-inceleme/11A2-CLAUDE-g10-{WINDOWS,WSL}.log
   koşusu bu davranışsız düzeltmelerden önceydi; sonra Windows fmt, iki
   clippy ve `mcp_komutlari` yeniden geçti.
 - Görev 9'a göre workspace ve e2e +2, iki platformda da.
+
+## CI düzeltmesi: test düzeneği süreç ortamını okuyordu
+
+`6acab8f`'nin Windows CI'ında `mcp_komutlari`'nın iki testi "MCP tanımı
+doğrulanamadı" ile düştü. CI testleri `kalfatest` kullanıcısıyla, yönetici
+oturumunun PATH'iyle koşar. `McpTanim::hazirla` PATH'in her dizinini çözer;
+okunamayan dizin (`runneradmin` profili) bilerek ret verir. Test uygulaması
+ise MCP yöneticisine gerçek süreç ortamını veriyordu. Ürün davranışı
+değişmedi: `test_destek` artık yöneticiye yalnız `PATH=<veri dizini>` verir.
+WSL'de `kalfatest` için okunamayan `/root/.cargo/bin` PATH'e eklenince
+düzeltmeden önce 0/2, sonra 2/2.
