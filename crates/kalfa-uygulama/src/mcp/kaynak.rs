@@ -1,5 +1,5 @@
 //! Çalışma alanı başına sürümlü MCP araç yayımı ve tanım denetimlerinin
-//! sahiplenilmesi (Görev 8).
+//! sahiplenilmesi (Görev 8); alan planlayıcısıyla keşfe bağlanması (Görev 9).
 //!
 //! Keşfi biten sunucunun denetimi `denetim_bekliyor` ile bekletilir. Denetim
 //! yalnız aktif turu olan bir oturum `denetim_islerini_al` ile sahiplenince,
@@ -8,7 +8,7 @@
 //! sıradaki uygun oturum sahiplenir. Yayım değişmezdir; yeni sürüm bir sonraki
 //! model turunun görüntüsüne girer.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -49,9 +49,19 @@ impl Durum {
     }
 }
 
+/// Sahiplenmeden hemen önce alınan plan (Görev 9): etkin sunucular ve bu
+/// turda kurulacak işler. Etkin olmayan sunucunun yayımı ve bekleyeni düşer.
+pub struct McpAlanPlani {
+    pub etkinler: BTreeSet<String>,
+    pub isler: Vec<(String, McpDenetimIsi)>,
+}
+
+pub type McpAlanPlanlayici = Arc<dyn Fn(&McpAlanAracKaynagi) -> McpAlanPlani + Send + Sync>;
+
 pub struct McpAlanAracKaynagi {
     ben: Weak<Self>,
     durum: Mutex<Durum>,
+    planlayici: Mutex<Option<McpAlanPlanlayici>>,
 }
 
 impl McpAlanAracKaynagi {
@@ -59,11 +69,47 @@ impl McpAlanAracKaynagi {
         Arc::new_cyclic(|ben| Self {
             ben: ben.clone(),
             durum: Mutex::default(),
+            planlayici: Mutex::default(),
         })
     }
 
     fn durum(&self) -> MutexGuard<'_, Durum> {
         self.durum.lock().unwrap_or_else(|z| z.into_inner())
+    }
+
+    /// Alanın planlayıcısını bir kez bağlar; sonraki çağrılar etkisizdir.
+    pub fn planlayici_yoksa_ayarla(&self, planlayici: McpAlanPlanlayici) {
+        self.planlayici
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .get_or_insert(planlayici);
+    }
+
+    pub fn yayimda_mi(&self, anahtar: &str) -> bool {
+        self.durum().yayim.contains_key(anahtar)
+    }
+
+    fn plani_uygula(&self, plan: McpAlanPlani) {
+        let mut d = self.durum();
+        let once = d.yayim.len();
+        d.yayim.retain(|anahtar, _| plan.etkinler.contains(anahtar));
+        if d.yayim.len() != once {
+            d.yeniden_yayimla();
+        }
+        d.bekleyenler
+            .retain(|anahtar, _| plan.etkinler.contains(anahtar));
+        for (anahtar, is) in plan.isler {
+            // Sürmekte olan iş bitmeden aynı sunucu için ikinci iş açılmaz.
+            if d.bekleyenler
+                .get(&anahtar)
+                .is_some_and(|b| b.sahip.is_some())
+            {
+                continue;
+            }
+            drop(d);
+            self.denetim_bekliyor(&anahtar, is);
+            d = self.durum();
+        }
     }
 
     /// `anahtar` sunucusunun denetimini bekletir. Aynı anahtarın eski
@@ -164,6 +210,15 @@ impl AracKaynagi for McpAlanAracKaynagi {
     }
 
     fn denetim_islerini_al(&self, sahip: AracDenetimSahibi) -> Vec<AracDenetimIsi> {
+        // Planlayıcı ayarları ve yöneticiyi okur; kaynak kilidi tutulmadan çağrılır.
+        let planlayici = self
+            .planlayici
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .clone();
+        if let Some(planlayici) = planlayici {
+            self.plani_uygula(planlayici(self));
+        }
         let mut d = self.durum();
         let mut isler: Vec<AracDenetimIsi> = Vec::new();
         for (anahtar, bekleyen) in d.bekleyenler.iter_mut() {

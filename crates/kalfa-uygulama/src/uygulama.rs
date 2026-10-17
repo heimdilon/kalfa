@@ -83,6 +83,8 @@ pub struct Uygulama {
     pub(crate) mcp: Arc<crate::mcp::yonetici::McpYoneticisi>,
     /// Alan başına denetlenmiş MCP araç yayımı (1.1a-2 Görev 8).
     pub(crate) mcp_araclari: crate::mcp::kaynak::McpAracKaynaklari,
+    /// MCP araç tanımlarının denetimi ve `(D, model)` önbelleği (Görev 7, 9).
+    pub(crate) mcp_denetleyici: Arc<crate::mcp::denetim::McpTanimDenetleyicisi>,
     ic: Mutex<IcDurum>,
 }
 
@@ -152,6 +154,11 @@ impl Uygulama {
             },
         );
         *mcp_dinleyici.lock().unwrap_or_else(|z| z.into_inner()) = Some(Arc::downgrade(&mcp));
+        let mcp_denetleyici = crate::mcp::denetim::McpTanimDenetleyicisi::yeni(
+            b.veri_dizini.clone(),
+            ayarlar.clone(),
+            mcp.clone(),
+        );
         Arc::new(Self {
             oturum_dizini: dizin::oturum_dizini(&b.veri_dizini),
             kasa: b.kasa,
@@ -174,6 +181,7 @@ impl Uygulama {
             mcp_kasa,
             mcp,
             mcp_araclari: Default::default(),
+            mcp_denetleyici,
             veri_dizini: b.veri_dizini,
             ev_dizini: b.ev_dizini,
             geri_alma_dizini: b.geri_alma_dizini,

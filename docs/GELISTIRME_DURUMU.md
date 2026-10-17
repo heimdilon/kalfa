@@ -431,7 +431,18 @@ Windows/WSL workspace **1438/1393**, e2e özellikli Rust **260/261**;
 fmt/clippy temiz.
 [Görev 8 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev8-urun.md).
 
-**Sıradaki tek iş:** Görev 9 — Yaşam döngüsünün uygulamaya bağlanması ve kurtarma.
+**Görev 9 tamamlandı (17 Ekim, Claude):** Keşif zinciri alan kaynağına
+bağlandı: her model turu başında etkin sunucular başlatılır/doğrulanır, ilk
+keşifte ya da `R` değişince liste denetlenir, yoksa gerekiyorsa yenilenir;
+`McpArac`'lar yayımlanır. Başlamayan ya da kapatılan sunucunun araçları düşer;
+izinsiz sunucu turu bekletmez ve başlatma kartı birikmez. Yarım MCP çağrısı
+kurtarmada yeniden çalıştırılmaz. Ayrıca G7'nin görünmez Unicode kapısı
+açıklama ve şemalara genişletildi (`c8a8a39`). Windows/WSL workspace
+**1445/1400**, e2e özellikli Rust **265/266**; fmt/clippy temiz.
+[Görev 9 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev9-urun.md).
+
+**Sıradaki tek iş:** Görev 10 — IPC ve yerel onay sınırı (başlatma kartının
+arayüze taşınması dahil).
 UI/WebDriver ve tam MCP kabulü Görev 11–12 kapsamındadır; bu görevde koşulmadı.
 Görev 8–12 için yeni plan onayı gerekmez. Ürün yalnız PR20'nin
 `codex/mcp-11a2-plan` worktree'sinde geliştirilir; ortak main korunur.

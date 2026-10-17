@@ -19,6 +19,10 @@ fn ayarlar() -> OturumAyarlari {
 /// Yarım kalmış bir yazma içeren kayıt: model `yaz` çağırdı, "başladı" yazıldı,
 /// Kalfa sonuç gelmeden kapandı.
 fn yarim_kayit(dizin: &Path) -> (PathBuf, CagriId) {
+    yarim_kayit_adli(dizin, "yaz")
+}
+
+fn yarim_kayit_adli(dizin: &Path, ad: &str) -> (PathBuf, CagriId) {
     let yol = dizin.join("oturum.jsonl");
     let oturum = OturumId::yeni();
     let z = |sira, yuk| Zarf {
@@ -33,7 +37,7 @@ fn yarim_kayit(dizin: &Path) -> (PathBuf, CagriId) {
         id: "m1".into(),
         kind: "function".into(),
         function: FunctionCall {
-            name: "yaz".into(),
+            name: ad.into(),
             arguments: "{\"yol\":\"a.txt\"}".into(),
         },
     };
@@ -68,7 +72,7 @@ fn yarim_kayit(dizin: &Path) -> (PathBuf, CagriId) {
         KayitOgesi::AracBasladi {
             cagri,
             model_cagri_id: "m1".into(),
-            arac: "yaz".into(),
+            arac: ad.into(),
             yedekler: Vec::new(),
         },
     ))
@@ -139,6 +143,62 @@ async fn yarim_kalan_yazma_yeniden_calistirilmaz() {
     assert!(ikinci.tamamlayicilar.is_empty());
     assert_eq!(ikinci.mesajlar[2].tool_call_id.as_deref(), Some("m1"));
     assert_eq!(ikinci.mesajlar[3].content.as_deref(), Some("devam"));
+}
+
+/// Kaynaktan (MCP) gelen araç da kurtarmada yeniden çalıştırılmaz (Görev 9).
+struct TekAracKaynagi(kalfa_core::arac::KaynakAraci);
+
+impl kalfa_core::arac::AracKaynagi for TekAracKaynagi {
+    fn hazir_araclar(&self) -> Arc<[kalfa_core::arac::KaynakAraci]> {
+        Arc::from([self.0.clone()])
+    }
+
+    fn denetim_islerini_al(
+        &self,
+        _sahip: kalfa_core::arac::AracDenetimSahibi,
+    ) -> Vec<kalfa_core::arac::AracDenetimIsi> {
+        Vec::new()
+    }
+}
+
+#[tokio::test]
+async fn yarim_kalan_mcp_cagrisi_yeniden_calistirilmaz() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (yol, cagri) = yarim_kayit_adli(dizin.path(), "mcp__s__yaz");
+    let mcp = Arc::new(SahteArac::yazan("mcp__s__yaz"));
+    let kaynak = Arc::new(TekAracKaynagi(
+        kalfa_core::arac::KaynakAraci::yeni(mcp.clone()).unwrap(),
+    ));
+    let s = SahteSaglayici::yeni(vec![SahteYanit::metin("devam ediyorum")]);
+    let mut baglam = test_baglami(s.clone(), Vec::new(), sanal_siniflandirici());
+    baglam.araclar =
+        Arc::new(kalfa_core::arac::AracKayitDefteri::yeni_kaynakli(Vec::new(), kaynak).unwrap());
+    let (t, o, durum) = devam_et(&yol, ayarlar(), baglam).unwrap();
+    assert_eq!(durum.bilinmeyenler.len(), 1);
+
+    let mut d = Surucu::yeni(t, o);
+    let z = d
+        .bekle(|o| {
+            matches!(
+                o,
+                Olay::AracSonucu {
+                    durum: AracDurumu::SonucuBilinmiyor,
+                    ..
+                }
+            )
+        })
+        .await;
+    assert!(matches!(&z.yuk, Olay::AracSonucu { cagri: c, .. } if *c == cagri));
+    d.gonder(Komut::KullaniciMesaji {
+        metin: "devam".into(),
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(
+        mcp.cagri_sayisi(),
+        0,
+        "yarım MCP çağrısı yeniden çalıştırılmaz"
+    );
 }
 
 #[tokio::test]

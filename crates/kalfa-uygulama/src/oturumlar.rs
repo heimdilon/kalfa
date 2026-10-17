@@ -916,10 +916,23 @@ impl Uygulama {
                 .into_iter()
                 .filter(|a| adlar.insert(a.ad().to_string())),
         );
-        let araclar = Arc::new(
-            AracKayitDefteri::yeni_kaynakli(araclar, self.mcp_araclari.al(&alan_kimligi))
-                .map_err(ic_hata)?,
+        // Alanın MCP araçları her model turunun başında bu kaynaktan gelir;
+        // planlayıcı keşfi ve yayımı aktif turlu oturumun bütçesiyle yürütür.
+        let mcp_kaynagi = self.mcp_araclari.al(&alan_kimligi);
+        mcp_kaynagi.planlayici_yoksa_ayarla(
+            crate::mcp::baglanti::McpAlanBaglantisi::yeni(
+                alan_kimligi.clone(),
+                kok.to_path_buf(),
+                self.mcp.clone(),
+                self.mcp_denetleyici.clone(),
+                self.ayarlar.clone(),
+                self.denetci.clone(),
+                self.ayarlar.denetci_kipi_kaynagi(),
+            )
+            .planlayici(),
         );
+        let araclar =
+            Arc::new(AracKayitDefteri::yeni_kaynakli(araclar, mcp_kaynagi).map_err(ic_hata)?);
         Ok(OturumBaglami {
             saglayici: self.evren.clone(),
             araclar,

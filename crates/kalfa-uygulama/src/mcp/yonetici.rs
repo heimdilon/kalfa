@@ -123,7 +123,7 @@ pub struct McpBaslatmaKarti {
     pub wde_kodlu: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct BekleyenBaslatmaKarti {
     alan_kimligi: String,
     sunucu: String,
@@ -768,6 +768,20 @@ impl McpYoneticisi {
         }
     }
 
+    /// Otomatik başlatma her turda yeniden denenir (Görev 9). Aynı koşullarla
+    /// bekleyen kart varsa onun kimliği yeniden verilir; yoksa aynı (alan,
+    /// sunucu) için eskimiş kartlar düşer ve yenisi eklenir. Kartlar birikmez.
+    fn karti_bekletmeye_al(d: &mut YoneticiDurumu, kart: BekleyenBaslatmaKarti) -> String {
+        if let Some((kimlik, _)) = d.bekleyen_kartlar.iter().find(|(_, k)| **k == kart) {
+            return kimlik.clone();
+        }
+        d.bekleyen_kartlar
+            .retain(|_, k| !(k.alan_kimligi == kart.alan_kimligi && k.sunucu == kart.sunucu));
+        let kimlik = format!("mcp-baslat-{}", Uuid::new_v4());
+        d.bekleyen_kartlar.insert(kimlik.clone(), kart);
+        kimlik
+    }
+
     /// Model dışı başlatma izni kartı oluşturur (§5.1).
     pub fn baslatma_karti_olustur(
         &self,
@@ -1178,9 +1192,8 @@ impl McpYoneticisi {
                 &on_politika_ozeti,
                 hazir.kod_guveni,
             ) {
-                let istek_kimligi = format!("mcp-baslat-{}", Uuid::new_v4());
-                d.bekleyen_kartlar.insert(
-                    istek_kimligi.clone(),
+                let istek_kimligi = Self::karti_bekletmeye_al(
+                    &mut d,
                     BekleyenBaslatmaKarti {
                         alan_kimligi: alan_kimligi.to_owned(),
                         sunucu: sunucu.to_owned(),
@@ -1274,9 +1287,8 @@ impl McpYoneticisi {
             if guncel_w != baslangic_w {
                 // Koruma taraması sürerken başka bir yazma araya girdi!
                 if hazir.kod_guveni == KodGuveni::WdeKodlu {
-                    let istek_kimligi = format!("mcp-baslat-{}", Uuid::new_v4());
-                    d.bekleyen_kartlar.insert(
-                        istek_kimligi.clone(),
+                    let istek_kimligi = Self::karti_bekletmeye_al(
+                        &mut d,
                         BekleyenBaslatmaKarti {
                             alan_kimligi: alan_kimligi.to_owned(),
                             sunucu: sunucu.to_owned(),
@@ -1302,9 +1314,8 @@ impl McpYoneticisi {
                 &guncel_pi,
                 hazir.kod_guveni,
             ) {
-                let istek_kimligi = format!("mcp-baslat-{}", Uuid::new_v4());
-                d.bekleyen_kartlar.insert(
-                    istek_kimligi.clone(),
+                let istek_kimligi = Self::karti_bekletmeye_al(
+                    &mut d,
                     BekleyenBaslatmaKarti {
                         alan_kimligi: alan_kimligi.to_owned(),
                         sunucu: sunucu.to_owned(),
@@ -2503,6 +2514,7 @@ mod tests {
         cagri_hatasi: Option<McpHatasi>,
         kapanis_sonucu: KapanisSonucu,
         kapandi: AtomicBool,
+        araclar: Vec<Tool>,
     }
 
     impl McpSurecUcu for SahteSurecUcu {
@@ -2526,6 +2538,7 @@ mod tests {
             let cagri_beklet = self.cagri_beklet.clone();
             let cagri_basladi = self.cagri_basladi.clone();
             let cagri_hatasi = self.cagri_hatasi.clone();
+            let araclar = self.araclar.clone();
             Box::pin(async move {
                 if let Some(b) = cagri_basladi {
                     b.notify_one();
@@ -2536,7 +2549,7 @@ mod tests {
                 if let Some(hata) = cagri_hatasi {
                     return Err(hata);
                 }
-                Ok(Vec::new())
+                Ok(araclar)
             })
         }
 
@@ -2601,6 +2614,8 @@ mod tests {
         cagri_hatasi: Mutex<Option<McpHatasi>>,
         baslatma_hatalari_kalan: AtomicUsize,
         kapanis_sonucu: Mutex<KapanisSonucu>,
+        /// Sahte sürecin `tools/list` yanıtı.
+        araclar: Mutex<Vec<Tool>>,
     }
 
     impl SahteSurecBaslatici {
@@ -2618,6 +2633,7 @@ mod tests {
                 kapat_basladi: Mutex::new(None),
                 cagri_hatasi: Mutex::new(None),
                 baslatma_hatalari_kalan: AtomicUsize::new(0),
+                araclar: Mutex::new(Vec::new()),
                 kapanis_sonucu: Mutex::new(KapanisSonucu {
                     kendiliginden: true,
                     cikis: Some(0),
@@ -2664,6 +2680,7 @@ mod tests {
                 cagri_hatasi: self.cagri_hatasi.lock().unwrap().clone(),
                 kapanis_sonucu: self.kapanis_sonucu.lock().unwrap().clone(),
                 kapandi: AtomicBool::new(false),
+                araclar: self.araclar.lock().unwrap().clone(),
             }) as Arc<dyn McpSurecUcu>)
         }
     }
@@ -4108,5 +4125,223 @@ mod tests {
             )
             .await
             .unwrap();
+    }
+
+    /// Görev 9: alan planlayıcısının başlat → keşif → `McpArac` → yayım zinciri.
+    mod alan_baglantisi {
+        use super::*;
+        use crate::mcp::baglanti::McpAlanBaglantisi;
+        use crate::mcp::denetim::McpTanimDenetleyicisi;
+        use crate::mcp::kaynak::McpAlanAracKaynagi;
+        use kalfa_core::arac::{AracDenetimSahibi, AracKaynagi};
+        use kalfa_core::butce::ButceTalepci;
+        use kalfa_core::denetci::DenetimKipi;
+        use kalfa_sandbox::tarama::CancellationToken;
+
+        fn tool(ad: &str) -> Tool {
+            let sema = serde_json::json!({"type": "object"});
+            Tool::new(
+                ad.to_owned(),
+                "okur".to_owned(),
+                Arc::new(sema.as_object().cloned().unwrap()),
+            )
+        }
+
+        fn kaynak_kur(test: &TestOrtami) -> Arc<McpAlanAracKaynagi> {
+            kaynak_kur_alan(test, &test.alan_kimligi, &test.proje_koku)
+        }
+
+        fn kaynak_kur_alan(
+            test: &TestOrtami,
+            alan_kimligi: &str,
+            kok: &Path,
+        ) -> Arc<McpAlanAracKaynagi> {
+            let denetleyici = McpTanimDenetleyicisi::yeni(
+                test.veri_dizini.clone(),
+                test.ayarlar.clone(),
+                test.yonetici.clone(),
+            );
+            let baglanti = McpAlanBaglantisi::yeni(
+                alan_kimligi.to_owned(),
+                kok.to_path_buf(),
+                test.yonetici.clone(),
+                denetleyici,
+                test.ayarlar.clone(),
+                Arc::new(kalfa_core::denetci::Yok),
+                Arc::new(std::sync::RwLock::new(DenetimKipi::Kapali)),
+            );
+            let kaynak = McpAlanAracKaynagi::yeni();
+            kaynak.planlayici_yoksa_ayarla(baglanti.planlayici());
+            kaynak
+        }
+
+        /// Bir model turunun başı: sahiplen ve işleri bitir.
+        async fn tur(kaynak: &McpAlanAracKaynagi, oturum: OturumId) -> Vec<String> {
+            let (butce, _alici) = ButceTalepci::kanal();
+            let sahip = AracDenetimSahibi {
+                oturum,
+                butce,
+                iptal: CancellationToken::new(),
+            };
+            for is in kaynak.denetim_islerini_al(sahip) {
+                is.await;
+            }
+            kaynak
+                .hazir_araclar()
+                .iter()
+                .map(|a| a.ad().to_owned())
+                .collect()
+        }
+
+        fn etkinlik(test: &TestOrtami, sunucu: &str, etkin: bool) {
+            let (mut ayar, rev) = test.ayarlar.mcp_ayarlarini_oku();
+            for s in &mut ayar.sunucular {
+                if s.ad == sunucu {
+                    s.etkin = etkin;
+                }
+            }
+            test.ayarlar.mcp_ayarlarini_kaydet(&ayar, rev).unwrap();
+        }
+
+        #[tokio::test]
+        async fn izinli_sunucu_turda_baslar_kesfedilir_ve_yayimlanir() {
+            let test = TestOrtami::kur();
+            test.harici_sunucu_ekle("harici", McpKipi::Yalitimli);
+            *test.baslatici.araclar.lock().unwrap() = vec![tool("oku")];
+            let oturum = test.siki_oturum_ac();
+            // Başlatma izni (yerel kart) verilir; süreç sonra durdurulur ki
+            // planlayıcı onu kendisi başlatsın.
+            test.onayla_ve_baslat("harici").await;
+            test.yonetici
+                .sunucuyu_durdur_ve_bekle(&test.alan_kimligi, "harici")
+                .await
+                .unwrap();
+            let kaynak = kaynak_kur(&test);
+
+            assert_eq!(tur(&kaynak, oturum).await, vec!["mcp__harici__oku"]);
+            assert_eq!(test.baslatici.sayac(), 2, "planlayıcı süreci başlattı");
+
+            // Değişiklik yoksa aynı yayım kalır; süreç yeniden başlamaz.
+            let surum = kaynak.surum();
+            assert_eq!(tur(&kaynak, oturum).await, vec!["mcp__harici__oku"]);
+            assert_eq!(kaynak.surum(), surum);
+            assert_eq!(test.baslatici.sayac(), 2);
+
+            // Kapatılan sunucunun araçları sonraki turda düşer.
+            etkinlik(&test, "harici", false);
+            assert!(tur(&kaynak, oturum).await.is_empty());
+        }
+
+        /// Başlatma izni geri alınınca ya da alan kaldırılırken sunucu
+        /// başlamaz ve önceki yayımdaki araçları sonraki turda düşer.
+        #[tokio::test]
+        async fn izin_geri_alininca_ve_alan_kaldirilirken_araclar_duser() {
+            let test = TestOrtami::kur();
+            test.harici_sunucu_ekle("harici", McpKipi::Yalitimli);
+            *test.baslatici.araclar.lock().unwrap() = vec![tool("oku")];
+            let oturum = test.siki_oturum_ac();
+            test.onayla_ve_baslat("harici").await;
+            let kaynak = kaynak_kur(&test);
+            assert_eq!(tur(&kaynak, oturum).await, vec!["mcp__harici__oku"]);
+
+            test.yonetici
+                .baslatma_izni_geri_al(&test.alan_kimligi, "harici");
+            assert!(tur(&kaynak, oturum).await.is_empty());
+            assert_eq!(test.baslatici.sayac(), 1, "izinsiz yeniden başlamaz");
+
+            // İzin yeniden verilir; alan kaldırılırken yeni başlatma olmaz.
+            test.onayla_ve_baslat("harici").await;
+            assert_eq!(tur(&kaynak, oturum).await, vec!["mcp__harici__oku"]);
+            let sayac = test.baslatici.sayac();
+            test.yonetici
+                .alan_kapanisini_baslat_ve_bekle(&test.alan_kimligi)
+                .await
+                .unwrap();
+            assert!(tur(&kaynak, oturum).await.is_empty());
+            assert_eq!(test.baslatici.sayac(), sayac);
+        }
+
+        /// Aynı tanım iki alanda ayrı süreçtir; bir alanın izni öbürüne geçmez.
+        #[tokio::test]
+        async fn iki_alan_ayri_izin_ve_ayri_yayim_tutar() {
+            let test = TestOrtami::kur();
+            test.harici_sunucu_ekle("harici", McpKipi::Yalitimli);
+            *test.baslatici.araclar.lock().unwrap() = vec![tool("oku")];
+            let oturum = test.siki_oturum_ac();
+            test.onayla_ve_baslat("harici").await;
+            let ikinci_kok = test.proje_koku.with_file_name("proje-iki");
+            std::fs::create_dir_all(&ikinci_kok).unwrap();
+            let ikinci_alan = CalismaAlaniKaydi::kimlik(&ikinci_kok);
+            let ikinci_oturum = OturumId::yeni();
+            test.yonetici.oturum_kipi_guncelle(
+                &ikinci_alan,
+                Some(&ikinci_kok),
+                ikinci_oturum,
+                Some(Kip::Siki),
+            );
+
+            let birinci = kaynak_kur(&test);
+            let ikinci = kaynak_kur_alan(&test, &ikinci_alan, &ikinci_kok);
+            assert_eq!(tur(&birinci, oturum).await, vec!["mcp__harici__oku"]);
+            assert!(
+                tur(&ikinci, ikinci_oturum).await.is_empty(),
+                "ikinci alan birincinin iznini kullanamaz"
+            );
+            assert_eq!(test.baslatici.sayac(), 1);
+        }
+
+        #[tokio::test]
+        async fn izinsiz_sunucu_baslamaz_araci_gelmez_ve_turu_bekletmez() {
+            let test = TestOrtami::kur();
+            test.harici_sunucu_ekle("harici", McpKipi::Yalitimli);
+            *test.baslatici.araclar.lock().unwrap() = vec![tool("oku")];
+            let oturum = test.siki_oturum_ac();
+            let kaynak = kaynak_kur(&test);
+
+            let araclar = tokio::time::timeout(Duration::from_secs(5), tur(&kaynak, oturum))
+                .await
+                .expect("izinsiz sunucu turu bekletmemeli");
+            assert!(araclar.is_empty());
+            assert_eq!(test.baslatici.sayac(), 0, "izin yokken süreç başlamaz");
+
+            // Her tur yeniden denenen başlatma tek bekleyen kartı yeniden kullanır.
+            let ilk_kart: Vec<String> = test
+                .yonetici
+                .durum()
+                .bekleyen_kartlar
+                .keys()
+                .cloned()
+                .collect();
+            tur(&kaynak, oturum).await;
+            tur(&kaynak, oturum).await;
+            let son_kart: Vec<String> = test
+                .yonetici
+                .durum()
+                .bekleyen_kartlar
+                .keys()
+                .cloned()
+                .collect();
+            assert_eq!(ilk_kart.len(), 1);
+            assert_eq!(son_kart, ilk_kart, "kartlar birikmez, kimlik korunur");
+        }
+
+        #[tokio::test]
+        async fn yalniz_inceleme_oturumu_kalinca_sunucu_baslatilmaz() {
+            let test = TestOrtami::kur();
+            test.harici_sunucu_ekle("harici", McpKipi::Yalitimli);
+            *test.baslatici.araclar.lock().unwrap() = vec![tool("oku")];
+            let oturum = test.siki_oturum_ac();
+            test.onayla_ve_baslat("harici").await;
+            test.yonetici.oturum_kipi_guncelle(
+                &test.alan_kimligi,
+                Some(&test.proje_koku),
+                oturum,
+                Some(Kip::Inceleme),
+            );
+            let kaynak = kaynak_kur(&test);
+
+            assert!(tur(&kaynak, oturum).await.is_empty());
+            assert_eq!(test.baslatici.sayac(), 1, "yalnız izin anındaki başlatma");
+        }
     }
 }
