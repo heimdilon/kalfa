@@ -12,6 +12,7 @@ use kalfa_evren::tipler::{ChatMessage, ChatRequest, ChatResponse, Role};
 
 use super::Oturum;
 use super::arac_asamasi::kaynak_kacisla;
+use crate::arac::AracAnlikGoruntusu;
 use crate::butce::{ButceDenemesi, ButceTalepci, hata_kullanimi, sureli, yanit_kullanimi};
 use crate::gonderim::{IstekAsamasi, IstekSonucu};
 use crate::kayit::{KayitOgesi, OZET_ONEKI, OzetYontemi};
@@ -312,9 +313,8 @@ fn zaman_asimi_hatasi() -> EvrenError {
 
 impl Oturum {
     /// Bağlamın bayt ölçüsü: sistem mesajı, araç tanımları ve mesajlar (§5).
-    pub(super) fn baglam_bayti(&self) -> u64 {
-        let tanimlar = serde_json::to_vec(&self.baglam.araclar.tanimlar(self.ayarlar.kip))
-            .map_or(0, |v| v.len() as u64);
+    pub(super) fn baglam_bayti(&self, goruntu: &AracAnlikGoruntusu) -> u64 {
+        let tanimlar = serde_json::to_vec(goruntu.tanimlar()).map_or(0, |v| v.len() as u64);
         self.ayarlar.sistem_mesaji.len() as u64
             + tanimlar
             + self.mesajlar.iter().map(mesaj_bayti).sum::<u64>()
@@ -323,10 +323,14 @@ impl Oturum {
     /// Bağlam eşiği aşıldıysa eski araç çıktılarını özetler (§5–§9).
     /// `siki`: bağlam aşımından sonra (§11); eşiğe bakılmaz, son çıktılar
     /// korunmaz, bütün adaylar özetlenir. Bir şey değiştiyse `true`.
-    pub(super) async fn baglami_yonet(&mut self, siki: bool) -> Result<bool, BitisNedeni> {
+    pub(super) async fn baglami_yonet(
+        &mut self,
+        siki: bool,
+        goruntu: &AracAnlikGoruntusu,
+    ) -> Result<bool, BitisNedeni> {
         let sinirlar = &self.ayarlar.sinirlar;
         let tavan = pencere(&self.ayarlar.model) / 5 * 4;
-        let bayt = self.baglam_bayti();
+        let bayt = self.baglam_bayti(goruntu);
         let once = self.oran.tahmin(bayt);
         if !siki && once <= sinirlar.baglam_esigi.min(tavan) {
             return Ok(false);
@@ -439,7 +443,7 @@ impl Oturum {
         if adet + yer_tutucu_sayisi == 0 {
             return Ok(false);
         }
-        let sonra = self.oran.tahmin(self.baglam_bayti());
+        let sonra = self.oran.tahmin(self.baglam_bayti(goruntu));
         self.yay(Olay::BaglamOzetlendi {
             adet,
             yer_tutucu: yer_tutucu_sayisi,

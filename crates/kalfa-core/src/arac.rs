@@ -711,7 +711,8 @@ pub enum KayitHatasi {
 
 pub struct AracKayitDefteri {
     araclar: Vec<Arc<dyn Arac>>,
-    semalar: HashMap<String, jsonschema::Validator>,
+    semalar: HashMap<String, Arc<jsonschema::Validator>>,
+    kaynak: Option<Arc<dyn AracKaynagi>>,
 }
 
 impl AracKayitDefteri {
@@ -727,9 +728,29 @@ impl AracKayitDefteri {
                     hata: e.to_string(),
                 }
             })?;
-            semalar.insert(arac.ad().to_string(), dogrulayici);
+            semalar.insert(arac.ad().to_string(), Arc::new(dogrulayici));
         }
-        Ok(Self { araclar, semalar })
+        Ok(Self {
+            araclar,
+            semalar,
+            kaynak: None,
+        })
+    }
+
+    /// Sabit araçlara ek olarak her model turunun başında `kaynak`'ın hazır
+    /// yayımını da görüntüye alan defter (MCP; Görev 8).
+    pub fn yeni_kaynakli(
+        araclar: Vec<Arc<dyn Arac>>,
+        kaynak: Arc<dyn AracKaynagi>,
+    ) -> Result<Self, KayitHatasi> {
+        Ok(Self {
+            kaynak: Some(kaynak),
+            ..Self::yeni(araclar)?
+        })
+    }
+
+    pub fn kaynak(&self) -> Option<&Arc<dyn AracKaynagi>> {
+        self.kaynak.as_ref()
     }
 
     pub fn bul(&self, ad: &str) -> Option<Arc<dyn Arac>> {
@@ -747,27 +768,148 @@ impl AracKayitDefteri {
     /// Argüman metnini JSON olarak çözer ve aracın şemasına karşı doğrular.
     /// Hata metni modele gider; model argümanı düzeltip yeniden deneyebilir.
     pub fn dogrula(&self, ad: &str, argumanlar: &str) -> Result<Value, String> {
-        let dogrulayici = self
-            .semalar
-            .get(ad)
-            .ok_or_else(|| format!("`{ad}` adlı bir araç yok."))?;
-        let metin = if argumanlar.trim().is_empty() {
-            "{}"
-        } else {
-            argumanlar
-        };
-        let deger: Value = serde_json::from_str(metin)
-            .map_err(|e| format!("Argümanlar geçerli JSON değil: {e}"))?;
-        let hatalar: Vec<String> = dogrulayici
-            .iter_errors(&deger)
-            .map(|e| format!("{}: {}", e.instance_path(), e))
-            .collect();
-        if hatalar.is_empty() {
-            Ok(deger)
-        } else {
-            Err(format!("Argümanlar şemaya uymuyor: {}", hatalar.join("; ")))
-        }
+        semaya_gore_dogrula(ad, self.semalar.get(ad).map(Arc::as_ref), argumanlar)
     }
+
+    /// Bir model turunun tek araç görüntüsü. Kaynak yalnız bir kez ve
+    /// beklemeden okunur; hazır olmayan keşif turu bekletmez. İnceleme
+    /// kipinde kaynak araçları görüntüye hiç girmez.
+    pub fn anlik_goruntu(&self, kip: Kip) -> AracAnlikGoruntusu {
+        let mut tanimlar = self.tanimlar(kip);
+        let mut araclar: HashMap<String, (Arc<dyn Arac>, Arc<jsonschema::Validator>)> = self
+            .araclar
+            .iter()
+            .filter_map(|a| {
+                let sema = self.semalar.get(a.ad())?.clone();
+                Some((a.ad().to_string(), (a.clone(), sema)))
+            })
+            .collect();
+        if let Some(kaynak) = self.kaynak.as_ref().filter(|_| kip != Kip::Inceleme) {
+            for girdi in kaynak.hazir_araclar().iter() {
+                // Sabit araç ya da önceki kaynak girdisi aynı adı tutuyorsa
+                // ikincisi görüntüye girmez.
+                if araclar.contains_key(girdi.ad()) {
+                    continue;
+                }
+                if girdi.arac.sunulur_mu() {
+                    tanimlar.push(girdi.tanim.clone());
+                }
+                araclar.insert(
+                    girdi.ad().to_string(),
+                    (girdi.arac.clone(), girdi.sema.clone()),
+                );
+            }
+        }
+        AracAnlikGoruntusu { tanimlar, araclar }
+    }
+}
+
+fn semaya_gore_dogrula(
+    ad: &str,
+    dogrulayici: Option<&jsonschema::Validator>,
+    argumanlar: &str,
+) -> Result<Value, String> {
+    let dogrulayici = dogrulayici.ok_or_else(|| format!("`{ad}` adlı bir araç yok."))?;
+    let metin = if argumanlar.trim().is_empty() {
+        "{}"
+    } else {
+        argumanlar
+    };
+    let deger: Value =
+        serde_json::from_str(metin).map_err(|e| format!("Argümanlar geçerli JSON değil: {e}"))?;
+    let hatalar: Vec<String> = dogrulayici
+        .iter_errors(&deger)
+        .map(|e| format!("{}: {}", e.instance_path(), e))
+        .collect();
+    if hatalar.is_empty() {
+        Ok(deger)
+    } else {
+        Err(format!("Argümanlar şemaya uymuyor: {}", hatalar.join("; ")))
+    }
+}
+
+/// Bir model turunun araç görüntüsü (Görev 8). Sağlayıcı isteği, gönderim
+/// günlüğü, ad çözümlemesi ve argüman doğrulaması aynı görüntüyü kullanır;
+/// tur sürerken kaynakta yayımlanan yeni sürüm bir sonraki model turunda görünür.
+pub struct AracAnlikGoruntusu {
+    tanimlar: Vec<ToolDef>,
+    araclar: HashMap<String, (Arc<dyn Arac>, Arc<jsonschema::Validator>)>,
+}
+
+impl AracAnlikGoruntusu {
+    pub fn tanimlar(&self) -> &[ToolDef] {
+        &self.tanimlar
+    }
+
+    pub fn bul(&self, ad: &str) -> Option<Arc<dyn Arac>> {
+        self.araclar.get(ad).map(|(arac, _)| arac.clone())
+    }
+
+    pub fn dogrula(&self, ad: &str, argumanlar: &str) -> Result<Value, String> {
+        semaya_gore_dogrula(
+            ad,
+            self.araclar.get(ad).map(|(_, sema)| sema.as_ref()),
+            argumanlar,
+        )
+    }
+}
+
+/// Kaynağın yayımladığı değişmez araç girdisi. Tanım ve şema yapılırken bir
+/// kez okunur; görüntü sarmalayıcıyı yeniden sorgulamaz. Böylece modelin
+/// gördüğü tanım, doğrulanan şema ve çalışan sarmalayıcı aynı sürümdendir.
+#[derive(Clone)]
+pub struct KaynakAraci {
+    tanim: ToolDef,
+    sema: Arc<jsonschema::Validator>,
+    arac: Arc<dyn Arac>,
+}
+
+impl KaynakAraci {
+    /// Harici başvurulu şema derleyiciye ulaşmadan reddedilir.
+    pub fn yeni(arac: Arc<dyn Arac>) -> Result<Self, KayitHatasi> {
+        let sema = arac.parametre_semasi();
+        let gecersiz = |hata: String| KayitHatasi::GecersizSema {
+            arac: arac.ad().to_string(),
+            hata,
+        };
+        if harici_ref_var_mi(&sema) {
+            return Err(gecersiz("harici başvuru".into()));
+        }
+        let dogrulayici = jsonschema::validator_for(&sema).map_err(|e| gecersiz(e.to_string()))?;
+        Ok(Self {
+            tanim: ToolDef::function(arac.ad(), arac.aciklama(), sema),
+            sema: Arc::new(dogrulayici),
+            arac,
+        })
+    }
+
+    pub fn ad(&self) -> &str {
+        &self.tanim.function.name
+    }
+}
+
+/// Bağımsız görev olarak başlatılan tanım denetimi.
+pub type AracDenetimIsi = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+
+/// Tanım denetiminin bütçe ve günlük sahibi: aktif turu olan oturum. `iptal`
+/// turun belirtecidir; tur bitince ya da oturum kapanınca tetiklenir.
+#[derive(Clone)]
+pub struct AracDenetimSahibi {
+    pub oturum: crate::kimlik::OturumId,
+    pub butce: ButceTalepci,
+    pub iptal: CancellationToken,
+}
+
+/// Oturum dışında yayımlanan araçların kaynağı (MCP). Core `kalfa-mcp`'yi
+/// tanımaz; uygulama alan başına denetlenmiş ve sürümlü kümeyi buradan verir.
+pub trait AracKaynagi: Send + Sync {
+    /// Son hazır yayım. Senkron ve kısadır; keşfi ya da denetimi beklemez.
+    fn hazir_araclar(&self) -> Arc<[KaynakAraci]>;
+
+    /// Bekleyen tanım denetimlerini bu sahiple sahiplenir. Oturum dönen
+    /// işleri bağımsız görev olarak başlatır, beklemez; böylece işlerin
+    /// bütçe talepleri oturumun olay döngüsünde işlenir.
+    fn denetim_islerini_al(&self, sahip: AracDenetimSahibi) -> Vec<AracDenetimIsi>;
 }
 
 // MCP çalışma tarifinin ayrı özet ve sayaç tipleri.

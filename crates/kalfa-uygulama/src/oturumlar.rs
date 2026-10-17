@@ -916,7 +916,10 @@ impl Uygulama {
                 .into_iter()
                 .filter(|a| adlar.insert(a.ad().to_string())),
         );
-        let araclar = Arc::new(AracKayitDefteri::yeni(araclar).map_err(ic_hata)?);
+        let araclar = Arc::new(
+            AracKayitDefteri::yeni_kaynakli(araclar, self.mcp_araclari.al(&alan_kimligi))
+                .map_err(ic_hata)?,
+        );
         Ok(OturumBaglami {
             saglayici: self.evren.clone(),
             araclar,

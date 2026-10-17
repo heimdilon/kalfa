@@ -420,7 +420,18 @@ workspace **1427/1382**, e2e özellikli Rust **255/256**, WSL gerçek yalıtım
 clippy/fmt temiz.
 [Görev 7 raporu](superpowers/bulgular/2026-10-16-kalfa-11a-2-gorev7-urun.md).
 
-**Sıradaki tek iş:** Görev 8 — Tek tur görüntüsü ve bütçe olay akışı.
+**Görev 8 tamamlandı (17 Ekim, Claude):** Her model turu başında tek araç
+görüntüsü (`AracAnlikGoruntusu`) alınır; istek, `AracTanimlari` günlüğü,
+429/413 tekrarları, ad çözümlemesi ve argüman doğrulaması aynı görüntüyü
+kullanır. Core `AracKaynagi` dikişi `kalfa-mcp`'yi tanımaz; tanım denetimleri
+yalnız aktif turda, oturumun bütçesiyle bağımsız görev olarak sahiplenilir ve
+oturumu kilitlemez. Uygulama alan başına `McpAlanAracKaynagi` yayımlar (tek
+sahip, sonuçsuzda geri verme, nesil). Keşfin bu kaynağa bağlanması Görev 9.
+Windows/WSL workspace **1438/1393**, e2e özellikli Rust **260/261**;
+fmt/clippy temiz.
+[Görev 8 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev8-urun.md).
+
+**Sıradaki tek iş:** Görev 9 — Yaşam döngüsünün uygulamaya bağlanması ve kurtarma.
 UI/WebDriver ve tam MCP kabulü Görev 11–12 kapsamındadır; bu görevde koşulmadı.
 Görev 8–12 için yeni plan onayı gerekmez. Ürün yalnız PR20'nin
 `codex/mcp-11a2-plan` worktree'sinde geliştirilir; ortak main korunur.

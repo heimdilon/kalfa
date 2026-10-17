@@ -21,7 +21,7 @@ use kalfa_evren::tipler::{ChatMessage, DusunceEforu, ToolCall, ToolDef};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
-use crate::arac::AracKayitDefteri;
+use crate::arac::{AracDenetimSahibi, AracKayitDefteri};
 use crate::butce::{
     ButceDevri, ButceDurumu, ButceGorunumu, ButceHatasi, ButceIslemId, ButceMesaji, ButceSinirlari,
     ButceTalebi, ButceTalepci, eski_kayit_devri,
@@ -1512,8 +1512,9 @@ impl Oturum {
                     ),
                 };
             }
-            if let AsamaSonucu::Bitir(neden) =
-                self.arac_asamasi(cevap.cagrilar, &mut hata_sayaci).await
+            if let AsamaSonucu::Bitir(neden) = self
+                .arac_asamasi(cevap.cagrilar, &cevap.goruntu, &mut hata_sayaci)
+                .await
             {
                 return neden;
             }
@@ -2068,6 +2069,27 @@ impl Oturum {
             .unwrap_or_default();
         for islem in acik {
             self.butce_bitir(islem, None).await;
+        }
+    }
+
+    /// Kaynağın bekleyen tanım denetimlerini bu oturumun aktif turuna bağlar
+    /// ve bağımsız görev olarak başlatır; beklemez (Görev 8). Bütçe talepleri
+    /// oturumun olay döngülerinde işlenir. Boşta ya da İnceleme kipinde
+    /// denetim sahiplenilmez: o kipte kaynak araçları zaten sunulmaz.
+    fn tanim_denetimlerini_baslat(&self) {
+        let Some(kaynak) = self.baglam.araclar.kaynak() else {
+            return;
+        };
+        if self.tur.is_none() || self.iptal.is_cancelled() || self.ayarlar.kip == Kip::Inceleme {
+            return;
+        }
+        let sahip = AracDenetimSahibi {
+            oturum: self.kimlik,
+            butce: self.butce_talepci(),
+            iptal: self.iptal.clone(),
+        };
+        for is in kaynak.denetim_islerini_al(sahip) {
+            tokio::spawn(is);
         }
     }
 

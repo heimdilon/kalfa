@@ -16,8 +16,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::{Etki, Oturum};
 use crate::arac::{
-    Arac, AracCiktisi, AracHatasi, AracOrtami, AracTamamlama, CiktiGonderici, CiktiParcasi,
-    DosyaDegisiklikleri, GonderimTalebi, GonderimYaniti, Hazirlik, OrtamIstegi,
+    Arac, AracAnlikGoruntusu, AracCiktisi, AracHatasi, AracOrtami, AracTamamlama, CiktiGonderici,
+    CiktiParcasi, DosyaDegisiklikleri, GonderimTalebi, GonderimYaniti, Hazirlik, OrtamIstegi,
 };
 use crate::butce::ButceIslemId;
 use crate::denetci::{DenetimGirdisi, DenetimKipi, DenetimSonucu};
@@ -263,6 +263,7 @@ impl Oturum {
     pub(super) async fn arac_asamasi(
         &mut self,
         cagrilar: Vec<ToolCall>,
+        goruntu: &AracAnlikGoruntusu,
         hata_sayaci: &mut HashMap<String, u32>,
     ) -> AsamaSonucu {
         let mut siradaki_cagrilar = cagrilar;
@@ -281,7 +282,7 @@ impl Oturum {
                 let plan = if self.iptal.is_cancelled() {
                     Err("tur iptal edildi".into())
                 } else {
-                    self.planla(cagri, &tc, &siniflandirici, &mut korumalar)
+                    self.planla(cagri, &tc, goruntu, &siniflandirici, &mut korumalar)
                         .await
                 };
                 match plan {
@@ -501,13 +502,12 @@ impl Oturum {
         &mut self,
         cagri: CagriId,
         tc: &ToolCall,
+        goruntu: &AracAnlikGoruntusu,
         siniflandirici: &'s Siniflandirici,
         korumalar: &mut Option<TopluSiniflandirici<'s>>,
     ) -> Result<(Planlanan, Karar), String> {
         let ad = tc.function.name.as_str();
-        let arac = self
-            .baglam
-            .araclar
+        let arac = goruntu
             .bul(ad)
             .ok_or_else(|| format!("`{ad}` adlı bir araç yok."))?;
         let kip = self.ayarlar.kip;
@@ -517,7 +517,7 @@ impl Oturum {
         if !arac.sunulur_mu() {
             return Err(format!("`{ad}` aracı şu an kullanılamıyor."));
         }
-        let argumanlar = self.baglam.araclar.dogrula(ad, &tc.function.arguments)?;
+        let argumanlar = goruntu.dogrula(ad, &tc.function.arguments)?;
         // Hazırlık beklerken komut kanalını da işle. Politika sürümünü
         // beklemeden önce al: hazırlık sırasında değişen kip eski işlemi yetkilendirmez.
         let politika = self.politika.load(Ordering::SeqCst);

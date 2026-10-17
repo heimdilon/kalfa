@@ -81,6 +81,8 @@ pub struct Uygulama {
     /// MCP sır kasası ve çalışma alanına bağlı MCP süreç yöneticisi (1.1a-2).
     pub(crate) mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa>,
     pub(crate) mcp: Arc<crate::mcp::yonetici::McpYoneticisi>,
+    /// Alan başına denetlenmiş MCP araç yayımı (1.1a-2 Görev 8).
+    pub(crate) mcp_araclari: crate::mcp::kaynak::McpAracKaynaklari,
     ic: Mutex<IcDurum>,
 }
 
@@ -171,6 +173,7 @@ impl Uygulama {
             eklentiler,
             mcp_kasa,
             mcp,
+            mcp_araclari: Default::default(),
             veri_dizini: b.veri_dizini,
             ev_dizini: b.ev_dizini,
             geri_alma_dizini: b.geri_alma_dizini,
