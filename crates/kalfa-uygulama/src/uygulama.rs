@@ -85,6 +85,9 @@ pub struct Uygulama {
     pub(crate) mcp_araclari: crate::mcp::kaynak::McpAracKaynaklari,
     /// MCP araç tanımlarının denetimi ve `(D, model)` önbelleği (Görev 7, 9).
     pub(crate) mcp_denetleyici: Arc<crate::mcp::denetim::McpTanimDenetleyicisi>,
+    /// Yerel onaylı MCP kayıt defteri ve ana pencerenin MCP kanalı (Görev 10).
+    pub(crate) mcp_kayit: crate::mcp::tanimlar::McpKayitDefteri,
+    pub(crate) mcp_kanali: Arc<crate::mcp::komutlar::McpArayuzKanali>,
     ic: Mutex<IcDurum>,
 }
 
@@ -159,6 +162,16 @@ impl Uygulama {
             ayarlar.clone(),
             mcp.clone(),
         );
+        let mcp_kayit = crate::mcp::tanimlar::McpKayitDefteri::yeni(
+            ayarlar.clone(),
+            mcp_kasa.clone(),
+            b.iletisim.clone(),
+        );
+        let mcp_kanali = crate::mcp::komutlar::McpArayuzKanali::yeni(
+            mcp.clone(),
+            mcp_denetleyici.clone(),
+            ayarlar.clone(),
+        );
         Arc::new(Self {
             oturum_dizini: dizin::oturum_dizini(&b.veri_dizini),
             kasa: b.kasa,
@@ -182,6 +195,8 @@ impl Uygulama {
             mcp,
             mcp_araclari: Default::default(),
             mcp_denetleyici,
+            mcp_kayit,
+            mcp_kanali,
             veri_dizini: b.veri_dizini,
             ev_dizini: b.ev_dizini,
             geri_alma_dizini: b.geri_alma_dizini,

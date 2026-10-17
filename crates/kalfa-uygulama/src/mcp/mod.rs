@@ -4,6 +4,7 @@ pub mod baglanti;
 pub mod denetim;
 pub mod kasa;
 pub mod kaynak;
+pub mod komutlar;
 pub mod koruma;
 pub mod surec;
 pub mod tanimlar;

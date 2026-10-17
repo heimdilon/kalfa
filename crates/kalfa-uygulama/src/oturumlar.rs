@@ -928,6 +928,7 @@ impl Uygulama {
                 self.ayarlar.clone(),
                 self.denetci.clone(),
                 self.ayarlar.denetci_kipi_kaynagi(),
+                Some(self.mcp_kanali.clone()),
             )
             .planlayici(),
         );

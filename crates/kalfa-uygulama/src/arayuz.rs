@@ -61,6 +61,12 @@ pub trait YalitimYazici: Send + Sync + 'static {
     fn gonder(&self, durum: &YalitimDurumu) -> Result<(), String>;
 }
 
+/// MCP durum görüntüsünün ana pencereye yazıldığı yer (Tauri'de `Channel`;
+/// 1.1a-2 Görev 10). Görüntünün `revizyon`'u artar; arayüz eskisini atar.
+pub trait McpYazici: Send + Sync + 'static {
+    fn gonder(&self, durum: &crate::mcp::komutlar::McpDurumuDto) -> Result<(), String>;
+}
+
 /// Bir oturumun kanal mesajlarının yazıldığı yer (Tauri'de `Channel`).
 pub trait KanalYazici: Send + Sync + 'static {
     fn gonder(&self, mesaj: KanalMesaji) -> Result<(), String>;

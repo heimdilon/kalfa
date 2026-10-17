@@ -344,6 +344,9 @@ struct YoneticiDurumu {
     yalitimli_izinler: BTreeMap<McpAnahtari, KaliciYalitimliIzin>,
     gecici_tam_erisim_izinleri: BTreeMap<McpAnahtari, GeciciTamErisimIzni>,
     bekleyen_kartlar: BTreeMap<String, BekleyenBaslatmaKarti>,
+    /// Bekleyen kartların arayüz görüntüsü; kimliği `bekleyen_kartlar`da
+    /// kalmayan görüntü okunurken atılır (Görev 10).
+    kart_gorunumleri: BTreeMap<String, McpBaslatmaKarti>,
     son_politika_ozeti: McpPolitikaOzeti,
     politika_revizyonu: u64,
     sistem_ortami: Vec<(String, String)>,
@@ -439,6 +442,7 @@ impl McpYoneticisi {
                 yalitimli_izinler,
                 gecici_tam_erisim_izinleri: BTreeMap::new(),
                 bekleyen_kartlar: BTreeMap::new(),
+                kart_gorunumleri: BTreeMap::new(),
                 son_politika_ozeti,
                 politika_revizyonu: 1,
                 sistem_ortami,
@@ -811,11 +815,57 @@ impl McpYoneticisi {
             },
         );
 
-        Ok(Self::baslatma_karti_dto(
-            istek_kimligi,
-            alan_kimligi,
-            &hazir,
+        Ok(Self::kart_gorunumunu_kaydet(
+            &mut d,
+            Self::baslatma_karti_dto(istek_kimligi, alan_kimligi, &hazir),
         ))
+    }
+
+    fn kart_gorunumunu_kaydet(d: &mut YoneticiDurumu, kart: McpBaslatmaKarti) -> McpBaslatmaKarti {
+        let YoneticiDurumu {
+            bekleyen_kartlar,
+            kart_gorunumleri,
+            ..
+        } = d;
+        kart_gorunumleri.retain(|kimlik, _| bekleyen_kartlar.contains_key(kimlik));
+        kart_gorunumleri.insert(kart.istek_kimligi.clone(), kart.clone());
+        kart
+    }
+
+    /// Yanıt bekleyen başlatma kartları (arayüzün sohbet ve Ayarlar görüntüsü).
+    pub fn bekleyen_baslatma_kartlari(&self) -> Vec<McpBaslatmaKarti> {
+        let d = self.durum();
+        d.kart_gorunumleri
+            .iter()
+            .filter(|(kimlik, _)| d.bekleyen_kartlar.contains_key(*kimlik))
+            .map(|(_, kart)| kart.clone())
+            .collect()
+    }
+
+    /// Alan kaydındaki kök; arayüz yol göndermediği için komutlar kökü buradan alır.
+    pub fn alan_koku(&self, alan_kimligi: &str) -> Option<PathBuf> {
+        self.durum()
+            .alanlar
+            .get(alan_kimligi)
+            .and_then(|a| a.kok.clone())
+    }
+
+    /// Sunucunun yuvası bulunan alanlar ve çalışma zamanı durumları.
+    pub fn sunucu_alanlari(&self, sunucu: &str) -> Vec<(String, McpSunucuDurumu)> {
+        self.durum()
+            .yuvalar
+            .iter()
+            .filter(|(k, _)| k.sunucu == sunucu)
+            .map(|(k, y)| (k.alan_kimligi.clone(), y.durum.clone()))
+            .collect()
+    }
+
+    pub fn sistem_ortami(&self) -> Vec<(String, String)> {
+        self.durum().sistem_ortami.clone()
+    }
+
+    pub fn yalitim_dizini(&self) -> &Path {
+        &self.yalitim_dizini
     }
 
     fn baslatma_karti_dto(
@@ -1205,7 +1255,10 @@ impl McpYoneticisi {
                     },
                 );
                 return Err(YoneticiHatasi::BaslatmaIzniGerekli(Box::new(
-                    Self::baslatma_karti_dto(istek_kimligi, alan_kimligi, &hazir),
+                    Self::kart_gorunumunu_kaydet(
+                        &mut d,
+                        Self::baslatma_karti_dto(istek_kimligi, alan_kimligi, &hazir),
+                    ),
                 )));
             }
             guncel_w
@@ -1300,7 +1353,10 @@ impl McpYoneticisi {
                         },
                     );
                     return Err(YoneticiHatasi::BaslatmaIzniGerekli(Box::new(
-                        Self::baslatma_karti_dto(istek_kimligi, alan_kimligi, &hazir),
+                        Self::kart_gorunumunu_kaydet(
+                            &mut d,
+                            Self::baslatma_karti_dto(istek_kimligi, alan_kimligi, &hazir),
+                        ),
                     )));
                 }
                 return Err(YoneticiHatasi::BaslatmaYarisi);
@@ -1327,7 +1383,10 @@ impl McpYoneticisi {
                     },
                 );
                 return Err(YoneticiHatasi::BaslatmaIzniGerekli(Box::new(
-                    Self::baslatma_karti_dto(istek_kimligi, alan_kimligi, &hazir),
+                    Self::kart_gorunumunu_kaydet(
+                        &mut d,
+                        Self::baslatma_karti_dto(istek_kimligi, alan_kimligi, &hazir),
+                    ),
                 )));
             }
 
@@ -4169,6 +4228,7 @@ mod tests {
                 test.ayarlar.clone(),
                 Arc::new(kalfa_core::denetci::Yok),
                 Arc::new(std::sync::RwLock::new(DenetimKipi::Kapali)),
+                None,
             );
             let kaynak = McpAlanAracKaynagi::yeni();
             kaynak.planlayici_yoksa_ayarla(baglanti.planlayici());

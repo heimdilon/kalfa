@@ -441,8 +441,18 @@ açıklama ve şemalara genişletildi (`c8a8a39`). Windows/WSL workspace
 **1445/1400**, e2e özellikli Rust **265/266**; fmt/clippy temiz.
 [Görev 9 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev9-urun.md).
 
-**Sıradaki tek iş:** Görev 10 — IPC ve yerel onay sınırı (başlatma kartının
-arayüze taşınması dahil).
+**Görev 10 tamamlandı (17 Ekim, Claude):** Ana pencereye 15 MCP komutu
+(durum, ayrıntı, komut seç, taslak, içe aktarma, etkinlik, sil, yeniden
+başlat, başlatma kartı yanıtı, izin geri alma) ve sıralı durum kanalı
+(`mcp_dinle`, artan `revizyon`) eklendi; komut adları, capability ve TS
+sözleşmesi aynı commit'te. Kayıt ve silme yerel pencereyle onaylanır; tam
+erişimli başlatma arayüzün "kabul"üne ek olarak yerel onay ister; arayüz yol
+göndermez. Başlatma artık tura bağlı değil: kısa turda kartın kaybolması
+düzeltildi. Windows/WSL workspace **1447/1402**, e2e özellikli Rust
+**267/268**, arayüz 0/0 ve 435/435; fmt/clippy temiz.
+[Görev 10 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev10-urun.md).
+
+**Sıradaki tek iş:** Görev 11 — Ayarlar, başlatma ve çağrı kartları (Svelte).
 UI/WebDriver ve tam MCP kabulü Görev 11–12 kapsamındadır; bu görevde koşulmadı.
 Görev 8–12 için yeni plan onayı gerekmez. Ürün yalnız PR20'nin
 `codex/mcp-11a2-plan` worktree'sinde geliştirilir; ortak main korunur.
