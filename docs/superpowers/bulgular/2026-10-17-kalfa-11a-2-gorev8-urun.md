@@ -50,6 +50,17 @@ değişmezdir ve sürümü artar.
   talebi o deneme bitince karta düşer. Durdur kararından sonra kart açık
   kalır ve sonraki turda aynı kartın kararıyla sürer.
 
+## Ek düzeltme: görünmez Unicode kapısı (G7)
+
+Push sonrası otomatik güvenlik incelemesi, G7 raporunun aksine görünmez
+Unicode denetiminin `tanimi_denetle` içinde yalnız (zaten ASCII'yle sınırlı)
+birleşik ada uygulandığını buldu; açıklama ve şema metinleri denetlenmiyordu.
+Artık açıklamada ya da giriş/çıkış şemasının herhangi bir yazısında veya
+anahtarında görünmez/yön değiştiren karakter varsa araç sıra numarasıyla
+kapanır (`\n`, `\t`, `\r\n` serbest). Test önce düştü, sonra geçti. Windows
+`kalfa-mcp` 99/0 ve `kalfa-uygulama` 242/0; WSL ikisi birlikte 343/0;
+fmt/clippy temiz.
+
 ## Kanıt
 
 Yeni core entegrasyon testleri (`crates/kalfa-core/tests/arac_goruntusu.rs`,

@@ -142,6 +142,15 @@ pub(crate) fn tanimi_denetle(
         return Err(red());
     }
 
+    // Görünmez ya da yön değiştiren karakter modele/denetçiye/arayüze
+    // gördüğünden farklı metin taşıyabilir; açıklama ve şemalarda da araç kapanır.
+    if uzak_aciklama.is_some_and(gorunmez_var_mi)
+        || semada_metin_var(girdi_semasi, &gorunmez_var_mi)
+        || cikti_semasi.is_some_and(|sema| semada_metin_var(sema, &gorunmez_var_mi))
+    {
+        return Err(red());
+    }
+
     let aciklama = uzak_aciklama.unwrap_or_default();
     let aciklama = utf8_bayt_sinirinda_kirp(aciklama, ACIKLAMA_AZAMI_BAYT).to_owned();
 
@@ -212,14 +221,17 @@ fn metin_sir_iceriyor(metin: &str, sirlar: &[GizliDeger]) -> bool {
 }
 
 fn sema_sir_iceriyor(sema: &Value, sirlar: &[GizliDeger]) -> bool {
+    semada_metin_var(sema, &|metin| metin_sir_iceriyor(metin, sirlar))
+}
+
+/// Şemadaki her yazı ve nesne anahtarı için `kosul`'u dener.
+fn semada_metin_var(sema: &Value, kosul: &dyn Fn(&str) -> bool) -> bool {
     match sema {
-        Value::String(metin) => metin_sir_iceriyor(metin, sirlar),
-        Value::Array(degerler) => degerler
+        Value::String(metin) => kosul(metin),
+        Value::Array(degerler) => degerler.iter().any(|deger| semada_metin_var(deger, kosul)),
+        Value::Object(nesne) => nesne
             .iter()
-            .any(|deger| sema_sir_iceriyor(deger, sirlar)),
-        Value::Object(nesne) => nesne.iter().any(|(anahtar, deger)| {
-            metin_sir_iceriyor(anahtar, sirlar) || sema_sir_iceriyor(deger, sirlar)
-        }),
+            .any(|(anahtar, deger)| kosul(anahtar) || semada_metin_var(deger, kosul)),
         Value::Null | Value::Bool(_) | Value::Number(_) => false,
     }
 }
@@ -338,6 +350,22 @@ mod testler {
         assert!(tanim("ara\u{200b}", None, &json!({"type":"object"}), None).is_err());
         assert!(tanim("ara/oku", None, &json!({"type":"object"}), None).is_err());
         assert!(tanim("", None, &json!({"type":"object"}), None).is_err());
+    }
+
+    #[test]
+    fn aciklama_ve_semalarda_gorunmez_unicode_araci_kapatir() {
+        let nesne = json!({"type":"object"});
+        // Normal satır sonu ve sekme reddedilmez.
+        assert!(tanim(AD, Some("iki\r\nsatır\tsekme"), &nesne, None).is_ok());
+
+        let gizli = "ara\u{202e}tluser";
+        assert!(tanim(AD, Some(gizli), &nesne, None).is_err());
+        let deger = json!({"type":"object","description": gizli});
+        assert!(tanim(AD, None, &deger, None).is_err());
+        let anahtar = json!({"type":"object","properties":{"a\u{200b}":{"type":"string"}}});
+        assert!(tanim(AD, None, &anahtar, None).is_err());
+        let dizi = json!({"type":"object","examples":["\u{e0041}"]});
+        assert!(tanim(AD, None, &nesne, Some(&dizi)).is_err());
     }
 
     #[test]
