@@ -21,6 +21,7 @@
   import type { AnaDurum } from './anaDurum.svelte';
   import ButceAyari from './ButceAyari.svelte';
   import GuvenlikAyarlari from './GuvenlikAyarlari.svelte';
+  import McpSunuculari from './McpSunuculari.svelte';
   import { boyutMetni } from './geriAlma';
 
   let { durum }: { durum: AnaDurum } = $props();
@@ -226,6 +227,8 @@
         {/if}
       </Card>
     {/if}
+
+    <McpSunuculari {durum} />
 
     <GuvenlikAyarlari {durum} />
 

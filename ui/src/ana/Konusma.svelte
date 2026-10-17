@@ -22,6 +22,7 @@
   import type { AnaDurum } from './anaDurum.svelte';
   import { gunAy, projeAdi, satirBasligi } from './bicim';
   import KonusmaOgesi from './KonusmaOgesi.svelte';
+  import McpBaslatmaKarti from './McpBaslatmaKarti.svelte';
 
   let { durum }: { durum: AnaDurum } = $props();
 
@@ -321,6 +322,13 @@
         {:else}
           <p class="bos">{m('konusma.bos')}</p>
         {/each}
+        {#if !ekran.salt_okunur}
+          {#each durum.mcpKartlari(ekran.calisma_alani_kimligi) as kart (kart.istek_kimligi)}
+            <div class="oge">
+              <McpBaslatmaKarti {kart} onyanit={(kabul) => durum.mcpKartiYanitla(kart, kabul)} />
+            </div>
+          {/each}
+        {/if}
       </div>
     </div>
 

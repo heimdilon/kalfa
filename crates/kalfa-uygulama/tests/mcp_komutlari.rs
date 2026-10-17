@@ -10,7 +10,9 @@ use kalfa_core::kimlik::OturumId;
 use kalfa_core::saglayici::Saglayici;
 use kalfa_core::test_destek::{SahteSaglayici, SahteYanit};
 use kalfa_uygulama::arayuz::McpYazici;
+use kalfa_uygulama::mcp::ayarlar::McpKipi;
 use kalfa_uygulama::mcp::komutlar::{McpDurumuDto, McpSunucuFormu};
+use kalfa_uygulama::sozlesme::OturumAcilisi;
 use kalfa_uygulama::test_destek::{SahteKanal, TestUygulamasi, test_uygulamasi};
 use serde_json::json;
 use tempfile::TempDir;
@@ -61,13 +63,16 @@ async fn ortam(senaryo: Vec<SahteYanit>) -> Ortam {
 
 impl Ortam {
     async fn oturum(&self) -> OturumId {
+        self.acilis().await.oturum
+    }
+
+    async fn acilis(&self) -> OturumAcilisi {
         let alan = self.t.uygulama.calisma_alani_sec().await.unwrap();
         self.t
             .uygulama
             .oturum_baslat(alan.kimlik, "glm-5.3".into())
             .await
             .unwrap()
-            .oturum
     }
 
     /// Yerel seçiciyle komut seçip formu arayüzün göndereceği JSON'dan kurar.
@@ -141,7 +146,8 @@ async fn kayit_ve_silme_yerel_onaysiz_olmaz() {
 #[tokio::test]
 async fn baslatma_karti_arayuze_ulasir_tek_kullanimlik_ve_tam_erisim_yerel_onay_ister() {
     let o = ortam(vec![SahteYanit::metin("tamam")]).await;
-    let oturum = o.oturum().await;
+    let acilis = o.acilis().await;
+    let oturum = acilis.oturum;
     o.t.iletisim.onay_ver(true);
     let form = o.form("tam", "tam_erisim").await;
     let taslak = o.t.uygulama.mcp_taslak_olustur(None, form).unwrap();
@@ -182,6 +188,12 @@ async fn baslatma_karti_arayuze_ulasir_tek_kullanimlik_ve_tam_erisim_yerel_onay_
     .await
     .expect("başlatma kartı kanala yazılmalı");
     assert_eq!(kart.sunucu, "tam");
+    assert_eq!(kart.kip, McpKipi::TamErisim);
+    assert_eq!(
+        acilis.calisma_alani_kimligi.as_deref(),
+        Some(kart.alan_kimligi.as_str()),
+        "arayüz kartı oturumun alan kimliğiyle eşler"
+    );
     let revizyonlar: Vec<u64> = yazici
         .0
         .lock()

@@ -33,8 +33,8 @@ use crate::kimlik::{CagriId, IslemId};
 use crate::kisayol::{Kisayol, KisayolTeklifi, teklif};
 use crate::muhur::{OnayMuhru, muhur_hesapla};
 use crate::protokol::{
-    AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OnayOgesi, OnaysizDegisiklikler,
-    OnizlemeNedeni, OnizlemeOgesi,
+    AracDurumu, BitisNedeni, Komut, McpOnayKarti, Olay, OnayKarari, OnayOgesi,
+    OnaysizDegisiklikler, OnizlemeNedeni, OnizlemeOgesi,
 };
 use crate::tur_ozeti::{GeriAlinabilirlik, KomutOzeti, YazilanDosya};
 use crate::yol::CalismaYolu;
@@ -680,6 +680,7 @@ impl Oturum {
                 veri_cikisi: p.hazirlik.veri_cikisi,
                 kisayol: teklifler.get(&p.cagri).cloned(),
                 eklenti: p.hazirlik.eklenti.clone(),
+                mcp: p.hazirlik.mcp.as_ref().map(McpOnayKarti::yeni),
             })
             .collect();
         // Yerel iletişim kutusu komutu çekirdekten okur, webview'dan değil

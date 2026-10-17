@@ -12,6 +12,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
+  import Badge from '../bilesenler/Badge.svelte';
   import Button from '../bilesenler/Button.svelte';
   import Checkbox from '../bilesenler/Checkbox.svelte';
   import DiffView from '../bilesenler/DiffView.svelte';
@@ -195,7 +196,13 @@
       <div class="onizleme">
         <div class="onizleme-ust">
           <Icon
-            name={aktifOge.kabuk ? 'square-terminal' : aktifOge.eklenti ? 'puzzle' : 'file-text'}
+            name={aktifOge.kabuk
+              ? 'square-terminal'
+              : aktifOge.eklenti
+                ? 'puzzle'
+                : aktifOge.mcp
+                  ? 'box'
+                  : 'file-text'}
             size={16}
           />
           <div class="yol-blogu">
@@ -287,6 +294,31 @@
           </dd>
         </div>
       {/if}
+      {#if aktifOge.mcp}
+        {@const k = aktifOge.mcp}
+        {@const tam = k.erisim === 'TamErisim'}
+        <div class="bilgi">
+          <dt><Icon name="box" size={16} />{m('onay.sayfa.kaynak')}</dt>
+          <dd class="mcp-kaynak">
+            <GorunurMetin metin={m('mcp.onay.kaynak', { sunucu: k.sunucu, arac: k.arac })} />
+            <Badge tone={tam ? 'danger' : 'accent'}>
+              {m(tam ? 'mcp.rozet.tam_erisim' : 'mcp.rozet.yalitimli')}
+            </Badge>
+          </dd>
+        </div>
+        <div class={['bilgi', { uyari: tam }]}>
+          <dt><Icon name="shield" size={16} />{m('mcp.onay.erisim')}</dt>
+          <dd>
+            {#if tam}
+              {m('mcp.onay.tam_erisim')}
+            {:else if k.ag_hostlari.length === 0}
+              {m('mcp.onay.yalitimli_ag_yok')}
+            {:else}
+              <GorunurMetin metin={m('mcp.onay.yalitimli_ag', { hostlar: k.ag_hostlari.join(', ') })} />
+            {/if}
+          </dd>
+        </div>
+      {/if}
       {#if aktifOge.hedefler.length > 0}
         <div class="bilgi">
           <dt><Icon name="folder" size={16} />{m('onay.sayfa.nerede')}</dt>
@@ -337,8 +369,11 @@
     {/if}
 
     <!-- Eklentinin yerel onayını ilk gönderim kartı anlatır. -->
-    {#if ogeler.some((o) => o.yerel_onay && !o.eklenti)}
+    {#if ogeler.some((o) => o.yerel_onay && !o.eklenti && !o.mcp)}
       <p class="yerel"><Icon name="shield-alert" size={16} />{m('onay.kabuk.yerel')}</p>
+    {/if}
+    {#if ogeler.some((o) => o.yerel_onay && o.mcp)}
+      <p class="yerel"><Icon name="shield-alert" size={16} />{m('mcp.onay.yerel')}</p>
     {/if}
 
     <div class="alt">
@@ -615,5 +650,11 @@
   .dugmeler {
     display: flex;
     gap: 12px;
+  }
+  .mcp-kaynak {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
 </style>

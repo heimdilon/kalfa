@@ -452,8 +452,25 @@ düzeltildi. Windows/WSL workspace **1447/1402**, e2e özellikli Rust
 **267/268**, arayüz 0/0 ve 435/435; fmt/clippy temiz.
 [Görev 10 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev10-urun.md).
 
-**Sıradaki tek iş:** Görev 11 — Ayarlar, başlatma ve çağrı kartları (Svelte).
-UI/WebDriver ve tam MCP kabulü Görev 11–12 kapsamındadır; bu görevde koşulmadı.
+**Görev 11 tamamlandı (17 Ekim, Claude):** Ayarlar'da Eklentiler'den
+ayrı MCP sunucuları bölümü eklendi: rozet ve açıklaması, alan başına durum,
+araç sayısı, izin geri alma ve yeniden başlatma. Form yalıtımlı başlar;
+Gözat kimlik döner. Tam erişimde ağ alanı gizlenir ve kalıcı uyarı çıkar.
+Gizli değer parola alanındadır ve geri gelmez. JSON içe aktarmada metin
+gönderilince silinir. Ayrıntıda tanım denetimi durumları görünür.
+Sohbette model dışı başlatma kartı yalnız aynı alanın oturumunda çıkar ve
+sohbeti bekletmez. Onay sayfasında MCP kaynağı, rozet ve erişim satırı;
+MCP kısayolu ve araç kartı rozeti eklendi. Arka uca üç sözleşme alanı
+eklendi: `OnayOgesi.mcp`, kartın `kip`'i ve
+`OturumAcilisi.calisma_alani_kimligi`. Arayüz 0/0 ve **459/459**;
+Windows/WSL workspace **1447/1402**, e2e özellikli Rust **267/268**;
+fmt/clippy temiz.
+[Görev 11 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev11-urun.md).
+
+**Sıradaki tek iş:** Görev 12 — iki platformda tam kabul ve kapanış
+(gerçek yalıtım sunucusu, §11 matrisi, WebDriver e2e, rapor).
+Gerçek WebDriver e2e ve tam MCP kabulü Görev 12 kapsamındadır; bu görevde
+koşulmadı.
 Görev 8–12 için yeni plan onayı gerekmez. Ürün yalnız PR20'nin
 `codex/mcp-11a2-plan` worktree'sinde geliştirilir; ortak main korunur.
 PR taslak ve kullanıcı kararı olmadan birleşmez; yeni indirme, Cargo

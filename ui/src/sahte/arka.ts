@@ -23,6 +23,10 @@ import type {
   Kip,
   KomutHatasi,
   KurulumSonucu,
+  McpDurumu,
+  McpIceAktarmaOnizlemesi,
+  McpSunucuAyrintisi,
+  McpSunucuFormu,
   Olay,
   OnarimSonucu,
   OnayOgesi,
@@ -31,6 +35,7 @@ import type {
   OturumId,
   OturumSatiri,
   SartMetni,
+  SeciliKomutBilgisi,
   SartPenceresiDurumu,
   TurId,
   UygulamaDurumu,
@@ -47,6 +52,11 @@ interface SahteOturum {
   acilis: OturumAcilisi;
   satir: OturumSatiri;
   eskiSayfa: GecmisSayfasi;
+}
+
+/** Rust'taki alan kimliğinin sahtesi: aynı yol aynı kimliği verir. */
+export function sahteAlanKimligi(yol: string): string {
+  return `alan:${yol}`;
 }
 
 export function bosOzet(model = 'glm-5.3', kip: Kip = 'Siki'): OturumAcilisi['ozet'] {
@@ -240,6 +250,19 @@ export class SahteArka {
   /** Komutun yerine geçen davranış (önizlemenin senaryosu kullanır). */
   ozel = new Map<string, (a: Argumanlar) => unknown>();
 
+  /** MCP görüntüsü; `mcpDurumuYaz` revizyonu artırıp dinleyene yazar. */
+  mcp: McpDurumu = { revizyon: 1, sunucular: [], baslatma_kartlari: [] };
+  mcpAyrintilari = new Map<string, McpSunucuAyrintisi>();
+  /** MCP kayıt, içe aktarma ve silmenin yerel onay yanıtı. */
+  mcpOnayi = true;
+  /** Başlatma kartı kabulünün sonucu (tam erişimde yerel pencere reddedebilir). */
+  mcpKartSonucu = true;
+  /** `mcp_komut_sec`'in seçimi; `null` vazgeçmektir. */
+  mcpKomutu: SeciliKomutBilgisi | null = { kimlik: 'komut-1', gorunen_ad: 'sunucu.exe' };
+  mcpIceAktarma: McpIceAktarmaOnizlemesi | null = null;
+  #mcpKanali: Channel<McpDurumu> | null = null;
+  #mcpTaslaklari = new Map<string, { eskiAd: string | null; form: McpSunucuFormu }>();
+
   #oturumlar = new Map<OturumId, SahteOturum>();
   #kanallar = new Map<OturumId, Channel<KanalMesaji>>();
   #no = new Map<OturumId, number>();
@@ -257,8 +280,10 @@ export class SahteArka {
     satir: Partial<OturumSatiri> = {},
     eskiSayfa: GecmisSayfasi = { ogeler: [], daha_eski_var: false },
   ): OturumId {
+    const yol = acilis.calisma_alani === undefined ? 'C:\\projeler\\kalfa' : acilis.calisma_alani;
     const tam: OturumAcilisi = {
-      calisma_alani: 'C:\\projeler\\kalfa',
+      calisma_alani: yol,
+      calisma_alani_kimligi: yol === null ? null : sahteAlanKimligi(yol),
       gecmis: { ogeler: [], daha_eski_var: false },
       ozet: bosOzet(),
       salt_okunur: null,
@@ -288,6 +313,7 @@ export class SahteArka {
       acilis: {
         oturum: satir.dosya,
         calisma_alani: null,
+        calisma_alani_kimligi: null,
         gecmis: { ogeler: [], daha_eski_var: false },
         ozet: bosOzet(),
         salt_okunur: null,
@@ -326,6 +352,29 @@ export class SahteArka {
   yalitimDurumu(yeni: YalitimDurumu): void {
     this.uygulama.yalitim = yeni;
     this.#yalitimKanali?.onmessage(yeni);
+  }
+
+  /** MCP görüntüsünü değiştirir; revizyon artar ve dinleyen pencereye yazılır. */
+  mcpDurumuYaz(degisiklik: Partial<Omit<McpDurumu, 'revizyon'>> = {}): void {
+    this.mcp = { ...this.mcp, ...degisiklik, revizyon: this.mcp.revizyon + 1 };
+    this.#mcpKanali?.onmessage(structuredClone(this.mcp));
+  }
+
+  /** Ham MCP görüntüsünü olduğu gibi yazar (eski revizyon testleri). */
+  mcpPaketi(durum: McpDurumu): void {
+    this.#mcpKanali?.onmessage(structuredClone(durum));
+  }
+
+  #mcpKaydet(eskiAd: string | null, form: McpSunucuFormu): void {
+    const ozet = {
+      ad: form.ad,
+      etkin: form.etkin ?? true,
+      kip: form.kip ?? 'yalitimli',
+      gizli_ortam_sayisi: (form.ortam ?? []).filter((o) => o.tur !== 'duz').length,
+    };
+    const eski = this.mcp.sunucular.find((s) => s.ozet.ad === (eskiAd ?? form.ad));
+    const digerleri = this.mcp.sunucular.filter((s) => s !== eski);
+    this.mcpDurumuYaz({ sunucular: [...digerleri, { ozet, alanlar: eski?.alanlar ?? [] }] });
   }
 
   komutlar(ad: string): Argumanlar[] {
@@ -654,6 +703,80 @@ export class SahteArka {
         );
       case 'gunluk_sinir':
         return this.gunlukSinir;
+      case 'mcp_dinle':
+        this.#mcpKanali = a.kanal as Channel<McpDurumu>;
+        this.#mcpKanali.onmessage(structuredClone(this.mcp));
+        return null;
+      case 'mcp_durumu':
+        return structuredClone(this.mcp);
+      case 'mcp_sunucu_ayrintisi': {
+        const ayrinti = this.mcpAyrintilari.get(a.ad as string);
+        if (!ayrinti) throw { kod: 'GecersizGirdi', mesaj: 'MCP sunucusu bulunamadı.' };
+        return structuredClone(ayrinti);
+      }
+      case 'mcp_komut_sec':
+        return this.mcpKomutu;
+      case 'mcp_taslak_olustur': {
+        this.#sayac += 1;
+        const kimlik = `taslak-${this.#sayac}`;
+        this.#mcpTaslaklari.set(kimlik, {
+          eskiAd: (a.eski_ad as string | null) ?? null,
+          form: a.form as McpSunucuFormu,
+        });
+        return { taslak_kimligi: kimlik, kusak: 1 };
+      }
+      case 'mcp_taslak_kaydet': {
+        const taslak = this.#mcpTaslaklari.get(a.taslak_kimligi as string);
+        if (!taslak) throw { kod: 'GecersizGirdi', mesaj: 'Geçersiz veya süresi dolmuş taslak.' };
+        if (!this.mcpOnayi) return false;
+        this.#mcpTaslaklari.delete(a.taslak_kimligi as string);
+        this.#mcpKaydet(taslak.eskiAd, taslak.form);
+        return true;
+      }
+      case 'mcp_ice_aktar_onizle':
+        if (!this.mcpIceAktarma) throw { kod: 'GecersizGirdi', mesaj: 'Geçersiz MCP JSON yapılandırması.' };
+        return structuredClone(this.mcpIceAktarma);
+      case 'mcp_ice_aktar_gizlilik':
+        return 2;
+      case 'mcp_ice_aktar_kaydet': {
+        if (!this.mcpOnayi || !this.mcpIceAktarma) return false;
+        for (const s of this.mcpIceAktarma.sunucular) {
+          this.#mcpKaydet(null, {
+            ad: s.ad,
+            etkin: false,
+            kip: 'yalitimli',
+            komut: { tur: 'program_adi', ad: s.komut_gorunumu },
+            baslatma_zamani_asimi_sn: 30,
+            cagri_zamani_asimi_sn: 120,
+          });
+        }
+        return true;
+      }
+      case 'mcp_etkin_ayarla': {
+        const s = this.mcp.sunucular.find((x) => x.ozet.ad === a.ad);
+        if (s) s.ozet.etkin = Boolean(a.etkin);
+        this.mcpDurumuYaz();
+        return null;
+      }
+      case 'mcp_sil':
+        if (!this.mcpOnayi) return false;
+        this.mcpDurumuYaz({ sunucular: this.mcp.sunucular.filter((x) => x.ozet.ad !== a.ad) });
+        return true;
+      case 'mcp_baslatma_karti_yanitla': {
+        // Kart tek kullanımlık: yanıt ne olursa olsun düşer.
+        const kalan = this.mcp.baslatma_kartlari.filter((k) => k.istek_kimligi !== a.istek_kimligi);
+        const vardi = kalan.length !== this.mcp.baslatma_kartlari.length;
+        this.mcpDurumuYaz({ baslatma_kartlari: kalan });
+        return vardi && Boolean(a.kabul) && this.mcpKartSonucu;
+      }
+      case 'mcp_baslatma_izni_geri_al': {
+        const alan = this.mcp.sunucular
+          .find((x) => x.ozet.ad === a.ad)
+          ?.alanlar.find((x) => x.alan_kimligi === a.alan_kimligi);
+        if (alan) alan.izin = null;
+        this.mcpDurumuYaz();
+        return null;
+      }
       default:
         // mesaj_gonder, turu_iptal_et, arac_onayi, model_degistir, paketi_isledim,
         // baglanti_ac, anahtar_penceresini_ac, sart_penceresini_ac

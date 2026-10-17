@@ -116,6 +116,8 @@ pub struct McpBaslatmaKarti {
     pub istek_kimligi: String,
     pub alan_kimligi: String,
     pub sunucu: String,
+    /// Arayüzün dallandığı kip; `erisim_kipi` onun görünen adıdır.
+    pub kip: crate::mcp::ayarlar::McpKipi,
     pub erisim_kipi: String,
     pub komut_ozeti: String,
     pub ag_listesi: Vec<String>,
@@ -906,6 +908,10 @@ impl McpYoneticisi {
             istek_kimligi,
             alan_kimligi: alan_kimligi.to_owned(),
             sunucu: hazir.ad.clone(),
+            kip: match hazir.kip {
+                CalistirmaKipi::Yalitimli => crate::mcp::ayarlar::McpKipi::Yalitimli,
+                CalistirmaKipi::TamErisim => crate::mcp::ayarlar::McpKipi::TamErisim,
+            },
             erisim_kipi,
             komut_ozeti,
             ag_listesi,

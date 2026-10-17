@@ -210,6 +210,7 @@ impl Uygulama {
         }
         Ok(OturumAcilisi {
             oturum,
+            calisma_alani_kimligi: Some(CalismaAlaniKaydi::kimlik(&kok)),
             calisma_alani: Some(kok.display().to_string()),
             gecmis: GecmisSayfasi {
                 ogeler: Vec::new(),
@@ -347,6 +348,7 @@ impl Uygulama {
         }
         Ok(OturumAcilisi {
             oturum,
+            calisma_alani_kimligi: kok.as_deref().map(CalismaAlaniKaydi::kimlik),
             calisma_alani: kok.map(|k| k.display().to_string()),
             gecmis: ilk_sayfa,
             ozet,

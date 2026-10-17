@@ -487,6 +487,12 @@ async fn mcp_cagri_izinleri_gercek_actor_yolunda_dort_kip_iki_erisim_uygular() {
                         "onaydan önce RPC yok"
                     );
                     assert_eq!(ogeler[0].yerel_onay, erisim == McpErisim::TamErisim);
+                    let kart = ogeler[0].mcp.as_ref().expect("MCP öğesi kart özeti taşır");
+                    assert_eq!(
+                        (kart.sunucu.as_str(), kart.arac.as_str(), kart.erisim),
+                        ("deneme-sunucusu", "oku", erisim)
+                    );
+                    assert!(kart.ag_hostlari.is_empty() && !kart.ag_sinirsiz);
                     if erisim == McpErisim::TamErisim {
                         assert!(ogeler[0].kisayol.is_none());
                         d.gonder(Komut::YerelOnay {

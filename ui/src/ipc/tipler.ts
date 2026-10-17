@@ -82,6 +82,17 @@ export interface OnayOgesi {
   kisayol?: KisayolTeklifi;
   /** Eklenti aracında eklentinin tarifi; ilk gönderim kartı buna bakar (aşama 4 §8.4). */
   eklenti?: EklentiTarifi;
+  /** MCP aracında sunucu, araç, erişim ve ağ (1.1a tasarımı §9). */
+  mcp?: McpOnayKarti;
+}
+
+/** MCP onay kartının özeti; komut, ortam ve yol taşımaz. */
+export interface McpOnayKarti {
+  sunucu: string;
+  arac: string;
+  erisim: 'Yalitimli' | 'TamErisim';
+  ag_hostlari: string[];
+  ag_sinirsiz: boolean;
 }
 
 /** Eklenti aracının kimliği ve yetenekleri (aşama 4 tasarımı §8.1). */
@@ -100,7 +111,9 @@ export interface EklentiTarifi {
 
 export type KisayolTeklifi =
   | { tip: 'Dosya'; arac: string; dizin: string }
-  | { tip: 'Kabuk'; program: string; dizin: string };
+  | { tip: 'Kabuk'; program: string; dizin: string }
+  /** Yalıtımlı MCP aracı; özet alanları arayüzde gösterilmez. */
+  | { tip: 'Mcp'; sunucu: string; arac: string };
 
 /** Oturumdaki bir kısayol (§9.1). */
 export interface Kisayol {
@@ -524,6 +537,8 @@ export type SaltOkunurNedeni =
 export interface OturumAcilisi {
   oturum: OturumId;
   calisma_alani: string | null;
+  /** MCP başlatma kartı oturuma bu kimlikle bağlanır (1.1a tasarımı §5.1). */
+  calisma_alani_kimligi: string | null;
   gecmis: GecmisSayfasi;
   ozet: DurumOzeti;
   salt_okunur: SaltOkunurNedeni | null;
@@ -757,6 +772,8 @@ export interface McpBaslatmaKarti {
   istek_kimligi: string;
   alan_kimligi: string;
   sunucu: string;
+  kip: McpKipi;
+  /** `kip`'in arka uçtaki görünen adı. */
   erisim_kipi: string;
   komut_ozeti: string;
   ag_listesi: string[];

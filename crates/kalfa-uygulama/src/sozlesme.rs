@@ -138,6 +138,8 @@ pub enum SaltOkunurNedeni {
 pub struct OturumAcilisi {
     pub oturum: OturumId,
     pub calisma_alani: Option<String>,
+    /// MCP başlatma kartı bu kimlikle oturuma bağlanır (1.1a tasarımı §5.1).
+    pub calisma_alani_kimligi: Option<String>,
     pub gecmis: GecmisSayfasi,
     pub ozet: DurumOzeti,
     pub salt_okunur: Option<SaltOkunurNedeni>,

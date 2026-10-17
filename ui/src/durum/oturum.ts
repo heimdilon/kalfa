@@ -111,6 +111,7 @@ export interface GeriAlmaOnizlemesi {
 export interface OturumEkrani {
   oturum: OturumId;
   calisma_alani: string | null;
+  calisma_alani_kimligi: string | null;
   salt_okunur: SaltOkunurNedeni | null;
   ogeler: EkranOgesi[];
   daha_eski_var: boolean;
@@ -220,6 +221,7 @@ export function acilistanEkran(acilis: OturumAcilisi): OturumEkrani {
   return {
     oturum: acilis.oturum,
     calisma_alani: acilis.calisma_alani,
+    calisma_alani_kimligi: acilis.calisma_alani_kimligi,
     salt_okunur: acilis.salt_okunur,
     ogeler,
     daha_eski_var: acilis.gecmis.daha_eski_var,
