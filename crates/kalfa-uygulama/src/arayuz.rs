@@ -14,6 +14,12 @@ pub trait Iletisim: Send + Sync {
     /// Yerel klasör seçici; `baslangic` verilirse orada açılır. Vazgeçilirse
     /// `None`.
     async fn klasor_sec(&self, baslik: &str, baslangic: Option<&Path>) -> Option<PathBuf>;
+    /// Yerel dosya seçici; `baslangic` verilirse orada açılır. Vazgeçilirse
+    /// `None`.
+    async fn dosya_sec(&self, baslik: &str, baslangic: Option<&Path>) -> Option<PathBuf> {
+        let _ = (baslik, baslangic);
+        None
+    }
     /// Yerel onay kutusu; `tamam` düğmesi seçilirse `true`.
     async fn onayla(&self, baslik: &str, mesaj: &str, tamam: &str, vazgec: &str) -> bool;
 }
@@ -53,6 +59,12 @@ pub trait Pencereler: Send + Sync {
 /// aşama 2 tasarımı §10.5).
 pub trait YalitimYazici: Send + Sync + 'static {
     fn gonder(&self, durum: &YalitimDurumu) -> Result<(), String>;
+}
+
+/// MCP durum görüntüsünün ana pencereye yazıldığı yer (Tauri'de `Channel`;
+/// 1.1a-2 Görev 10). Görüntünün `revizyon`'u artar; arayüz eskisini atar.
+pub trait McpYazici: Send + Sync + 'static {
+    fn gonder(&self, durum: &crate::mcp::komutlar::McpDurumuDto) -> Result<(), String>;
 }
 
 /// Bir oturumun kanal mesajlarının yazıldığı yer (Tauri'de `Channel`).

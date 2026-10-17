@@ -11,7 +11,8 @@
 
 use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::{future::Future, pin::Pin};
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::ambient_authority;
@@ -30,10 +31,30 @@ use crate::baglanti;
 /// Metin okuma ve arama tek dosyada en çok 8 MiB tutar.
 pub const OKUMA_BAYT_SINIRI: usize = 8 * 1024 * 1024;
 
+/// Çalışma alanında yan etkili bir yazma/düzenleme veya kabuk komutu
+/// başladığında ya da bittiğinde çağrılan bildirim.
+pub type YazmaBildirimi = Arc<dyn Fn() + Send + Sync>;
+
+/// Yan etki sonrasındaki denetimin gerçekten tamamlandığını bildiren gelecek.
+pub type YazmaBitisBildirimi =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
 pub struct CalismaAlani {
     kok: PathBuf,
     dizin: Dir,
     siniflandirici: Arc<Siniflandirici>,
+    yazma_basladi: Option<YazmaBildirimi>,
+    yazma_bitti: Option<YazmaBitisBildirimi>,
+    calisma_zamani: Option<tokio::runtime::Handle>,
+    yazma_denetimleri: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+}
+
+struct YazmaBitisKoruma<'a>(&'a CalismaAlani);
+
+impl Drop for YazmaBitisKoruma<'_> {
+    fn drop(&mut self) {
+        self.0.yazma_bitti_bildir();
+    }
 }
 
 struct TaramaCercevesi {
@@ -54,13 +75,72 @@ pub(crate) struct OncekiDosya {
 impl CalismaAlani {
     /// Sınıflandırıcının köküne tek kaynaktan gelen tutamaç açar.
     pub fn ac(siniflandirici: Arc<Siniflandirici>) -> io::Result<Arc<Self>> {
+        Self::ac_bildirimli(siniflandirici, None, None)
+    }
+
+    /// Yazma kuşağı (`yazma_basladi`) ve yazma sonrası koruma denetimi (`yazma_bitti`)
+    /// bildirimleriyle çalışma alanı tutamacı açar.
+    pub fn ac_bildirimli(
+        siniflandirici: Arc<Siniflandirici>,
+        yazma_basladi: Option<YazmaBildirimi>,
+        yazma_bitti: Option<YazmaBitisBildirimi>,
+    ) -> io::Result<Arc<Self>> {
+        let calisma_zamani = if yazma_bitti.is_some() {
+            Some(tokio::runtime::Handle::try_current().map_err(|_| {
+                io::Error::other("Yazma denetimi için etkin çalışma zamanı gerekli.")
+            })?)
+        } else {
+            None
+        };
         let kok = siniflandirici.kok().to_path_buf();
         let dizin = Dir::open_ambient_dir(&kok, ambient_authority())?;
         Ok(Arc::new(Self {
             kok,
             dizin,
             siniflandirici,
+            yazma_basladi,
+            yazma_bitti,
+            calisma_zamani,
+            yazma_denetimleri: Mutex::new(Vec::new()),
         }))
+    }
+
+    /// Yan etkili bir yazma/düzenleme ya da kabuk işlemi başlamak üzereyken çağrılır.
+    pub fn yazma_basladi_bildir(&self) {
+        if let Some(bildirim) = &self.yazma_basladi {
+            bildirim();
+        }
+    }
+
+    /// Yan etkili işlem tamamlandığında (başarılı, hatalı ya da iptal edilmiş) çağrılır.
+    pub fn yazma_bitti_bildir(&self) {
+        if let (Some(bildirim), Some(calisma_zamani)) = (&self.yazma_bitti, &self.calisma_zamani) {
+            // Future bırakılırsa JoinHandle'ın bırakılması işi iptal etmez.
+            let gorev = calisma_zamani.spawn(bildirim());
+            let mut denetimler = self
+                .yazma_denetimleri
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            denetimler.retain(|g| !g.is_finished());
+            denetimler.push(gorev);
+        }
+    }
+
+    /// Araç sonucu yayımlanmadan önce, senkron yazmanın başlattığı denetimi bekler.
+    pub async fn yazma_bitisini_bekle(&self) -> Result<(), AracHatasi> {
+        let denetimler = {
+            let mut bekleyen = self
+                .yazma_denetimleri
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            std::mem::take(&mut *bekleyen)
+        };
+        for denetim in denetimler {
+            denetim.await.map_err(|_| {
+                AracHatasi::GirisCikis("Yazma sonrası koruma denetimi tamamlanamadı.".into())
+            })?;
+        }
+        Ok(())
     }
 
     pub fn kok(&self) -> &Path {
@@ -335,6 +415,8 @@ impl CalismaAlani {
     }
 
     pub fn yaz(&self, yol: &CalismaYolu, icerik: &[u8]) -> io::Result<()> {
+        self.yazma_basladi_bildir();
+        let _bitis_koruma = YazmaBitisKoruma(self);
         let git = self.git_kimligi()?;
         let (ust, ad) = self.ust_dizin_denetimli(yol, true, git.as_ref())?;
         let mut secenek = OpenOptions::new();
@@ -593,6 +675,8 @@ impl GeriYukleyici for CalismaAlani {
                 "Dosyanın başka bir adı var (hard link); geri yazmak öteki adı da değiştirirdi.",
             ));
         }
+        self.yazma_basladi_bildir();
+        let _bitis_koruma = YazmaBitisKoruma(self);
         match icerik {
             Some(icerik) => {
                 dosya.seek(SeekFrom::Start(0))?;

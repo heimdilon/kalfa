@@ -30,3 +30,5 @@ pub mod e2e;
 pub mod test_destek;
 
 pub use uygulama::{Bilesenler, Uygulama};
+
+pub mod mcp;

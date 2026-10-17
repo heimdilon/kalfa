@@ -1,7 +1,7 @@
 // Önizlemenin sahte verisi ve senaryolu turu. Yalnızca `onizleme.html`
 // kullanır; uygulama paketine girmez. Metinler örnektir, EVREN'den gelmez.
 import type { EklentiIstekOzeti, EklentiTarifi, Kisayol, Olay, OturumId } from '../ipc/tipler';
-import { bosOzet, onayOgesi, SahteArka } from '../sahte/arka';
+import { bosOzet, onayOgesi, sahteAlanKimligi, SahteArka } from '../sahte/arka';
 
 const SAAT = 3600_000;
 const GUN = 24 * SAAT;
@@ -106,6 +106,42 @@ export function anaSenaryosu(windows = false, gunlukSinir = false): SahteArka {
     },
     { ad: 'ornek-notlar', yerlesik: false, acik: false, kullanilamaz: false, gonderim_izni_ms: null },
     { ad: 'bozuk-eklenti', yerlesik: false, acik: false, kullanilamaz: true, gonderim_izni_ms: null },
+  ];
+  // Yerel MCP sunucuları (1.1a tasarımı §9) ve `o1`'in alanında bekleyen
+  // başlatma kartı (§5.1).
+  const mcpAlani = sahteAlanKimligi('C:\\projeler\\kalfa-api');
+  arka.mcp.sunucular = [
+    {
+      ozet: { ad: 'notlar', etkin: true, kip: 'yalitimli', gizli_ortam_sayisi: 1 },
+      alanlar: [
+        {
+          alan_kimligi: mcpAlani,
+          durum: 'calisiyor',
+          kusak: 2,
+          hata: null,
+          izin: 'yalitimli',
+          arac_sayisi: 3,
+        },
+      ],
+    },
+    {
+      ozet: { ad: 'yerel-kabuk', etkin: false, kip: 'tam_erisim', gizli_ortam_sayisi: 0 },
+      alanlar: [],
+    },
+  ];
+  arka.mcp.baslatma_kartlari = [
+    {
+      istek_kimligi: 'mcp-istek-1',
+      alan_kimligi: mcpAlani,
+      sunucu: 'takvim',
+      kip: 'yalitimli',
+      erisim_kipi: 'Yalıtılmış süreç',
+      komut_ozeti: 'npx -y @ornek/takvim-mcp@1.4.0',
+      ag_listesi: ['api.takvim.ornek:443'],
+      uyari:
+        'Sunucu başladığı andan kapanana kadar, araç çağrılmasa da çalışır; çalışma alanına yazabilir ve izinli ağa çıkabilir.',
+      wde_kodlu: false,
+    },
   ];
   // Ayarlar (aşama 2 tasarımı §10.4): "Yeniden dene" yalıtımı bulur.
   if (windows) {

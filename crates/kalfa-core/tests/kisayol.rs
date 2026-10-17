@@ -4,7 +4,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use kalfa_core::arac::{Arac, Hazirlik, YazmaHedefi};
+use kalfa_core::arac::{
+    Arac, Hazirlik, McpAgKarti, McpAracHazirligi, McpAracTanimOzeti, McpBaslatmaSayaci, McpErisim,
+    McpKartEtiketi, McpKorumaOzeti, McpPolitikaOzeti, McpTanimOzeti, McpTarifi,
+    McpYalitimProfiliOzeti, YazmaHedefi,
+};
 use kalfa_core::gorunum::GORUNMEZ_UYARISI;
 use kalfa_core::izin::{
     AGLI_KABUK_UYARISI, ALAN_HAZIRLIGI_UYARISI, AYNI_ADIM_UYARISI, BAGLANTI_UYARISI,
@@ -97,6 +101,35 @@ fn kabuk_hazirligi(t: KabukTarifi) -> Hazirlik {
     Hazirlik {
         tum_calisma_alani: true,
         kabuk: Some(t),
+        ..Default::default()
+    }
+}
+
+fn mcp_hazirligi(
+    tanim: u8,
+    politika: u8,
+    koruma: u8,
+    baslatma: u64,
+    arac_tanimi: u8,
+    erisim: McpErisim,
+) -> Hazirlik {
+    Hazirlik {
+        mcp: Some(McpAracHazirligi {
+            sunucu: McpKartEtiketi::yeni("deneme").unwrap(),
+            arac: McpKartEtiketi::yeni("dosya_oku").unwrap(),
+            kip: Kip::Proje,
+            erisim,
+            ag: McpAgKarti::Kapali,
+            ilk_cagri: false,
+            tarif: McpTarifi::yeni(
+                McpTanimOzeti::ozetten([tanim; 32]),
+                McpPolitikaOzeti::ozetten([politika; 32]),
+                McpKorumaOzeti::ozetten([koruma; 32]),
+                McpYalitimProfiliOzeti::ozetten([4; 32]),
+                McpBaslatmaSayaci::yeni(baslatma),
+            ),
+            arac_tanimi: McpAracTanimOzeti::ozetten([arac_tanimi; 32]),
+        }),
         ..Default::default()
     }
 }
@@ -219,6 +252,43 @@ fn uygunluk_tablosu() {
     assert_eq!(
         teklif("kabuk", &kabuk_hazirligi(tarif(None, ".")), &onayli(&[])),
         None
+    );
+}
+
+#[test]
+fn mcp_kisayolu_t_d_ve_politikayi_baglar_n_ve_k_degisimi_kapsami_korur() {
+    let h = mcp_hazirligi(1, 2, 3, 4, 5, McpErisim::Yalitimli);
+    let k = teklif("mcp__deneme__dosya_oku", &h, &onayli(&[])).unwrap();
+    assert!(k.kapsar("mcp__deneme__dosya_oku", &h));
+    assert!(!k.kapsar("mcp__diger__dosya_oku", &h));
+
+    // N veya yalnız K değişirse R değişse de kapsam korunur.
+    assert!(k.kapsar(
+        "mcp__deneme__dosya_oku",
+        &mcp_hazirligi(1, 2, 9, 40, 5, McpErisim::Yalitimli)
+    ));
+    assert!(k.kapsar(
+        "mcp__deneme__dosya_oku",
+        &mcp_hazirligi(1, 2, 3, 41, 5, McpErisim::Yalitimli)
+    ));
+
+    // T, D veya Π değişince kısayolun bağlandığı onay kapsamı değişir.
+    for guncel in [
+        mcp_hazirligi(8, 2, 3, 4, 5, McpErisim::Yalitimli),
+        mcp_hazirligi(1, 2, 3, 4, 8, McpErisim::Yalitimli),
+        mcp_hazirligi(1, 8, 3, 4, 5, McpErisim::Yalitimli),
+    ] {
+        assert!(!k.kapsar("mcp__deneme__dosya_oku", &guncel));
+    }
+
+    assert_eq!(
+        teklif(
+            "mcp__deneme__dosya_oku",
+            &mcp_hazirligi(1, 2, 3, 4, 5, McpErisim::TamErisim),
+            &onayli(&[])
+        ),
+        None,
+        "tam erişimli MCP aracı kısayol almaz"
     );
 }
 

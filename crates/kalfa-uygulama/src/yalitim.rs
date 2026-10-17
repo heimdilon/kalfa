@@ -29,6 +29,8 @@ pub type Degisince = Box<dyn Fn(&YalitimDurumu) + Send + Sync>;
 /// Ana pencerenin kanalı; tek ana pencere vardır, yeni kanal eskisinin yerini
 /// alır.
 pub(crate) type Dinleyici = Arc<Mutex<Option<Box<dyn YalitimYazici>>>>;
+pub(crate) type McpDinleyici =
+    Arc<Mutex<Option<std::sync::Weak<crate::mcp::yonetici::McpYoneticisi>>>>;
 
 /// Yalıtıcının nereden geldiği.
 pub enum YalitimKaynagi {
@@ -171,6 +173,7 @@ impl Drop for YalitimKaldirmaRezervi<'_> {
             .ic()
             .yalitim_kaldirma_rezervleri
             .remove(&self.kimlik);
+        self.uygulama.mcp.alan_rezervini_kaldir(&self.kimlik);
     }
 }
 
@@ -182,11 +185,20 @@ pub(crate) fn yalitici_kur(
     kalfa_araclari: Vec<PathBuf>,
     kayit: &YalitimAyarlari,
     dinleyici: Dinleyici,
+    mcp_dinleyici: McpDinleyici,
 ) -> Arc<dyn Yalitici> {
     let degisince: Degisince = Box::new(move |d| {
         if let Some(yazici) = dinleyici.lock().unwrap_or_else(|z| z.into_inner()).as_ref() {
             // Kapanmış pencerenin kanalı yazılamaz; yeni pencere yeniden verir.
             let _ = yazici.gonder(d);
+        }
+        if let Some(mcp) = mcp_dinleyici
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
+        {
+            mcp.politika_degisti();
         }
     });
     match kaynak {
@@ -231,9 +243,11 @@ impl Uygulama {
     /// Algılamayı yeniden çalıştırır (§8.3); durum değiştiyse kanala da yazılır.
     pub async fn yalitimi_algila(&self) -> Result<YalitimDurumu, KomutHatasi> {
         let yalitici = self.yalitici.clone();
-        tokio::task::spawn_blocking(move || yalitici.yeniden_algila())
+        let durum = tokio::task::spawn_blocking(move || yalitici.yeniden_algila())
             .await
-            .map_err(|e| KomutHatasi::ic(e.to_string()))
+            .map_err(|e| KomutHatasi::ic(e.to_string()))?;
+        self.mcp.politika_degisti();
+        Ok(durum)
     }
 
     pub fn arac_zinciri_dizinleri(&self) -> Vec<String> {
@@ -305,6 +319,10 @@ impl Uygulama {
             uygulama: self,
             kimlik: alan.kimlik.clone(),
         };
+        self.mcp
+            .alan_kapanisini_baslat_ve_bekle(&alan.kimlik)
+            .await
+            .map_err(|e| KomutHatasi::ic(e.to_string()))?;
         self.yalitici
             .alani_kaldir_kimlikle(&alan.kimlik)
             .map_err(|e| KomutHatasi::ic(format!("Çalışma alanı kaldırılamadı: {e}")))?;
@@ -484,6 +502,7 @@ impl Uygulama {
             }
         })?;
         self.yalitici.okunur_dizinleri_ayarla(yeni.clone());
+        self.mcp.politika_degisti();
         Ok(metinler(&yeni))
     }
 
@@ -494,6 +513,7 @@ impl Uygulama {
             .yalitim_ayarlari
             .dizinleri_degistir(|l| l.retain(|d| d.as_os_str() != yol))?;
         self.yalitici.okunur_dizinleri_ayarla(yeni.clone());
+        self.mcp.politika_degisti();
         Ok(metinler(&yeni))
     }
 

@@ -9,6 +9,7 @@ use kalfa_evren::tipler::{ChatMessage, ChatRequest, ToolCall};
 use kalfa_evren::{AkisOlayi, YanitMeta};
 
 use super::{Etki, Oturum};
+use crate::arac::AracAnlikGoruntusu;
 use crate::butce::{ButceIslemId, hata_kullanimi};
 use crate::gonderim::{GonderilenOge, GunlukToken, IstekAsamasi, IstekSonucu};
 use crate::kayit::KayitOgesi;
@@ -18,14 +19,16 @@ use crate::sart_kapisi::SartKarari;
 
 pub(super) struct ModelCevabi {
     pub(super) cagrilar: Vec<ToolCall>,
+    /// Çağrılar bu görüntüyle çözülür ve doğrulanır (Görev 8).
+    pub(super) goruntu: AracAnlikGoruntusu,
 }
 
 impl Oturum {
-    fn istek_olustur(&self) -> ChatRequest {
+    fn istek_olustur(&self, goruntu: &AracAnlikGoruntusu) -> ChatRequest {
         let mut mesajlar = vec![ChatMessage::system(self.ayarlar.sistem_mesaji.clone())];
         mesajlar.extend(self.mesajlar.iter().cloned());
         let mut istek = ChatRequest::new(self.ayarlar.model.clone(), mesajlar);
-        istek.tools = self.baglam.araclar.tanimlar(self.ayarlar.kip);
+        istek.tools = goruntu.tanimlar().to_vec();
         if let Some(efor) = self.ayarlar.efor {
             istek.efor_uygula(efor);
         }
@@ -33,14 +36,18 @@ impl Oturum {
     }
 
     pub(super) async fn model_turu(&mut self) -> Result<ModelCevabi, BitisNedeni> {
-        self.baglami_yonet(false).await?;
-        let istek = self.istek_olustur();
+        // Kaynak bir kez okunur; bu model turunun isteği, günlüğü, yeniden
+        // denemeleri ve araç planı hep bu görüntüyü kullanır (Görev 8).
+        self.tanim_denetimlerini_baslat();
+        let goruntu = self.baglam.araclar.anlik_goruntu(self.ayarlar.kip);
+        self.baglami_yonet(false, &goruntu).await?;
+        let istek = self.istek_olustur(&goruntu);
         let (
             SaglayiciAkisi {
                 olaylar: mut akis, ..
             },
             islem,
-        ) = self.akis_ac(istek).await?;
+        ) = self.akis_ac(istek, &goruntu).await?;
         let mut metin = String::new();
         let mut dusunce = String::new();
         let mut cagrilar = Vec::new();
@@ -133,7 +140,7 @@ impl Oturum {
                     ChatMessage::assistant((!metin.is_empty()).then_some(metin), cagrilar.clone());
                 mesaj.reasoning = (!dusunce.is_empty()).then_some(dusunce);
                 self.mesaj_ekle(mesaj, Some("model".to_string())).await;
-                Ok(ModelCevabi { cagrilar })
+                Ok(ModelCevabi { cagrilar, goruntu })
             }
             Err(neden) => {
                 // Yarım kalan yanıtın metni bağlamda kalır; araç çağrıları çalıştırılmaz.
@@ -152,6 +159,7 @@ impl Oturum {
     pub(super) async fn akis_ac(
         &mut self,
         mut istek: ChatRequest,
+        goruntu: &AracAnlikGoruntusu,
     ) -> Result<(SaglayiciAkisi, ButceIslemId), BitisNedeni> {
         let mut hiz_denendi = false;
         let mut asim_denendi = false;
@@ -162,8 +170,8 @@ impl Oturum {
             let onceki = self.gonderilen as u32;
             let onceki_sistem = self.son_sistem_istemi.clone();
             let onceki_araclar = self.son_arac_tanimlari.clone();
-            self.son_istek_bayti = self.baglam_bayti();
-            let yeni = self.gonderim_oncesi_hazirla().await;
+            self.son_istek_bayti = self.baglam_bayti(goruntu);
+            let yeni = self.gonderim_oncesi_hazirla(goruntu).await;
             // Ağdan hemen önce bütçe izni (5b tasarımı §4.1). Reddedilen deneme
             // ağa çıkmaz: hazırlanan sistem istemi ve araç tanımları gönderilmiş sayılmaz.
             let islem = match self.butce_izni_ver("ana").await {
@@ -250,12 +258,12 @@ impl Oturum {
                         }
                         hata @ kalfa_evren::EvrenError::BaglamAsimi { .. } => {
                             // 5a tasarımı §11: bir kez sıkı özetleme, sonra yeniden.
-                            if asim_denendi || !self.baglami_yonet(true).await? {
+                            if asim_denendi || !self.baglami_yonet(true, goruntu).await? {
                                 self.hata(hata.to_string()).await;
                                 return Err(BitisNedeni::Hata);
                             }
                             asim_denendi = true;
-                            istek = self.istek_olustur();
+                            istek = self.istek_olustur(goruntu);
                         }
                         _ => {
                             self.hata(e.to_string()).await;
@@ -336,7 +344,10 @@ impl Oturum {
         .await;
     }
 
-    pub(super) async fn gonderim_oncesi_hazirla(&mut self) -> Vec<GonderilenOge> {
+    pub(super) async fn gonderim_oncesi_hazirla(
+        &mut self,
+        goruntu: &AracAnlikGoruntusu,
+    ) -> Vec<GonderilenOge> {
         let mut ogeler = Vec::new();
 
         // 1. Sistem istemi
@@ -363,7 +374,7 @@ impl Oturum {
         }
 
         // 2. Araç tanımları
-        let mevcut_tanimlar = self.baglam.araclar.tanimlar(self.ayarlar.kip);
+        let mevcut_tanimlar = goruntu.tanimlar().to_vec();
         if self.son_arac_tanimlari.as_ref().map(|(_, t)| t) != Some(&mevcut_tanimlar) {
             let bayt = serde_json::to_vec(&mevcut_tanimlar).map_or(0, |v| v.len() as u64);
             self.kaydet(KayitOgesi::AracTanimlari {

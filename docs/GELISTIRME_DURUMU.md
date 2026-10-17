@@ -354,11 +354,127 @@ beş işiyle yeşil. Son belge başının denetimleri PR üzerinden izlenir.
 [Dar yama raporu](superpowers/bulgular/2026-10-14-wasmtime-4903-guvenlik-yamasi.md).
 Bu koşunun Windows test kökü (230 artık) ve WSL kaynak kopyası da silindi.
 
-**Sıradaki tek iş:** PR #19'un son başındaki CI kapısı yeşilken kullanıcı
-incelemesi ve merge onayı. Ardından 1.1a-2 planı yazılabilir.
-Claude'un ön doğrulama worktree'si/kopyası ve ortak derleme önbellekleri
-korunur. Codex WSL kaynak kopyası ve Windows'a özel bu test kökü silindi;
-eski artık dizinlere dokunulmadı.
+**1.1a-1 birleşti (15 Ekim):** PR #19, kullanıcının açık squash onayıyla
+`cf4e5f3` olarak main'e birleşti; birleşen ağaç doğrulanan `7a2dbf8` ile
+birebir aynı. PR CI `38640288792` beş işiyle yeşil. Codex'in ürün
+worktree'si arşivlenip kaldırıldı; KALFA-19 Bitti.
+
+**1.1a-2 ürün uygulaması (15 Ekim, Codex; PR #20 taslak):**
+[12 görevli planın](superpowers/plans/2026-10-15-kalfa-11a-2-mcp.md)
+inceleme ve G2 kapısı tamamlandı; kullanıcı devam talimatı verdi.
+Görev 1 (KALFA-21) `kalfa-mcp` ürün crate'ini ekler: rmcp 3.5.1 istemcisi,
+ayrıştırma öncesi 4 MiB sınırı, 64 öğeli kuyruklar, ölümcül hata kanalı,
+abonelik yaşamı, cache/log kapıları ve gerçek yerel test sunucusu.
+Bağımsız incelemedeki iki kapanış bulgusu önce düşen testlerle düzeltildi.
+MCP henüz araç defterine/arayüze bağlı değildir.
+
+Windows ve WSL hedefli **37/37**; workspace Windows **1271/0/19**,
+WSL `kalfatest` **1224/0/19**; client-only derleme, workspace clippy/fmt
+iki platformda temiz. [Ürün doğrulama raporu](superpowers/bulgular/2026-10-15-kalfa-11a-2-gorev1-urun.md).
+Bu görevde gerçek yalıtım, arayüz ve WebDriver yeniden koşmadı; sonraki
+görevlerin kabul kapıları korunur. Canlı EVREN ya da PR merge'i yok.
+
+Kullanıcının rmcp indirme ve “Yerel onaydan sonra dosya özeti alınsın”
+kararları geçerli; tasarım r9 §13.8 kaynaklıdır. Kayıt onayı öncesinde
+argüman/ortam dosyası içeriği okunamaz.
+
+**Görev2 tamamlandı (15 Ekim, `c4f12ab`):** Tanım, son ortam, W kökleri,
+seçici kimliği ve T/Π/K/P/N/R/D tipleri; native kayıt onayından sonra
+akış içerik özeti eklendi. NODE_OPTIONS, NODE_PATH ve Windows junction/..
+karşı örnekleri önce düştü, düzeltildi; son bağımsız inceleme kapalı.
+Windows workspace **1300/0/19**, WSL **1254/0/19**; e2e özellikli Rust
+**195/195** iki platformda. Client-only lib+bins, iki clippy/fmt temiz.
+[Görev2 raporu](superpowers/bulgular/2026-10-15-kalfa-11a-2-gorev2-urun.md).
+Görev1'in `1ede4c3` CI38745987451 koşusu yedi işiyle yeşil; yeni başın
+CI sonucu ayrıca izlenir. Gerçek yalıtım/UI/WebDriver bu görevde koşmadı.
+
+**Görev 3–5 tamamlandı (16 Ekim):** Antigravity'nin ayar/kasa/maske ve
+ortak koruma uygulamaları `e2962a9` / `e75822f`. Kullanıcının doğrudan
+devriyle Codex (KALFA-24), süreç yöneticisini bağımsız inceleme ve önce
+düşen regresyonlarla tamamladı: RPC/başlatma/drop yarışları, gerçek
+zamanlayıcı, korumalı kök ve yazma sonrası denetim beklemesi düzeltildi.
+Windows/WSL workspace **1354/1309**, e2e özellikli Rust **234/235**;
+gerçek yalıtım **50/32**, uyumluluk **24/16**, client/clippy/fmt temiz.
+[Görev 5 raporu](superpowers/bulgular/2026-10-16-kalfa-11a-2-gorev5-urun.md).
+İki eski A15 ret beklentisi indirmeyen gerçek arşiv açma testine çevrildi;
+son koşuda yeni paket gerekmedi. Bu Rust kontrolleri UI/WebDriver değildir.
+
+**Görev 6 tamamlandı (16 Ekim):** Gerçek actor izin matrisi, R/D mührü,
+T/D/Π kısayolu ve manager-owned çağrı kilidi bağlandı. Cleanup/drop/hata
+yolları doğrulanan kapanış ve son taramayı bekler; hatada alan engellenir.
+İptal bildirimi flush makbuzu alır; aynı iki saniyelik kapanma payı korunur.
+Bağımsız bulgular kapalı. Windows/WSL workspace **1389/1344**,
+e2e özellikli Rust **250/251**, gerçek yalıtım **50/32**,
+uyumluluk **24/16**, gerçek stdio kabulü **4/4** iki platformda; clippy/fmt temiz.
+[Görev 6 raporu](superpowers/bulgular/2026-10-16-kalfa-11a-2-gorev6-urun.md).
+
+**Görev 7 tamamlandı (16 Ekim):** MCP araç tanımı sır taraması (5 konum, yalnız
+sıra numarasıyla ret), boyut/UTF-8/görünmez Unicode/harici `$ref` ve `$id`
+kapıları, `D` özeti (çıkış şeması dahil), `(D, denetçi_modeli)` kalıcı önbelleği,
+ilk sunan oturumun `ButceTalepci`/iptal bağlantısı ile sonuç/hata/stderr
+maskeleme ve `outputSchema` doğrulama kapıları bağlandı. Ayrıca yönetici
+olmayan Windows CI kullanıcısında görülen `gercek_surec_testleri` derleme kilidi
+ve DACL okuma bayrağı düzeltildi. Bağımsız bulgular kapalı. Windows/WSL
+workspace **1427/1382**, e2e özellikli Rust **255/256**, WSL gerçek yalıtım
+**32/32**, uyumluluk **16/16**, gerçek stdio kabulü **4/4** iki platformda;
+clippy/fmt temiz.
+[Görev 7 raporu](superpowers/bulgular/2026-10-16-kalfa-11a-2-gorev7-urun.md).
+
+**Görev 8 tamamlandı (17 Ekim, Claude):** Her model turu başında tek araç
+görüntüsü (`AracAnlikGoruntusu`) alınır; istek, `AracTanimlari` günlüğü,
+429/413 tekrarları, ad çözümlemesi ve argüman doğrulaması aynı görüntüyü
+kullanır. Core `AracKaynagi` dikişi `kalfa-mcp`'yi tanımaz; tanım denetimleri
+yalnız aktif turda, oturumun bütçesiyle bağımsız görev olarak sahiplenilir ve
+oturumu kilitlemez. Uygulama alan başına `McpAlanAracKaynagi` yayımlar (tek
+sahip, sonuçsuzda geri verme, nesil). Keşfin bu kaynağa bağlanması Görev 9.
+Windows/WSL workspace **1438/1393**, e2e özellikli Rust **260/261**;
+fmt/clippy temiz.
+[Görev 8 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev8-urun.md).
+
+**Görev 9 tamamlandı (17 Ekim, Claude):** Keşif zinciri alan kaynağına
+bağlandı: her model turu başında etkin sunucular başlatılır/doğrulanır, ilk
+keşifte ya da `R` değişince liste denetlenir, yoksa gerekiyorsa yenilenir;
+`McpArac`'lar yayımlanır. Başlamayan ya da kapatılan sunucunun araçları düşer;
+izinsiz sunucu turu bekletmez ve başlatma kartı birikmez. Yarım MCP çağrısı
+kurtarmada yeniden çalıştırılmaz. Ayrıca G7'nin görünmez Unicode kapısı
+açıklama ve şemalara genişletildi (`c8a8a39`). Windows/WSL workspace
+**1445/1400**, e2e özellikli Rust **265/266**; fmt/clippy temiz.
+[Görev 9 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev9-urun.md).
+
+**Görev 10 tamamlandı (17 Ekim, Claude):** Ana pencereye 15 MCP komutu
+(durum, ayrıntı, komut seç, taslak, içe aktarma, etkinlik, sil, yeniden
+başlat, başlatma kartı yanıtı, izin geri alma) ve sıralı durum kanalı
+(`mcp_dinle`, artan `revizyon`) eklendi; komut adları, capability ve TS
+sözleşmesi aynı commit'te. Kayıt ve silme yerel pencereyle onaylanır; tam
+erişimli başlatma arayüzün "kabul"üne ek olarak yerel onay ister; arayüz yol
+göndermez. Başlatma artık tura bağlı değil: kısa turda kartın kaybolması
+düzeltildi. Windows/WSL workspace **1447/1402**, e2e özellikli Rust
+**267/268**, arayüz 0/0 ve 435/435; fmt/clippy temiz.
+[Görev 10 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev10-urun.md).
+
+**Görev 11 tamamlandı (17 Ekim, Claude):** Ayarlar'da Eklentiler'den
+ayrı MCP sunucuları bölümü eklendi: rozet ve açıklaması, alan başına durum,
+araç sayısı, izin geri alma ve yeniden başlatma. Form yalıtımlı başlar;
+Gözat kimlik döner. Tam erişimde ağ alanı gizlenir ve kalıcı uyarı çıkar.
+Gizli değer parola alanındadır ve geri gelmez. JSON içe aktarmada metin
+gönderilince silinir. Ayrıntıda tanım denetimi durumları görünür.
+Sohbette model dışı başlatma kartı yalnız aynı alanın oturumunda çıkar ve
+sohbeti bekletmez. Onay sayfasında MCP kaynağı, rozet ve erişim satırı;
+MCP kısayolu ve araç kartı rozeti eklendi. Arka uca üç sözleşme alanı
+eklendi: `OnayOgesi.mcp`, kartın `kip`'i ve
+`OturumAcilisi.calisma_alani_kimligi`. Arayüz 0/0 ve **459/459**;
+Windows/WSL workspace **1447/1402**, e2e özellikli Rust **267/268**;
+fmt/clippy temiz.
+[Görev 11 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev11-urun.md).
+
+**Sıradaki tek iş:** Görev 12 — iki platformda tam kabul ve kapanış
+(gerçek yalıtım sunucusu, §11 matrisi, WebDriver e2e, rapor).
+Gerçek WebDriver e2e ve tam MCP kabulü Görev 12 kapsamındadır; bu görevde
+koşulmadı.
+Görev 8–12 için yeni plan onayı gerekmez. Ürün yalnız PR20'nin
+`codex/mcp-11a2-plan` worktree'sinde geliştirilir; ortak main korunur.
+PR taslak ve kullanıcı kararı olmadan birleşmez; yeni indirme, Cargo
+dosyası değişikliği, sistem ayarı ve canlı EVREN yapılmaz.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

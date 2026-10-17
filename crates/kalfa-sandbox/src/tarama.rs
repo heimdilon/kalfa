@@ -18,17 +18,136 @@
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use ignore::{WalkBuilder, WalkState};
+pub use tokio_util::sync::CancellationToken;
 
 /// Görüntüye girebilecek en çok girdi; aşılırsa görüntü eksiktir.
 pub const GORUNTU_AZAMI_GIRDI: usize = 500_000;
 /// Görüntünün toplanabileceği en uzun süre; aşılırsa görüntü eksiktir. Gizli
 /// dosya taraması sürer, yalnızca görüntü toplanmaz.
 pub const GORUNTU_AZAMI_SURE: Duration = Duration::from_secs(5);
+/// Koruma taramasının en uzun süresi (1.1a §4.3); aşılırsa yürüyüş işbirlikçi
+/// olarak durdurulur ve `koruma_tam = false` işaretlenir.
+pub const KORUMA_AZAMI_SURE: Duration = Duration::from_secs(30);
+
+/// Koruma taramasının tamamlanamama nedeni (1.1a §4.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KorumaTaramaHatasi {
+    /// Bir dizin girdisi, meta verisi veya hardlink kimliği okunamadı ya da
+    /// çalışma alanı yolu olarak ayrıştırılamadı.
+    Okunamadi { yol: Option<PathBuf>, mesaj: String },
+    /// Koruma taraması 30 sn sınırını aştı ve işbirlikçi olarak durduruldu.
+    ZamanAsimi,
+    /// Tarama iptal sinyaliyle işbirlikçi olarak durduruldu.
+    Iptal,
+}
+
+type SahteGecenSure = Arc<dyn Fn() -> Duration + Send + Sync>;
+type YolEnjeksiyonu = Arc<dyn Fn(&Path) -> bool + Send + Sync>;
+
+/// Koruma ve adli girdi taramasının çalışma seçenekleri.
+#[derive(Clone)]
+pub struct TaramaSecenekleri {
+    pub goruntu_siniri: GoruntuSiniri,
+    pub koruma_suresi: Duration,
+    pub iptal: CancellationToken,
+    sahte_gecen_sure: Option<SahteGecenSure>,
+    yuruyus_hata_enjeksiyonu: Option<YolEnjeksiyonu>,
+    inode_hata_enjeksiyonu: Option<YolEnjeksiyonu>,
+}
+
+impl Default for TaramaSecenekleri {
+    fn default() -> Self {
+        Self {
+            goruntu_siniri: GoruntuSiniri::default(),
+            koruma_suresi: KORUMA_AZAMI_SURE,
+            iptal: CancellationToken::new(),
+            sahte_gecen_sure: None,
+            yuruyus_hata_enjeksiyonu: None,
+            inode_hata_enjeksiyonu: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for TaramaSecenekleri {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TaramaSecenekleri")
+            .field("goruntu_siniri", &self.goruntu_siniri)
+            .field("koruma_suresi", &self.koruma_suresi)
+            .field("iptal", &self.iptal.is_cancelled())
+            .finish()
+    }
+}
+
+impl TaramaSecenekleri {
+    pub fn yeni() -> Self {
+        Self::default()
+    }
+
+    pub fn goruntu_siniri_ile(mut self, sinir: GoruntuSiniri) -> Self {
+        self.goruntu_siniri = sinir;
+        self
+    }
+
+    pub fn koruma_suresi_ile(mut self, sure: Duration) -> Self {
+        self.koruma_suresi = sure;
+        self
+    }
+
+    pub fn iptal_ile(mut self, iptal: CancellationToken) -> Self {
+        self.iptal = iptal;
+        self
+    }
+
+    pub fn sahte_gecen_sure_ile(
+        mut self,
+        sahte: impl Fn() -> Duration + Send + Sync + 'static,
+    ) -> Self {
+        self.sahte_gecen_sure = Some(Arc::new(sahte));
+        self
+    }
+
+    pub fn yuruyus_hata_enjeksiyonu_ile(
+        mut self,
+        kural: impl Fn(&Path) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.yuruyus_hata_enjeksiyonu = Some(Arc::new(kural));
+        self
+    }
+
+    pub fn inode_hata_enjeksiyonu_ile(
+        mut self,
+        kural: impl Fn(&Path) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.inode_hata_enjeksiyonu = Some(Arc::new(kural));
+        self
+    }
+
+    fn gecen_sure(&self, baslangic: Instant) -> Duration {
+        match &self.sahte_gecen_sure {
+            Some(sahte) => sahte(),
+            None => baslangic.elapsed(),
+        }
+    }
+
+    fn yuruyus_hatasi_mi(&self, tam_yol: &Path, goreli: Option<&Path>) -> bool {
+        let Some(kural) = &self.yuruyus_hata_enjeksiyonu else {
+            return false;
+        };
+        kural(tam_yol) || goreli.is_some_and(|g| kural(g))
+    }
+
+    fn inode_hatasi_mi(&self, tam_yol: &Path, goreli: Option<&Path>) -> bool {
+        let Some(kural) = &self.inode_hata_enjeksiyonu else {
+            return false;
+        };
+        kural(tam_yol) || goreli.is_some_and(|g| kural(g))
+    }
+}
 
 /// Görüntünün sınırları; testler küçültür.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,33 +288,44 @@ struct YerelGoruntu<'t, 'a> {
 
 impl YerelGoruntu<'_, '_> {
     /// Dosya ya da bağlantıysa görüntüye ekler. Sınır aşıldıysa eklemez ve
-    /// görüntüyü eksik işaretler.
-    fn ekle(&mut self, giris: &ignore::DirEntry) {
+    /// yalnızca görüntüyü eksik işaretler (`Ok(())`). Meta veri okunamadıysa
+    /// hem görüntüyü eksik işaretler hem de koruma hatası için `Err` döner.
+    fn ekle(&mut self, giris: &ignore::DirEntry) -> Result<(), String> {
         let t = self.toplayici;
         let Some(tur) = giris.file_type() else {
-            return;
+            t.eksik_isaretle();
+            return Err("Girdi türü çözülemedi.".into());
         };
         let tur = if tur.is_symlink() {
             GirdiTuru::Baglanti
         } else if tur.is_file() {
             GirdiTuru::Dosya
         } else {
-            return;
+            return Ok(());
+        };
+        let goreli = match giris.path().strip_prefix(t.kok) {
+            Ok(g) => g,
+            Err(e) => {
+                t.eksik_isaretle();
+                return Err(format!("Göreli yol çözülemedi: {e}"));
+            }
+        };
+        let bilgi = match giris.metadata() {
+            Ok(b) => b,
+            Err(e) => {
+                t.eksik_isaretle();
+                return Err(format!("Meta veri okunamadı: {e}"));
+            }
         };
         if t.eksik.load(Ordering::Relaxed) {
-            return;
+            return Ok(());
         }
         if t.sayi.fetch_add(1, Ordering::Relaxed) >= t.sinir.girdi
             || t.baslangic.elapsed() > t.sinir.sure
         {
             t.eksik_isaretle();
-            return;
+            return Ok(());
         }
-        let (Ok(goreli), Ok(bilgi)) = (giris.path().strip_prefix(t.kok), giris.metadata()) else {
-            // Okunamayan girdi farkı gizleyebilir.
-            t.eksik_isaretle();
-            return;
-        };
         let zaman_ns = bilgi
             .modified()
             .ok()
@@ -208,6 +338,7 @@ impl YerelGoruntu<'_, '_> {
             kimlik: kimlik(&bilgi),
         };
         self.girdiler.push((anahtar(goreli), girdi));
+        Ok(())
     }
 }
 
@@ -259,6 +390,11 @@ pub struct Tarama {
     pub yapilandirma: Vec<Yapilandirma>,
     /// Komuttan önceki meta veri görüntüsü (aşama 3 tasarımı §5.4).
     pub goruntu: Goruntu,
+    /// Koruma taramasının okuma, ayrıştırma, meta veri/hardlink kimliği, iptal
+    /// veya 30 sn süre hatası olmadan eksiksiz tamamlanıp tamamlanmadığı.
+    pub koruma_tam: bool,
+    /// `koruma_tam == false` ise ilk karşılaşılan koruma tarama hatası.
+    pub koruma_hatasi: Option<KorumaTaramaHatasi>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -286,11 +422,30 @@ pub struct AdliGirdiler {
     pub git: Vec<GitGirdisi>,
     pub yapilandirma: Vec<Yapilandirma>,
     pub goruntu: Goruntu,
+    pub koruma_tam: bool,
+    pub koruma_hatasi: Option<KorumaTaramaHatasi>,
 }
 
 impl Tarama {
     pub fn sayi(&self) -> usize {
         self.dosyalar.len() + self.dizinler.len()
+    }
+
+    /// Üst katman bir girdiyi ayrıştıramadığında koruma tamlığını düşürür.
+    pub fn koruma_hata_kaydet(&mut self, hata: KorumaTaramaHatasi) {
+        self.koruma_tam = false;
+        if self.koruma_hatasi.is_none() {
+            self.koruma_hatasi = Some(hata);
+        }
+    }
+}
+
+impl AdliGirdiler {
+    pub fn koruma_hata_kaydet(&mut self, hata: KorumaTaramaHatasi) {
+        self.koruma_tam = false;
+        if self.koruma_hatasi.is_none() {
+            self.koruma_hatasi = Some(hata);
+        }
     }
 }
 
@@ -321,28 +476,145 @@ pub fn tara_ayrintili(
     git_mi: GitMi<'_>,
     yapilandirma_mi: YolKurali<'_>,
 ) -> Tarama {
-    let goruntu = GoruntuToplayici::yeni(kok, GoruntuSiniri::default());
+    tara_ayrintili_secenekli(
+        kok,
+        gizli_mi,
+        git_mi,
+        yapilandirma_mi,
+        &TaramaSecenekleri::default(),
+    )
+}
+
+struct KorumaTakibi {
+    baslangic: Instant,
+    kok_goruldu: AtomicBool,
+    hata: Mutex<Option<KorumaTaramaHatasi>>,
+}
+
+impl KorumaTakibi {
+    fn yeni() -> Self {
+        Self {
+            baslangic: Instant::now(),
+            kok_goruldu: AtomicBool::new(false),
+            hata: Mutex::new(None),
+        }
+    }
+
+    fn hata_kaydet(&self, yeni: KorumaTaramaHatasi) {
+        let mut kilit = self.hata.lock().unwrap_or_else(|z| z.into_inner());
+        if kilit.is_none() {
+            *kilit = Some(yeni);
+        }
+    }
+
+    fn adim_kontrol(&self, secenekler: &TaramaSecenekleri, goruntu: &GoruntuToplayici<'_>) -> bool {
+        if secenekler.iptal.is_cancelled() {
+            self.hata_kaydet(KorumaTaramaHatasi::Iptal);
+            goruntu.eksik_isaretle();
+            return false;
+        }
+        if secenekler.gecen_sure(self.baslangic) > secenekler.koruma_suresi {
+            self.hata_kaydet(KorumaTaramaHatasi::ZamanAsimi);
+            goruntu.eksik_isaretle();
+            return false;
+        }
+        true
+    }
+
+    fn bitir(
+        self,
+        kok: &Path,
+        secenekler: &TaramaSecenekleri,
+    ) -> (bool, Option<KorumaTaramaHatasi>) {
+        if secenekler.iptal.is_cancelled() {
+            self.hata_kaydet(KorumaTaramaHatasi::Iptal);
+        } else if secenekler.gecen_sure(self.baslangic) > secenekler.koruma_suresi {
+            self.hata_kaydet(KorumaTaramaHatasi::ZamanAsimi);
+        } else if !self.kok_goruldu.load(Ordering::Relaxed) {
+            self.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                yol: Some(kok.to_path_buf()),
+                mesaj: "Çalışma alanı kökü taranamadı.".into(),
+            });
+        }
+        let hata = self.hata.into_inner().unwrap_or_else(|z| z.into_inner());
+        (hata.is_none(), hata)
+    }
+}
+
+fn ignore_hata_yolu(hata: &ignore::Error) -> Option<PathBuf> {
+    match hata {
+        ignore::Error::WithPath { path, .. } => Some(path.clone()),
+        ignore::Error::WithLineNumber { err, .. } | ignore::Error::WithDepth { err, .. } => {
+            ignore_hata_yolu(err)
+        }
+        ignore::Error::Partial(hatalar) => hatalar.iter().find_map(ignore_hata_yolu),
+        _ => None,
+    }
+}
+
+/// `tara_ayrintili`, koruma süresi, iptal sinyali ve görüntü sınırı verilerek.
+pub fn tara_ayrintili_secenekli(
+    kok: &Path,
+    gizli_mi: YolKurali<'_>,
+    git_mi: GitMi<'_>,
+    yapilandirma_mi: YolKurali<'_>,
+    secenekler: &TaramaSecenekleri,
+) -> Tarama {
+    let goruntu = GoruntuToplayici::yeni(kok, secenekler.goruntu_siniri);
     let toplanan = Mutex::new(Toplanan::default());
+    let koruma = KorumaTakibi::yeni();
     WalkBuilder::new(kok)
         .standard_filters(false)
         .follow_links(false)
         .build_parallel()
         .run(|| {
             let toplanan = &toplanan;
+            let koruma = &koruma;
             let mut goruntu = goruntu.yerel();
             Box::new(move |giris| {
-                let Ok(giris) = giris else {
-                    // Okunamayan dizin farkı gizleyebilir.
-                    goruntu.toplayici.eksik_isaretle();
-                    return WalkState::Continue;
+                if !koruma.adim_kontrol(secenekler, goruntu.toplayici) {
+                    return WalkState::Quit;
+                }
+                let giris = match giris {
+                    Ok(g) => g,
+                    Err(hata) => {
+                        goruntu.toplayici.eksik_isaretle();
+                        koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                            yol: ignore_hata_yolu(&hata),
+                            mesaj: hata.to_string(),
+                        });
+                        return WalkState::Continue;
+                    }
                 };
                 if giris.depth() == 0 {
+                    koruma.kok_goruldu.store(true, Ordering::Relaxed);
                     return WalkState::Continue;
                 }
-                let Some(tur) = giris.file_type() else {
-                    return WalkState::Continue;
+                let goreli = match giris.path().strip_prefix(kok) {
+                    Ok(g) => g,
+                    Err(e) => {
+                        goruntu.toplayici.eksik_isaretle();
+                        koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                            yol: Some(giris.path().to_path_buf()),
+                            mesaj: format!("Göreli yol çözülemedi: {e}"),
+                        });
+                        return WalkState::Continue;
+                    }
                 };
-                let Ok(goreli) = giris.path().strip_prefix(kok) else {
+                if secenekler.yuruyus_hatasi_mi(giris.path(), Some(goreli)) {
+                    goruntu.toplayici.eksik_isaretle();
+                    koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                        yol: Some(giris.path().to_path_buf()),
+                        mesaj: "Yürüyüş girdisi okunamadı.".into(),
+                    });
+                    return WalkState::Skip;
+                }
+                let Some(tur) = giris.file_type() else {
+                    goruntu.toplayici.eksik_isaretle();
+                    koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                        yol: Some(giris.path().to_path_buf()),
+                        mesaj: "Girdi türü çözülemedi.".into(),
+                    });
                     return WalkState::Continue;
                 };
                 if let Some(girdi) = git_girdisi(&giris, git_mi) {
@@ -355,8 +627,11 @@ pub fn tara_ayrintili(
                     if dizin {
                         return WalkState::Skip;
                     }
-                } else {
-                    goruntu.ekle(&giris);
+                } else if let Err(mesaj) = goruntu.ekle(&giris) {
+                    koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                        yol: Some(giris.path().to_path_buf()),
+                        mesaj,
+                    });
                 }
                 // Bağlantı izlenmez; hedefi çalışma alanındaysa kendisi taranır.
                 if tur.is_symlink() || !(tur.is_dir() || tur.is_file()) {
@@ -365,7 +640,26 @@ pub fn tara_ayrintili(
                 let gizli = gizli_mi(goreli, tur.is_dir());
                 let yapilandirma = yapilandirma_mi(goreli, tur.is_dir());
                 let inode = if tur.is_file() {
-                    inode(giris.path())
+                    if secenekler.inode_hatasi_mi(giris.path(), Some(goreli)) {
+                        goruntu.toplayici.eksik_isaretle();
+                        koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                            yol: Some(giris.path().to_path_buf()),
+                            mesaj: "Dosya hardlink kimliği okunamadı.".into(),
+                        });
+                        None
+                    } else {
+                        match inode(giris.path()) {
+                            Ok(deger) => deger,
+                            Err(e) => {
+                                goruntu.toplayici.eksik_isaretle();
+                                koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                                    yol: Some(giris.path().to_path_buf()),
+                                    mesaj: format!("Dosya meta verisi okunamadı: {e}"),
+                                });
+                                None
+                            }
+                        }
+                    }
                 } else {
                     None
                 };
@@ -396,6 +690,7 @@ pub fn tara_ayrintili(
                 WalkState::Continue
             })
         });
+    let (koruma_tam, koruma_hatasi) = koruma.bitir(kok, secenekler);
     let t = toplanan.into_inner().unwrap_or_else(|z| z.into_inner());
     let mut dosyalar = t.dosyalar;
     let gizli_dizin_altinda =
@@ -427,6 +722,8 @@ pub fn tara_ayrintili(
         git: t.git.into_iter().collect(),
         yapilandirma: en_ustteki(t.yapilandirma),
         goruntu: goruntu.bitir(),
+        koruma_tam,
+        koruma_hatasi,
     }
 }
 
@@ -454,7 +751,7 @@ pub fn adli_girdiler(
     git_mi: GitMi<'_>,
     yapilandirma_mi: YolKurali<'_>,
 ) -> AdliGirdiler {
-    adli_girdiler_sinirli(kok, git_mi, yapilandirma_mi, GoruntuSiniri::default())
+    adli_girdiler_secenekli(kok, git_mi, yapilandirma_mi, &TaramaSecenekleri::default())
 }
 
 /// `adli_girdiler`, görüntünün sınırı verilerek; testler için.
@@ -464,20 +761,70 @@ pub fn adli_girdiler_sinirli(
     yapilandirma_mi: YolKurali<'_>,
     sinir: GoruntuSiniri,
 ) -> AdliGirdiler {
-    let goruntu = GoruntuToplayici::yeni(kok, sinir);
+    adli_girdiler_secenekli(
+        kok,
+        git_mi,
+        yapilandirma_mi,
+        &TaramaSecenekleri::yeni().goruntu_siniri_ile(sinir),
+    )
+}
+
+/// `adli_girdiler`, koruma seçenekleri verilerek.
+pub fn adli_girdiler_secenekli(
+    kok: &Path,
+    git_mi: GitMi<'_>,
+    yapilandirma_mi: YolKurali<'_>,
+    secenekler: &TaramaSecenekleri,
+) -> AdliGirdiler {
+    let goruntu = GoruntuToplayici::yeni(kok, secenekler.goruntu_siniri);
     let toplanan = Mutex::new((BTreeSet::new(), BTreeSet::new()));
+    let koruma = KorumaTakibi::yeni();
     WalkBuilder::new(kok)
         .standard_filters(false)
         .follow_links(false)
         .build_parallel()
         .run(|| {
             let toplanan = &toplanan;
+            let koruma = &koruma;
             let mut goruntu = goruntu.yerel();
             Box::new(move |giris| {
-                let Ok(giris) = giris else {
-                    goruntu.toplayici.eksik_isaretle();
-                    return WalkState::Continue;
+                if !koruma.adim_kontrol(secenekler, goruntu.toplayici) {
+                    return WalkState::Quit;
+                }
+                let giris = match giris {
+                    Ok(g) => g,
+                    Err(hata) => {
+                        goruntu.toplayici.eksik_isaretle();
+                        koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                            yol: ignore_hata_yolu(&hata),
+                            mesaj: hata.to_string(),
+                        });
+                        return WalkState::Continue;
+                    }
                 };
+                if giris.depth() == 0 {
+                    koruma.kok_goruldu.store(true, Ordering::Relaxed);
+                    return WalkState::Continue;
+                }
+                let goreli = match giris.path().strip_prefix(kok) {
+                    Ok(g) => g,
+                    Err(e) => {
+                        goruntu.toplayici.eksik_isaretle();
+                        koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                            yol: Some(giris.path().to_path_buf()),
+                            mesaj: format!("Göreli yol çözülemedi: {e}"),
+                        });
+                        return WalkState::Continue;
+                    }
+                };
+                if secenekler.yuruyus_hatasi_mi(giris.path(), Some(goreli)) {
+                    goruntu.toplayici.eksik_isaretle();
+                    koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                        yol: Some(giris.path().to_path_buf()),
+                        mesaj: "Yürüyüş girdisi okunamadı.".into(),
+                    });
+                    return WalkState::Skip;
+                }
                 if let Some(girdi) = git_girdisi(&giris, git_mi) {
                     let dizin = girdi.dizin;
                     toplanan
@@ -491,15 +838,21 @@ pub fn adli_girdiler_sinirli(
                         WalkState::Continue
                     };
                 }
-                if giris.depth() > 0 {
-                    goruntu.ekle(&giris);
+                if let Err(mesaj) = goruntu.ekle(&giris) {
+                    koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                        yol: Some(giris.path().to_path_buf()),
+                        mesaj,
+                    });
                 }
-                let (Some(tur), Ok(goreli)) = (giris.file_type(), giris.path().strip_prefix(kok))
-                else {
+                let Some(tur) = giris.file_type() else {
+                    goruntu.toplayici.eksik_isaretle();
+                    koruma.hata_kaydet(KorumaTaramaHatasi::Okunamadi {
+                        yol: Some(giris.path().to_path_buf()),
+                        mesaj: "Girdi türü çözülemedi.".into(),
+                    });
                     return WalkState::Continue;
                 };
-                if giris.depth() > 0
-                    && !tur.is_symlink()
+                if !tur.is_symlink()
                     && (tur.is_dir() || tur.is_file())
                     && yapilandirma_mi(goreli, tur.is_dir())
                 {
@@ -515,11 +868,14 @@ pub fn adli_girdiler_sinirli(
                 WalkState::Continue
             })
         });
+    let (koruma_tam, koruma_hatasi) = koruma.bitir(kok, secenekler);
     let (git, yapilandirma) = toplanan.into_inner().unwrap_or_else(|z| z.into_inner());
     AdliGirdiler {
         git: git.into_iter().collect(),
         yapilandirma: en_ustteki(yapilandirma),
         goruntu: goruntu.bitir(),
+        koruma_tam,
+        koruma_hatasi,
     }
 }
 
@@ -536,17 +892,17 @@ fn git_girdisi(giris: &ignore::DirEntry, git_mi: GitMi<'_>) -> Option<GitGirdisi
 }
 
 #[cfg(unix)]
-fn inode(yol: &Path) -> Option<((u64, u64), u64)> {
+fn inode(yol: &Path) -> std::io::Result<Option<((u64, u64), u64)>> {
     use std::os::unix::fs::MetadataExt;
-    let bilgi = std::fs::symlink_metadata(yol).ok()?;
-    Some(((bilgi.dev(), bilgi.ino()), bilgi.nlink()))
+    let bilgi = std::fs::symlink_metadata(yol)?;
+    Ok(Some(((bilgi.dev(), bilgi.ino()), bilgi.nlink())))
 }
 
 /// Windows'ta gerek yoktur: ACL dosya nesnesindedir, hard link aynı nesneyi
 /// paylaşır.
 #[cfg(not(unix))]
-fn inode(_yol: &Path) -> Option<((u64, u64), u64)> {
-    None
+fn inode(_yol: &Path) -> std::io::Result<Option<((u64, u64), u64)>> {
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -817,5 +1173,123 @@ mod tests {
             vec![k.join(".env"), k.join("a.txt"), k.join("b.txt")]
         );
         assert_eq!(t.dizinler, vec![k.join("gizli")]);
+    }
+
+    #[test]
+    fn tarama_koruma_tamligini_goruntu_eksikliginden_ayirir() {
+        let d = tempfile::tempdir().unwrap();
+        let k = d.path();
+        std::fs::create_dir_all(k.join("alt")).unwrap();
+        for i in 0..6 {
+            std::fs::write(k.join(format!("dosya-{i}.txt")), "icerik").unwrap();
+        }
+        std::fs::write(k.join("alt/.env"), "GIZLI=1").unwrap();
+
+        // Görüntü sınırı dolsa bile okuma/meta veri hatası yoksa koruma tamdır.
+        let goruntu_dar = TaramaSecenekleri::yeni().goruntu_siniri_ile(GoruntuSiniri {
+            girdi: 2,
+            sure: GORUNTU_AZAMI_SURE,
+        });
+        let tam = tara_ayrintili_secenekli(
+            k,
+            &env_ya_da_gizli_dizin,
+            &git_adi,
+            &vscode_ya_da_envrc,
+            &goruntu_dar,
+        );
+        assert!(tam.goruntu.eksik);
+        assert!(tam.koruma_tam);
+        assert!(tam.koruma_hatasi.is_none());
+        assert_eq!(tam.dosyalar, vec![k.join("alt/.env")]);
+
+        // Yürüyüş girdisi okunamadığında aynı gizli dosyalar bulunsa bile koruma tam sayılmaz.
+        let yuruyus_hatali = TaramaSecenekleri::yeni().yuruyus_hata_enjeksiyonu_ile(|yol| {
+            yol.file_name().and_then(|a| a.to_str()) == Some("dosya-0.txt")
+        });
+        let eksik_yuruyus = tara_ayrintili_secenekli(
+            k,
+            &env_ya_da_gizli_dizin,
+            &git_adi,
+            &vscode_ya_da_envrc,
+            &yuruyus_hatali,
+        );
+        assert!(!eksik_yuruyus.koruma_tam);
+        assert!(matches!(
+            eksik_yuruyus.koruma_hatasi,
+            Some(KorumaTaramaHatasi::Okunamadi { .. })
+        ));
+
+        // Hardlink/inode kimliği alınamadığında da koruma tam sayılmaz.
+        let inode_hatali = TaramaSecenekleri::yeni().inode_hata_enjeksiyonu_ile(|yol| {
+            yol.file_name().and_then(|a| a.to_str()) == Some("dosya-1.txt")
+        });
+        let eksik_inode = tara_ayrintili_secenekli(
+            k,
+            &env_ya_da_gizli_dizin,
+            &git_adi,
+            &vscode_ya_da_envrc,
+            &inode_hatali,
+        );
+        assert!(!eksik_inode.koruma_tam);
+        assert!(matches!(
+            eksik_inode.koruma_hatasi,
+            Some(KorumaTaramaHatasi::Okunamadi { .. })
+        ));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let kapali = k.join("okunamayan-dizin");
+            std::fs::create_dir_all(&kapali).unwrap();
+            std::fs::write(kapali.join(".env"), "GIZLI=2").unwrap();
+            std::fs::set_permissions(&kapali, std::fs::Permissions::from_mode(0o000)).unwrap();
+            let erisim_engellendi = std::fs::read_dir(&kapali).is_err();
+            let sonuc = tara_ayrintili(k, &env_ya_da_gizli_dizin, &git_adi, &vscode_ya_da_envrc);
+            std::fs::set_permissions(&kapali, std::fs::Permissions::from_mode(0o700)).unwrap();
+            if erisim_engellendi {
+                assert!(!sonuc.koruma_tam);
+                assert!(matches!(
+                    sonuc.koruma_hatasi,
+                    Some(KorumaTaramaHatasi::Okunamadi { .. })
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn tarama_sahte_saatle_otuz_saniye_sinirini_ve_iptali_isbirlikci_uygular() {
+        let d = tempfile::tempdir().unwrap();
+        let k = d.path();
+        for i in 0..8 {
+            std::fs::write(k.join(format!("f-{i}.txt")), "x").unwrap();
+        }
+
+        let asildi = TaramaSecenekleri::yeni()
+            .sahte_gecen_sure_ile(|| KORUMA_AZAMI_SURE + Duration::from_secs(1));
+        let zaman_asimi = tara_ayrintili_secenekli(
+            k,
+            &env_ya_da_gizli_dizin,
+            &git_adi,
+            &vscode_ya_da_envrc,
+            &asildi,
+        );
+        assert!(!zaman_asimi.koruma_tam);
+        assert_eq!(
+            zaman_asimi.koruma_hatasi,
+            Some(KorumaTaramaHatasi::ZamanAsimi)
+        );
+
+        let token = CancellationToken::new();
+        token.cancel();
+        let iptalli = TaramaSecenekleri::yeni().iptal_ile(token);
+        let iptal_sonucu = tara_ayrintili_secenekli(
+            k,
+            &env_ya_da_gizli_dizin,
+            &git_adi,
+            &vscode_ya_da_envrc,
+            &iptalli,
+        );
+        assert!(!iptal_sonucu.koruma_tam);
+        assert_eq!(iptal_sonucu.koruma_hatasi, Some(KorumaTaramaHatasi::Iptal));
     }
 }

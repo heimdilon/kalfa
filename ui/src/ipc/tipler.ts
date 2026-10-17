@@ -82,6 +82,17 @@ export interface OnayOgesi {
   kisayol?: KisayolTeklifi;
   /** Eklenti aracında eklentinin tarifi; ilk gönderim kartı buna bakar (aşama 4 §8.4). */
   eklenti?: EklentiTarifi;
+  /** MCP aracında sunucu, araç, erişim ve ağ (1.1a tasarımı §9). */
+  mcp?: McpOnayKarti;
+}
+
+/** MCP onay kartının özeti; komut, ortam ve yol taşımaz. */
+export interface McpOnayKarti {
+  sunucu: string;
+  arac: string;
+  erisim: 'Yalitimli' | 'TamErisim';
+  ag_hostlari: string[];
+  ag_sinirsiz: boolean;
 }
 
 /** Eklenti aracının kimliği ve yetenekleri (aşama 4 tasarımı §8.1). */
@@ -100,7 +111,9 @@ export interface EklentiTarifi {
 
 export type KisayolTeklifi =
   | { tip: 'Dosya'; arac: string; dizin: string }
-  | { tip: 'Kabuk'; program: string; dizin: string };
+  | { tip: 'Kabuk'; program: string; dizin: string }
+  /** Yalıtımlı MCP aracı; özet alanları arayüzde gösterilmez. */
+  | { tip: 'Mcp'; sunucu: string; arac: string };
 
 /** Oturumdaki bir kısayol (§9.1). */
 export interface Kisayol {
@@ -524,6 +537,8 @@ export type SaltOkunurNedeni =
 export interface OturumAcilisi {
   oturum: OturumId;
   calisma_alani: string | null;
+  /** MCP başlatma kartı oturuma bu kimlikle bağlanır (1.1a tasarımı §5.1). */
+  calisma_alani_kimligi: string | null;
   gecmis: GecmisSayfasi;
   ozet: DurumOzeti;
   salt_okunur: SaltOkunurNedeni | null;
@@ -693,4 +708,154 @@ export interface OturumEklentisi {
 /** EVREN'in günlük token sınırı doldu (aşama 4c). */
 export interface GunlukSinirDurumu {
   sifirlanma: string | null;
+}
+
+// ── MCP sunucuları (1.1a-2 Görev 10) ───────────────────────────────────────
+// Arayüz yol göndermez: komut yerel seçiciyle seçilir (`kimlik`), çalışma
+// alanı oturum ya da alan kimliğiyle gelir. Gizli değer yalnız formda gider,
+// geri hiç gelmez.
+
+export type McpKipi = 'yalitimli' | 'tam_erisim';
+
+export type McpKomut =
+  | { tur: 'program_adi'; ad: string; argumanlar?: string[] }
+  | { tur: 'secili_yurutulebilir'; kimlik: string; argumanlar?: string[] };
+
+export interface McpAgKurali {
+  host: string;
+  port: number;
+  ozel_ag?: boolean;
+}
+
+export type McpOrtamFormGirdisi =
+  | { tur: 'duz'; ad: string; deger: string }
+  | { tur: 'yeni_gizli'; ad: string; deger: string }
+  | { tur: 'korunan_gizli'; ad: string; kimlik: string };
+
+export interface McpSunucuFormu {
+  ad: string;
+  etkin?: boolean;
+  komut: McpKomut;
+  ortam?: McpOrtamFormGirdisi[];
+  kip?: McpKipi;
+  ag_izinleri?: McpAgKurali[];
+  baslatma_zamani_asimi_sn: number;
+  cagri_zamani_asimi_sn: number;
+}
+
+export interface McpSunucuOzeti {
+  ad: string;
+  etkin: boolean;
+  kip: McpKipi;
+  gizli_ortam_sayisi: number;
+}
+
+export type McpDurumEtiketi = 'durdu' | 'basliyor' | 'calisiyor' | 'bosta_kapandi' | 'hata';
+
+/** `kusak` süreç kuşağıdır; eski kuşağın olayı yenisinin üstüne yazılmaz. */
+export interface McpAlanDurumu {
+  alan_kimligi: string;
+  durum: McpDurumEtiketi;
+  kusak: number | null;
+  hata: string | null;
+  izin: McpKipi | null;
+  arac_sayisi: number;
+}
+
+export interface McpSunucuSatiri {
+  ozet: McpSunucuOzeti;
+  alanlar: McpAlanDurumu[];
+}
+
+/** Model dışı başlatma kartı (tasarım §5.1); model açamaz, yanıtlayamaz. */
+export interface McpBaslatmaKarti {
+  istek_kimligi: string;
+  alan_kimligi: string;
+  sunucu: string;
+  kip: McpKipi;
+  /** `kip`'in arka uçtaki görünen adı. */
+  erisim_kipi: string;
+  komut_ozeti: string;
+  ag_listesi: string[];
+  uyari: string;
+  wde_kodlu: boolean;
+}
+
+/** Kanal görüntüsü; `revizyon` artar, arayüz eskisini atar. */
+export interface McpDurumu {
+  revizyon: number;
+  sunucular: McpSunucuSatiri[];
+  baslatma_kartlari: McpBaslatmaKarti[];
+}
+
+export interface McpOrtamDegiskeni {
+  ad: string;
+  gizli: boolean;
+  deger_acik?: string;
+  gizli_var: boolean;
+  gizli_kimlik?: string;
+}
+
+export interface McpSunucuAyari {
+  ad: string;
+  etkin: boolean;
+  komut: McpKomut;
+  ortam: McpOrtamDegiskeni[];
+  kip: McpKipi;
+  ag_izinleri: McpAgKurali[];
+  baslatma_zamani_asimi_sn: number;
+  cagri_zamani_asimi_sn: number;
+}
+
+export interface McpAracOzeti {
+  birlesik_ad: string;
+  uzak_ad: string;
+  aciklama: string;
+  d_ozeti_hex: string;
+  denetim_metni: string;
+  denetim_sonucu: DenetimSonucu | null;
+  sunulur: boolean;
+  uyari: string | null;
+  onbellekten: boolean;
+}
+
+export interface McpAlanAyrintisi {
+  alan_kimligi: string;
+  araclar: McpAracOzeti[];
+  /** Kapatılan araçlar yalnız sıra numarasıyla. */
+  reddedilenler: string[];
+  /** Maskeli son stderr satırları. */
+  stderr: string[];
+}
+
+export interface McpSunucuAyrintisi {
+  ayrinti: McpSunucuAyari;
+  alanlar: McpAlanAyrintisi[];
+}
+
+export interface SeciliKomutBilgisi {
+  kimlik: string;
+  gorunen_ad: string;
+}
+
+export interface McpTaslak {
+  taslak_kimligi: string;
+  kusak: number;
+}
+
+export interface McpIceAktarmaSunucusu {
+  ad: string;
+  etkin: boolean;
+  kip: McpKipi;
+  komut_gorunumu: string;
+  secili_komut_kimligi?: string;
+  argumanlar: string[];
+  ortam: McpOrtamDegiskeni[];
+}
+
+export interface McpIceAktarmaOnizlemesi {
+  taslak_kimligi: string;
+  kusak: number;
+  sunucular: McpIceAktarmaSunucusu[];
+  atlanan_url_sunuculari: { ad: string; neden: string }[];
 }

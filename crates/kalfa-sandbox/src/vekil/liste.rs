@@ -237,6 +237,27 @@ impl IzinListesi {
         }
     }
 
+    /// Yalnız verilen kuralları içeren izin listesi üretir (MCP sunucuları için,
+    /// kabuğun varsayılan paket kayıt hostlarını eklemeden).
+    pub fn dogrudan(kullanici: &[HostKurali]) -> Self {
+        let mut harita: BTreeMap<(String, u16), HostKurali> = BTreeMap::new();
+        for k in kullanici {
+            let h = k.host.to_lowercase();
+            harita.insert(
+                (h.clone(), k.port),
+                HostKurali {
+                    host: h,
+                    port: k.port,
+                    ozel_ag: k.ozel_ag,
+                    kaynak: HostKaynagi::Kullanici,
+                },
+            );
+        }
+        Self {
+            kurallar: harita.into_values().collect(),
+        }
+    }
+
     /// Host ve porta tam eşleşen kuralı arar.
     pub fn bul(&self, host: &str, port: u16) -> Option<&HostKurali> {
         let h = host.to_lowercase();

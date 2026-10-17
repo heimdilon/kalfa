@@ -34,6 +34,70 @@ pub struct Korumali {
     pub dizin: bool,
 }
 
+impl AlanBilgisi {
+    /// Koruma taraması eksiksizse (`self.gizli.koruma_tam == true`) gizli
+    /// dosyalar, gizli dizinler, korumalı yollar, dış `.git` dizinleri, okunur
+    /// dizinler ve ağ özetinden kanonik SHA-256 koruma özeti (`K`) üretir.
+    ///
+    /// Tarama eksikse (`koruma_tam == false`) özet üretilmez (`None`).
+    pub fn koruma_ozeti_baytlari(
+        &self,
+        okunur_dizinler: &[PathBuf],
+        ag_ozeti: Option<&str>,
+    ) -> Option<[u8; 32]> {
+        if !self.gizli.koruma_tam {
+            return None;
+        }
+        fn alan_ekle(h: &mut Sha256, veri: &[u8]) {
+            h.update((veri.len() as u64).to_le_bytes());
+            h.update(veri);
+        }
+        fn yol_listesi_ekle(h: &mut Sha256, etiket: &[u8], liste: &[PathBuf]) {
+            let mut sirali: Vec<&[u8]> = liste
+                .iter()
+                .map(|y| y.as_os_str().as_encoded_bytes())
+                .collect();
+            sirali.sort();
+            alan_ekle(h, etiket);
+            h.update((sirali.len() as u64).to_le_bytes());
+            for yol in sirali {
+                alan_ekle(h, yol);
+            }
+        }
+
+        let mut h = Sha256::new();
+        alan_ekle(&mut h, b"kalfa-mcp-koruma-v1");
+        alan_ekle(&mut h, self.kok.as_os_str().as_encoded_bytes());
+        yol_listesi_ekle(&mut h, b"gizli-dosyalar", &self.gizli.dosyalar);
+        yol_listesi_ekle(&mut h, b"gizli-dizinler", &self.gizli.dizinler);
+
+        let mut korumali: Vec<(&[u8], bool)> = self
+            .korumali
+            .iter()
+            .map(|k| (k.yol.as_os_str().as_encoded_bytes(), k.dizin))
+            .collect();
+        korumali.sort();
+        alan_ekle(&mut h, b"korumali");
+        h.update((korumali.len() as u64).to_le_bytes());
+        for (yol, dizin) in korumali {
+            alan_ekle(&mut h, yol);
+            h.update([u8::from(dizin)]);
+        }
+
+        yol_listesi_ekle(&mut h, b"git-dizinleri", &self.git_dizinleri);
+        yol_listesi_ekle(&mut h, b"okunur-dizinler", okunur_dizinler);
+        alan_ekle(&mut h, b"ag");
+        match ag_ozeti {
+            Some(ozet) => {
+                h.update([1]);
+                alan_ekle(&mut h, ozet.as_bytes());
+            }
+            None => h.update([0]),
+        }
+        Some(h.finalize().into())
+    }
+}
+
 /// Çalışma alanının kimliği: kanonik yolunun SHA-256'sından 16 onaltılık
 /// karakter (§7.3). Çalışma alanı kaydı da aynı kimliği kullanır.
 pub fn alan_kimligi(kok: &Path) -> String {

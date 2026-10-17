@@ -33,7 +33,7 @@ use kalfa_sandbox::windows::ace_kaydi::{AceKaydi, Girdi, ORTAK};
 #[cfg(windows)]
 use kalfa_sandbox::windows::yalitici::{WindowsAyari, WindowsYalitici};
 #[cfg(windows)]
-use kalfa_sandbox::{AlanBilgisi, Tarama, alan_kimligi};
+use kalfa_sandbox::{AlanBilgisi, OzelDizinler, Tarama, alan_kimligi};
 use kalfa_sandbox::{Yalitici, YalitimDurumu};
 use kalfa_tools::{CalismaAlani, KabukAraci, KabukGuveni};
 use serde_json::{Value, json};
@@ -692,34 +692,149 @@ async fn cargo_agsiz_onceden_indirilmis_crate_ile_derler_ve_test_eder() {
     assert!(cikti.contains("test result: ok. 1 passed"), "{cikti}");
 }
 
-/// A15 (bilinen sınır, aşama 2 tasarımı §14): ağlı komutta çalışma alanına
-/// özel `CARGO_HOME` boş başlar ve kapta doldurulamaz. cargo paketi açarken
-/// hedefi kanonikleştirir; bu, `GetFinalPathNameByHandleW`'nin DOS yol adını
-/// ister, o da Mount Manager'a erişim ister ve AppContainer'da "Erişim
-/// engellendi" verir. Sınır kalkarsa bu test düşer; §14 ve §7.4 güncellenir.
+/// A15 regresyonu: ağlı çağrının özel `CARGO_HOME`'u, yalnızca geliştiricinin
+/// önceden önbelleğe aldığı arşiv ve crates.io indeks girdisiyle ağsız
+/// doldurulup paketi gerçekten açabilmeli. Kaynak ağacını kopyalamıyoruz.
 #[cfg(windows)]
 #[tokio::test]
-async fn cargo_ozel_registry_kapta_doldurulamaz() {
+async fn cargo_ozel_registry_onbellekten_agdisi_paket_acar() {
     let d = TempDir::new().unwrap();
-    ornek_yaz(RUST_ORNEGI, d.path());
-    let k = kurgu(d.path());
-    let fetch = k
+    std::fs::create_dir_all(d.path().join("src")).unwrap();
+    std::fs::write(
+        d.path().join("Cargo.toml"),
+        "[package]\nname = \"a15-offline-regression\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nmemchr = \"=2.8.3\"\n",
+    )
+    .unwrap();
+    std::fs::write(d.path().join("src/lib.rs"), "").unwrap();
+
+    // Herhangi bir hata durumunda dış ağa çıkılmaması için boş çözücülü sahte
+    // vekil kullanılır. İki hedef, yalnızca olası crates.io CONNECT girişimini
+    // ölçmek için aynı mevcut Cargo uçları olarak izin listesinde kalır.
+    let cozucu = Arc::new(SahteCozucu {
+        eslemeler: std::collections::HashMap::new(),
+    });
+    let k = kurgu_agli(d.path(), Some(cozucu));
+
+    // Mevcut test hazırlığı ilk çağrıda alan DACL'lerini ve özel önbellek
+    // kökünü kurar. Arşiv ve indeks bundan sonra, test sürecinin yetkisiyle
+    // özel CARGO_HOME'a kopyalanır.
+    let ilk = k
         .dene(&json!({
-            "program": "cargo",
-            "argumanlar": ["fetch", "--locked"],
-            "ag": true,
-            "zaman_asimi_sn": 600
+            "program": "cmd",
+            "argumanlar": ["/C", "exit 0"],
+            "zaman_asimi_sn": 30
         }))
         .await
-        .expect_err("A15 sınırı kalktı: §14 ve §7.4'ü güncelleyin");
-    assert!(fetch.contains("Downloaded hex"), "{fetch}");
-    assert!(fetch.contains("canonicaliz"), "{fetch}");
-    // Model ne yapılacağını öğrenir (2d-3).
+        .unwrap_or_else(|e| panic!("özel Cargo önbelleği hazırlığı başarısız: {e}"));
+    assert!(ilk.contains("Çıkış kodu: 0"), "{ilk}");
+
+    let cargo_home = OzelDizinler::yol(&k.veri().join("yalitim"), &alan_kimligi(d.path())).cargo();
     assert!(
-        fetch.contains("`cargo fetch` çalıştırması gerekiyor"),
-        "{fetch}"
+        cargo_home.is_dir(),
+        "özel CARGO_HOME hazırlanmalı: {cargo_home:?}"
     );
-    eprintln!("A15 ağlı cargo fetch:\n{fetch}");
+    let kaynak_dizin = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .into_iter()
+        .chain(
+            std::env::var_os("USERPROFILE")
+                .map(PathBuf::from)
+                .map(|ev| ev.join(".cargo")),
+        )
+        .find_map(|host_cargo| {
+            let registry = host_cargo.join("registry");
+            let entries = std::fs::read_dir(registry.join("cache")).ok()?;
+            entries.filter_map(Result::ok).find_map(|entry| {
+                let kimlik = entry.file_name().to_string_lossy().into_owned();
+                if !kimlik.starts_with("index.crates.io-") {
+                    return None;
+                }
+                let indeks_koku = registry.join("index").join(&kimlik);
+                let arsiv = entry.path().join("memchr-2.8.3.crate");
+                let indeks = indeks_koku.join(".cache/me/mc/memchr");
+                let ayar = indeks_koku.join("config.json");
+                (arsiv.is_file() && indeks.is_file() && ayar.is_file())
+                    .then_some((kimlik, arsiv, indeks, ayar))
+            })
+        })
+        .expect("host Cargo önbelleğinde memchr 2.8.3 arşivi ve crates.io indeksi olmalı");
+    let (registry_kimligi, arsiv, indeks, indeks_ayari) = kaynak_dizin;
+
+    let kaynak = cargo_home
+        .join("registry")
+        .join("src")
+        .join(&registry_kimligi)
+        .join("memchr-2.8.3");
+    assert!(
+        !kaynak.exists(),
+        "paket önceden açılmış olmamalı: {kaynak:?}"
+    );
+
+    let registry = cargo_home.join("registry");
+    let arsiv_dizini = registry.join("cache").join(&registry_kimligi);
+    let indeks_dizini = registry.join("index").join(&registry_kimligi);
+    std::fs::create_dir_all(&arsiv_dizini).unwrap();
+    std::fs::create_dir_all(indeks_dizini.join(".cache/me/mc")).unwrap();
+    std::fs::copy(arsiv, arsiv_dizini.join("memchr-2.8.3.crate")).unwrap();
+    std::fs::copy(indeks, indeks_dizini.join(".cache/me/mc/memchr")).unwrap();
+    std::fs::copy(indeks_ayari, indeks_dizini.join("config.json")).unwrap();
+
+    let (sonuc, ag) = k
+        .calistir_agli(
+            "cargo fetch --offline",
+            &["index.crates.io:443", "static.crates.io:443"],
+        )
+        .await;
+    let cikti = sonuc.unwrap_or_else(|e| panic!("önbellekten çevrimdışı fetch başarısız: {e}"));
+    assert!(cikti.contains("Çıkış kodu: 0"), "{cikti}");
+    // Bağlantı yokken kabuk ağ özeti üretmez; dolu özet varsa tek bir
+    // CONNECT girişimi veya ret bile çevrimdışı koşulu bozar.
+    assert!(
+        ag.as_ref().is_none_or(|a| a.hostlar.is_empty()),
+        "cargo fetch --offline CONNECT üretmemeli: {:?}",
+        ag
+    );
+
+    let kilit = std::fs::read_to_string(d.path().join("Cargo.lock")).unwrap();
+    assert!(
+        kilit
+            .replace("\r\n", "\n")
+            .contains("name = \"memchr\"\nversion = \"2.8.3\""),
+        "Cargo.lock tam önbellekteki sürümü çözmeli:\n{kilit}"
+    );
+    assert!(
+        kaynak.join("Cargo.toml").is_file(),
+        "Cargo arşivi özel registry/src altına açmalı: {kaynak:?}"
+    );
+    eprintln!("A15 çevrimdışı özel Cargo fetch çıktısı:\n{cikti}");
+}
+
+/// Cargo CONNECT isteği gerçek dış ağa çıkmadan vekile ulaşmalı. Boş sahte
+/// DNS bütün çözümlemeleri reddeder; paket veya indeks indirilemez.
+#[cfg(windows)]
+#[tokio::test]
+async fn cargo_connect_istegi_sahte_dns_ile_vekilde_gorulur() {
+    let d = TempDir::new().unwrap();
+    let k = kurgu_agli(
+        d.path(),
+        Some(Arc::new(SahteCozucu {
+            eslemeler: std::collections::HashMap::new(),
+        })),
+    );
+    let (_, ag) = k
+        .calistir_agli(
+            "cargo search memchr --limit 1 --config net.retry=0 --config http.timeout=2",
+            &["crates.io:443", "index.crates.io:443"],
+        )
+        .await;
+    let ag = ag.expect("Cargo CONNECT girişimi vekilde görülmeli");
+    assert!(
+        ag.hostlar
+            .iter()
+            .any(|h| { matches!(h.host.as_str(), "crates.io" | "index.crates.io") }),
+        "Cargo isteği kaybolmamalı: {:?}",
+        ag.hostlar
+    );
 }
 
 /// A12: `build.rs` MSVC'nin `cl.exe` ve `INCLUDE` ortamıyla C derler; bağlama
@@ -1292,12 +1407,11 @@ impl kalfa_sandbox::vekil::Cozucu for SahteCozucu {
     }
 }
 
-/// curl, git, npm, Node (fetch) ve pip yerel sahte vekile CONNECT gönderiyor;
-/// Linux'ta cargo da. İndirme yapılmaz (3d planı Görev 4, Windows alt planı
-/// Görev W4). WSL'de pip kurulu olmadığı için Linux'ta Python'un kendi
-/// istemcisi sınanır; pip vekili aynı ortam değişkenlerinden okur.
+/// curl, git, npm, Node (fetch) ve Python urllib yerel sahte vekile CONNECT
+/// gönderiyor; Linux'ta cargo da. Paket indirilmez (3d planı Görev 4, Windows
+/// alt planı Görev W4).
 #[tokio::test]
-async fn agli_curl_git_npm_node_pip_vekillle_connect_gonderir() {
+async fn agli_curl_git_npm_node_python_vekillle_connect_gonderir() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1405,9 +1519,9 @@ async fn agli_curl_git_npm_node_pip_vekillle_connect_gonderir() {
         ag.hostlar
     );
 
-    // 5. pip/python CONNECT gönderir
+    // 5. Python urllib CONNECT gönderir; paket indirmez.
     let py_komut = if cfg!(windows) {
-        "python -m pip download six --no-deps --no-cache-dir --timeout 5"
+        "python -c \"import urllib.request; urllib.request.urlopen('https://pypi.org/').read()\""
     } else {
         "python3 -c \"import urllib.request; urllib.request.urlopen('https://pypi.org/').read()\""
     };
@@ -1417,12 +1531,12 @@ async fn agli_curl_git_npm_node_pip_vekillle_connect_gonderir() {
         ag.hostlar
             .iter()
             .any(|h| h.host == "pypi.org" && h.baglanti_sayisi > 0),
-        "pip pypi.org'a CONNECT göndermeli: {:?}",
+        "Python urllib pypi.org'a CONNECT göndermeli: {:?}",
         ag.hostlar
     );
 
-    // 6. cargo CONNECT gönderir. Windows'ta A15 yüzünden ayrı testte
-    // (`cargo_fetch_a15_siniri_beklenir`).
+    // 6. cargo CONNECT gönderir. A15 testi çevrimdışı olduğundan bu pozitif
+    // Cargo kontrolü Linux ile sınırlıdır.
     #[cfg(target_os = "linux")]
     {
         let (_, ag) = k
@@ -1440,40 +1554,6 @@ async fn agli_curl_git_npm_node_pip_vekillle_connect_gonderir() {
             ag.hostlar
         );
     }
-}
-
-/// Bilinen sınır: cargo'nun yeni crate'i açması A15 yüzünden kapta düşer
-/// (aşama 3d Windows alt planı Görev W4, G6 raporu).
-#[cfg(windows)]
-#[tokio::test]
-async fn cargo_fetch_a15_siniri_beklenir() {
-    let d = TempDir::new().unwrap();
-    let k = kurgu_agli(d.path(), None);
-    std::fs::create_dir_all(d.path().join("src")).unwrap();
-    std::fs::write(
-        d.path().join("Cargo.toml"),
-        "[package]\nname = \"deneme\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[dependencies]\nitoa = \"1\"\n",
-    )
-    .unwrap();
-    std::fs::write(d.path().join("src/lib.rs"), "").unwrap();
-
-    let (sonuc, _) = k
-        .calistir_agli(
-            "cargo fetch",
-            &["index.crates.io:443", "static.crates.io:443"],
-        )
-        .await;
-    // Beklenen sınır: A15 AppContainer dosya kanonikleştirme sınırı. Sınır
-    // kalkarsa kırmızıya döner. Ağ kısmının (iptal denetimi dahil) geçtiğini
-    // indirmenin kendisi gösterir.
-    let cikti = match sonuc {
-        Ok(c) => c,
-        Err(e) => e,
-    };
-    assert!(
-        cikti.contains("Downloaded itoa") && cikti.contains("canonicalizing"),
-        "A15 sınırı bekleniyordu, çıktı:\n{cikti}"
-    );
 }
 
 /// Schannel'lı curl, stapling yapmayan bir hosta (index.crates.io) kapta
@@ -1494,17 +1574,18 @@ async fn curl_kapta_iptal_bilgisi_olmadan_baglanir() {
     assert!(cikti.contains("kod=200"), "{cikti}");
 }
 
-/// Bilinen sınır: Sistem Python'unun `pip`'i A16 sınıfından düşer. Kalfa'nın
-/// Python'uyla venv'de `pip install` çalışır (aşama 2 §12.3, aşama 3d Windows alt planı Görev W4).
+/// Sistem pip AC/Temp altında oluşturduğu dizinleri temizleyemiyor (A16).
+/// Paket yokken `--no-index` ile ölçülür; genel paket-bulunamadı hatası bu
+/// sınırın kanıtı değildir. İndirme veya kurulum yapılmaz.
 #[cfg(windows)]
 #[tokio::test]
-async fn sistem_pip_a16_siniri_beklenir() {
+async fn sistem_pip_a16_gecici_dizin_temizligi_siniri_beklenir() {
     let d = TempDir::new().unwrap();
     let k = kurgu_agli(d.path(), None);
 
     let (sonuc, _) = k
         .calistir_agli(
-            "python -m pip download six --no-deps --no-cache-dir",
+            "$env:PIP_CONFIG_FILE='nul'; python -m pip --isolated download six --no-index --no-deps --no-cache-dir --disable-pip-version-check",
             &["pypi.org:443", "files.pythonhosted.org:443"],
         )
         .await;
@@ -1514,11 +1595,24 @@ async fn sistem_pip_a16_siniri_beklenir() {
         Err(e) => e,
     };
     assert!(
-        cikti.contains("PermissionError")
-            || cikti.contains("Access is denied")
-            || cikti.contains("erişim engellendi")
-            || cikti.contains("ERROR:"),
-        "A16 sınırı bekleniyordu, çıktı:\n{cikti}"
+        cikti.contains("Failed to remove contents in a temporary directory")
+            && cikti.contains(r"AC\Temp\pip-"),
+        "A16 geçici dizin temizliği sınırı bekleniyordu, çıktı:\n{cikti}"
+    );
+    let kimlik = alan_kimligi(d.path());
+    let gecici = k
+        .veri()
+        .join("yalitim")
+        .join(&kimlik)
+        .join("ev/Packages")
+        .join(format!("Kalfa.Alan.{kimlik}"))
+        .join("AC/Temp");
+    assert!(
+        std::fs::read_dir(gecici)
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|g| { g.file_name().to_string_lossy().starts_with("pip-") && g.path().is_dir() }),
+        "pip temizleyemediğini bildirdiği dizini gerçekten bırakmalı"
     );
 }
 

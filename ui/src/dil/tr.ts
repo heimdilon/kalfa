@@ -10,6 +10,8 @@ import type {
   EklentiDurumu,
   Kip,
   KisayolTeklifi,
+  McpDurumEtiketi,
+  McpKipi,
   ModelProfili,
   YalitimYoklukNedeni,
 } from '../ipc/tipler';
@@ -397,6 +399,140 @@ export const tr = {
     "Yeni sürüm EVREN'e gönderim kapsamını değiştirdiği için bu eklentinin gönderim izinleri silindi. İlk gönderim yeniden sorulacak.",
   'eklentiler.kurulamadi': 'Eklenti kurulamadı: {mesaj}',
 
+  // Yerel MCP sunucuları (1.1a tasarımı §9). WASM eklentilerinden ayrıdır.
+  'mcp.baslik': 'MCP sunucuları',
+  'mcp.aciklama':
+    'Bilgisayarınızda çalışan yerel MCP sunucularının araçları modele sunulur. Bunlar eklenti değildir; kendi süreçlerinde çalışırlar.',
+  'mcp.ekle': 'Sunucu ekle',
+  'mcp.ice_aktar': "JSON'dan içe aktar",
+  'mcp.bos': 'Kayıtlı MCP sunucusu yok.',
+  'mcp.liste': 'Kayıtlı MCP sunucuları',
+  'mcp.rozet.yalitimli': 'Yalıtılmış süreç',
+  'mcp.rozet.tam_erisim': 'Tam sistem erişimi',
+  'mcp.rozet_aciklama.yalitimli':
+    'Erişim yalnız çağrı sırasında değil, sunucu başladığı andan kapanana kadar sürer: çalışma alanına yazabilir, izinli ağa çıkabilir.',
+  'mcp.rozet_aciklama.tam_erisim':
+    'Erişim yalnız çağrı sırasında değil, sunucu başladığı andan kapanana kadar sürer. Hesabınızın erişebildiği her şeye erişir. Sunucu kendiliğinden kapansa da geride çalışan süreçler kalabilir.',
+  'mcp.etkin': 'Etkin',
+  'mcp.durum.durdu': 'Durdu',
+  'mcp.durum.basliyor': 'Başlıyor',
+  'mcp.durum.calisiyor': 'Çalışıyor',
+  'mcp.durum.bosta_kapandi': 'Boşta kapandı',
+  'mcp.durum.hata': 'Hata',
+  'mcp.alanlar': 'Çalışma alanları',
+  'mcp.alan_yok': 'Bu sunucu henüz hiçbir çalışma alanında başlatılmadı.',
+  'mcp.alan_kimligi': 'Çalışma alanı {kimlik}',
+  'mcp.arac_sayisi': '{sayi} araç',
+  'mcp.hata': 'Son hata: {mesaj}',
+  'mcp.izin.yalitimli': 'Başlatma izni var (kalıcı)',
+  'mcp.izin.tam_erisim': 'Başlatma izni var (Kalfa kapanana kadar)',
+  'mcp.izin.yok': 'Başlatma izni yok',
+  'mcp.izni_geri_al': 'İzni geri al',
+  'mcp.yeniden_baslat': 'Yeniden başlat',
+  'mcp.yeniden_baslat_oturum_yok':
+    'Yeniden başlatmak için bu çalışma alanında bir oturum açın.',
+  'mcp.ayrinti': 'Ayrıntı',
+  'mcp.ayrinti_gizle': 'Ayrıntıyı gizle',
+  'mcp.duzenle': 'Düzenle',
+  'mcp.sil': 'Sil',
+  'mcp.reddedildi': 'Yerel pencerede vazgeçildi; hiçbir şey değişmedi.',
+  'mcp.kaydedildi': '{ad} kaydedildi.',
+  'mcp.silindi': '{ad} silindi.',
+
+  'mcp.form.baslik_yeni': 'Yeni MCP sunucusu',
+  'mcp.form.baslik_duzenle': '{ad} sunucusunu düzenle',
+  'mcp.form.ad': 'Ad',
+  'mcp.form.komut': 'Komut',
+  'mcp.form.komut_program': 'Program adı',
+  'mcp.form.komut_secili': 'Dosya seç',
+  'mcp.form.program_ipucu':
+    'PATH’te aranan çıplak bir ad yazın, örneğin npx. Paket sürümünü sabitlemenizi öneririz: paket@1.2.3.',
+  'mcp.form.gozat': 'Gözat',
+  'mcp.form.secili_yok': 'Henüz dosya seçilmedi.',
+  'mcp.form.secili_kayitli': 'Kayıtlı dosya',
+  'mcp.form.argumanlar': 'Argümanlar',
+  'mcp.form.argumanlar_ipucu': 'Her satır bir argümandır; programa metin olarak verilir.',
+  'mcp.form.ortam': 'Ortam değişkenleri',
+  'mcp.form.ortam_ad': 'Değişken adı',
+  'mcp.form.ortam_deger': 'Değer',
+  'mcp.form.ortam_gizli': 'Gizli',
+  'mcp.form.ortam_kayitli_gizli': 'Kayıtlı gizli değer (gösterilmez)',
+  'mcp.form.ortam_degistir': 'Değiştir',
+  'mcp.form.ortam_ekle': 'Değişken ekle',
+  'mcp.form.ortam_kaldir': '{ad} değişkenini kaldır',
+  'mcp.form.erisim': 'Erişim',
+  'mcp.form.tam_uyari':
+    'Tam sistem erişimi: sunucu hesabınızın erişebildiği her şeye erişir ve ağ sınırsızdır. Sunucu kendiliğinden kapansa da geride çalışan süreçler kalabilir. Bu kipe geçişi ve her çağrıyı Kalfa yerel bir pencerede ayrıca sorar.',
+  'mcp.form.ag': 'Ağ izinleri',
+  'mcp.form.ag_ipucu': 'Boş bırakırsanız sunucu ağa çıkamaz.',
+  'mcp.form.ag_sinirsiz': 'Sınırsız',
+  'mcp.form.ag_host': 'Host',
+  'mcp.form.ag_port': 'Port',
+  'mcp.form.ag_ozel': 'Özel ağ',
+  'mcp.form.ag_ekle': 'Ağ izni ekle',
+  'mcp.form.ag_kaldir': '{host} iznini kaldır',
+  'mcp.form.baslatma_zamani': 'Başlatma zaman aşımı (sn)',
+  'mcp.form.cagri_zamani': 'Çağrı zaman aşımı (sn)',
+  'mcp.form.yerel_onay':
+    'Kaydet dediğinizde Kalfa çözülmüş tam komutu yerel bir pencerede gösterir ve onayınızı ister.',
+  'mcp.form.kaydet': 'Kaydet',
+  'mcp.form.vazgec': 'Vazgeç',
+  'mcp.form.hata.ad': 'Sunucu için bir ad yazın.',
+  'mcp.form.hata.komut': 'Bir program adı yazın ya da bir dosya seçin.',
+  'mcp.form.hata.ortam': 'Her ortam değişkeninin bir adı olmalı.',
+  'mcp.form.hata.ag': 'Ağ izinlerinde host ve 1–65535 arasında port yazın.',
+  'mcp.form.hata.zaman': 'Zaman aşımları sıfırdan büyük tam sayı olmalı.',
+
+  'mcp.ice.baslik': "JSON'dan içe aktar",
+  'mcp.ice.aciklama':
+    'mcpServers biçimindeki yapılandırmayı yapıştırın. Metni Kalfa ayrıştırır; sunucular yalıtımlı ve kapalı eklenir.',
+  'mcp.ice.metin': 'JSON yapılandırması',
+  'mcp.ice.onizle': 'Önizle',
+  'mcp.ice.sunucular': 'Eklenecek sunucular',
+  'mcp.ice.gizli_say': 'Gizli say',
+  'mcp.ice.gizli': 'gizli',
+  'mcp.ice.atlanan': '{ad} atlandı: {neden}',
+  'mcp.ice.kaydet': 'İçe aktar',
+
+  'mcp.ayrinti.araclar': 'Araçlar',
+  'mcp.ayrinti.arac_yok': 'Bu çalışma alanında denetlenmiş araç yok.',
+  'mcp.ayrinti.denetim_kapali': 'Tanım denetimi kapalı',
+  'mcp.ayrinti.denetim_guvenli': 'Denetlendi',
+  'mcp.ayrinti.denetim_uyarili': 'Şüpheli, uyarıyla sunuluyor',
+  'mcp.ayrinti.denetim_kati': 'Şüpheli, sunulmuyor',
+  'mcp.ayrinti.denetim_bilinmiyor': 'Denetlenemedi',
+  'mcp.ayrinti.sunulmuyor': 'Modele sunulmuyor',
+  'mcp.ayrinti.denetim_metni': 'Denetlenen tanım',
+  'mcp.ayrinti.reddedilenler':
+    'Kapatılan araçlar (sıra no): {liste}. Tanımlarında gizli değer ya da görünmez karakter bulundu; adları gösterilmez.',
+  'mcp.ayrinti.stderr': 'Son hata çıktısı (maskeli)',
+
+  'mcp.kart.baslik': '{sunucu} bu çalışma alanında başlatılsın mı?',
+  'mcp.kart.model_disi': 'Bu kartı model açamaz ve yanıtlayamaz.',
+  'mcp.kart.erisim': 'Erişim',
+  'mcp.kart.komut': 'Komut',
+  'mcp.kart.ag': 'Ağ',
+  'mcp.kart.ag_yok': 'Ağ yok',
+  'mcp.kart.ag_sinirsiz': 'Sınırsız',
+  'mcp.kart.wde':
+    'Sunucunun kodu modelin yazabildiği bir yerde. Çalışma alanında değişiklik olursa her başlatmada yeniden sorulur.',
+  'mcp.kart.sure.yalitimli':
+    'İzin bu çalışma alanında kalıcıdır; Ayarlar’dan geri alabilirsiniz.',
+  'mcp.kart.sure.tam_erisim':
+    'İzin Kalfa açık kaldıkça geçerlidir. Başlat dediğinizde Kalfa yerel bir pencerede ayrıca onay ister.',
+  'mcp.kart.baslat': 'Başlat',
+  'mcp.kart.baslatma': 'Başlatma',
+  'mcp.kart.verilmedi': '{sunucu} başlatılmadı.',
+
+  'mcp.onay.kaynak': '{sunucu} MCP sunucusu · {arac}',
+  'mcp.onay.erisim': 'Erişim',
+  'mcp.onay.yalitimli_ag_yok': 'Yalıtılmış süreç: çalışma alanına yazabilir, ağa çıkamaz.',
+  'mcp.onay.yalitimli_ag': 'Yalıtılmış süreç: çalışma alanına yazabilir ve şu adreslere çıkabilir: {hostlar}.',
+  'mcp.onay.tam_erisim':
+    'Tam sistem erişimi: hesabınızın erişebildiği her şeye erişir, ağ sınırsızdır. Bu yüzden onayı yerel pencere ister.',
+  'mcp.onay.yerel':
+    'Tam sistem erişimli MCP araçları, onayınızdan sonra yerel bir pencerede bir kez daha sorulur. Bu araçlar için "bu oturumda izin ver" yoktur.',
+
   // "Bu oturumdaki izinler" panelindeki eklentiler (aşama 4 tasarımı §14).
   'oturum.eklentiler': 'Eklentiler',
   'oturum.eklenti.aciklama':
@@ -536,6 +672,7 @@ export const tr = {
   'kisayol.dosya': 'Bu oturumda {dizin}/ altındaki dosyaları {arac} ile onaysız düzenleyebilir.',
   'kisayol.dosya_kok': 'Bu oturumda çalışma alanındaki dosyaları {arac} ile onaysız düzenleyebilir.',
   'kisayol.kabuk': "Bu oturumda {program} programını {dizin} dizininde yalıtımlı ve ağsız çalıştırabilir.",
+  'kisayol.mcp': 'Bu oturumda {sunucu} sunucusunun {arac} aracını onaysız çağırabilir.',
   'kisayol.liste': 'Bu oturumdaki izinler ({sayi})',
   'kisayol.kaldir': 'Bu izni kaldır',
   'kisayol.aciklama': 'İzin kipi değişince bu izinler silinir; oturum kapanınca da kalmaz.',
@@ -638,6 +775,24 @@ export const EKLENTI_DURUMU_ADI: Record<EklentiDurumu['tip'], MetinAnahtari> = {
   Yuklenemedi: 'eklentiler.durum.Yuklenemedi',
 };
 
+export const MCP_DURUMU_ADI: Record<McpDurumEtiketi, MetinAnahtari> = {
+  durdu: 'mcp.durum.durdu',
+  basliyor: 'mcp.durum.basliyor',
+  calisiyor: 'mcp.durum.calisiyor',
+  bosta_kapandi: 'mcp.durum.bosta_kapandi',
+  hata: 'mcp.durum.hata',
+};
+
+export const MCP_ROZETI: Record<McpKipi, MetinAnahtari> = {
+  yalitimli: 'mcp.rozet.yalitimli',
+  tam_erisim: 'mcp.rozet.tam_erisim',
+};
+
+export const MCP_ROZET_ACIKLAMASI: Record<McpKipi, MetinAnahtari> = {
+  yalitimli: 'mcp.rozet_aciklama.yalitimli',
+  tam_erisim: 'mcp.rozet_aciklama.tam_erisim',
+};
+
 /**
  * Eklenti tarifindeki manifest ucunun (`embeddings`, `rerank`) okunur adı;
  * bilinmeyen uç olduğu gibi.
@@ -705,6 +860,7 @@ export const YALITIM_SADE: Record<YalitimYoklukNedeni, MetinAnahtari> = {
 /** Kısayolun cümlesi (aşama 3 tasarımı §9.1). */
 export function kisayolCumlesi(t: KisayolTeklifi): string {
   if (t.tip === 'Kabuk') return m('kisayol.kabuk', { program: t.program, dizin: t.dizin });
+  if (t.tip === 'Mcp') return m('kisayol.mcp', { sunucu: t.sunucu, arac: t.arac });
   return t.dizin === '.'
     ? m('kisayol.dosya_kok', { arac: t.arac })
     : m('kisayol.dosya', { dizin: t.dizin, arac: t.arac });

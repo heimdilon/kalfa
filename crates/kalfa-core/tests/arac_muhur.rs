@@ -63,6 +63,72 @@ fn diff_olmadan_gorunmez_icerik_bilgisi_muhre_baglanir() {
     assert_ne!(once, muhur_hesapla(cagri, "dosya_yaz", &json!({}), &h));
 }
 
+fn mcp_hazirligi(baslatma: u64, arac_tanimi: u8) -> Hazirlik {
+    let tarif = McpTarifi::yeni(
+        McpTanimOzeti::ozetten([1; 32]),
+        McpPolitikaOzeti::ozetten([2; 32]),
+        McpKorumaOzeti::ozetten([3; 32]),
+        McpYalitimProfiliOzeti::ozetten([4; 32]),
+        McpBaslatmaSayaci::yeni(baslatma),
+    );
+    Hazirlik {
+        mcp: Some(McpAracHazirligi {
+            sunucu: McpKartEtiketi::yeni("deneme-sunucusu").unwrap(),
+            arac: McpKartEtiketi::yeni("dosya-oku").unwrap(),
+            kip: Kip::Proje,
+            erisim: McpErisim::Yalitimli,
+            ag: McpAgKarti::Kapali,
+            ilk_cagri: false,
+            tarif,
+            arac_tanimi: McpAracTanimOzeti::ozetten([arac_tanimi; 32]),
+        }),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn mcp_muhru_r_d_ve_argumanlari_baglar() {
+    let cagri = CagriId::yeni();
+    let arguman = json!({"yol": "rapor.txt"});
+    let ilk = mcp_hazirligi(5, 7);
+    let muhur = muhur_hesapla(cagri, "mcp__deneme__dosya_oku", &arguman, &ilk);
+    assert_eq!(
+        muhur,
+        muhur_hesapla(cagri, "mcp__deneme__dosya_oku", &arguman, &ilk),
+        "aynı R/D/argüman deterministik mühür üretir"
+    );
+    assert_ne!(
+        muhur,
+        muhur_hesapla(
+            cagri,
+            "mcp__deneme__dosya_oku",
+            &arguman,
+            &mcp_hazirligi(6, 7)
+        ),
+        "N değişince R ve çağrı mührü değişir"
+    );
+    assert_ne!(
+        muhur,
+        muhur_hesapla(
+            cagri,
+            "mcp__deneme__dosya_oku",
+            &arguman,
+            &mcp_hazirligi(5, 8)
+        ),
+        "araç tanımı D değişince çağrı mührü değişir"
+    );
+    assert_ne!(
+        muhur,
+        muhur_hesapla(
+            cagri,
+            "mcp__deneme__dosya_oku",
+            &json!({"yol": "baska.txt"}),
+            &ilk
+        ),
+        "argüman değişince çağrı mührü değişir"
+    );
+}
+
 #[test]
 fn akisli_ozet_buyuk_kaynaktan_sabit_parcalar_okur_ve_iptali_isler() {
     struct Kaynak {

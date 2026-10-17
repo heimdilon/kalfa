@@ -70,6 +70,65 @@ describe('ana pencere komutları (1c tasarımı §6.1)', () => {
   });
 });
 
+describe('MCP komutları (1.1a-2 Görev 10)', () => {
+  it('komut adları ve argüman adları Rust tarafıyla aynı; yol alanı yok', async () => {
+    const c = kaydet();
+    const form = {
+      ad: 'yerel',
+      komut: { tur: 'secili_yurutulebilir' as const, kimlik: 'mcp-komut-1' },
+      baslatma_zamani_asimi_sn: 30,
+      cagri_zamani_asimi_sn: 120,
+    };
+    await ana.mcpDurumu();
+    await ana.mcpSunucuAyrintisi('yerel');
+    await ana.mcpKomutSec();
+    await ana.mcpTaslakOlustur(null, form);
+    await ana.mcpTaslakGuncelle('t-1', 'eski', form);
+    await ana.mcpTaslakKaydet('t-1', 2, 'o-1');
+    await ana.mcpIceAktarOnizle('{}');
+    await ana.mcpIceAktarGizlilik('t-1', 'yerel', 'ANAHTAR', true);
+    await ana.mcpIceAktarKaydet('t-1', 3, null);
+    await ana.mcpEtkinAyarla('yerel', false);
+    await ana.mcpSil('yerel');
+    await ana.mcpYenidenBaslat('o-1', 'yerel');
+    await ana.mcpBaslatmaKartiYanitla('k-1', true);
+    await ana.mcpBaslatmaIzniGeriAl('alan-1', 'yerel');
+    expect(c).toEqual([
+      ['mcp_durumu', {}],
+      ['mcp_sunucu_ayrintisi', { ad: 'yerel' }],
+      ['mcp_komut_sec', {}],
+      ['mcp_taslak_olustur', { eski_ad: null, form }],
+      ['mcp_taslak_guncelle', { taslak_kimligi: 't-1', eski_ad: 'eski', form }],
+      ['mcp_taslak_kaydet', { taslak_kimligi: 't-1', kusak: 2, oturum: 'o-1' }],
+      ['mcp_ice_aktar_onizle', { json: '{}' }],
+      [
+        'mcp_ice_aktar_gizlilik',
+        { taslak_kimligi: 't-1', sunucu: 'yerel', ortam: 'ANAHTAR', gizli: true },
+      ],
+      ['mcp_ice_aktar_kaydet', { taslak_kimligi: 't-1', kusak: 3, oturum: null }],
+      ['mcp_etkin_ayarla', { ad: 'yerel', etkin: false }],
+      ['mcp_sil', { ad: 'yerel' }],
+      ['mcp_yeniden_baslat', { oturum: 'o-1', ad: 'yerel' }],
+      ['mcp_baslatma_karti_yanitla', { istek_kimligi: 'k-1', kabul: true }],
+      ['mcp_baslatma_izni_geri_al', { alan_kimligi: 'alan-1', ad: 'yerel' }],
+    ]);
+  });
+
+  it('kanal eski revizyonlu görüntüyü yenisinin üstüne yazmaz', async () => {
+    const c = kaydet();
+    const gelenler: number[] = [];
+    await ana.mcpDinle((durum) => gelenler.push(durum.revizyon));
+    expect(c[0][0]).toBe('mcp_dinle');
+    const kanal = c[0][1]?.kanal as Channel<{ revizyon: number }>;
+    expect(kanal).toBeInstanceOf(Channel);
+    const bos = { sunucular: [], baslatma_kartlari: [] };
+    for (const revizyon of [2, 1, 2, 3]) {
+      kanal.onmessage({ revizyon, ...bos } as never);
+    }
+    expect(gelenler).toEqual([2, 3]);
+  });
+});
+
 describe('şart penceresi komutları (1c tasarımı §6.1)', () => {
   it('komut adları ve argüman adları', async () => {
     const c = kaydet();

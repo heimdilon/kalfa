@@ -404,6 +404,16 @@ pub enum ButceMesaji {
         islem: ButceIslemId,
         kullanim: Option<GunlukToken>,
     },
+    /// Oturum bütçesiyle çalışan harici denetçi çağrısının (ör. MCP araç tanımı
+    /// denetimi) gönderim günlüğü (`Istek`) ve `Kullanim` satırlarını oturum
+    /// kaydına yazar. Oturum iptal edilmiş, kapanmış veya kayıt hatasına
+    /// düşmüşse `false` döner.
+    DenetimGunlugu {
+        girdi: crate::denetci::DenetimGirdisi,
+        model: String,
+        yanit: Box<crate::denetci::DenetimYaniti>,
+        tamam: oneshot::Sender<bool>,
+    },
 }
 
 /// Oturuma bağlı izin istemcisi (5b tasarımı §4.1). Her oturumun kendi kanalı
@@ -413,7 +423,7 @@ pub struct ButceTalepci(mpsc::Sender<ButceMesaji>);
 
 impl ButceTalepci {
     /// Oturumun talep kanalı: gönderici istemcide, alıcı oturum görevindedir.
-    pub(crate) fn kanal() -> (Self, mpsc::Receiver<ButceMesaji>) {
+    pub fn kanal() -> (Self, mpsc::Receiver<ButceMesaji>) {
         let (gonderici, alici) = mpsc::channel(TALEP_KAPASITESI);
         (Self(gonderici), alici)
     }
@@ -440,6 +450,32 @@ impl ButceTalepci {
     /// süpürmesi o denemeyi zaten bilinmeyen olarak kapatmıştır.
     pub async fn bitir(&self, islem: ButceIslemId, kullanim: Option<GunlukToken>) {
         let _ = self.0.send(ButceMesaji::Bitis { islem, kullanim }).await;
+    }
+
+    /// Bu oturumun bütçesiyle yapılan harici denetçi çağrısının gönderim günlüğü
+    /// (`Istek`) ve `Kullanim` satırlarını oturum kaydına yazar. Oturum/tur
+    /// aktif ve sağlıklıysa `true`, iptal edilmiş veya kapanmışsa `false` döner.
+    pub async fn denetim_gunlugu_kaydet(
+        &self,
+        girdi: crate::denetci::DenetimGirdisi,
+        model: String,
+        yanit: crate::denetci::DenetimYaniti,
+    ) -> bool {
+        let (tamam, alici) = oneshot::channel();
+        if self
+            .0
+            .send(ButceMesaji::DenetimGunlugu {
+                girdi,
+                model,
+                yanit: Box::new(yanit),
+                tamam,
+            })
+            .await
+            .is_err()
+        {
+            return false;
+        }
+        alici.await.unwrap_or(false)
     }
 }
 

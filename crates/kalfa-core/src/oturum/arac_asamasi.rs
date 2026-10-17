@@ -5,8 +5,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use futures_util::StreamExt;
+use futures_util::future::BoxFuture;
 use futures_util::stream::FuturesUnordered;
+use futures_util::{FutureExt, StreamExt};
 use kalfa_evren::YanitMeta;
 use kalfa_evren::tipler::{ChatMessage, ToolCall};
 use serde_json::Value;
@@ -15,8 +16,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::{Etki, Oturum};
 use crate::arac::{
-    Arac, AracCiktisi, AracHatasi, AracOrtami, CiktiGonderici, CiktiParcasi, DosyaDegisiklikleri,
-    GonderimTalebi, GonderimYaniti, Hazirlik, OrtamIstegi,
+    Arac, AracAnlikGoruntusu, AracCiktisi, AracHatasi, AracOrtami, AracTamamlama, CiktiGonderici,
+    CiktiParcasi, DosyaDegisiklikleri, GonderimTalebi, GonderimYaniti, Hazirlik, OrtamIstegi,
 };
 use crate::butce::ButceIslemId;
 use crate::denetci::{DenetimGirdisi, DenetimKipi, DenetimSonucu};
@@ -32,8 +33,8 @@ use crate::kimlik::{CagriId, IslemId};
 use crate::kisayol::{Kisayol, KisayolTeklifi, teklif};
 use crate::muhur::{OnayMuhru, muhur_hesapla};
 use crate::protokol::{
-    AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OnayOgesi, OnaysizDegisiklikler,
-    OnizlemeNedeni, OnizlemeOgesi,
+    AracDurumu, BitisNedeni, Komut, McpOnayKarti, Olay, OnayKarari, OnayOgesi,
+    OnaysizDegisiklikler, OnizlemeNedeni, OnizlemeOgesi,
 };
 use crate::tur_ozeti::{GeriAlinabilirlik, KomutOzeti, YazilanDosya};
 use crate::yol::CalismaYolu;
@@ -64,6 +65,9 @@ struct BekleyenSonuc {
 struct Planlanan {
     cagri: CagriId,
     model_id: String,
+    /// Onay eskidikten sonra yalnız bu MCP çağrısı yeniden planlanır;
+    /// aynı model yanıtındaki tamamlanan çağrılar kuyruğa geri girmez.
+    model_cagrisi: ToolCall,
     anahtar: String,
     arac: Arc<dyn Arac>,
     argumanlar: Value,
@@ -99,7 +103,75 @@ struct CagriSonucu {
     degisiklikler: Option<DosyaDegisiklikleri>,
     kalfa_uretimi: bool,
     denetlenecek: Option<DenetimGirdisi>,
+    denetim: Option<DenetimSonucu>,
+    /// MCP yöneticisinin çağrı kaydı ve kilit tutamacı. Core, sonuç
+    /// denetimi/kaydından sonra tamamlar; drop iptal cleanup'ını başlatır.
+    tamamlama: Option<AracTamamlama>,
     ag: Option<crate::tur_ozeti::AgKomutOzeti>,
+}
+
+enum McpFinalizasyonOlayi {
+    OnayEskidi {
+        plan: Box<Planlanan>,
+        sonuc: Result<(), AracHatasi>,
+    },
+    Sonuc {
+        sonuc: Box<CagriSonucu>,
+        finalizasyon: Result<(), AracHatasi>,
+        iptal_yolu: bool,
+    },
+}
+
+type McpFinalizasyonGelecegi = BoxFuture<'static, McpFinalizasyonOlayi>;
+
+fn mcp_iptal_ve_bekle_baslat(plan: Planlanan, tamamlama: AracTamamlama) -> McpFinalizasyonGelecegi {
+    async move {
+        let sonuc = tamamlama.iptal_ve_bekle().await;
+        McpFinalizasyonOlayi::OnayEskidi {
+            plan: Box::new(plan),
+            sonuc,
+        }
+    }
+    .boxed()
+}
+
+fn mcp_son_denetimini_baslat(
+    mut sonuc: CagriSonucu,
+) -> Result<McpFinalizasyonGelecegi, Box<CagriSonucu>> {
+    let Some(tamamlama) = sonuc.tamamlama.take() else {
+        return Err(Box::new(sonuc));
+    };
+    let iptal_yolu = sonuc.durum == AracDurumu::IptalEdildi;
+    Ok(async move {
+        let finalizasyon = if iptal_yolu {
+            tamamlama.iptal_ve_bekle().await
+        } else {
+            tamamlama.tamamla().await
+        };
+        McpFinalizasyonOlayi::Sonuc {
+            sonuc: Box::new(sonuc),
+            finalizasyon,
+            iptal_yolu,
+        }
+    }
+    .boxed())
+}
+
+fn mcp_finalizasyon_sonucuna_uygula(sonuc: &mut CagriSonucu, hata: bool) {
+    if !hata {
+        return;
+    }
+    sonuc.durum = AracDurumu::Basarisiz;
+    sonuc.icerik = AracHatasi::SonucIsleme.to_string();
+    sonuc.kaynak = "kalfa:sonuç".to_string();
+    sonuc.hata_sayilmaz = false;
+    sonuc.guvenlik_uyarilari.clear();
+    sonuc.komut = None;
+    sonuc.degisiklikler = None;
+    sonuc.kalfa_uretimi = true;
+    sonuc.denetlenecek = None;
+    sonuc.denetim = None;
+    sonuc.ag = None;
 }
 
 impl CagriSonucu {
@@ -118,6 +190,8 @@ impl CagriSonucu {
             degisiklikler: None,
             kalfa_uretimi: true,
             denetlenecek: None,
+            denetim: None,
+            tamamlama: None,
             ag: None,
         }
     }
@@ -137,188 +211,270 @@ pub(super) enum AsamaSonucu {
     Bitir(BitisNedeni),
 }
 
+struct YurutmeSonucu {
+    bitis: Option<BitisNedeni>,
+    yeniden_onay: Vec<ToolCall>,
+    tamamlanan_model_cagrilari: HashSet<String>,
+}
+
+const MCP_TAZE_ONAY_UYARISI: &str =
+    "MCP hazırlığı onaydan sonra değişti; güncel kartı yeniden onaylayın.";
+
 fn tekrar_anahtari(tc: &ToolCall) -> String {
     format!("{}\u{0}{}", tc.function.name, tc.function.arguments)
+}
+
+fn taze_onay_cagrilari(cagrilar: Vec<ToolCall>, tamamlananlar: &HashSet<String>) -> Vec<ToolCall> {
+    cagrilar
+        .into_iter()
+        .filter(|tc| !tamamlananlar.contains(&tc.id))
+        .collect()
+}
+
+#[cfg(test)]
+mod taze_onay_testleri {
+    use super::*;
+
+    fn arac_cagrisi(id: &str) -> ToolCall {
+        ToolCall {
+            id: id.into(),
+            kind: "function".into(),
+            function: kalfa_evren::tipler::FunctionCall {
+                name: "mcp__deneme__oku".into(),
+                arguments: "{}".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn taze_onay_kuyrugu_yalniz_tamamlanmamis_cagrilari_tutar() {
+        let tamamlananlar = HashSet::from(["bitti".to_string()]);
+        let siradaki = taze_onay_cagrilari(
+            vec![arac_cagrisi("eskidi"), arac_cagrisi("bitti")],
+            &tamamlananlar,
+        );
+
+        assert_eq!(siradaki.len(), 1);
+        assert_eq!(siradaki[0].id, "eskidi");
+    }
 }
 
 impl Oturum {
     pub(super) async fn arac_asamasi(
         &mut self,
         cagrilar: Vec<ToolCall>,
+        goruntu: &AracAnlikGoruntusu,
         hata_sayaci: &mut HashMap<String, u32>,
     ) -> AsamaSonucu {
-        let mut serbest = Vec::new();
-        let mut onayli = Vec::new();
+        let mut siradaki_cagrilar = cagrilar;
+        let mut taze_mcp_onayi = false;
+        let mut tamamlanan_model_cagrilari = HashSet::new();
         let mut bekleyen_sonuclar = Vec::new();
         // Git korumaları bu yanıtın planlamasında bir kez çözülür (ilk yazan
         // hazırlıkta); yürütme onları kilit altında yeniden çözer.
         let siniflandirici = self.baglam.siniflandirici.clone();
-        let mut korumalar = None;
-        for tc in cagrilar {
-            let cagri = CagriId::yeni();
-            let plan = if self.iptal.is_cancelled() {
-                Err("tur iptal edildi".into())
-            } else {
-                self.planla(cagri, &tc, &siniflandirici, &mut korumalar)
-                    .await
-            };
-            match plan {
-                Ok((plan, Karar::Serbest)) => serbest.push(plan),
-                Ok((plan, Karar::Onayli { uyarilar })) => onayli.push((plan, uyarilar, false)),
-                Ok((plan, Karar::YerelOnayli { uyarilar })) => onayli.push((plan, uyarilar, true)),
-                Ok((plan, Karar::Yasak { neden })) => {
-                    let s = CagriSonucu::plandan(
-                        &plan,
-                        AracDurumu::Reddedildi,
-                        format!("[izin verilmedi] {neden}"),
-                    );
-                    self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
-                        .await;
-                }
-                Err(mesaj) => {
-                    let durum = if self.iptal.is_cancelled() {
-                        AracDurumu::IptalEdildi
-                    } else {
-                        AracDurumu::Basarisiz
-                    };
-                    let icerik = if durum == AracDurumu::IptalEdildi {
-                        "[çalıştırılmadı: tur iptal edildi]".to_string()
-                    } else {
-                        format!("[hata] {mesaj}")
-                    };
-                    let s = CagriSonucu {
-                        cagri,
-                        model_id: tc.id.clone(),
-                        arac: tc.function.name.clone(),
-                        anahtar: tekrar_anahtari(&tc),
-                        durum,
-                        icerik,
-                        kaynak: "kalfa:sonuç".to_string(),
-                        hata_sayilmaz: false,
-                        guvenlik_uyarilari: Vec::new(),
-                        komut: None,
-                        degisiklikler: None,
-                        kalfa_uretimi: true,
-                        denetlenecek: None,
-                        ag: None,
-                    };
-                    self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
-                        .await;
+        loop {
+            let mut serbest = Vec::new();
+            let mut onayli = Vec::new();
+            let mut korumalar = None;
+            for tc in std::mem::take(&mut siradaki_cagrilar) {
+                let cagri = CagriId::yeni();
+                let plan = if self.iptal.is_cancelled() {
+                    Err("tur iptal edildi".into())
+                } else {
+                    self.planla(cagri, &tc, goruntu, &siniflandirici, &mut korumalar)
+                        .await
+                };
+                match plan {
+                    Ok((mut plan, karar)) => {
+                        // İcra kapısı planlanan gerçek izin kararına göre kalır.
+                        // Eskimiş MCP kartı yalnızca karttaki uyarıyı ve Serbest
+                        // karardan Onaylı karta yükseltmeyi etkiler.
+                        plan.karar = karar.clone();
+                        let kart_karari = if taze_mcp_onayi && plan.hazirlik.mcp.is_some() {
+                            karar.birlestir(Karar::Onayli {
+                                uyarilar: vec![MCP_TAZE_ONAY_UYARISI.to_string()],
+                            })
+                        } else {
+                            karar
+                        };
+                        match kart_karari {
+                            Karar::Serbest => serbest.push(plan),
+                            Karar::Onayli { uyarilar } => onayli.push((plan, uyarilar, false)),
+                            Karar::YerelOnayli { uyarilar } => {
+                                onayli.push((plan, uyarilar, true));
+                            }
+                            Karar::Yasak { neden } => {
+                                let s = CagriSonucu::plandan(
+                                    &plan,
+                                    AracDurumu::Reddedildi,
+                                    format!("[izin verilmedi] {neden}"),
+                                );
+                                self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
+                                    .await;
+                            }
+                        }
+                    }
+                    Err(mesaj) => {
+                        let durum = if self.iptal.is_cancelled() {
+                            AracDurumu::IptalEdildi
+                        } else {
+                            AracDurumu::Basarisiz
+                        };
+                        let icerik = if durum == AracDurumu::IptalEdildi {
+                            "[çalıştırılmadı: tur iptal edildi]".to_string()
+                        } else {
+                            format!("[hata] {mesaj}")
+                        };
+                        let s = CagriSonucu {
+                            cagri,
+                            model_id: tc.id.clone(),
+                            arac: tc.function.name.clone(),
+                            anahtar: tekrar_anahtari(&tc),
+                            durum,
+                            icerik,
+                            kaynak: "kalfa:sonuç".to_string(),
+                            hata_sayilmaz: false,
+                            guvenlik_uyarilari: Vec::new(),
+                            komut: None,
+                            degisiklikler: None,
+                            kalfa_uretimi: true,
+                            denetlenecek: None,
+                            denetim: None,
+                            tamamlama: None,
+                            ag: None,
+                        };
+                        self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
+                            .await;
+                    }
                 }
             }
-        }
 
-        // Hazırlıkta iptal, önceden planlanan ve henüz ele alınmayan
-        // çağrıları da kapatır; sonraki model isteğinde eksik tool yanıtı kalmaz.
-        if self.iptal.is_cancelled() {
-            for p in serbest.iter().chain(onayli.iter().map(|(p, _, _)| p)) {
+            // Hazırlıkta iptal, önceden planlanan ve henüz ele alınmayan
+            // çağrıları da kapatır; sonraki model isteğinde eksik tool yanıtı kalmaz.
+            if self.iptal.is_cancelled() {
+                for p in serbest.iter().chain(onayli.iter().map(|(p, _, _)| p)) {
+                    self.sonuc_isle(
+                        CagriSonucu::plandan(
+                            p,
+                            AracDurumu::IptalEdildi,
+                            "[çalıştırılmadı: tur iptal edildi]".into(),
+                        ),
+                        hata_sayaci,
+                        &mut bekleyen_sonuclar,
+                    )
+                    .await;
+                }
+                return AsamaSonucu::Bitir(BitisNedeni::Iptal);
+            }
+
+            // Daha sonraki bir hazırlık beklenirken önceki planların kipi de
+            // değişmiş olabilir. Geçersiz planlar için onay kartı gösterme.
+            let politika = self.politika.load(Ordering::SeqCst);
+            let (mut serbest, mut eski): (Vec<_>, Vec<_>) =
+                serbest.into_iter().partition(|p| p.politika == politika);
+            let (onayli, eski_onayli): (Vec<_>, Vec<_>) = onayli
+                .into_iter()
+                .partition(|(p, _, _)| p.politika == politika);
+            eski.extend(eski_onayli.into_iter().map(|(p, _, _)| p));
+            // Aynı adım kuralı (güvenlik analizi Bulgu 3): onay isteyen bir komut
+            // varsa aynı adımdaki onaysız yazmalar da onaya çıkar; yoksa kullanıcı
+            // komutu onaylarken aynı anda yazılan kodu görmezdi. Planın kararı
+            // (izin motorunun kararı) değişmez; yürütmede onunla karşılaştırılır.
+            let mut onayli = onayli;
+            if onayli.iter().any(|(p, _, _)| p.hazirlik.kabuk.is_some()) {
+                let (yazan, kalan): (Vec<_>, Vec<_>) = serbest
+                    .into_iter()
+                    .partition(|p| !p.hazirlik.yazilan.is_empty());
+                serbest = kalan;
+                onayli.extend(
+                    yazan
+                        .into_iter()
+                        .map(|p| (p, vec![AYNI_ADIM_UYARISI.to_string()], false)),
+                );
+            }
+            for p in eski {
                 self.sonuc_isle(
                     CagriSonucu::plandan(
-                        p,
+                        &p,
                         AracDurumu::IptalEdildi,
-                        "[çalıştırılmadı: tur iptal edildi]".into(),
+                        format!("[çalıştırılmadı] {}", AracHatasi::PolitikaDegisti),
                     ),
                     hata_sayaci,
                     &mut bekleyen_sonuclar,
                 )
                 .await;
             }
-            return AsamaSonucu::Bitir(BitisNedeni::Iptal);
-        }
 
-        // Daha sonraki bir hazırlık beklenirken önceki planların kipi de
-        // değişmiş olabilir. Geçersiz planlar için onay kartı gösterme.
-        let politika = self.politika.load(Ordering::SeqCst);
-        let (mut serbest, mut eski): (Vec<_>, Vec<_>) =
-            serbest.into_iter().partition(|p| p.politika == politika);
-        let (onayli, eski_onayli): (Vec<_>, Vec<_>) = onayli
-            .into_iter()
-            .partition(|(p, _, _)| p.politika == politika);
-        eski.extend(eski_onayli.into_iter().map(|(p, _, _)| p));
-        // Aynı adım kuralı (güvenlik analizi Bulgu 3): onay isteyen bir komut
-        // varsa aynı adımdaki onaysız yazmalar da onaya çıkar; yoksa kullanıcı
-        // komutu onaylarken aynı anda yazılan kodu görmezdi. Planın kararı
-        // (izin motorunun kararı) değişmez; yürütmede onunla karşılaştırılır.
-        let mut onayli = onayli;
-        if onayli.iter().any(|(p, _, _)| p.hazirlik.kabuk.is_some()) {
-            let (yazan, kalan): (Vec<_>, Vec<_>) = serbest
-                .into_iter()
-                .partition(|p| !p.hazirlik.yazilan.is_empty());
-            serbest = kalan;
-            onayli.extend(
-                yazan
-                    .into_iter()
-                    .map(|p| (p, vec![AYNI_ADIM_UYARISI.to_string()], false)),
-            );
-        }
-        for p in eski {
-            self.sonuc_isle(
-                CagriSonucu::plandan(
-                    &p,
-                    AracDurumu::IptalEdildi,
-                    format!("[çalıştırılmadı] {}", AracHatasi::PolitikaDegisti),
-                ),
-                hata_sayaci,
-                &mut bekleyen_sonuclar,
-            )
-            .await;
-        }
-
-        if !onayli.is_empty() {
-            let toplama = self.onay_topla(onayli).await;
-            for s in toplama.reddedilen {
-                self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
-                    .await;
-            }
-            if let Some(neden) = toplama.iptal {
-                for p in serbest
-                    .iter()
-                    .chain(&toplama.onaylanan)
-                    .chain(&toplama.yanitsiz)
-                {
-                    let s = CagriSonucu::plandan(
-                        p,
-                        AracDurumu::IptalEdildi,
-                        "[çalıştırılmadı: tur iptal edildi]".into(),
-                    );
+            if !onayli.is_empty() {
+                let toplama = self.onay_topla(onayli).await;
+                for s in toplama.reddedilen {
                     self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
                         .await;
                 }
-                return AsamaSonucu::Bitir(neden);
-            }
-            if toplama.politika_degisti {
-                self.hata(
+                if let Some(neden) = toplama.iptal {
+                    for p in serbest
+                        .iter()
+                        .chain(&toplama.onaylanan)
+                        .chain(&toplama.yanitsiz)
+                    {
+                        let s = CagriSonucu::plandan(
+                            p,
+                            AracDurumu::IptalEdildi,
+                            "[çalıştırılmadı: tur iptal edildi]".into(),
+                        );
+                        self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
+                            .await;
+                    }
+                    return AsamaSonucu::Bitir(neden);
+                }
+                if toplama.politika_degisti {
+                    self.hata(
                     "İzin kipi değişti; bekleyen onaylar geçersiz sayıldı ve bu adımdaki işlemler yapılmadı.",
                 )
                 .await;
-                for p in serbest
-                    .iter()
-                    .chain(&toplama.onaylanan)
-                    .chain(&toplama.yanitsiz)
-                {
-                    let icerik =
-                        "[çalıştırılmadı: izin kipi değişti; gerekirse yeniden dene]".to_string();
-                    let s = CagriSonucu::plandan(p, AracDurumu::IptalEdildi, icerik);
-                    self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
-                        .await;
+                    for p in serbest
+                        .iter()
+                        .chain(&toplama.onaylanan)
+                        .chain(&toplama.yanitsiz)
+                    {
+                        let icerik = "[çalıştırılmadı: izin kipi değişti; gerekirse yeniden dene]"
+                            .to_string();
+                        let s = CagriSonucu::plandan(p, AracDurumu::IptalEdildi, icerik);
+                        self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
+                            .await;
+                    }
+                    return AsamaSonucu::Devam;
                 }
-                return AsamaSonucu::Devam;
+                serbest.extend(toplama.onaylanan);
             }
-            serbest.extend(toplama.onaylanan);
-        }
 
-        if let Some(neden) = self
-            .yurut(serbest, hata_sayaci, &mut bekleyen_sonuclar)
-            .await
-        {
-            for b in bekleyen_sonuclar {
-                self.mesaj_ekle(
-                    ChatMessage::tool(b.model_id, crate::kurtarma::ONIZLEME_IPTALI.to_string()),
-                    Some("kalfa:sonuç".to_string()),
-                )
+            let yurutme = self
+                .yurut(serbest, hata_sayaci, &mut bekleyen_sonuclar)
                 .await;
+            if let Some(neden) = yurutme.bitis {
+                for b in bekleyen_sonuclar {
+                    self.mesaj_ekle(
+                        ChatMessage::tool(b.model_id, crate::kurtarma::ONIZLEME_IPTALI.to_string()),
+                        Some("kalfa:sonuç".to_string()),
+                    )
+                    .await;
+                }
+                return AsamaSonucu::Bitir(neden);
             }
-            return AsamaSonucu::Bitir(neden);
+            if !yurutme.yeniden_onay.is_empty() {
+                // Yalnız RPC'ye hiç çıkmayan MCP çağrıları yeniden hazırlanır.
+                // Aynı model yanıtındaki başarıyla tamamlanan çağrılar bu kuyruğa
+                // giremez ve ikinci kez çalıştırılmaz.
+                tamamlanan_model_cagrilari.extend(yurutme.tamamlanan_model_cagrilari);
+                siradaki_cagrilar =
+                    taze_onay_cagrilari(yurutme.yeniden_onay, &tamamlanan_model_cagrilari);
+                taze_mcp_onayi = true;
+                if !siradaki_cagrilar.is_empty() {
+                    continue;
+                }
+            }
+            break;
         }
         let esik = self.ayarlar.sinirlar.ayni_hata_esigi;
         let hata_esigi_asildi = hata_sayaci.values().any(|n| *n >= esik);
@@ -346,13 +502,12 @@ impl Oturum {
         &mut self,
         cagri: CagriId,
         tc: &ToolCall,
+        goruntu: &AracAnlikGoruntusu,
         siniflandirici: &'s Siniflandirici,
         korumalar: &mut Option<TopluSiniflandirici<'s>>,
     ) -> Result<(Planlanan, Karar), String> {
         let ad = tc.function.name.as_str();
-        let arac = self
-            .baglam
-            .araclar
+        let arac = goruntu
             .bul(ad)
             .ok_or_else(|| format!("`{ad}` adlı bir araç yok."))?;
         let kip = self.ayarlar.kip;
@@ -362,7 +517,7 @@ impl Oturum {
         if !arac.sunulur_mu() {
             return Err(format!("`{ad}` aracı şu an kullanılamıyor."));
         }
-        let argumanlar = self.baglam.araclar.dogrula(ad, &tc.function.arguments)?;
+        let argumanlar = goruntu.dogrula(ad, &tc.function.arguments)?;
         // Hazırlık beklerken komut kanalını da işle. Politika sürümünü
         // beklemeden önce al: hazırlık sırasında değişen kip eski işlemi yetkilendirmez.
         let politika = self.politika.load(Ordering::SeqCst);
@@ -398,6 +553,7 @@ impl Oturum {
         let plan = Planlanan {
             cagri,
             model_id: tc.id.clone(),
+            model_cagrisi: tc.clone(),
             anahtar: tekrar_anahtari(tc),
             arac,
             argumanlar,
@@ -456,6 +612,14 @@ impl Oturum {
         }
         if let Some(kabuk) = &hazirlik.kabuk {
             karar = karar.birlestir(kabuk_karari(kip, kabuk));
+        }
+        if let Some(mcp) = &hazirlik.mcp {
+            karar = karar.birlestir(crate::izin::mcp_karari(
+                kip,
+                mcp.erisim,
+                mcp.ilk_cagri,
+                &mcp.ag,
+            ));
         }
         // Onaysız yazmanın güvenlik ağı geri almadır; önceki hâli saklanamayan
         // yazma o ağın dışındadır ve her kipte onay ister (K9). Kayıtsız
@@ -516,6 +680,7 @@ impl Oturum {
                 veri_cikisi: p.hazirlik.veri_cikisi,
                 kisayol: teklifler.get(&p.cagri).cloned(),
                 eklenti: p.hazirlik.eklenti.clone(),
+                mcp: p.hazirlik.mcp.as_ref().map(McpOnayKarti::yeni),
             })
             .collect();
         // Yerel iletişim kutusu komutu çekirdekten okur, webview'dan değil
@@ -806,7 +971,9 @@ impl Oturum {
         planlar: Vec<Planlanan>,
         hata_sayaci: &mut HashMap<String, u32>,
         bekleyen_sonuclar: &mut Vec<BekleyenSonuc>,
-    ) -> Option<BitisNedeni> {
+    ) -> YurutmeSonucu {
+        let mut yeniden_onay = Vec::new();
+        let mut tamamlanan_model_cagrilari = HashSet::new();
         let mut calisacak = Vec::with_capacity(planlar.len());
         let mut kaydi_yazilamayan = Vec::new();
         let mut saklanamayan = Vec::new();
@@ -878,6 +1045,11 @@ impl Oturum {
         let (ortam_tx, mut ortam_rx) = mpsc::channel::<OrtamIstegi>(ORTAM_KANALI);
         let mut isler = FuturesUnordered::new();
         let mut denetim_isleri = FuturesUnordered::new();
+        let mut mcp_finalizasyon_isleri: FuturesUnordered<McpFinalizasyonGelecegi> =
+            FuturesUnordered::new();
+        // MCP çağrı sonucu, core denetimi ve yönetici son denetimi bitene
+        // kadar kullanıcıya/model bağlamına yayımlanmaz.
+        let mut tamamlanmasi_bekleyen: HashMap<CagriId, CagriSonucu> = HashMap::new();
         // Araç tarafında atılan (oturuma hiç ulaşmayan) baytların sayaçları.
         let mut arac_sayaclari = HashMap::new();
         for p in calisacak {
@@ -891,6 +1063,13 @@ impl Oturum {
             arac_sayaclari.insert(p.cagri, cikti.atlanan_sayaci());
             let ortam = AracOrtami::yeni(cikti, p.cagri, ortam_tx.clone(), self.butce_talepci());
             isler.push(async move {
+                // MCP çağrı tutamacı yürütme future'ından önce oluşur. Future
+                // iptal/drop edilirse eşzamanlı cleanup bildirimi manager'a ulaşır.
+                let tamamlama = p
+                    .hazirlik
+                    .mcp
+                    .as_ref()
+                    .map(|_| AracTamamlama::yeni(p.arac.clone(), p.cagri));
                 let sonuc = tek_calistir(
                     &p,
                     &kilitler,
@@ -901,7 +1080,7 @@ impl Oturum {
                     ortam,
                 )
                 .await;
-                (p, sonuc)
+                (p, sonuc, tamamlama)
             });
         }
         drop(cikti_tx);
@@ -919,13 +1098,36 @@ impl Oturum {
         loop {
             // İptal gelmişse bekleyen eklenti istekleri bırakılır; araç
             // `GonderimYaniti::Iptal` alıp çıkar.
+            if iptal_nedeni.is_some() {
+                // Finalizasyon sürerken bütçe yanıtı bekleyen başka bir araç
+                // tur sonunu bekleyerek actor'ı kilitleyemez.
+                self.butce_kuyrugunu_bosalt();
+            }
             if iptal_nedeni.is_some() && !eklenti_bekleyen.is_empty() {
                 eklenti_bekleyen.clear();
                 self.bekleyen_govdeleri_temizle();
             }
-            if (isler.is_empty() && denetim_isleri.is_empty())
-                || (iptal_nedeni.is_some() && isler.is_empty())
+            if iptal_nedeni.is_some()
+                && (!denetim_isleri.is_empty() || !tamamlanmasi_bekleyen.is_empty())
             {
+                // İptal edilen denetim future'larının guard'ları da cleanup
+                // event'ine taşınır; harici tarama sonuçları artık yayımlanmaz.
+                denetim_isleri = FuturesUnordered::new();
+                for (_, mut sonuc) in std::mem::take(&mut tamamlanmasi_bekleyen) {
+                    sonuc.durum = AracDurumu::IptalEdildi;
+                    sonuc.icerik = "[iptal edildi]".to_string();
+                    sonuc.denetlenecek = None;
+                    sonuc.denetim = None;
+                    match mcp_son_denetimini_baslat(sonuc) {
+                        Ok(is) => mcp_finalizasyon_isleri.push(is),
+                        Err(sonuc) => {
+                            self.sonuc_isle(*sonuc, hata_sayaci, bekleyen_sonuclar)
+                                .await;
+                        }
+                    }
+                }
+            }
+            if isler.is_empty() && denetim_isleri.is_empty() && mcp_finalizasyon_isleri.is_empty() {
                 break;
             }
             tokio::select! {
@@ -973,13 +1175,39 @@ impl Oturum {
                         self.butce_talebi_geldi(talep).await;
                     }
                 }
-                Some((p, sonuc)) = isler.next(), if !isler.is_empty() => {
+                Some((p, sonuc, tamamlama)) = isler.next(), if !isler.is_empty() => {
                     if let Some(sayac) = arac_sayaclari.remove(&p.cagri) {
                         let bayt = sayac.swap(0, Ordering::SeqCst);
                         *atlanan.entry(p.cagri).or_default() += bayt;
                     }
                     self.atlanani_bildir(p.cagri, &mut atlanan).await;
-                    let s = sonuc_olustur(&p, sonuc, azami);
+                    if p.hazirlik.mcp.is_some()
+                        && matches!(
+                            &sonuc,
+                            Err(AracHatasi::OnayEskidi | AracHatasi::PolitikaDegisti)
+                        )
+                    {
+                        if let Some(tamamlama) = tamamlama {
+                            mcp_finalizasyon_isleri
+                                .push(mcp_iptal_ve_bekle_baslat(p, tamamlama));
+                        } else {
+                            tamamlanan_model_cagrilari.insert(p.model_id.clone());
+                            self.sonuc_isle(
+                                CagriSonucu::plandan(
+                                    &p,
+                                    AracDurumu::Basarisiz,
+                                    AracHatasi::SonucIsleme.to_string(),
+                                ),
+                                hata_sayaci,
+                                bekleyen_sonuclar,
+                            )
+                            .await;
+                        }
+                        continue;
+                    }
+                    tamamlanan_model_cagrilari.insert(p.model_id.clone());
+                    let mut s = sonuc_olustur(&p, sonuc, azami);
+                    s.tamamlama = tamamlama;
                     self.onaysiz_isle(&p, s.degisiklikler.as_ref());
                     let denetlenecek = s
                         .denetlenecek
@@ -996,15 +1224,97 @@ impl Oturum {
                         let denetci = self.baglam.denetci.clone();
                         // Denetçinin her ağ denemesi bu oturumun bütçesinden izin ister (5b §4.1).
                         let butce = self.butce_talepci();
+                        let cagri = s.cagri;
+                        if s.tamamlama.is_some() {
+                            tamamlanmasi_bekleyen.insert(cagri, s);
+                        } else {
+                            self.sonuc_isle(s, hata_sayaci, bekleyen_sonuclar).await;
+                        }
                         denetim_isleri.push(async move {
                             let yanit = denetci.denetle(&girdi, &butce).await;
-                            (s.cagri, girdi, yanit)
+                            (cagri, girdi, yanit)
                         });
+                    } else {
+                        match mcp_son_denetimini_baslat(s) {
+                            Ok(is) => mcp_finalizasyon_isleri.push(is),
+                            Err(sonuc) => {
+                                self.sonuc_isle(*sonuc, hata_sayaci, bekleyen_sonuclar)
+                                    .await;
+                            }
+                        }
                     }
-                    self.sonuc_isle(s, hata_sayaci, bekleyen_sonuclar).await;
                 }
                 Some((cagri, girdi, yanit)) = denetim_isleri.next(), if !denetim_isleri.is_empty() => {
-                    self.denetim_sonucu_isle(cagri, girdi, yanit, bekleyen_sonuclar).await;
+                    let sonuc = self.denetim_sonucu_isle(
+                        cagri,
+                        girdi,
+                        yanit,
+                        &mut tamamlanmasi_bekleyen,
+                        bekleyen_sonuclar,
+                    )
+                    .await;
+                    if let Some(sonuc) = sonuc {
+                        match mcp_son_denetimini_baslat(sonuc) {
+                            Ok(is) => mcp_finalizasyon_isleri.push(is),
+                            Err(sonuc) => {
+                                self.sonuc_isle(*sonuc, hata_sayaci, bekleyen_sonuclar)
+                                    .await;
+                            }
+                        }
+                    }
+                }
+                Some(olay) = mcp_finalizasyon_isleri.next(), if !mcp_finalizasyon_isleri.is_empty() => {
+                    match olay {
+                        McpFinalizasyonOlayi::OnayEskidi { plan, sonuc } => {
+                            if sonuc.is_ok() && iptal_nedeni.is_none() {
+                                self.mcp_onay_eskidi_kaydi(&plan).await;
+                                yeniden_onay.push(plan.model_cagrisi.clone());
+                            } else {
+                                tamamlanan_model_cagrilari.insert(plan.model_id.clone());
+                                let mut arac_sonucu = CagriSonucu::plandan(
+                                    &plan,
+                                    if sonuc.is_ok() {
+                                        AracDurumu::IptalEdildi
+                                    } else {
+                                        AracDurumu::Basarisiz
+                                    },
+                                    if sonuc.is_ok() {
+                                        "[çalıştırılmadı: tur iptal edildi]".into()
+                                    } else {
+                                        AracHatasi::SonucIsleme.to_string()
+                                    },
+                                );
+                                mcp_finalizasyon_sonucuna_uygula(&mut arac_sonucu, sonuc.is_err());
+                                self.sonuc_isle(arac_sonucu, hata_sayaci, bekleyen_sonuclar)
+                                    .await;
+                            }
+                        }
+                        McpFinalizasyonOlayi::Sonuc {
+                            mut sonuc,
+                            finalizasyon,
+                            iptal_yolu,
+                        } => {
+                            mcp_finalizasyon_sonucuna_uygula(
+                                &mut sonuc,
+                                finalizasyon.is_err(),
+                            );
+                            if iptal_nedeni.is_some() && !iptal_yolu && finalizasyon.is_ok() {
+                                sonuc.durum = AracDurumu::IptalEdildi;
+                                sonuc.icerik = "[iptal edildi]".to_string();
+                                sonuc.kaynak = "kalfa:sonuç".to_string();
+                                sonuc.hata_sayilmaz = false;
+                                sonuc.guvenlik_uyarilari.clear();
+                                sonuc.komut = None;
+                                sonuc.degisiklikler = None;
+                                sonuc.kalfa_uretimi = true;
+                                sonuc.denetlenecek = None;
+                                sonuc.denetim = None;
+                                sonuc.ag = None;
+                            }
+                            self.sonuc_isle(*sonuc, hata_sayaci, bekleyen_sonuclar)
+                                .await;
+                        }
+                    }
                 }
             }
         }
@@ -1029,11 +1339,36 @@ impl Oturum {
                 }
             }
         }
-        if self.kayit_hatasi.is_some() {
-            Some(BitisNedeni::Hata)
-        } else {
-            iptal_nedeni
+        YurutmeSonucu {
+            bitis: if self.kayit_hatasi.is_some() {
+                Some(BitisNedeni::Hata)
+            } else {
+                iptal_nedeni
+            },
+            yeniden_onay,
+            tamamlanan_model_cagrilari,
         }
+    }
+
+    /// Eski RPC denemesini kayıt/özetten kapatır ama model çağrı kimliğine
+    /// tool mesajı yazmaz; modelin bekleyen çağrısı yeni kart sonuçlanınca
+    /// yalnızca bir kez nihai yanıt alır.
+    async fn mcp_onay_eskidi_kaydi(&mut self, p: &Planlanan) {
+        let durum = AracDurumu::IptalEdildi;
+        self.geri_alma.arac_bitti(p.cagri, durum);
+        self.tur_ozeti.arac_bitti(p.cagri, durum);
+        self.kaydet(KayitOgesi::AracBitti {
+            cagri: p.cagri,
+            durum,
+        })
+        .await;
+        self.yay(Olay::AracSonucu {
+            cagri: p.cagri,
+            arac: p.arac.ad().to_string(),
+            durum,
+            icerik: "[çalıştırılmadı: MCP hazırlığı değişti; güncel onay istenecek]".into(),
+        })
+        .await;
     }
 
     async fn denetim_sonucu_isle(
@@ -1041,8 +1376,9 @@ impl Oturum {
         cagri: CagriId,
         girdi: DenetimGirdisi,
         yanit: crate::denetci::DenetimYaniti,
+        tamamlanmasi_bekleyen: &mut HashMap<CagriId, CagriSonucu>,
         bekleyen_sonuclar: &mut [BekleyenSonuc],
-    ) {
+    ) -> Option<CagriSonucu> {
         if let Some(b) = bekleyen_sonuclar.iter_mut().find(|b| b.cagri == cagri) {
             b.denetim = Some(yanit.sonuc.clone());
         }
@@ -1101,11 +1437,16 @@ impl Oturum {
             istek_id: yanit.meta.as_ref().and_then(|m| m.istek_id.clone()),
         })
         .await;
+        let mut tamamlanmis = tamamlanmasi_bekleyen.remove(&cagri);
+        if let Some(s) = &mut tamamlanmis {
+            s.denetim = Some(yanit.sonuc.clone());
+        }
         self.yay(Olay::DenetimSonucu {
             cagri,
             sonuc: yanit.sonuc,
         })
         .await;
+        tamamlanmis
     }
 
     /// Ara çıktı parçasını arayüze iletir. Olay kuyruğu yarıdan fazla doluysa
@@ -1168,7 +1509,7 @@ impl Oturum {
                 model_id: s.model_id.clone(),
                 kaynak: s.kaynak.clone(),
                 icerik: s.icerik.clone(),
-                denetim: None,
+                denetim: s.denetim.clone(),
             });
         } else {
             self.mesaj_ekle(
@@ -1699,7 +2040,7 @@ fn kisayol_bul(
 
 async fn tek_calistir(
     p: &Planlanan,
-    kilitler: &crate::kilit::KaynakKilitleri,
+    kilitler: &Arc<crate::kilit::KaynakKilitleri>,
     politika: &AtomicU64,
     siniflandirici: &Siniflandirici,
     kisayollar: &std::sync::Mutex<Vec<Kisayol>>,
@@ -1708,14 +2049,29 @@ async fn tek_calistir(
 ) -> Result<AracCiktisi, AracHatasi> {
     let yazilan: Vec<CalismaYolu> = p.hazirlik.yazilan.iter().map(|h| h.yol.clone()).collect();
     // Kilitsiz araç (eklenti) kilidini dokunduğu her yol için kendisi alır.
-    let _kilit = if p.hazirlik.kilitsiz {
+    let kilit = if p.hazirlik.kilitsiz && p.hazirlik.mcp.is_none() {
         None
     } else {
         Some(tokio::select! {
-            k = kilitler.al(&p.hazirlik.okunan, &yazilan, p.hazirlik.tum_calisma_alani) => k,
+            k = async {
+                if p.hazirlik.mcp.is_some() {
+                    kilitler
+                        .sahipli_al(&p.hazirlik.okunan, &yazilan, p.hazirlik.tum_calisma_alani)
+                        .await
+                } else {
+                    kilitler
+                        .al(&p.hazirlik.okunan, &yazilan, p.hazirlik.tum_calisma_alani)
+                        .await
+                }
+            } => k,
             _ = iptal.cancelled() => return Err(AracHatasi::Iptal),
         })
     };
+    // MCP, sahipli kilidi ilk kilitli hazırlık await'inden önce yöneticiye
+    // aktarır; hazırlık future'ı iptal edilse bile çağrı kaydı kilidi tutar.
+    let kilit = p
+        .arac
+        .kilidi_devral(p.cagri, &p.hazirlik, iptal.clone(), kilit)?;
     // İzin kipi planlamadan sonra değişti ise yeni kipte yeniden
     // yetkilendirilmeden işlem yapılmaz.
     if politika.load(Ordering::SeqCst) != p.politika {
@@ -1784,7 +2140,7 @@ async fn tek_calistir(
         return Err(AracHatasi::PolitikaDegisti);
     }
     p.arac
-        .calistir_ortamli(&p.argumanlar, &taze, iptal, ortam)
+        .calistir_kilitli(&p.argumanlar, &taze, iptal, ortam, kilit)
         .await
 }
 
@@ -1831,6 +2187,9 @@ fn sonuc_olustur(
         }
         Err(AracHatasi::Iptal) => {
             CagriSonucu::plandan(p, AracDurumu::IptalEdildi, "[iptal edildi]".into())
+        }
+        Err(e @ AracHatasi::OnayEskidi) if p.hazirlik.mcp.is_some() => {
+            CagriSonucu::plandan(p, AracDurumu::IptalEdildi, format!("[çalıştırılmadı] {e}"))
         }
         Err(e @ (AracHatasi::PolitikaDegisti | AracHatasi::KomutKosuluDegisti(_))) => {
             CagriSonucu::plandan(p, AracDurumu::IptalEdildi, format!("[çalıştırılmadı] {e}"))

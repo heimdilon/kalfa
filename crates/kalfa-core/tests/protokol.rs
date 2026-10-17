@@ -105,6 +105,7 @@ fn butun_olaylar_gidip_gelir() {
                 veri_cikisi: None,
                 kisayol: None,
                 eklenti: None,
+                mcp: None,
             }],
         },
         Olay::OnayGerekiyor {
@@ -198,6 +199,7 @@ fn kabuk_ogesi(cagri: CagriId) -> OnayOgesi {
         veri_cikisi: None,
         kisayol: None,
         eklenti: None,
+        mcp: None,
     }
 }
 
