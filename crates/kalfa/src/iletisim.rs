@@ -38,6 +38,24 @@ impl<R: Runtime> Iletisim for TauriIletisim<R> {
             .and_then(|yol| yol.simplified().into_path().ok())
     }
 
+    async fn dosya_sec(&self, baslik: &str, baslangic: Option<&Path>) -> Option<PathBuf> {
+        let (gonder, al) = oneshot::channel();
+        let mut kutu = self.0.dialog().file().set_title(baslik);
+        if let Some(dizin) = baslangic {
+            kutu = kutu.set_directory(dizin);
+        }
+        if let Some(pencere) = odakli_pencere(&self.0) {
+            kutu = kutu.set_parent(&pencere);
+        }
+        kutu.pick_file(move |secilen| {
+            let _ = gonder.send(secilen);
+        });
+        al.await
+            .ok()
+            .flatten()
+            .and_then(|yol| yol.simplified().into_path().ok())
+    }
+
     async fn onayla(&self, baslik: &str, mesaj: &str, tamam: &str, vazgec: &str) -> bool {
         let (gonder, al) = oneshot::channel();
         let mut kutu = self

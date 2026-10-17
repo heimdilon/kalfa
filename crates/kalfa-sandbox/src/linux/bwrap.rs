@@ -165,6 +165,7 @@ mod tests {
                 git: Vec::new(),
                 yapilandirma: Vec::new(),
                 goruntu: Default::default(),
+                ..Default::default()
             },
             korumali: vec![
                 Korumali {

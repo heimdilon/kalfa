@@ -10,6 +10,7 @@ function acilis(gecmis: OturumAcilisi['gecmis'] = { ogeler: [], daha_eski_var: f
   return acilistanEkran({
     oturum: OTURUM,
     calisma_alani: 'C:\\proje',
+    calisma_alani_kimligi: null,
     gecmis,
     ozet: {
       model: 'glm-5.3',
@@ -694,6 +695,7 @@ describe('bütçe (5b tasarımı §7, §9)', () => {
     return acilistanEkran({
       oturum: OTURUM,
       calisma_alani: 'C:\proje',
+      calisma_alani_kimligi: null,
       gecmis: { ogeler: [], daha_eski_var: false },
       ozet: {
         model: 'glm-5.3',

@@ -66,6 +66,21 @@
     "allow-eklenti-verisini-sil",
     "allow-oturum-eklentileri",
     "allow-eklenti-istegi",
-    "allow-gunluk-sinir"
+    "allow-gunluk-sinir",
+    "allow-mcp-dinle",
+    "allow-mcp-durumu",
+    "allow-mcp-sunucu-ayrintisi",
+    "allow-mcp-komut-sec",
+    "allow-mcp-taslak-olustur",
+    "allow-mcp-taslak-guncelle",
+    "allow-mcp-taslak-kaydet",
+    "allow-mcp-ice-aktar-onizle",
+    "allow-mcp-ice-aktar-gizlilik",
+    "allow-mcp-ice-aktar-kaydet",
+    "allow-mcp-etkin-ayarla",
+    "allow-mcp-sil",
+    "allow-mcp-yeniden-baslat",
+    "allow-mcp-baslatma-karti-yanitla",
+    "allow-mcp-baslatma-izni-geri-al"
   ]
 }

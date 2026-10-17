@@ -17,6 +17,10 @@ use kalfa_core::protokol::ButceKarari;
 use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::hata::KomutHatasi;
+use kalfa_uygulama::mcp::komutlar::{
+    McpDurumuDto, McpSunucuAyrintisiDto, McpSunucuFormu, McpTaslakDto,
+};
+use kalfa_uygulama::mcp::tanimlar::{IceAktarmaOnizlemeDto, SeciliKomutBilgisi, TaslakKimligi};
 use kalfa_uygulama::sozlesme::{
     AgHostu, AnahtarSonucu, CalismaAlani, DenetciDurumu, DusunceEforu, GizliAyarGorunumu,
     GunlukSayfasi, KabulYaniti, ModelSecenegi, OnarimSonucu, OnayGirdisi, OturumAcilisi,
@@ -28,7 +32,7 @@ use kalfa_uygulama::sozlesme::{
 use tauri::ipc::Channel;
 use tauri::{Builder, Runtime, State};
 
-use crate::kanal::{TauriKanal, TauriYalitimKanali};
+use crate::kanal::{TauriKanal, TauriMcpKanali, TauriYalitimKanali};
 
 type Sonuc<T> = Result<T, KomutHatasi>;
 
@@ -99,6 +103,21 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         oturum_eklentileri,
         eklenti_istegi,
         gunluk_sinir,
+        mcp_dinle,
+        mcp_durumu,
+        mcp_sunucu_ayrintisi,
+        mcp_komut_sec,
+        mcp_taslak_olustur,
+        mcp_taslak_guncelle,
+        mcp_taslak_kaydet,
+        mcp_ice_aktar_onizle,
+        mcp_ice_aktar_gizlilik,
+        mcp_ice_aktar_kaydet,
+        mcp_etkin_ayarla,
+        mcp_sil,
+        mcp_yeniden_baslat,
+        mcp_baslatma_karti_yanitla,
+        mcp_baslatma_izni_geri_al,
         sart_penceresi_durumu,
         anahtari_kaydet,
         sartlari_kabul_et,
@@ -615,4 +634,127 @@ pub async fn ag_hostu_ekle(
 #[tauri::command(rename_all = "snake_case")]
 pub async fn ag_hostu_kaldir(u: State<'_, Arc<Uygulama>>, host: String) -> Sonuc<Vec<AgHostu>> {
     u.ag_hostu_kaldir(host).await
+}
+
+// MCP sunucuları (1.1a-2 Görev 10). Arayüz yol göndermez; kayıt, silme ve
+// tam erişimli başlatma arka uçta yerel pencereyle onaylanır.
+
+/// Ana pencere açılınca bir kez çağırır; MCP durum görüntüsü bu kanala yazılır.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_dinle(u: State<'_, Arc<Uygulama>>, kanal: Channel<McpDurumuDto>) -> Sonuc<()> {
+    u.mcp_dinle(Box::new(TauriMcpKanali(kanal)));
+    Ok(())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_durumu(u: State<'_, Arc<Uygulama>>) -> Sonuc<McpDurumuDto> {
+    Ok(u.mcp_durumu())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_sunucu_ayrintisi(
+    u: State<'_, Arc<Uygulama>>,
+    ad: String,
+) -> Sonuc<McpSunucuAyrintisiDto> {
+    u.mcp_sunucu_ayrintisi(&ad)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_komut_sec(u: State<'_, Arc<Uygulama>>) -> Sonuc<Option<SeciliKomutBilgisi>> {
+    u.mcp_komut_sec().await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_taslak_olustur(
+    u: State<'_, Arc<Uygulama>>,
+    eski_ad: Option<String>,
+    form: McpSunucuFormu,
+) -> Sonuc<McpTaslakDto> {
+    u.mcp_taslak_olustur(eski_ad, form)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_taslak_guncelle(
+    u: State<'_, Arc<Uygulama>>,
+    taslak_kimligi: TaslakKimligi,
+    eski_ad: Option<String>,
+    form: McpSunucuFormu,
+) -> Sonuc<u64> {
+    u.mcp_taslak_guncelle(taslak_kimligi, eski_ad, form)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_taslak_kaydet(
+    u: State<'_, Arc<Uygulama>>,
+    taslak_kimligi: TaslakKimligi,
+    kusak: u64,
+    oturum: Option<OturumId>,
+) -> Sonuc<bool> {
+    u.mcp_taslak_kaydet(taslak_kimligi, kusak, oturum).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_ice_aktar_onizle(
+    u: State<'_, Arc<Uygulama>>,
+    json: String,
+) -> Sonuc<IceAktarmaOnizlemeDto> {
+    u.mcp_ice_aktar_onizle(&json)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_ice_aktar_gizlilik(
+    u: State<'_, Arc<Uygulama>>,
+    taslak_kimligi: TaslakKimligi,
+    sunucu: String,
+    ortam: String,
+    gizli: bool,
+) -> Sonuc<u64> {
+    u.mcp_ice_aktar_gizlilik(taslak_kimligi, &sunucu, &ortam, gizli)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_ice_aktar_kaydet(
+    u: State<'_, Arc<Uygulama>>,
+    taslak_kimligi: TaslakKimligi,
+    kusak: u64,
+    oturum: Option<OturumId>,
+) -> Sonuc<bool> {
+    u.mcp_ice_aktar_kaydet(taslak_kimligi, kusak, oturum).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_etkin_ayarla(u: State<'_, Arc<Uygulama>>, ad: String, etkin: bool) -> Sonuc<()> {
+    u.mcp_etkin_ayarla(ad, etkin)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_sil(u: State<'_, Arc<Uygulama>>, ad: String) -> Sonuc<bool> {
+    u.mcp_sil(ad).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_yeniden_baslat(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    ad: String,
+) -> Sonuc<()> {
+    u.mcp_yeniden_baslat(oturum, ad).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_baslatma_karti_yanitla(
+    u: State<'_, Arc<Uygulama>>,
+    istek_kimligi: String,
+    kabul: bool,
+) -> Sonuc<bool> {
+    u.mcp_baslatma_karti_yanitla(istek_kimligi, kabul).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_baslatma_izni_geri_al(
+    u: State<'_, Arc<Uygulama>>,
+    alan_kimligi: String,
+    ad: String,
+) -> Sonuc<()> {
+    u.mcp_baslatma_izni_geri_al(alan_kimligi, ad)
 }

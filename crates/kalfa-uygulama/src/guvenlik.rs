@@ -223,6 +223,7 @@ mod tests {
             veri_cikisi: None,
             kisayol: None,
             eklenti: None,
+            mcp: None,
         }
     }
 
@@ -313,6 +314,7 @@ mod tests {
                 ilk_gonderim: true,
                 ..Default::default()
             }),
+            mcp: None,
         }
     }
 

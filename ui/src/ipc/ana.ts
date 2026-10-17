@@ -9,6 +9,12 @@ import type {
   EklentiSatiri,
   GunlukSinirDurumu,
   KurulumSonucu,
+  McpDurumu,
+  McpIceAktarmaOnizlemesi,
+  McpSunucuAyrintisi,
+  McpSunucuFormu,
+  McpTaslak,
+  SeciliKomutBilgisi,
   OturumEklentisi,
   GizliAyarGorunumu,
   CagriId,
@@ -251,3 +257,78 @@ export const eklentiIstegi = (oturum: OturumId, islem: IslemId) =>
   invoke<string>('eklenti_istegi', { oturum, islem });
 
 export const gunlukSinir = () => invoke<GunlukSinirDurumu | null>('gunluk_sinir');
+
+// ── MCP sunucuları (1.1a-2 Görev 10) ───────────────────────────────────────
+
+/**
+ * MCP durum görüntüsünü dinler: şimdiki görüntü hemen, sonrakiler değiştikçe
+ * gelir. Revizyonu son görülenden büyük olmayan görüntü atılır; eski bir
+ * görüntü yenisinin üstüne yazılmaz.
+ */
+export function mcpDinle(dinleyici: (durum: McpDurumu) => void) {
+  let son = 0;
+  const kanal = new Channel<McpDurumu>((durum) => {
+    if (durum.revizyon <= son) return;
+    son = durum.revizyon;
+    dinleyici(durum);
+  });
+  return invoke<void>('mcp_dinle', { kanal });
+}
+
+export const mcpDurumu = () => invoke<McpDurumu>('mcp_durumu');
+
+export const mcpSunucuAyrintisi = (ad: string) =>
+  invoke<McpSunucuAyrintisi>('mcp_sunucu_ayrintisi', { ad });
+
+/** Yerel dosya seçici; arayüze yalnız dosya adı ve opak kimlik döner. */
+export const mcpKomutSec = () => invoke<SeciliKomutBilgisi | null>('mcp_komut_sec');
+
+export const mcpTaslakOlustur = (eskiAd: string | null, form: McpSunucuFormu) =>
+  invoke<McpTaslak>('mcp_taslak_olustur', { eski_ad: eskiAd, form });
+
+export const mcpTaslakGuncelle = (
+  taslakKimligi: string,
+  eskiAd: string | null,
+  form: McpSunucuFormu,
+) => invoke<number>('mcp_taslak_guncelle', { taslak_kimligi: taslakKimligi, eski_ad: eskiAd, form });
+
+/** Yerel pencerede onaylanır; vazgeçilirse `false`. */
+export const mcpTaslakKaydet = (taslakKimligi: string, kusak: number, oturum: OturumId | null) =>
+  invoke<boolean>('mcp_taslak_kaydet', { taslak_kimligi: taslakKimligi, kusak, oturum });
+
+/** JSON arka uçta ayrıştırılır; sunucular kapalı ve yalıtımlı eklenir. */
+export const mcpIceAktarOnizle = (json: string) =>
+  invoke<McpIceAktarmaOnizlemesi>('mcp_ice_aktar_onizle', { json });
+
+export const mcpIceAktarGizlilik = (
+  taslakKimligi: string,
+  sunucu: string,
+  ortam: string,
+  gizli: boolean,
+) =>
+  invoke<number>('mcp_ice_aktar_gizlilik', {
+    taslak_kimligi: taslakKimligi,
+    sunucu,
+    ortam,
+    gizli,
+  });
+
+/** Yerel pencerede onaylanır; vazgeçilirse `false`. */
+export const mcpIceAktarKaydet = (taslakKimligi: string, kusak: number, oturum: OturumId | null) =>
+  invoke<boolean>('mcp_ice_aktar_kaydet', { taslak_kimligi: taslakKimligi, kusak, oturum });
+
+export const mcpEtkinAyarla = (ad: string, etkin: boolean) =>
+  invoke<void>('mcp_etkin_ayarla', { ad, etkin });
+
+/** Yerel pencerede onaylanır; vazgeçilirse `false`. */
+export const mcpSil = (ad: string) => invoke<boolean>('mcp_sil', { ad });
+
+export const mcpYenidenBaslat = (oturum: OturumId, ad: string) =>
+  invoke<void>('mcp_yeniden_baslat', { oturum, ad });
+
+/** Tam erişimde arka uç ayrıca yerel pencere onayı ister. */
+export const mcpBaslatmaKartiYanitla = (istekKimligi: string, kabul: boolean) =>
+  invoke<boolean>('mcp_baslatma_karti_yanitla', { istek_kimligi: istekKimligi, kabul });
+
+export const mcpBaslatmaIzniGeriAl = (alanKimligi: string, ad: string) =>
+  invoke<void>('mcp_baslatma_izni_geri_al', { alan_kimligi: alanKimligi, ad });

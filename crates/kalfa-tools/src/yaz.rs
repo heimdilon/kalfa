@@ -152,7 +152,7 @@ impl Arac for DosyaYaz {
         let yazma_yolu = yol.clone();
         let veri = icerik.to_string();
         let hedef = hedef.clone();
-        tokio::task::spawn_blocking(move || {
+        let sonuc = tokio::task::spawn_blocking(move || {
             let onceki = alan
                 .onceki_dosya(&yazma_yolu, false, Some(&iptal))
                 .map_err(|e| {
@@ -175,7 +175,9 @@ impl Arac for DosyaYaz {
                 .map_err(AracHatasi::from)
         })
         .await
-        .map_err(|e| AracHatasi::GirisCikis(e.to_string()))??;
+        .map_err(|e| AracHatasi::GirisCikis(e.to_string()))?;
+        self.alan.yazma_bitisini_bekle().await?;
+        sonuc?;
         Ok(AracCiktisi {
             icerik: format!("`{yol}` yazıldı ({} bayt).", icerik.len()),
             kaynak: format!("dosya:{yol}"),

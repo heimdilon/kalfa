@@ -38,6 +38,9 @@ pub struct E2eAyarlari {
     /// Klasör seçicinin döneceği çalışma alanı; yoksa seçimden vazgeçilir.
     #[serde(default)]
     pub calisma_alani: Option<PathBuf>,
+    /// Dosya seçicinin döneceği yürütülebilir dosya yolu; yoksa seçimden vazgeçilir.
+    #[serde(default)]
+    pub secili_dosya: Option<PathBuf>,
     /// Yerel onay kutularının cevabı (izin kipi yükseltme, bağlantı açma,
     /// yalıtımsız komut).
     #[serde(default)]
@@ -78,6 +81,7 @@ impl E2eAyarlari {
 /// kutularını süremez.
 pub struct SahteIletisim {
     calisma_alani: Option<PathBuf>,
+    secili_dosya: Option<PathBuf>,
     onay: bool,
 }
 
@@ -85,6 +89,7 @@ impl SahteIletisim {
     pub fn yeni(ayarlar: &E2eAyarlari) -> Self {
         Self {
             calisma_alani: ayarlar.calisma_alani.clone(),
+            secili_dosya: ayarlar.secili_dosya.clone(),
             onay: ayarlar.onay,
         }
     }
@@ -94,6 +99,10 @@ impl SahteIletisim {
 impl Iletisim for SahteIletisim {
     async fn klasor_sec(&self, _baslik: &str, _baslangic: Option<&Path>) -> Option<PathBuf> {
         self.calisma_alani.clone()
+    }
+
+    async fn dosya_sec(&self, _baslik: &str, _baslangic: Option<&Path>) -> Option<PathBuf> {
+        self.secili_dosya.clone()
     }
 
     async fn onayla(&self, _baslik: &str, _mesaj: &str, _tamam: &str, _vazgec: &str) -> bool {

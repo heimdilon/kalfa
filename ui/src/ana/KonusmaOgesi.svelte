@@ -8,7 +8,13 @@
   import Message from '../bilesenler/Message.svelte';
   import ThoughtPanel from '../bilesenler/ThoughtPanel.svelte';
   import ToolCallCard from '../bilesenler/ToolCallCard.svelte';
-  import { AKTARIM_DURMA_METNI, denetimKategorisi, m } from '../dil/tr';
+  import {
+    AKTARIM_DURMA_METNI,
+    MCP_ROZET_ACIKLAMASI,
+    MCP_ROZETI,
+    denetimKategorisi,
+    m,
+  } from '../dil/tr';
   import type { EkranOgesi } from '../durum/oturum';
   import * as ipc from '../ipc/ana';
   import type { BitisNedeni, OturumId } from '../ipc/tipler';
@@ -72,8 +78,11 @@
   </Message>
 {:else if oge.tip === 'AracCagrisi'}
   {@const d = aracKartDurumu(oge.durum)}
+  {@const mcp = durum.mcpSunucusu(oge.arac)}
   <ToolCallCard
-    tool={aracBasligi(oge)}
+    tool={mcp
+      ? `${mcp.ozet.ad} · ${oge.arac.slice(`mcp__${mcp.ozet.ad}__`.length)}`
+      : aracBasligi(oge)}
     target={aracHedefi(oge)}
     meta={kabukOzeti(oge)}
     status={d.status}
@@ -81,6 +90,13 @@
     icon={ARAC_IKONU[oge.arac] ?? 'box'}
   >
     {#snippet rozet()}
+      {#if mcp}
+        <span title={m(MCP_ROZET_ACIKLAMASI[mcp.ozet.kip])}>
+          <Badge tone={mcp.ozet.kip === 'tam_erisim' ? 'danger' : 'accent'}>
+            {m(MCP_ROZETI[mcp.ozet.kip])}
+          </Badge>
+        </span>
+      {/if}
       {#if oge.denetim?.tip === 'Suruyor'}
         <Badge tone="info" icon="loader-circle">{m('denetim.rozet.suruyor')}</Badge>
       {:else if oge.denetim?.tip === 'Supheli'}

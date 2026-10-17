@@ -17,6 +17,9 @@ import type {
   GunlukSinirDurumu,
   IslemId,
   Kip,
+  McpBaslatmaKarti,
+  McpDurumu,
+  McpSunucuSatiri,
   OnarimSonucu,
   OnayGirdisi,
   OturumAcilisi,
@@ -73,7 +76,41 @@ export class AnaDurum {
   denetci = $state<DenetciDurumu | null>(null);
   /** Yeni oturumların bütçe varsayılanı; Ayarlar açılınca okunur (5b tasarımı §9). */
   butceVarsayilani = $state<ButceSinirlari | null>(null);
+  /** MCP sunucularının son görüntüsü; kanal eski revizyonu atar (1.1a-2). */
+  mcp = $state<McpDurumu | null>(null);
   aktif = $derived(this.secili ? (this.ekranlar.get(this.secili) ?? null) : null);
+
+  /** Ayarlar'daki MCP bölümü açılınca güncel görüntüyü okur. */
+  async mcpYenile(): Promise<void> {
+    const d = await this.#dene(() => ipc.mcpDurumu());
+    if (d) this.#mcpYaz(d);
+  }
+
+  /** Kanal ve doğrudan okuma aynı yere yazar; eski revizyon yenisini ezmez. */
+  #mcpYaz(d: McpDurumu): void {
+    if (!this.mcp || d.revizyon > this.mcp.revizyon) this.mcp = d;
+  }
+
+  /** Çalışma alanının yanıt bekleyen MCP başlatma kartları (tasarım §5.1). */
+  mcpKartlari(alan: string | null): McpBaslatmaKarti[] {
+    if (!alan) return [];
+    return this.mcp?.baslatma_kartlari.filter((k) => k.alan_kimligi === alan) ?? [];
+  }
+
+  /** `mcp__<sunucu>__<araç>` adlı aracın sunucusu; en uzun ad eşleşir. */
+  mcpSunucusu(arac: string): McpSunucuSatiri | undefined {
+    return this.mcp?.sunucular
+      .filter((s) => arac.startsWith(`mcp__${s.ozet.ad}__`))
+      .sort((a, b) => b.ozet.ad.length - a.ozet.ad.length)[0];
+  }
+
+  /** Kart tek kullanımlıdır; tam erişimde kabulü Rust yerel pencerede ayrıca sorar. */
+  async mcpKartiYanitla(kart: McpBaslatmaKarti, kabul: boolean): Promise<void> {
+    const verildi = await this.#dene(() =>
+      ipc.mcpBaslatmaKartiYanitla(kart.istek_kimligi, kabul),
+    );
+    if (kabul && verildi === false) this.duyuru = m('mcp.kart.verilmedi', { sunucu: kart.sunucu });
+  }
 
   /** Pencere açılınca: uygulama durumu, liste ve son açık oturum (1c tasarımı §5.6). */
   async baslat(): Promise<void> {
@@ -86,6 +123,7 @@ export class AnaDurum {
     });
     await this.gunlukSiniriYenile();
     await this.#dene(() => ipc.yalitimiDinle((d) => this.#yalitimYaz(d)));
+    await this.#dene(() => ipc.mcpDinle((d) => this.#mcpYaz(d)));
     await this.listeyiYenile();
     const son = this.uygulama?.son_oturum;
     if (son) await this.oturumSec(son);

@@ -83,6 +83,7 @@ Esin kaynağı: [Karpathy gözlemlerinden türetilen ajan yönergeleri](https://
 | `crates/kalfa-evren` | EVREN istemcisi: istek ve yanıt tipleri, SSE, şart uçları, kredi |
 | `crates/kalfa-core` | Arayüzden bağımsız oturum çekirdeği: izin kipleri, mühürlü onay, JSONL kayıt ve kurtarma, git koruması |
 | `crates/kalfa-tools` | Dosya araçları ve kabuk aracı |
+| `crates/kalfa-mcp` | Yerel MCP için sınırlı stdio taşıması ve istemci |
 | `crates/kalfa-sandbox` | Komut çalıştırma, süreç sınırları, Linux yalıtımı (bwrap ve seccomp) |
 | `crates/kalfa-plugin` | Eklenti çalışma zamanı: manifest, wasmtime host'u, sınırlar, depo, eklenti aracı; test eklentileri `test-eklentileri/`'nde |
 | `crates/kalfa-plugin-sdk` | Eklenti yazarının SDK'sı ve WIT sözleşmesi (`wit/kalfa.wit`); lisansı Apache-2.0 WITH LLVM-exception |
@@ -112,6 +113,12 @@ cargo fmt --all -- --check
 ```
 
 Değişikliğin dokunduğu yere göre ayrıca:
+
+- **`kalfa-mcp`:** İstemci ve yerel test ikilisini yalnız üretim özellikleriyle derleyin:
+
+  ```sh
+  cargo check -p kalfa-mcp --lib --bins --locked
+  ```
 
 - **`kalfa-uygulama` ya da `kalfa`:**
 

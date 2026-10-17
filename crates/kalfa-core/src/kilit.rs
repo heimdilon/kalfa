@@ -25,10 +25,22 @@ pub struct KaynakKilitleri {
 }
 
 /// Tutulan kilitler; bırakılınca (drop) çözülür.
-#[derive(Debug)]
 pub struct KilitSeti {
     _genel: Tutucu,
     _yollar: Vec<Tutucu>,
+    /// MCP cleanup kaydı yaşarken kök yöneticisinin Weak tablosu düşmesin.
+    /// Sıradan araçların `al()` yolu bu alanı boş bırakır.
+    _sahip: Option<Arc<KaynakKilitleri>>,
+}
+
+impl std::fmt::Debug for KilitSeti {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KilitSeti")
+            .field("genel", &self._genel)
+            .field("yollar", &self._yollar)
+            .field("sahip_tutuldu", &self._sahip.is_some())
+            .finish()
+    }
 }
 
 /// Kilit tutucular yalnızca bırakılmak için saklanır.
@@ -87,7 +99,22 @@ impl KaynakKilitleri {
         KilitSeti {
             _genel: genel,
             _yollar: yollar,
+            _sahip: None,
         }
+    }
+
+    /// Kilitlerle birlikte bu çalışma alanının kaynak yöneticisini de yaşatır.
+    /// MCP manager çağrı kaydı kilidi devraldığında kökün Weak tablosu
+    /// düşmemeli; sıradan araçlar mevcut `al()` yolunu kullanmaya devam eder.
+    pub async fn sahipli_al(
+        self: &Arc<Self>,
+        okunan: &[CalismaYolu],
+        yazilan: &[CalismaYolu],
+        tum_calisma_alani: bool,
+    ) -> KilitSeti {
+        let mut kilit = self.al(okunan, yazilan, tum_calisma_alani).await;
+        kilit._sahip = Some(self.clone());
+        kilit
     }
 }
 
@@ -162,5 +189,28 @@ mod tests {
             0,
             "temizlik son Arc drop'unda yapılmalı"
         );
+    }
+
+    #[tokio::test]
+    async fn sahipli_guard_son_oturumdan_sonra_ayni_kok_kilitlerini_yasatir() {
+        let d = tempfile::tempdir().unwrap();
+        let y = KilitYoneticisi::yeni();
+        let kaynaklar = y.al(d.path()).unwrap();
+        let guard = kaynaklar.sahipli_al(&[], &[], true).await;
+        drop(kaynaklar);
+
+        // Guard'ın tuttuğu Arc sayesinde Weak kayıt yükselir; yeni oturum
+        // ayrı bir kilit tablosu kuramaz ve aynı genel yazma kilidinde bekler.
+        let yeni_oturum = y.al(d.path()).unwrap();
+        let mut ikinci = tokio::spawn(async move { yeni_oturum.al(&[], &[], true).await });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(25), &mut ikinci)
+                .await
+                .is_err(),
+            "cleanup guard'ı yaşarken aynı kökte yeni yazma başlamamalı"
+        );
+
+        drop(guard);
+        let _ikinci = ikinci.await.unwrap();
     }
 }

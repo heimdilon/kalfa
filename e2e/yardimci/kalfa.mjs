@@ -139,7 +139,8 @@ export class Kalfa {
   /**
    * Kalfa'yı açar. `ayarlar` sahte EVREN'in ayarlarıdır
    * (`kalfa_uygulama::e2e::E2eAyarlari`); çalışma alanı verilmezse geçici
-   * dizindeki `alan` kullanılır.
+   * dizindeki `alan` kullanılır. Ayarlar alanın yoluna bağlıysa `ayarlar`
+   * bir işlevdir: uygulama açılmadan önce alanla çağrılır.
    */
   static async ac(ayarlar = {}) {
     await sureclerBitsin();
@@ -148,6 +149,7 @@ export class Kalfa {
     const alan = join(kok, 'alan');
     mkdirSync(veri);
     mkdirSync(alan);
+    if (typeof ayarlar === 'function') ayarlar = ayarlar(alan);
     // Linux'ta kabuk yalıtımda çalışır (aşama 2 tasarımı §12.5). Testlerin
     // `node`'u sistem dizinlerinde değilse (örneğin /opt/node) yalıtıma açılır;
     // kullanıcı bunu Ayarlar'dan yapar.

@@ -5,6 +5,7 @@ use kalfa_evren::KrediGozlemi;
 use kalfa_evren::tipler::DusunceEforu;
 use serde::{Deserialize, Serialize};
 
+use crate::arac::{McpAgKarti, McpAracHazirligi, McpErisim};
 use crate::butce::{ButceGorunumu, ButceSinirlari};
 use crate::denetci::DenetimSonucu;
 use crate::geri_alma::{GeriAlmaPlani, GeriAlmaSonucu};
@@ -160,6 +161,43 @@ pub struct OnayOgesi {
     /// göre gösterir (aşama 4 tasarımı §8.4, §14). Mühre hazırlıktan girer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eklenti: Option<crate::arac::EklentiTarifi>,
+    /// MCP aracında kartın sunucu, araç, erişim ve ağ özeti (1.1a tasarımı
+    /// §9). Mühre girmez; mühür hazırlıktan gelir.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<McpOnayKarti>,
+}
+
+/// MCP onay kartının özeti. Yalnız doğrulanmış görünen adlar ve hostlar;
+/// komut, ortam ve yol taşımaz.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpOnayKarti {
+    pub sunucu: String,
+    pub arac: String,
+    pub erisim: McpErisim,
+    /// İzinli hostlar; ağ kapalıysa ve tam erişimde boş.
+    pub ag_hostlari: Vec<String>,
+    /// Tam erişimde ağ sınırsızdır.
+    pub ag_sinirsiz: bool,
+}
+
+impl McpOnayKarti {
+    pub fn yeni(h: &McpAracHazirligi) -> Self {
+        let (ag_hostlari, ag_sinirsiz) = match &h.ag {
+            McpAgKarti::Kapali => (Vec::new(), false),
+            McpAgKarti::Sinirli { hostlar } => (
+                hostlar.iter().map(|x| x.gorunen().to_owned()).collect(),
+                false,
+            ),
+            McpAgKarti::Sinirsiz => (Vec::new(), true),
+        };
+        Self {
+            sunucu: h.sunucu.gorunen().to_owned(),
+            arac: h.arac.gorunen().to_owned(),
+            erisim: h.erisim,
+            ag_hostlari,
+            ag_sinirsiz,
+        }
+    }
 }
 
 /// Onay kartında "Veri çıkışı" satırı (aşama 3b, tasarım §9.3).

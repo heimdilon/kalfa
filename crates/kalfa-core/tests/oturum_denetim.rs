@@ -744,3 +744,77 @@ async fn kip_turun_basinda_okunur_tur_sirasinda_degismez() {
         "ikinci tur yeni kiple başlar; denetçi çağrılır"
     );
 }
+
+#[tokio::test]
+async fn harici_mcp_tanim_denetimi_butce_sahibinin_gunlugune_yazilir_ve_bosta_reddedilir() {
+    use kalfa_core::denetci::{
+        DENETCI_MODELI, DenetimGirdisi, GuvenlikDenetcisi, YapilandirilmisSiniflandirici,
+    };
+
+    let (d, siniflandirici) = ortam();
+    dosya_yaz(&d, "a.txt", "birinci\n");
+    let mut temel = uyar_ayarlari(&d);
+    temel.denetci_kipi = DenetimKipi::Kapali;
+    let (ayar, yol) = kayitli(temel, &d);
+    let s = okuma_senaryosu();
+    s.sohbet_ekle(guvenli());
+    let arac: Arc<dyn kalfa_core::arac::Arac> =
+        Arc::new(SahteArac::okuyan("dosya_oku").gecikme(Duration::from_millis(150)));
+    let baglam = test_baglami(s.clone(), vec![arac], siniflandirici);
+    let mut dvr = test_oturumu(baglam, ayar);
+
+    // 1. Oturum boştayken (`tur.is_none()`) aktif tur iptal belirteci yoktur ve
+    // bütçe/günlük kapısı harici denetimi reddeder.
+    assert!(dvr.tutamac.aktif_tur_iptal_belirteci().is_none());
+    let bosta_butce = dvr.tutamac.butce_talepci();
+    assert!(bosta_butce.izin("denetçi").await.is_none());
+
+    // 2. Tur başlatılır; oturum aktif yürütmedeyken harici MCP tanım denetimi
+    // aynı oturumun bütçesini kullanır ve JSONL gönderim günlüğüne `amac: "denetci"`
+    // olarak yazılır.
+    dvr.gonder(Komut::KullaniciMesaji {
+        metin: "Oku.".into(),
+    })
+    .await;
+    dvr.bekle(|o| matches!(o, Olay::TurBasladi)).await;
+
+    let iptal = dvr
+        .tutamac
+        .aktif_tur_iptal_belirteci()
+        .expect("aktif turda iptal belirteci olmalı");
+    assert!(!iptal.is_cancelled());
+
+    let denetci = YapilandirilmisSiniflandirici::yeni(s.clone());
+    let girdi = DenetimGirdisi {
+        kaynak: "mcp_tanim:mcp__yerel_srv__ara".to_owned(),
+        icerik: "ad: mcp__yerel_srv__ara\naçıklama: güvenli arama".to_owned(),
+    };
+    let butce = dvr.tutamac.butce_talepci();
+    let yanit = denetci.denetle(&girdi, &butce).await;
+    assert_eq!(yanit.sonuc, DenetimSonucu::Guvenli);
+    assert!(
+        butce
+            .denetim_gunlugu_kaydet(girdi, DENETCI_MODELI.to_owned(), yanit)
+            .await
+    );
+
+    dvr.bekle(|o| matches!(o, Olay::Tamamlandi { .. })).await;
+    assert!(
+        iptal.is_cancelled(),
+        "tur bitince aktif tur iptal belirteci düşmeli"
+    );
+
+    let kayitlar = OturumKaydi::oku(&yol).unwrap();
+    let gunluk = kalfa_core::gonderim::gunluk_uret(&kayitlar);
+    let denetci_kayitlari: Vec<_> = gunluk.iter().filter(|g| g.amac == "denetci").collect();
+    assert_eq!(denetci_kayitlari.len(), 1, "{gunluk:?}");
+    assert_eq!(
+        denetci_kayitlari[0].model.as_deref(),
+        Some("qwen3.8-flash-next")
+    );
+    assert_eq!(denetci_kayitlari[0].yeni.len(), 1);
+    assert_eq!(
+        denetci_kayitlari[0].yeni[0].kaynak,
+        "mcp_tanim:mcp__yerel_srv__ara"
+    );
+}

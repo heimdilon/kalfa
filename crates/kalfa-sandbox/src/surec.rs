@@ -336,11 +336,21 @@ impl EtkilesimliSurec {
     /// bütün torunlar ölmüştür; Windows'ta işin etkin süreç sayısı sıfırdır.
     /// Öldürme ya da doğrulama başarısızsa `Err` döner; çağıran, ağacın
     /// durduğunu varsayamaz.
-    pub async fn kapat(mut self) -> std::io::Result<KapanisSonucu> {
+    pub async fn kapat(self) -> std::io::Result<KapanisSonucu> {
+        self.kapat_kadar(Instant::now() + crate::etkilesimli::KAPANMA_PAYI)
+            .await
+    }
+
+    /// MCP'nin nazik iptal/flush aşamasıyla aynı kapanma payını paylaşır.
+    /// Verilen son an en çok normal pay kadar olabilir; geçmişse doğrudan
+    /// zorunlu öldürme ve doğrulamaya geçilir. Bu yol da stdin'i keser ve
+    /// ağacın durduğunu doğrulamadan başarı dönmez.
+    pub async fn kapat_kadar(mut self, son: Instant) -> std::io::Result<KapanisSonucu> {
         let bas = std::time::Instant::now();
+        let son = son.min(Instant::now() + crate::etkilesimli::KAPANMA_PAYI);
         self.girdiyi_kes();
         let kendiliginden = self.cikis.is_some()
-            || tokio::time::timeout(crate::etkilesimli::KAPANMA_PAYI, self.bitisi_bekle())
+            || tokio::time::timeout_at(son, self.bitisi_bekle())
                 .await
                 .is_ok();
         let sonuc = self.agaci_bitir().await;
@@ -603,6 +613,34 @@ mod tests {
         satir.trim().to_string()
     }
 
+    /// MCP iptal yazımı payı tüketmişse EOF sonrası gecikmeli doğal çıkış
+    /// için yeni pay açılmaz. Öldürmenin OS süresine eşik konmaz.
+    #[tokio::test]
+    async fn etkilesimli_kapat_kadar_tukenmis_kapanma_payini_yenilemez() {
+        let d = tempfile::tempdir().unwrap();
+        let (program, argumanlar): (&str, Vec<&str>) = if cfg!(windows) {
+            (
+                "powershell",
+                vec![
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "[Console]::Out.WriteLine($PID);[Console]::Out.Flush();[Console]::In.ReadToEnd() > $null;Start-Sleep -Milliseconds 600",
+                ],
+            )
+        } else {
+            ("sh", vec!["-c", "echo $$; cat >/dev/null; sleep 0.6"])
+        };
+        let mut surec = baslat(d.path(), program, &argumanlar);
+        let pid: u32 = ilk_satir(&mut surec).await.parse().unwrap();
+        let _temizlik = Temizlik(vec![pid]);
+        let sonuc = surec
+            .kapat_kadar(tokio::time::Instant::now() - Duration::from_millis(1))
+            .await
+            .unwrap();
+        assert!(!sonuc.kendiliginden);
+        assert!(!yasiyor(pid), "süre dolsa da süreç ağacı doğrulanmalı");
+    }
     /// G1.1 (tam erişim): 1 000 JSON-RPC satırı, 1 MiB'lık satır ve UTF-8
     /// birebir; EOF'ta kendiliğinden çıkış.
     #[tokio::test]
