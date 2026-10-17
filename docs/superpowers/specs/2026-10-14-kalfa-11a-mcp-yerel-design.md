@@ -15,12 +15,13 @@ G1 geçti; §4.1 ve §4.3'teki ayrı kalan riskler kullanıcı tarafından
 kabul edildi. 1.1a-1 ürün uygulamasını Codex devraldı; süreç altyapısı
 `c1d464f` commit'inde iki platformun zorunlu kontrollerini geçti.
 [Ürün raporu](../bulgular/2026-10-14-kalfa-11a-1-urun.md) kanıtı taşır.
-1.1a-2 uygulaması başladı: taşıma ve istemci (Görev 1) iki platformda
-doğrulandı; [ürün kaydı](../bulgular/2026-10-15-kalfa-11a-2-gorev1-urun.md)
-kapsamı belirtir. Tanım, kod kökleri ve tarif (Görev2) de `c4f12ab` ile
-iki platformda doğrulandı; [Görev2 kaydı](../bulgular/2026-10-15-kalfa-11a-2-gorev2-urun.md)
-sınırları belirtir. MCP yöneticisi ve arayüz sonraki görevlerde kalır. Ürün
-sonrası audit engeli için mevcut Wasmtime ailesi 49.0.3'e yamalandı;
+**1.1a tamamlandı:** 1.1a-2'nin 12 görevi (taşıma ve istemci, tanım ve
+tarif, kasa, koruma, süreç sahibi, çağrı, tanım denetimi, tur görüntüsü,
+yaşam döngüsü, IPC, arayüz ve iki platformda kabul) PR #20 ile 17 Ekim'de
+birleşti (main `bfe198a`). Görev kayıtları
+[plandadır](../plans/2026-10-15-kalfa-11a-2-mcp.md); kabul ve PR incelemesi
+[Görev 12 raporundadır](../bulgular/2026-10-17-kalfa-11a-2-gorev12-kabul.md).
+Uzak HTTP ve OAuth 1.1b'ye kalır (§2). Ürün sonrası audit engeli için mevcut Wasmtime ailesi 49.0.3'e yamalandı;
 [kapsam ve yeniden doğrulama](../bulgular/2026-10-14-wasmtime-4903-guvenlik-yamasi.md)
 ayrı kayıttadır.
 **Taban:** `main`, `04f16fc` (`v0.1.0` ön sürümü yayımlandı).

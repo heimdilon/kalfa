@@ -487,9 +487,13 @@ ve CI'ın yedi işi yeşilken birleşti: main `bfe198a`. Birleşmeden önce Code
 PR incelemesinin yedi bulgusu `20ec2ce` ile düzeltildi. PR worktree'si ve
 WSL kopyası kaldırıldı. **Yerel MCP (1.1a) tamamlandı.**
 
-**Sıradaki tek iş:** Sıradaki işi kullanıcı seçer. MCP'nin kalan parçası
-1.1b'dir (uzak Streamable HTTP ve OAuth, 1.1a tasarımı §2); tasarımı henüz
-yazılmadı. Yeni tasarım ya da plan kullanıcı onayı olmadan başlamaz.
+**Sıradaki tek iş:** MCP 1.1b'nin (uzak Streamable HTTP ve OAuth, 1.1a
+tasarımı §2) tasarım belgesini Claude yazar:
+`docs/superpowers/specs/`'te yeni belge ve onu açan PR.
+**Engel:** Yeni aşama kullanıcının açık başlatma onayını ister; genel
+"devam" bu onay sayılmaz.
+**Devam koşulu:** Kullanıcı 1.1b'yi başlatmayı onaylar; ya da başka bir
+işi seçerse bu satır onunla değiştirilir.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
