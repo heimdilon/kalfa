@@ -476,8 +476,10 @@ tanım yoluyla ulaşmadığı ölçüldü. Kabul testi bir eşzamanlılık hatas
 buldu: süren koruma taraması başlatma doğrulamasını düşürüyor, araçlar
 sonraki turda yayımdan çıkıyordu; bekleyen denetimle düzeltildi. Gerçek
 WebDriver e2e Windows/WSL **43/43** (yeni `13-mcp`); workspace
-**1450/1405**, e2e özellikli Rust **269/270**, MCP yalıtımı 3/3;
-fmt/clippy temiz.
+**1454/1410**, e2e özellikli Rust **273/275**, MCP yalıtımı 3/3;
+fmt/clippy temiz. PR incelemesindeki yedi bulgu (izin kalıcılığı, uyuyan
+izin, silme/yeniden adlandırma temizliği, kasa temizliği, içe aktarma ve
+form) testleriyle düzeltildi.
 [Görev 12 raporu](superpowers/bulgular/2026-10-17-kalfa-11a-2-gorev12-kabul.md).
 
 **Sıradaki tek iş:** PR #20'nin incelemesi ve kullanıcının birleştirme

@@ -491,6 +491,7 @@ export const tr = {
   'mcp.ice.sunucular': 'Eklenecek sunucular',
   'mcp.ice.gizli_say': 'Gizli say',
   'mcp.ice.gizli': 'gizli',
+  'mcp.ice.duz': 'düz değer olarak kaydedilir',
   'mcp.ice.atlanan': '{ad} atlandı: {neden}',
   'mcp.ice.kaydet': 'İçe aktar',
 

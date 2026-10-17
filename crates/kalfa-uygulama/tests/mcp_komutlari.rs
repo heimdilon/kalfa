@@ -11,6 +11,7 @@ use kalfa_core::kimlik::OturumId;
 use kalfa_core::protokol::{AracDurumu, Olay, OnayKarari};
 use kalfa_core::saglayici::Saglayici;
 use kalfa_core::test_destek::{SahteSaglayici, SahteYanit};
+use kalfa_sandbox::{BaslatmaHatasi, CalistirmaIstegi, Surec, Yalitici, YalitimDurumu, Yalitimsiz};
 use kalfa_uygulama::arayuz::McpYazici;
 use kalfa_uygulama::mcp::ayarlar::McpKipi;
 use kalfa_uygulama::mcp::komutlar::{McpDurumuDto, McpSunucuFormu};
@@ -542,4 +543,134 @@ async fn stderr_bekle(uygulama: &kalfa_uygulama::Uygulama, satir: &str) {
     })
     .await
     .unwrap_or_else(|_| panic!("sunucu stderr'inde {satir} görülmedi"));
+}
+
+/// Hazır görünen, süreç başlatamayan ve kaldırılan sunucu köklerini kaydeden
+/// yalıtıcı: izin verilir ama süreç yoktur.
+#[derive(Default)]
+struct KokKaydedenYalitici(Mutex<Vec<String>>);
+
+impl Yalitici for KokKaydedenYalitici {
+    fn durum(&self) -> YalitimDurumu {
+        YalitimDurumu::Hazir {
+            arka_uc: "test".into(),
+            surum: "1".into(),
+        }
+    }
+
+    fn profil_ozeti(&self, ag: bool, liste: Option<&str>) -> Option<String> {
+        Some(format!("test:{ag}:{}", liste.unwrap_or("-")))
+    }
+
+    fn baslat(&self, istek: &CalistirmaIstegi) -> Result<Surec, BaslatmaHatasi> {
+        Yalitimsiz.baslat(istek)
+    }
+
+    fn sunucu_kokunu_kaldir(&self, _kok: &Path, sunucu: &str) -> Result<(), String> {
+        self.0.lock().unwrap().push(sunucu.to_owned());
+        Ok(())
+    }
+}
+
+fn kok_kaydeden(y: &Arc<KokKaydedenYalitici>) -> YalitimKaynagi {
+    let y = Arc::clone(y);
+    YalitimKaynagi::Kurucu(Box::new(move |_| y as Arc<dyn Yalitici>))
+}
+
+/// "yerel" yalıtımlı sunucusu eklenmiş ve başlatma izni verilmiş ortam.
+async fn izinli_ortam(y: &Arc<KokKaydedenYalitici>) -> (Ortam, OturumId) {
+    let o = ortam_ile(Vec::new(), Some(kok_kaydeden(y))).await;
+    let oturum = o.oturum().await;
+    o.t.iletisim.onay_ver(true);
+    let form = o.form("yerel", "yalitimli").await;
+    let taslak = o.t.uygulama.mcp_taslak_olustur(None, form).unwrap();
+    assert!(
+        o.t.uygulama
+            .mcp_taslak_kaydet(taslak.taslak_kimligi, taslak.kusak, Some(oturum))
+            .await
+            .unwrap()
+    );
+    let (kanal, mut rx) = SahteKanal::yeni();
+    o.t.uygulama.oturumu_dinle(oturum, kanal).unwrap();
+    tur(&o, oturum, &mut rx, vec![SahteYanit::metin("1")]).await;
+    let kart =
+        o.t.uygulama
+            .mcp_durumu()
+            .baslatma_kartlari
+            .pop()
+            .expect("başlatma kartı");
+    // Süreç başlamaz (yalıtıcı başlatamaz); izin yine kaydedilir.
+    let _ =
+        o.t.uygulama
+            .mcp_baslatma_karti_yanitla(kart.istek_kimligi, true)
+            .await;
+    assert_eq!(izinler(&o.t.uygulama, "yerel"), vec![McpKipi::Yalitimli]);
+    (o, oturum)
+}
+
+fn izinler(uygulama: &kalfa_uygulama::Uygulama, ad: &str) -> Vec<McpKipi> {
+    uygulama
+        .mcp_durumu()
+        .sunucular
+        .iter()
+        .filter(|s| s.ozet.ad == ad)
+        .flat_map(|s| &s.alanlar)
+        .filter_map(|a| a.izin)
+        .collect()
+}
+
+/// Silinen sunucunun özel kökü (HOME/önbellek/geçici, Windows'ta ACE kaydı)
+/// kalmaz: aynı adla eklenen başka bir tanım onu devralmaz.
+#[tokio::test]
+async fn silinen_sunucunun_ozel_koku_kaldirilir() {
+    let y = Arc::new(KokKaydedenYalitici::default());
+    let (o, _) = izinli_ortam(&y).await;
+    assert!(o.t.uygulama.mcp_sil("yerel".into()).await.unwrap());
+    assert_eq!(*y.0.lock().unwrap(), vec!["yerel"]);
+}
+
+/// Yeniden adlandırılan sunucunun eski adlı izni ve kökü kalmaz; eski adlı
+/// süreç de aynı yoldan durur.
+#[tokio::test]
+async fn yeniden_adlandirmada_eski_adin_izni_ve_koku_kaldirilir() {
+    let y = Arc::new(KokKaydedenYalitici::default());
+    let (o, oturum) = izinli_ortam(&y).await;
+    let form = o.form("yeni", "yalitimli").await;
+    let taslak =
+        o.t.uygulama
+            .mcp_taslak_olustur(Some("yerel".into()), form)
+            .unwrap();
+    assert!(
+        o.t.uygulama
+            .mcp_taslak_kaydet(taslak.taslak_kimligi, taslak.kusak, Some(oturum))
+            .await
+            .unwrap()
+    );
+    assert_eq!(o.sunucu_adlari(), vec!["yeni"]);
+    assert_eq!(*y.0.lock().unwrap(), vec!["yerel"]);
+    assert!(izinler(&o.t.uygulama, "yeni").is_empty());
+}
+
+/// Yeniden açılıştan sonra yuvası olmayan kalıcı izin Ayarlar'da görünür ve
+/// geri alınabilir.
+#[tokio::test]
+async fn yeniden_acilista_uyuyan_izin_gorunur_ve_geri_alinir() {
+    let y = Arc::new(KokKaydedenYalitici::default());
+    let (o, _) = izinli_ortam(&y).await;
+    let ikinci = test_uygulamasi_yalitimla(
+        o._veri.path(),
+        SahteSaglayici::yeni(Vec::new()),
+        Some("evren_llm_a"),
+        kok_kaydeden(&y),
+    );
+    ikinci.uygulama.baslat().await;
+    let durum = ikinci.uygulama.mcp_durumu();
+    let alan = &durum.sunucular[0].alanlar;
+    assert_eq!(alan.len(), 1, "kalıcı izin satırı: {alan:?}");
+    assert_eq!(alan[0].izin, Some(McpKipi::Yalitimli));
+    ikinci
+        .uygulama
+        .mcp_baslatma_izni_geri_al(alan[0].alan_kimligi.clone(), "yerel".into())
+        .unwrap();
+    assert!(izinler(&ikinci.uygulama, "yerel").is_empty());
 }

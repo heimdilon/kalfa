@@ -10,6 +10,7 @@
 //! - Ana pencerenin kanalına yazılan her görüntünün `revizyon`'u artar; yeni
 //!   kanal güncel görüntüyü kilit altında alır, eski bir yazım onu ezmez.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -182,9 +183,21 @@ impl McpArayuzKanali {
             .sunucular
             .iter()
             .map(|sunucu| {
-                let alanlar = self
+                // Yeniden açılıştan sonra yuvası olmayan kayıtlı izinler de
+                // görünür ki geri alınabilsin.
+                let mut alanlar: BTreeMap<String, McpSunucuDurumu> = self
                     .yonetici
                     .sunucu_alanlari(&sunucu.ad)
+                    .into_iter()
+                    .collect();
+                for (alan, ad, _) in &izinler {
+                    if *ad == sunucu.ad {
+                        alanlar
+                            .entry(alan.clone())
+                            .or_insert(McpSunucuDurumu::Durdu);
+                    }
+                }
+                let alanlar = alanlar
                     .into_iter()
                     .map(|(alan, durum)| {
                         let izin = izinler
@@ -374,7 +387,7 @@ impl Uygulama {
                 &alan,
             )
             .await;
-        self.mcp_kayit_sonucu(sonuc)
+        self.mcp_kayit_sonucu(sonuc).await
     }
 
     pub fn mcp_ice_aktar_onizle(&self, json: &str) -> Result<IceAktarmaOnizlemeDto, KomutHatasi> {
@@ -412,10 +425,10 @@ impl Uygulama {
                 &alan,
             )
             .await;
-        self.mcp_kayit_sonucu(sonuc)
+        self.mcp_kayit_sonucu(sonuc).await
     }
 
-    fn mcp_kayit_sonucu(
+    async fn mcp_kayit_sonucu(
         &self,
         sonuc: Result<crate::mcp::tanimlar::KayitSonucu, KayitHatasi>,
     ) -> Result<bool, KomutHatasi> {
@@ -425,8 +438,13 @@ impl Uygulama {
                 for ad in kayit.tanim_ozetleri.keys() {
                     self.mcp.sunucu_tanimi_degisti(ad);
                 }
+                // Yeniden adlandırılan sunucunun eski adlı süreci ve izinleri.
+                let mut sorun = Ok(());
+                for ad in &kayit.eski_adlar {
+                    sorun = sorun.and(self.mcp_sunucuyu_kaldir(ad).await);
+                }
                 self.mcp_kanali.yay();
-                Ok(true)
+                sorun.map(|()| true)
             }
             Err(KayitHatasi::KullaniciReddetti) => Ok(false),
             Err(hata) => Err(kayit_hatasi(hata)),
@@ -436,10 +454,51 @@ impl Uygulama {
     fn mcp_ayar_degistir(&self, degisiklik: McpDegisikligi) -> Result<(), KomutHatasi> {
         let mut islem = McpAyarlarIslemi::baslat(&*self.ayarlar);
         islem.degisiklik_ekle(degisiklik);
-        islem
-            .kaydet(&*self.ayarlar, &*self.mcp_kasa)
-            .map_err(|e| KomutHatasi::gecersiz(e.to_string()))?;
-        Ok(())
+        match islem.kaydet(&*self.ayarlar, &*self.mcp_kasa) {
+            // Ayarlar yazıldı; kalan kasa kayıtları sonraki kayıtta silinir.
+            Err(e) if !e.kayit_tamamlandi_mi() => Err(KomutHatasi::gecersiz(e.to_string())),
+            _ => Ok(()),
+        }
+    }
+
+    /// Silinen ya da yeniden adlandırılan sunucunun süreçlerini durdurur,
+    /// başlatma izinlerini geri alır ve alan başına özel kökünü (Windows'ta
+    /// ACE kaydıyla) kaldırır. Bir adım başarısız olsa da ötekiler sürer.
+    async fn mcp_sunucuyu_kaldir(&self, ad: &str) -> Result<(), KomutHatasi> {
+        self.mcp.sunucu_tanimi_degisti(ad);
+        let mut alanlar: BTreeSet<String> = self
+            .mcp
+            .sunucu_alanlari(ad)
+            .into_iter()
+            .map(|(alan, _)| alan)
+            .collect();
+        let mut sorunlar = Vec::new();
+        for (alan, sunucu, _) in self.mcp.kayitli_baslatma_izinleri() {
+            if sunucu == ad {
+                if let Err(hata) = self.mcp.baslatma_izni_geri_al(&alan, ad) {
+                    sorunlar.push(hata.to_string());
+                }
+                alanlar.insert(alan);
+            }
+        }
+        if self.mcp.yalitim_hazir() {
+            for alan in alanlar {
+                let Some(kok) = self.mcp.alan_koku(&alan) else {
+                    continue;
+                };
+                if let Err(hata) = self.mcp.sunucu_kokunu_temizle(&kok, &alan, ad).await {
+                    sorunlar.push(hata.to_string());
+                }
+            }
+        }
+        if sorunlar.is_empty() {
+            Ok(())
+        } else {
+            Err(KomutHatasi::gecersiz(format!(
+                "`{ad}` sunucusu kaldırıldı ancak temizlik tamamlanamadı: {}",
+                sorunlar.join("; ")
+            )))
+        }
     }
 
     pub fn mcp_etkin_ayarla(&self, ad: String, etkin: bool) -> Result<(), KomutHatasi> {
@@ -468,14 +527,9 @@ impl Uygulama {
             return Ok(false);
         }
         self.mcp_ayar_degistir(McpDegisikligi::Sil { ad: ad.clone() })?;
-        self.mcp.sunucu_tanimi_degisti(&ad);
-        for (alan, sunucu, _) in self.mcp.kayitli_baslatma_izinleri() {
-            if sunucu == ad {
-                self.mcp.baslatma_izni_geri_al(&alan, &ad);
-            }
-        }
+        let sonuc = self.mcp_sunucuyu_kaldir(&ad).await;
         self.mcp_kanali.yay();
-        Ok(true)
+        sonuc.map(|()| true)
     }
 
     pub async fn mcp_yeniden_baslat(
@@ -524,8 +578,13 @@ impl Uygulama {
         sonuc.map_err(yonetici_hatasi)
     }
 
-    pub fn mcp_baslatma_izni_geri_al(&self, alan_kimligi: String, ad: String) {
-        self.mcp.baslatma_izni_geri_al(&alan_kimligi, &ad);
+    pub fn mcp_baslatma_izni_geri_al(
+        &self,
+        alan_kimligi: String,
+        ad: String,
+    ) -> Result<(), KomutHatasi> {
+        let sonuc = self.mcp.baslatma_izni_geri_al(&alan_kimligi, &ad);
         self.mcp_kanali.yay();
+        sonuc.map_err(yonetici_hatasi)
     }
 }

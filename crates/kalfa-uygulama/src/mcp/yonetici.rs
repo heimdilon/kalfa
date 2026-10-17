@@ -169,6 +169,8 @@ pub enum YoneticiHatasi {
     SunucuDurdurulamadi(String),
     #[error("uzak MCP araç hatası ({})", .0.kod())]
     UzakRpc(kalfa_mcp::istemci::RpcHatasi),
+    #[error("başlatma izinleri kalıcı olarak kaydedilemedi: {0}")]
+    IzinlerKaydedilemedi(String),
     #[error("{0}")]
     SunucuHatasi(String),
 }
@@ -542,7 +544,9 @@ impl McpYoneticisi {
         d.bekleyen_kartlar.retain(|_, kart| {
             !(kart.alan_kimligi == alan_kimligi && kart.kod_guveni == KodGuveni::WdeKodlu)
         });
-        self.izin_dosyasini_kaydet_kilitli(&d);
+        // Yazılamazsa eski dosya silinmiştir; silme de olmazsa bellekteki
+        // durum yine doğrudur, yalnız veri dizini salt okunur kalmıştır.
+        let _ = self.izin_dosyasini_kaydet_kilitli(&d);
         yeni
     }
 
@@ -605,7 +609,9 @@ impl McpYoneticisi {
                 .retain(|_, izin| izin.politika_ozeti_hex == yeni_pi_hex);
             d.bekleyen_kartlar
                 .retain(|_, kart| kart.politika_ozeti == yeni_pi);
-            self.izin_dosyasini_kaydet_kilitli(&d);
+            // Π ayarlarla aynı dizinde saklanır; burası yazılamıyorsa Π de
+            // diske geçmemiştir.
+            let _ = self.izin_dosyasini_kaydet_kilitli(&d);
 
             let yalitim_hazir = matches!(self.yalitici.durum(), YalitimDurumu::Hazir { .. });
             let mut liste = Vec::new();
@@ -680,26 +686,33 @@ impl McpYoneticisi {
     }
 
     /// Belirtilen `(alan_kimligi, sunucu)` için başlatma iznini geri alır ve
-    /// çalışan süreci hemen durdurur (§5.1, §9).
-    pub fn baslatma_izni_geri_al(self: &Arc<Self>, alan_kimligi: &str, sunucu: &str) {
+    /// çalışan süreci hemen durdurur (§5.1, §9). Süreç her durumda durur;
+    /// geri alma diske geçmediyse hata döner.
+    pub fn baslatma_izni_geri_al(
+        self: &Arc<Self>,
+        alan_kimligi: &str,
+        sunucu: &str,
+    ) -> Result<(), YoneticiHatasi> {
         let anahtar = McpAnahtari::yeni(alan_kimligi, sunucu);
-        let cikarilan = {
+        let (kayit, cikarilan) = {
             let mut d = self.durum();
             d.yalitimli_izinler.remove(&anahtar);
             d.gecici_tam_erisim_izinleri.remove(&anahtar);
             d.bekleyen_kartlar
                 .retain(|_, k| !(k.alan_kimligi == alan_kimligi && k.sunucu == sunucu));
-            self.izin_dosyasini_kaydet_kilitli(&d);
-            Self::yuvadan_sureci_ayir(
+            let kayit = self.izin_dosyasini_kaydet_kilitli(&d);
+            let cikarilan = Self::yuvadan_sureci_ayir(
                 &mut d,
                 &anahtar,
                 YoneticiHatasi::SunucuDurduruldu,
                 McpSunucuDurumu::Durdu,
-            )
+            );
+            (kayit, cikarilan)
         };
         if let Some((anahtar, kusak, kok_yolu)) = cikarilan {
             self.arka_planda_kapat(anahtar, kusak, kok_yolu);
         }
+        kayit
     }
 
     /// `(alan_kimligi, sunucu)` için geçerli bir başlatma izni olup olmadığını
@@ -871,6 +884,11 @@ impl McpYoneticisi {
         self.durum().sistem_ortami = ortam;
     }
 
+    /// Platform yalıtımı hazır mı? Sunucu kökleri yalnız o zaman temizlenebilir.
+    pub fn yalitim_hazir(&self) -> bool {
+        matches!(self.yalitici.durum(), YalitimDurumu::Hazir { .. })
+    }
+
     pub fn yalitim_dizini(&self) -> &Path {
         &self.yalitim_dizini
     }
@@ -1005,7 +1023,8 @@ impl McpYoneticisi {
                             .then_some(guncel_w.deger()),
                     },
                 );
-                self.izin_dosyasini_kaydet_kilitli(&d);
+                // Yazılamazsa izin yalnız bu oturumda geçerli kalır.
+                let _ = self.izin_dosyasini_kaydet_kilitli(&d);
             }
             CalistirmaKipi::TamErisim => {
                 d.gecici_tam_erisim_izinleri.insert(
@@ -2409,7 +2428,10 @@ impl McpYoneticisi {
         }
     }
 
-    fn izin_dosyasini_kaydet_kilitli(&self, d: &YoneticiDurumu) {
+    /// İzin dosyasını yazar. Yazılamazsa eski dosyayı siler: geri alınmış ya da
+    /// eskimiş bir izin sonraki açılışta geri gelmesin (izinler yeniden
+    /// sorulur). Silme de olmazsa hata döner.
+    fn izin_dosyasini_kaydet_kilitli(&self, d: &YoneticiDurumu) -> Result<(), YoneticiHatasi> {
         let dosya = KaliciIzinDosyasi {
             yalitimli_izinler: d.yalitimli_izinler.values().cloned().collect(),
             yazma_kusaklari: d
@@ -2420,7 +2442,14 @@ impl McpYoneticisi {
                 .collect(),
         };
         let yol = self.veri_dizini.join(IZIN_DOSYASI_ADI);
-        let _ = izin_dosyasini_yaz(&yol, &dosya);
+        let Err(yazma) = izin_dosyasini_yaz(&yol, &dosya) else {
+            return Ok(());
+        };
+        match std::fs::remove_file(&yol) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err(YoneticiHatasi::IzinlerKaydedilemedi(yazma.to_string())),
+        }
     }
 
     /// Çalışma alanı için kayıtlı bütün başlatma izinlerini listeler (Ayarlar için).
@@ -4391,7 +4420,8 @@ mod tests {
             assert_eq!(tur(&kaynak, oturum).await, vec!["mcp__harici__oku"]);
 
             test.yonetici
-                .baslatma_izni_geri_al(&test.alan_kimligi, "harici");
+                .baslatma_izni_geri_al(&test.alan_kimligi, "harici")
+                .unwrap();
             assert!(tur(&kaynak, oturum).await.is_empty());
             assert_eq!(test.baslatici.sayac(), 1, "izinsiz yeniden başlamaz");
 
@@ -4489,5 +4519,37 @@ mod tests {
             assert!(tur(&kaynak, oturum).await.is_empty());
             assert_eq!(test.baslatici.sayac(), 1, "yalnız izin anındaki başlatma");
         }
+    }
+
+    /// İzin dosyası yazılamazsa eski dosya silinir: geri alınan izin
+    /// yeniden açılışta dönmez. Silme de olmazsa geri alma hata bildirir.
+    #[tokio::test]
+    async fn izin_dosyasi_yazilamazsa_geri_alinan_izin_yeniden_acilista_donmez() {
+        let test = TestOrtami::kur();
+        test.harici_sunucu_ekle("harici", McpKipi::Yalitimli);
+        let _oturum = test.siki_oturum_ac();
+        test.onayla_ve_baslat("harici").await;
+        let yol = test.veri_dizini.join(IZIN_DOSYASI_ADI);
+        assert!(yol.exists());
+
+        // Geçici dosyanın yerinde dizin: yazma düşer, eski dosya silinir.
+        std::fs::create_dir(yol.with_extension("json.yeni")).unwrap();
+        test.yonetici
+            .baslatma_izni_geri_al(&test.alan_kimligi, "harici")
+            .unwrap();
+        assert!(!yol.exists(), "geri alınmış izin diskte kalmamalı");
+        assert!(
+            izin_dosyasini_oku(&test.veri_dizini)
+                .yalitimli_izinler
+                .is_empty()
+        );
+
+        // Dosyanın yerinde de dizin: silinemez, hata döner.
+        std::fs::create_dir(&yol).unwrap();
+        assert!(matches!(
+            test.yonetici
+                .baslatma_izni_geri_al(&test.alan_kimligi, "harici"),
+            Err(YoneticiHatasi::IzinlerKaydedilemedi(_))
+        ));
     }
 }

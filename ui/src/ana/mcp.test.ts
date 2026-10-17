@@ -246,7 +246,7 @@ describe('MCP formu', () => {
       a.mcpAyrintilari.set('notlar', {
         ayrinti: {
           ad: 'notlar',
-          etkin: true,
+          etkin: false,
           komut: { tur: 'program_adi', ad: 'npx', argumanlar: ['-y', 'notlar@1.2.3'] },
           ortam: [
             { ad: 'API_ANAHTARI', gizli: true, gizli_var: true, gizli_kimlik: 'gizli-1' },
@@ -269,6 +269,7 @@ describe('MCP formu', () => {
     expect(arka.komutlar('mcp_taslak_olustur')[0]).toMatchObject({
       eski_ad: 'notlar',
       form: {
+        etkin: false,
         komut: { tur: 'program_adi', ad: 'npx', argumanlar: ['-y', 'notlar@1.2.3'] },
         ortam: [
           { tur: 'korunan_gizli', ad: 'API_ANAHTARI', kimlik: 'gizli-1' },
@@ -281,7 +282,7 @@ describe('MCP formu', () => {
 });
 
 describe('MCP JSON içe aktarma', () => {
-  it('metin önizlemeye gidince alandan silinir; gizli değer gösterilmez; “gizli say” arka uca gider', async () => {
+  it('metin önizlemeye gidince alandan silinir; gizli değer gösterilmez; “gizli say” iki yönde arka uca gider', async () => {
     const json = JSON.stringify({ mcpServers: { notlar: { command: 'npx', env: { TOKEN: SIR } } } });
     const { arka } = await ciz((a) => {
       a.mcpIceAktarma = {
@@ -317,10 +318,14 @@ describe('MCP JSON içe aktarma', () => {
     expect(screen.getByText('uzak atlandı: URL sunucuları 1.1b’de')).toBeTruthy();
 
     const gizliSay = within(liste).getAllByRole<HTMLInputElement>('checkbox', { name: 'Gizli say' });
-    expect(gizliSay[0].disabled).toBe(true);
+    // Kısa düz değerler (8 karakterden kısa) gizli kalamaz; düze çevrilebilir.
+    expect(gizliSay[0].disabled).toBe(false);
+    await fireEvent.click(gizliSay[0]);
+    await waitFor(() => expect(within(liste).getByText('düz değer olarak kaydedilir')).toBeTruthy());
     await fireEvent.click(gizliSay[1]);
     await waitFor(() =>
       expect(arka.komutlar('mcp_ice_aktar_gizlilik')).toEqual([
+        { taslak_kimligi: 'ice-1', sunucu: 'notlar', ortam: 'TOKEN', gizli: false },
         { taslak_kimligi: 'ice-1', sunucu: 'notlar', ortam: 'DIL', gizli: true },
       ]),
     );

@@ -163,6 +163,8 @@ pub struct KayitSonucu {
     pub ayarlar: McpAyarlar,
     pub tanim_ozetleri: BTreeMap<String, McpTanimOzeti>,
     pub temizlik_bekleyenler: Vec<GizliKimlik>,
+    /// Yeniden adlandırmada artık bulunmayan eski ad.
+    pub eski_adlar: Vec<String>,
 }
 
 /// Yerel kayıt, dosya seçimi ve JSON içe aktarma hataları.
@@ -487,6 +489,11 @@ impl McpKayitDefteri {
                 yol: secili_yol,
             });
         }
+        let eski_adlar = eski_ad
+            .iter()
+            .filter(|a| **a != taslak.ad)
+            .cloned()
+            .collect();
         islem.degisiklik_ekle(McpDegisikligi::Kaydet {
             eski_ad,
             taslak: taslak.clone(),
@@ -494,7 +501,9 @@ impl McpKayitDefteri {
 
         let mut tanim_ozetleri = BTreeMap::new();
         tanim_ozetleri.insert(taslak.ad.clone(), ozet);
-        self.islemi_tamamla(islem, tanim_ozetleri)
+        let mut sonuc = self.islemi_tamamla(islem, tanim_ozetleri)?;
+        sonuc.eski_adlar = eski_adlar;
+        Ok(sonuc)
     }
 
     /// Ham `mcpServers` JSON metnini arka uçta ayrıştırır, doğrular ve sır/yol
@@ -782,6 +791,7 @@ impl McpKayitDefteri {
                 ayarlar: baz_ayarlar,
                 tanim_ozetleri: BTreeMap::new(),
                 temizlik_bekleyenler: Vec::new(),
+                eski_adlar: Vec::new(),
             });
         }
 
@@ -908,11 +918,20 @@ impl McpKayitDefteri {
         islem: McpAyarlarIslemi,
         tanim_ozetleri: BTreeMap<String, McpTanimOzeti>,
     ) -> Result<KayitSonucu, KayitHatasi> {
-        let ayarlar = islem.kaydet(&*self.depo, &*self.kasa)?;
+        // Ayarlar yazıldıysa kasa temizliği sonraki kayda kalır; kayıt
+        // tamamlanmış sayılır ki süreçler yeni tanıma göre dursun.
+        let (ayarlar, temizlik_bekleyenler) = match islem.kaydet(&*self.depo, &*self.kasa) {
+            Ok(ayarlar) => (ayarlar, Vec::new()),
+            Err(McpAyarlarHatasi::TemizlikGerekiyor { kalanlar }) => {
+                (self.depo.mcp_ayarlarini_oku().0, kalanlar)
+            }
+            Err(hata) => return Err(hata.into()),
+        };
         Ok(KayitSonucu {
             ayarlar,
             tanim_ozetleri,
-            temizlik_bekleyenler: Vec::new(),
+            temizlik_bekleyenler,
+            eski_adlar: Vec::new(),
         })
     }
 
@@ -1826,5 +1845,66 @@ mod tests {
             KayitHatasi::Ayarlar(McpAyarlarHatasi::BilinmeyenKorunanGizliKimlik)
         );
         assert_eq!(iletisim.sorulanlar().len(), onceki_sorulan_sayisi);
+    }
+
+    /// Ayarlar yazılıp yalnız eski sırrın kasadan silinmesi düşerse kayıt
+    /// tamamlanmış sayılır: çağıran süreçleri yeni tanıma göre durdurabilsin.
+    /// Yeniden adlandırmada eski ad da sonuçla döner.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kasa_temizligi_kalan_duzenleme_tamamlanmis_sayilir_ve_eski_adi_doner() {
+        let kok = tempfile::tempdir().unwrap();
+        let (veri, yalitim, kokler) = test_ortami(kok.path());
+        let ayarlar = Arc::new(Ayarlar::oku(&veri));
+        let kasa = Arc::new(SahteGizliKasa::yeni());
+        let iletisim = Arc::new(SahteIletisim::default());
+        iletisim.dosya_ver(&std::env::current_exe().unwrap());
+        iletisim.onay_ver(true);
+        let kayit = McpKayitDefteri::yeni(ayarlar.clone(), kasa.clone(), iletisim.clone());
+        let secili = kayit.komut_sec(None).await.unwrap().unwrap();
+        let taslak = |ad: &str, deger: &str| McpSunucuTaslagi {
+            ad: ad.into(),
+            etkin: true,
+            komut: McpKomut::SeciliYurutulebilir {
+                kimlik: secili.kimlik.clone(),
+                argumanlar: vec![],
+            },
+            ortam: vec![McpOrtamGirdisi::YeniGizli {
+                ad: "ANAHTAR".into(),
+                deger: YeniGizliDeger::yeni(deger).unwrap(),
+            }],
+            kip: McpKipi::Yalitimli,
+            ag_izinleri: Vec::new(),
+            baslatma_zamani_asimi_sn: 30,
+            cagri_zamani_asimi_sn: 120,
+        };
+
+        let (id, kusak) = kayit.taslak_olustur(None, taslak("birinci", "eski-gizli-deger"));
+        let ilk = kayit
+            .taslak_kaydet(&id, kusak, &[], &yalitim, &kokler, "alan")
+            .await
+            .unwrap();
+        assert!(ilk.eski_adlar.is_empty());
+        let eski = ilk.ayarlar.sunucu("birinci").unwrap().gizli_kimlikler();
+        for kimlik in &eski {
+            kasa.sil_hatasi_ekle(kimlik.clone());
+        }
+
+        let (id, kusak) =
+            kayit.taslak_olustur(Some("birinci".into()), taslak("ikinci", "yeni-gizli-deger"));
+        let sonuc = kayit
+            .taslak_kaydet(&id, kusak, &[], &yalitim, &kokler, "alan")
+            .await
+            .expect("ayarlar yazıldı; kayıt tamamlanmış sayılır");
+        assert_eq!(sonuc.eski_adlar, vec!["birinci".to_owned()]);
+        assert_eq!(
+            sonuc
+                .temizlik_bekleyenler
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
+            eski
+        );
+        assert!(sonuc.ayarlar.sunucu("birinci").is_none());
+        assert!(sonuc.ayarlar.sunucu("ikinci").is_some());
     }
 }

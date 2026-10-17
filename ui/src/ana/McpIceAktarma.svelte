@@ -2,8 +2,8 @@
   MCP JSON içe aktarma (1.1a tasarımı §9). Metni arka uç ayrıştırır; mutlak
   komut yolları orada kimliğe çevrilir. Metin sır içerebileceği için
   önizlemeye gönderilir gönderilmez alandan silinir. Önizleme gizli
-  değerleri göstermez; düz bir değeri "gizli say" ile kasaya
-  yönlendirebilirsiniz. Sunucular yalıtımlı ve kapalı eklenir, `url`
+  değerleri göstermez. Bütün değerler gizli başlar; "gizli say" ile bir
+  değeri düz değere çevirebilir ya da yeniden kasaya yönlendirebilirsiniz. Sunucular yalıtımlı ve kapalı eklenir, `url`
   içerenler atlanır. Kaydı Rust yerel pencerede sorar.
 -->
 <script lang="ts">
@@ -56,16 +56,17 @@
     });
   }
 
-  function gizliSay(sunucu: string, ortam: string): Promise<void> {
+  function gizliligiDegistir(sunucu: string, ortam: string, gizli: boolean): Promise<void> {
     const o = onizleme;
     if (!o) return Promise.resolve();
     return calistir(async () => {
-      kusak = await ipc.mcpIceAktarGizlilik(o.taslak_kimligi, sunucu, ortam, true);
+      kusak = await ipc.mcpIceAktarGizlilik(o.taslak_kimligi, sunucu, ortam, gizli);
       const degisken = o.sunucular
         .find((s) => s.ad === sunucu)
         ?.ortam.find((d) => d.ad === ortam);
       if (degisken) {
-        degisken.gizli = true;
+        degisken.gizli = gizli;
+        // Değer arayüze hiç gelmez; düze çevrilen değer de gösterilmez.
         degisken.deger_acik = undefined;
       }
     });
@@ -122,13 +123,13 @@
                 {#if d.gizli}
                   <span class="gizli">{m('mcp.ice.gizli')}</span>
                 {:else}
-                  <span class="mono"><GorunurMetin metin={d.deger_acik ?? ''} /></span>
+                  <span class="mono"><GorunurMetin metin={d.deger_acik ?? m('mcp.ice.duz')} /></span>
                 {/if}
                 <Checkbox
                   checked={d.gizli}
-                  disabled={d.gizli || mesgul}
+                  disabled={mesgul}
                   label={m('mcp.ice.gizli_say')}
-                  onchange={() => void gizliSay(s.ad, d.ad)}
+                  onchange={() => void gizliligiDegistir(s.ad, d.ad, !d.gizli)}
                 />
               </div>
             {/each}

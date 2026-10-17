@@ -199,3 +199,26 @@ Aynı ağaç (`07376d4`) iki platformda:
 `bellek_siniri_cagriyi_durdurur_sonraki_calisir` düştü. O sırada Windows
 takımı ve e2e aynı makinede koşuyordu. Dal `kalfa-plugin`'e dokunmaz; test
 tek başına 3/3 geçti ve yük yokken workspace koşusu yukarıdadır.
+
+## 7. PR incelemesi (Codex, `162a4e6`)
+
+Yedi bulgunun yedisi de kodda doğrulandı ve düzeltildi. Her biri, düzeltme
+geri alınınca düşen bir testle gelir.
+
+| Bulgu | Düzeltme | Test |
+|---|---|---|
+| İzin dosyası yazılamazsa geri alınan izin yeniden açılışta dönüyordu | Yazma düşerse eski dosya silinir (izinler yeniden sorulur); silme de düşerse geri alma hata bildirir | `yonetici::izin_dosyasi_yazilamazsa_geri_alinan_izin_yeniden_acilista_donmez` |
+| Yeniden açılıştan sonra yuvası olmayan kalıcı izin Ayarlar'da görünmüyordu | Satırlar yuvalarla kayıtlı izinlerin birleşimidir | `mcp_komutlari::yeniden_acilista_uyuyan_izin_gorunur_ve_geri_alinir` |
+| Silmede sunucunun özel kökü (Windows'ta ACE kaydı) kalıyordu | Silme, alan başına `sunucu_kokunu_temizle` çağırır | `mcp_komutlari::silinen_sunucunun_ozel_koku_kaldirilir` |
+| Yeniden adlandırmada eski adlı süreç ve izin kalıyordu | Kayıt sonucu eski adı taşır; eski ad silinmiş gibi kaldırılır | `mcp_komutlari::yeniden_adlandirmada_eski_adin_izni_ve_koku_kaldirilir` |
+| Ayarlar yazılıp kasa temizliği düşünce silme/kayıt hata dönüp süreçleri durdurmuyordu | `TemizlikGerekiyor` tamamlanmış kayıt sayılır; kalanlar sonraki kayıtta silinir | `tanimlar::kasa_temizligi_kalan_duzenleme_tamamlanmis_sayilir_ve_eski_adi_doner` (Linux) |
+| İçe aktarmada gizli başlayan kısa değer düze çevrilemiyordu; kayıt hep düşüyordu | "Gizli say" iki yönde çalışır (tasarım §8: "düz değere çevirebilir") | `mcp.test.ts` içe aktarma |
+| Formla düzenleme kapalı sunucuyu yeniden açıyordu | Düzenleme mevcut `etkin` değerini korur | `mcp.test.ts` düzenleme |
+
+Kalan sınır: veri dizini bütünüyle salt okunur olursa (dosya ne yazılır ne
+silinir) yazma kuşağı artışı ve politika değişikliği diske geçmez. Π aynı
+dizindeki ayarlarda saklandığı için o da diske geçmemiştir; açık geri alma
+bu durumda hata bildirir.
+
+Düzeltmelerden sonra Windows/WSL: workspace **1454/1410**, e2e özellikli
+Rust **273/275**; arayüz 0/0 ve 459/459, build temiz; fmt/clippy temiz.

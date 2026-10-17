@@ -144,7 +144,7 @@
     if (baslatma === null || cagri === null) return m('mcp.form.hata.zaman');
     return {
       ad: ad.trim(),
-      etkin: true,
+      etkin: ilk?.etkin ?? true,
       komut,
       ortam: ortamGirdileri,
       kip,

@@ -756,6 +756,5 @@ pub async fn mcp_baslatma_izni_geri_al(
     alan_kimligi: String,
     ad: String,
 ) -> Sonuc<()> {
-    u.mcp_baslatma_izni_geri_al(alan_kimligi, ad);
-    Ok(())
+    u.mcp_baslatma_izni_geri_al(alan_kimligi, ad)
 }
