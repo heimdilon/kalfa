@@ -39,11 +39,12 @@ describe('konuşma', () => {
     await k?.kapat();
   });
 
-  it('akan yanıttan sonra onaylanan değişiklik dosyaya yazılır', async () => {
+  it('akan yanıttan sonra karttan onaylanan değişiklik dosyaya yazılır', async () => {
     await k.gonder('yaz');
     await k.metniBekle('Notu yazıyorum.');
-    await k.dugme('İncele');
-    await k.dugme('Tümünü onayla');
+    // Yazma alanının üstündeki karttan, sayfa açmadan (masaüstü arayüzü §3).
+    await k.dugme('Bir kez izin ver');
+    assert.equal(await k.b.execute(() => document.querySelector('[role="dialog"]') !== null), false);
     assert.equal(await k.turSonuBekle(1), 'Normal');
     assert.equal(readFileSync(join(k.alan, 'notlar.txt'), 'utf8'), 'merhaba\n');
     await k.metniBekle('Araç sonucu:');

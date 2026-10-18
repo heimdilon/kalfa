@@ -174,6 +174,18 @@ export const tr = {
 
   'onay.kart.baslik': 'Onay isteği: {sayi} değişiklik',
   'onay.kart.incele': 'İncele',
+  'onay.kart.bekliyor': 'Kararınızı bekliyor',
+  'onay.bekleyen.baslik': 'Onayınızı bekliyor: {sayi} işlem',
+  'onay.bekleyen.bir_kez': 'Bir kez izin ver',
+  'onay.bekleyen.oturum': 'Bu oturumda izin ver',
+  'onay.bekleyen.reddet': 'Reddet',
+  'onay.bekleyen.tumunu_onayla': 'Tümünü onayla',
+  'onay.bekleyen.tumunu_reddet': 'Tümünü reddet',
+  'onay.bekleyen.riskli':
+    'Bu istekte tek tek seçilmesi gereken bir işlem var; onayı İncele\'den verin.',
+  'onay.bekleyen.ag': 'Ağ: {hostlar}',
+  'onay.bekleyen.tamami': 'Tamamını göster ({sayi} satır)',
+  'onay.bekleyen.daralt': 'Daralt',
   'onay.kart.yanitlandi': 'Yanıtlandı',
   'onay.kart.gecersiz': 'Tur bitti; karar gerekmiyor',
   'onay.kart.uyari': '{sayi} uyarı',

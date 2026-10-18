@@ -244,6 +244,48 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
     expect(screen.getByText('Yanıtlandı')).toBeTruthy();
   });
 
+  it('yazma alanının üstündeki karttan sayfa açmadan onaylanır (masaüstü arayüzü §3)', async () => {
+    const { arka } = await ciz();
+    onayIstegi(arka);
+    const kart = await screen.findByRole('region', { name: 'Onayınızı bekliyor: 2 işlem' });
+    expect(screen.getByText('Kararınızı bekliyor')).toBeTruthy();
+    await fireEvent.click(within(kart).getByRole('button', { name: 'Tümünü onayla' }));
+    await waitFor(() => expect(screen.getByText('Yanıtlandı')).toBeTruthy());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('region', { name: /Onayınızı bekliyor/ })).toBeNull();
+    expect(arka.komutlar('arac_onayi')).toEqual([
+      {
+        oturum: 'o1',
+        kararlar: [
+          { cagri: 'c1', muhur: 'm1', karar: { tip: 'Onayla' }, kisayol: false },
+          { cagri: 'c2', muhur: 'm2', karar: { tip: 'Onayla' }, kisayol: false },
+        ],
+      },
+    ]);
+  });
+
+  it('geçersizleşen eski sayfa seçimi yeni isteğin kartını saklamaz', async () => {
+    const { arka } = await ciz();
+    onayIstegi(arka);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    arka.olaylar('o1', [
+      { tip: 'Tamamlandi', neden: { tip: 'Normal' } },
+      { tip: 'TurBasladi' },
+      { tip: 'OnayGerekiyor', islem: 'i3', ogeler: [onayOgesi({ cagri: 'c9', muhur: 'm9' })] },
+    ]);
+    expect(await screen.findByRole('region', { name: 'Onayınızı bekliyor: 1 işlem' })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('sayfa açıkken yapışık kart gizlenir; aynı karar iki yerden verilmez', async () => {
+    const { arka } = await ciz();
+    onayIstegi(arka);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.queryByRole('region', { name: /Onayınızı bekliyor/ })).toBeNull();
+  });
+
   it('kabuk öğesinde diff yerine komut, dizin, ağ ve yalıtım; yerel onay notu', async () => {
     const { arka } = await ciz();
     arka.olaylar('o1', [
