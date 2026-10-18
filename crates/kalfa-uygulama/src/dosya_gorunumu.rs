@@ -233,25 +233,28 @@ pub(crate) fn git_durumu(kok: &Path) -> GitDurumu {
     let git_dizini = if meta.is_dir() {
         git
     } else if meta.is_file() {
-        match kisa_oku(&git)
-            .as_deref()
-            .and_then(|s| s.trim().strip_prefix("gitdir:"))
+        // `.git` dosyasını çalışma alanına kim yazdıysa (klonlanan depo,
+        // model) seçer: ağ yolu ve bağlantı izlenmez.
+        let Some(metin) = kisa_oku(&git) else {
+            return GitDurumu::GitDegil;
+        };
+        let Some(d) = metin
+            .trim()
+            .strip_prefix("gitdir:")
             .map(|d| Path::new(d.trim()))
-        {
-            // `.git` dosyasını çalışma alanına kim yazdıysa (klonlanan depo,
-            // model) seçer: ağ yolu açılmaz.
-            Some(d) if yerel_yol_mu(d) => kok.join(d),
-            _ => return GitDurumu::GitDegil,
+        else {
+            return GitDurumu::GitDegil;
+        };
+        let taban = if d.is_absolute() { Path::new("") } else { kok };
+        if !yerel_yol_mu(d) || !baglantisiz_mi(taban, d) {
+            return GitDurumu::GitDegil;
         }
+        kok.join(d)
     } else {
         return GitDurumu::GitDegil;
     };
     let head = git_dizini.join("HEAD");
-    // gitdir ve HEAD bağlantı olamaz: bağlantı ağ yoluna çıkabilir.
-    let gercek = |yol: &Path, dizin: bool| {
-        std::fs::symlink_metadata(yol).is_ok_and(|m| if dizin { m.is_dir() } else { m.is_file() })
-    };
-    if !gercek(&git_dizini, true) || !gercek(&head, false) {
+    if !std::fs::symlink_metadata(&head).is_ok_and(|m| m.is_file()) {
         return GitDurumu::GitDegil;
     }
     match kisa_oku(&head) {
@@ -276,6 +279,23 @@ fn yerel_yol_mu(yol: &Path) -> bool {
         Some(Component::Prefix(p)) => matches!(p.kind(), Prefix::Disk(_)),
         _ => true,
     }
+}
+
+/// `taban`'dan sonra `goreli`nin hiçbir bileşeni bağlantı (ya da Windows
+/// bağlantı noktası) değil mi? Her bileşen, öncekiler doğrulandıktan sonra
+/// izlenmeden yoklanır: ağ yoluna çıkan bir ara bağlantıya hiç dokunulmaz.
+fn baglantisiz_mi(taban: &Path, goreli: &Path) -> bool {
+    use std::path::Component;
+    let mut yol = taban.to_path_buf();
+    for parca in goreli.components() {
+        yol.push(parca);
+        if matches!(parca, Component::Normal(_))
+            && !std::fs::symlink_metadata(&yol).is_ok_and(|m| !m.file_type().is_symlink())
+        {
+            return false;
+        }
+    }
+    true
 }
 
 /// En çok 4 KiB.
@@ -361,6 +381,29 @@ mod testler {
             assert_eq!(git_durumu(w.path()), GitDurumu::GitDegil, "{ag}");
             assert!(!yerel_yol_mu(Path::new(ag)), "{ag}");
         }
+    }
+
+    /// gitdir yolundaki ara bağlantı izlenmez: hedefi ağ yolu olabilir.
+    #[test]
+    fn gitdir_yolundaki_ara_baglanti_izlenmez() {
+        let w = tempfile::tempdir().unwrap();
+        let dis = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dis.path().join("gd")).unwrap();
+        std::fs::write(dis.path().join("gd/HEAD"), "ref: refs/heads/dis\n").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dis.path(), w.path().join("bag")).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(dis.path(), w.path().join("bag"))
+            .expect("Windows test ajanında symlink yetkisi gerekir");
+        std::fs::write(w.path().join(".git"), "gitdir: bag/gd\n").unwrap();
+        assert_eq!(git_durumu(w.path()), GitDurumu::GitDegil);
+        // Aynı dizin bağlantısız yoldan okunur.
+        std::fs::write(
+            w.path().join(".git"),
+            format!("gitdir: {}\n", dis.path().join("gd").display()),
+        )
+        .unwrap();
+        assert_eq!(git_durumu(w.path()), GitDurumu::Dal { ad: "dis".into() });
     }
 
     /// HEAD bağlantıysa izlenmez.
