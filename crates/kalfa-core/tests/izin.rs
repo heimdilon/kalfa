@@ -641,6 +641,92 @@ fn git_yerlesimi_alt_modulun_git_dizinini_dogrular() {
     assert!(git_koruma::git_yerlesimi(&alan).dis_dizinler.is_empty());
 }
 
+/// Çalışma alanından okunan git hedefi ağ ya da aygıt ad alanındaysa
+/// açılmaz: Windows'ta böyle bir yolu açmak ağa kimlik bilgisi gönderebilir.
+/// Yerel `\\?\C:\…` yazımı ise açılmaya devam eder; reddetmek korumayı
+/// düşürürdü (aşağıdaki iki test birlikte bu dengeyi tutar).
+#[cfg(windows)]
+#[test]
+fn git_yerlesimi_ag_hedefini_acmaz_yerel_ozel_oneki_acar() {
+    let d = tempfile::tempdir().unwrap();
+    let ust = d.path().join("ust");
+    // `\\?\` yazımı normalleştirme yapmaz: bileşenler ayrı ayrı eklenir.
+    let modul = ust.join(".git").join("modules").join("alt");
+    std::fs::create_dir_all(&modul).unwrap();
+    std::fs::write(modul.join("config"), "[core]\n\tworktree = ../../../alt\n").unwrap();
+    let alan = ust.join("alt");
+    std::fs::create_dir_all(&alan).unwrap();
+
+    // Düz yazımla alt modülün git dizini doğrulanır ve bulunur.
+    std::fs::write(alan.join(".git"), "gitdir: ../.git/modules/alt\n").unwrap();
+    assert_eq!(
+        git_koruma::git_yerlesimi(&alan).dis_dizinler,
+        vec![modul.canonicalize().unwrap()]
+    );
+
+    // Yerel `\\?\` yazımı aynı dizini bulmaya devam eder.
+    let ozel = format!(r"\\?\{}", modul.display());
+    assert!(
+        std::path::Path::new(&ozel).join("config").exists(),
+        "{ozel}"
+    );
+    std::fs::write(alan.join(".git"), format!("gitdir: {ozel}\n")).unwrap();
+    assert_eq!(
+        git_koruma::git_yerlesimi(&alan).dis_dizinler,
+        vec![modul.canonicalize().unwrap()],
+        "{ozel}"
+    );
+
+    // Ağ yazımları açılmaz; dosya araçlarının korumasında ise kapalı
+    // düşülür, çünkü açmadan içeride mi dışarıda mı olduğu bilinemez.
+    for ag in [
+        r"\\127.0.0.1\pay\gd",
+        "//127.0.0.1/pay/gd",
+        r"\\?\UNC\127.0.0.1\pay\gd",
+    ] {
+        std::fs::write(alan.join(".git"), format!("gitdir: {ag}\n")).unwrap();
+        assert!(
+            git_koruma::git_yerlesimi(&alan).dis_dizinler.is_empty(),
+            "{ag}"
+        );
+        assert!(
+            git_koruma::korumali_yollar(&alan).contains(&".".to_string()),
+            "{ag}"
+        );
+    }
+}
+
+/// Yerel `\\?\` yazımlı yönlendirme korumasız kalmaz: hedefi reddetmek
+/// yalıtımdaki komuta git kanca/yapılandırma dizinini yazdırırdı.
+#[cfg(windows)]
+#[test]
+fn yonlendirilen_dizinler_yerel_ozel_oneki_korur() {
+    let d = tempfile::tempdir().unwrap();
+    let kok = d.path().canonicalize().unwrap();
+    let hedef = kok.join("gizli-git");
+    std::fs::create_dir_all(&hedef).unwrap();
+    let nokta_git = kok.join("alt").join(".git");
+    std::fs::create_dir_all(nokta_git.parent().unwrap()).unwrap();
+
+    // Düz yazım korunur.
+    std::fs::write(&nokta_git, format!("gitdir: {}\n", hedef.display())).unwrap();
+    assert_eq!(
+        git_koruma::yonlendirilen_dizinler(&nokta_git, false, &kok),
+        vec![hedef.clone()]
+    );
+
+    // Aynı hedef `\\?\` yazımıyla da korunur.
+    let duz = hedef.to_string_lossy().replace(r"\\?\", "");
+    let ozel = format!(r"\\?\{duz}");
+    assert!(std::path::Path::new(&ozel).exists(), "{ozel}");
+    std::fs::write(&nokta_git, format!("gitdir: {ozel}\n")).unwrap();
+    assert_eq!(
+        git_koruma::yonlendirilen_dizinler(&nokta_git, false, &kok),
+        vec![hedef],
+        "{ozel}"
+    );
+}
+
 fn kabuk(yalitimli: bool, ag: bool, ilk_cagri: bool) -> kalfa_core::kabuk::KabukTarifi {
     use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
     KabukTarifi {
