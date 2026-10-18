@@ -493,12 +493,42 @@ denemesindeki geri bildirimle şunlar birleşti:
 - araç kartında dosya diff'i (#25);
 - konuşmadaki onay kartı (#26);
 - Windows'ta Kalfa'ya özel başlık çubuğu (#27);
-- sağ panel: Ortam, Değişiklikler, Dosyalar (#28, main `032e9a3`).
+- sağ panel: Ortam, Değişiklikler, Dosyalar (#28);
+- kalan üç ayrıntı (#29, main `756c613`).
 
 Dosyalar bölümü salt okurdur ve yol değil oturuma bağlı kimlik alır.
 [Tasarım](superpowers/specs/2026-10-18-kalfa-masaustu-arayuzu-design.md),
 [plan](superpowers/plans/2026-10-18-kalfa-masaustu-arayuzu.md). Terminal,
 tarayıcı, yan sohbet ve plan bölümleri sonraya kaldı.
+
+**`git_koruma` ağ yolu sertleştirmesi (18 Ekim):** Masaüstü arayüzünün
+güvenlik incelemesi salt okur dosya görünümünde yakalanan açığın aynısının
+`kalfa-core`'un `git_koruma`'sında durduğunu göstermişti. Çalışma alanından
+okunan git hedefleri (`.git` dosyasının `gitdir:` satırı, `commondir`,
+git dizininin `core.worktree`'si, `core.hooksPath` ve `goreli_yap`'taki ara
+bağlantı hedefleri) doğrudan birleştirilip `canonicalize` ediliyordu; hedef
+UNC (`\\pay\…`), `\\?\` ya da aygıt yazımındaysa Windows bu yolu açarken
+ağa kimlik bilgisi gönderebiliyordu.
+
+Artık tek bir `yerel_hedef_mi`/`yerel_birlestir` çifti bütün bu noktalarda
+hedefin kendi önekini denetler ve yerel disk değilse dosya sistemine hiç
+dokunmaz; kural `kalfa-tools`'taki `baglantisiz_oku` ile aynıdır ve her
+platformda uygulanır. Yalıtıma dizin açan yolda (`git_yerlesimi`,
+`yonlendirilen_dizinler`) hedef reddedilir; dosya araçlarının korumasını
+hesaplayan `goreli_yap`'ta ise çözülemeyen hedef korumayı düşürmesin diye
+çalışma alanının tamamı korunur. Bilinen sınır: hedef düz yerel yolken
+yoldaki bir bağlantı ağ paylaşımını gösteriyorsa `canonicalize` onu yine
+izler; burada tutamaçlarla yürünmez.
+
+İki yeni test (`izin.rs`) önce düştü, sonra geçti: yerel bir dizini `\\?\`
+yazımıyla gösteren `gitdir:` artık açılmıyor, aynı yazım dosya araçlarının
+korumasında alanın tamamını koruyor. Windows workspace **1478/0/19**,
+Ubuntu 24.04 (WSL) workspace **1431/0/19**; iki platformda workspace clippy
+ve `cargo fmt` temiz. Güvenlik sınırına dokunduğu için gerçek yalıtım da
+koştu: Windows AppContainer uyumluluk **24/24**, Linux yalıtım **32/32** ve
+uyumluluk **16/16** (köprü derlendi, `köprü bulunamadı` yok),
+`yalitim-testleri` özellikli clippy temiz. Uçtan uca takım bu değişiklikte
+koşmadı.
 
 **Sıradaki tek iş:** MCP 1.1b'nin (uzak Streamable HTTP ve OAuth, 1.1a
 tasarımı §2) tasarım belgesini Claude yazar:

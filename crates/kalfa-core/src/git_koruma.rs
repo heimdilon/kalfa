@@ -5,10 +5,31 @@
 //! bir `.git` git'i başka bir yapılandırmaya ve kanca dizinine yönlendirir;
 //! git de onları yalıtım dışında, kullanıcının yetkileriyle çalıştırır.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf, Prefix};
 use std::process::Command;
 
 use crate::yol::CalismaYolu;
+
+/// Çalışma alanından okunan bir git hedefinin kendi öneki yerel disk mi.
+/// UNC (`\\pay\…`), `\\?\` ve aygıt yazımları reddedilir: Windows'ta böyle
+/// bir yolu açmak ağa kimlik bilgisi gönderebilir. `kalfa-tools`'taki
+/// `baglantisiz_oku` ile aynı kuraldır ve her platformda uygulanır.
+///
+/// Yalnız hedefin kendi öneki denetlenir; tabanın öneki denetlenmez, çünkü
+/// kanonik yollar Windows'ta zaten `\\?\C:\…` yazımındadır.
+fn yerel_hedef_mi(hedef: &Path) -> bool {
+    !matches!(
+        hedef.components().next(),
+        Some(Component::Prefix(onek)) if !matches!(onek.kind(), Prefix::Disk(_))
+    )
+}
+
+/// `taban`'a eklenmiş hedef; hedef yerel disk yolu değilse birleştirilmez,
+/// böylece dosya sistemine hiç dokunulmaz.
+fn yerel_birlestir(taban: &Path, deger: &str) -> Option<PathBuf> {
+    let hedef = Path::new(deger);
+    yerel_hedef_mi(hedef).then(|| taban.join(hedef))
+}
 
 /// Yalıtımın git yerleşimi (aşama 2 tasarımı §7.2, §7.4): korumalı yolların
 /// mutlak ve gerçek yazımlı hâli, çalışma alanı dışındaki git dizinleri.
@@ -46,6 +67,11 @@ pub struct KorumaliYol {
 /// - `core.hooksPath` hedefi yalıtımda görünen, `.git`'in ve dış git
 ///   dizinlerinin dışındaki bir yerdeyse ayrıca korunur.
 /// - `.git` sembolik bağlantıysa korunmaz ve izlenmez (bilinen sınır).
+/// - `.git`'ten, `commondir`'den ya da `core.hooksPath`'ten okunan hedef ağ
+///   yolu (UNC), `\\?\` ya da aygıt yazımındaysa açılmaz: Windows'ta böyle
+///   bir yolu açmak ağa kimlik bilgisi gönderebilir. Bilinen sınır: hedef
+///   düz bir yerel yolken yoldaki bir bağlantı ağ paylaşımını gösteriyorsa
+///   `canonicalize` onu yine izler; burada tutamaçlarla yürünmez.
 pub fn git_yerlesimi(kok: &Path) -> GitYerlesimi {
     let Ok(kok) = kok.canonicalize() else {
         return GitYerlesimi::default();
@@ -103,13 +129,14 @@ fn git_dizinleri(kok: &Path) -> Option<(PathBuf, PathBuf)> {
             .find_map(|s| s.trim().strip_prefix("gitdir:"))?
             .trim()
             .to_string();
-        kok.join(hedef).canonicalize().ok()?
+        yerel_birlestir(kok, &hedef)?.canonicalize().ok()?
     } else {
         nokta_git.canonicalize().ok()?
     };
     let ortak = std::fs::read_to_string(gitdir.join("commondir"))
         .ok()
-        .and_then(|m| gitdir.join(m.trim()).canonicalize().ok())
+        .and_then(|m| yerel_birlestir(&gitdir, m.trim()))
+        .and_then(|o| o.canonicalize().ok())
         .filter(|o| o != &gitdir);
     match ortak {
         Some(o) if worktree_mu(kok, &gitdir, &o) => Some((gitdir, o)),
@@ -131,7 +158,9 @@ fn worktree_mu(kok: &Path, gitdir: &Path, ortak: &Path) -> bool {
     let Ok(geri) = std::fs::read_to_string(gitdir.join("gitdir")) else {
         return false;
     };
-    let geri = gitdir.join(geri.trim());
+    let Some(geri) = yerel_birlestir(gitdir, geri.trim()) else {
+        return false;
+    };
     match (geri.canonicalize(), kok.join(".git").canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
         _ => false,
@@ -161,7 +190,9 @@ fn alt_modul_mu(kok: &Path, gitdir: &Path) -> bool {
         (core && ad.trim().eq_ignore_ascii_case("worktree"))
             .then(|| deger.trim().trim_matches('"').to_string())
     });
-    deger.is_some_and(|d| gitdir.join(d).canonicalize().is_ok_and(|w| w == kok))
+    deger.is_some_and(|d| {
+        yerel_birlestir(gitdir, &d).is_some_and(|w| w.canonicalize().is_ok_and(|w| w == kok))
+    })
 }
 
 /// `core.hooksPath`'in mutlak hâli; göreli değer çalışma ağacının köküne
@@ -171,7 +202,7 @@ fn hooks_path_mutlak(kok: &Path) -> Option<PathBuf> {
     if deger.starts_with('~') {
         return None;
     }
-    let yol = kok.join(&deger);
+    let yol = yerel_birlestir(kok, &deger)?;
     Some(yol.canonicalize().unwrap_or(yol))
 }
 
@@ -236,14 +267,15 @@ pub fn yonlendirilen_dizinler(nokta_git: &Path, dizin: bool, kok: &Path) -> Vec<
         }) else {
             return Vec::new();
         };
-        match ust.join(hedef).canonicalize() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
+        match yerel_birlestir(ust, &hedef).and_then(|g| g.canonicalize().ok()) {
+            Some(g) => g,
+            None => return Vec::new(),
         }
     };
     let ortak = std::fs::read_to_string(gitdir.join("commondir"))
         .ok()
-        .and_then(|m| gitdir.join(m.trim()).canonicalize().ok());
+        .and_then(|m| yerel_birlestir(&gitdir, m.trim()))
+        .and_then(|o| o.canonicalize().ok());
     let mut dizinler = Vec::new();
     if !dizin {
         dizinler.push(gitdir);
@@ -312,6 +344,11 @@ fn hooks_path_degeri(kok: &Path) -> Option<String> {
 }
 
 fn goreli_yap(kok: &Path, hedef: &Path) -> Option<String> {
+    // Ağ ya da `\\?\` yazımlı hedef açılmaz. Burada koruma hesaplanır:
+    // çözemediğimiz hedef korumayı düşürmez, alanın tamamı korunur.
+    if !yerel_hedef_mi(hedef) {
+        return Some(".".to_string());
+    }
     let kok = kok.canonicalize().ok()?;
     let mut ust = kok.join(hedef);
     let mut eksik = Vec::new();
@@ -332,6 +369,10 @@ fn goreli_yap(kok: &Path, hedef: &Path) -> Option<String> {
                         Ok(hedef) => hedef,
                         Err(_) => return Some(".".to_string()),
                     };
+                    // Ara bağlantının hedefi de ağ yolu olabilir.
+                    if !yerel_hedef_mi(&hedef) {
+                        return Some(".".to_string());
+                    }
                     ust = ust.parent()?.join(hedef);
                     continue;
                 }

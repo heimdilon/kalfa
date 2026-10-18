@@ -641,6 +641,71 @@ fn git_yerlesimi_alt_modulun_git_dizinini_dogrular() {
     assert!(git_koruma::git_yerlesimi(&alan).dis_dizinler.is_empty());
 }
 
+/// Çalışma alanından okunan git hedefi UNC (`\\pay`), `\\?\` ya da aygıt
+/// yazımındaysa açılmaz: Windows'ta böyle bir yolu açmak ağa kimlik bilgisi
+/// gönderebilir. Aynı yerel dizini gösterse bile reddedilir.
+#[cfg(windows)]
+#[test]
+fn git_yerlesimi_ag_ve_ozel_onekli_hedefi_acmaz() {
+    let d = tempfile::tempdir().unwrap();
+    let ust = d.path().join("ust");
+    // `\\?\` yazımı normalleştirme yapmaz: bileşenler ayrı ayrı eklenir.
+    let modul = ust.join(".git").join("modules").join("alt");
+    std::fs::create_dir_all(&modul).unwrap();
+    std::fs::write(modul.join("config"), "[core]\n\tworktree = ../../../alt\n").unwrap();
+    let alan = ust.join("alt");
+    std::fs::create_dir_all(&alan).unwrap();
+
+    // Düz yazımla alt modülün git dizini doğrulanır ve bulunur.
+    std::fs::write(alan.join(".git"), "gitdir: ../.git/modules/alt\n").unwrap();
+    assert_eq!(
+        git_koruma::git_yerlesimi(&alan).dis_dizinler,
+        vec![modul.canonicalize().unwrap()]
+    );
+
+    // Aynı dizin `\\?\` yazımıyla gösterilirse açılmaz. Yol vardır: izlenseydi
+    // aynı git dizini bulunurdu.
+    let ozel = format!(r"\\?\{}", modul.display());
+    assert!(
+        std::path::Path::new(&ozel).join("config").exists(),
+        "{ozel}"
+    );
+    std::fs::write(alan.join(".git"), format!("gitdir: {ozel}\n")).unwrap();
+    assert!(
+        git_koruma::git_yerlesimi(&alan).dis_dizinler.is_empty(),
+        "{ozel}"
+    );
+
+    for ag in [r"\\127.0.0.1\pay\gd", "//127.0.0.1/pay/gd"] {
+        std::fs::write(alan.join(".git"), format!("gitdir: {ag}\n")).unwrap();
+        assert!(
+            git_koruma::git_yerlesimi(&alan).dis_dizinler.is_empty(),
+            "{ag}"
+        );
+    }
+}
+
+/// Dosya araçlarının korumasında belirsiz hedef korumayı düşürmez: ağ ya da
+/// `\\?\` yazımlı git hedefi çözülmez, çalışma alanının tamamı korunur.
+#[cfg(windows)]
+#[test]
+fn korumali_yollar_ozel_onekli_hedefte_alani_korur() {
+    let d = tempfile::tempdir().unwrap();
+    let gitdir = d.path().join("modul-git");
+    std::fs::create_dir_all(&gitdir).unwrap();
+
+    std::fs::write(d.path().join(".git"), "gitdir: modul-git\n").unwrap();
+    assert!(git_koruma::korumali_yollar(d.path()).contains(&"modul-git".to_string()));
+
+    let ozel = format!(r"\\?\{}", gitdir.display());
+    assert!(std::path::Path::new(&ozel).exists(), "{ozel}");
+    std::fs::write(d.path().join(".git"), format!("gitdir: {ozel}\n")).unwrap();
+    assert!(
+        git_koruma::korumali_yollar(d.path()).contains(&".".to_string()),
+        "{ozel}"
+    );
+}
+
 fn kabuk(yalitimli: bool, ag: bool, ilk_cagri: bool) -> kalfa_core::kabuk::KabukTarifi {
     use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
     KabukTarifi {
