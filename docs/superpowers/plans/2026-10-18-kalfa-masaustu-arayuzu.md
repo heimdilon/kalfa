@@ -44,11 +44,13 @@ bloğu içermez.
 4. [x] Arayüz: olay `AracCagrisi` öğesine bağlanır; geçmişten gelen liste
    aynı alana düşer. Kart: dosya adı, `+N −M`, `DiffView` ile en çok 20
    satır ve "Tamamını göster"; sonuç `Basarisiz`/`IptalEdildi` ise
-   "uygulanmadı"; `diff` yoksa "Diff gösterilmiyor".
+   "uygulanmış olabilir" (yazma yarıda kalmış olabilir); `diff` yoksa
+   "Diff gösterilmiyor".
 
 **Kabul:** Çekirdek olay sırası, gizli dosyada `diff: None`, 64 KiB üstünde
 `diff: None`, geçmişten açılan oturumda liste dolu, eski kayıt okunur;
-arayüzde kart diff'i gösterir, uygulanmayanı etiketler, uzun diff'i katlar.
+arayüzde kart diff'i gösterir, başarısız çağrının değişikliğini "uygulanmış
+olabilir" diye etiketler, uzun diff'i katlar.
 **Commit:** `uygulama: araç kartında dosya diff'i`.
 **Birleşti:** #25, `cff1c88`.
 
@@ -114,6 +116,15 @@ Uygulamada plandan farklar:
   tutamacının aynısını kullanır.
 - **Salt okur oturum:** Kayıttan salt okunur açılan oturumda Ortam ve
   Dosyalar kapalıdır.
+
+Tasarımın uygulanmayan üç ayrıntısı (sonraki iş):
+
+- Araç kartında dosya adına tıklayıp sağ paneli Değişiklikler'de o dosyada
+  açma (tasarım §4.3).
+- Yapışık onay kartında "Bu değişiklik geri alınabilir" bilgisi (§3.2). Bilgi
+  yalnız İncele'deki tam sayfada görünür.
+- Yanıtlanan onayın kayıt satırında "Onaylandı" / "Reddedildi" ayrımı (§3.2).
+  Satır "Yanıtlandı" der; `OnayYanitlandi` kararı taşımaz.
 
 ## Doğrulama komutları
 

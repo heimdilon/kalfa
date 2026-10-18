@@ -72,8 +72,9 @@ penceresinde sorulur.
 
 Bekleyen onay isteği, konuşmanın sonunda, yazma alanının hemen üstünde
 **yapışık** bir kart olarak çıkar (Claude Code'daki gibi). Yanıtlanınca
-yapışıklık kalkar; konuşmada küçük bir kayıt satırı kalır ("Onaylandı",
-"Reddedildi", "Geçersiz").
+yapışıklık kalkar; konuşmada küçük bir kayıt satırı kalır. Uygulamada bu
+satır "Yanıtlandı" ya da "Geçersiz" der: `OnayYanitlandi` kararı taşımadığı
+için onay ile ret ayrılmaz (plandaki farklar).
 
 Kartın içeriği öğe başına:
 
@@ -82,7 +83,9 @@ Kartın içeriği öğe başına:
 - **Kabuk:** komut (tek aralıklı), dizin, yalıtım ve ağ rozetleri; ağlı
   komutta izinli hostlar.
 - **MCP:** `sunucu · araç`, erişim rozeti (yalıtımlı / tam erişim).
-- Uyarılar (sarı satır), "Bu değişiklik geri alınabilir" bilgisi.
+- Uyarılar (sarı satır). "Bu değişiklik geri alınabilir" bilgisi
+  uygulamada kartta yoktur; yalnız İncele'deki tam sayfada görünür (plandaki
+  farklar).
 
 Düğmeler:
 
@@ -157,8 +160,9 @@ pub struct DosyaDegisikligi {
 
 - Olay `AracCagrisiBasladi`'nın hemen ardından, `AracSonucu`'ndan önce
   gelir. Sonuç `Basarisiz` ya da `IptalEdildi` olursa kart diff'i
-  "uygulanmadı" etiketiyle gösterir. Reddedilen çağrı başlamadığı için olay
-  yoktur.
+  "uygulanmış olabilir" etiketiyle gösterir: yazma yarıda kalmış olabilir
+  (dosya kesilip yazılırken G/Ç hatası ya da yazma sonrası denetim hatası).
+  Reddedilen çağrı başlamadığı için olay yoktur.
 - Yeni kayıt türü gerekmez: geçmiş görünümü (`gecmis`) aynı bilgiyi
   `AracBasladi.yedekler`'den `GorunumOgesi::AracCagrisi.degisiklikler`'e
   koyar. Oturum yeniden açılınca diff görünür; yedeksiz eski kayıtta liste
@@ -173,7 +177,8 @@ pub struct DosyaDegisikligi {
 
 `dosya_duzenle` / `dosya_yaz` kartı: başlıkta dosya adı ve `+N −M`; altında
 `DiffView` ile en çok 20 satır, fazlası "Tamamını göster" ile açılır. Dosya
-adına tıklamak sağ paneli Değişiklikler'de o dosyada açar.
+adına tıklayıp sağ paneli Değişiklikler'de o dosyada açma uygulanmadı (plandaki
+farklar).
 
 ### 4.4 Testler
 
@@ -258,7 +263,9 @@ Konuşmadaki "Değişiklikler" düğmesi aynı paneli açar.
 - `calisma_alani_dosyasi(oturum, kimlik)` → en çok 256 KiB metin; ikili
   dosyada "ikili dosya", gizli dosya kalıbına uyanda "gizli dosya; içerik
   gösterilmez", büyük dosyada ilk 256 KiB ve "kırpıldı".
-- Sembolik bağlantı izlenmez; çalışma alanı dışına çıkan girdi gösterilmez.
+- Sembolik bağlantı ve bağlantı noktası adıyla "bağlantı" olarak listelenir
+  ama izlenmez ve açılmaz; hedefi çalışma alanının dışında olsa da adı
+  görünür.
 - `.git` gizlenir; `node_modules`, `target` gibi büyük dizinler kapalı
   gelir ve açılınca listelenir (dizin başına en çok 2000 girdi).
 - Düzenleme yok; dosyaya tıklamak salt okur önizleme açar.
@@ -286,7 +293,8 @@ Her biri ayrı PR ve iki platformda doğrulama:
 4. **Sağ panel** (§6): iki yeni salt okur komut ve panel; başlık çubuğuna
    bağlı (düğmeler orada).
 
-Plan, bu belge onaylanınca `docs/superpowers/plans/`'a yazılır.
+Belge 18 Ekim'de onaylandı; plan:
+[2026-10-18-kalfa-masaustu-arayuzu.md](../plans/2026-10-18-kalfa-masaustu-arayuzu.md).
 
 ## 8. Açık sorular
 
