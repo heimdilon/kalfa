@@ -5,7 +5,8 @@
   dosyalı yazmada ve 64 KiB üstünde yoktur. Çağrı başarılı bitmediyse yazma
   yarıda kalmış olabilir: değişiklik "uygulanmış olabilir" diye işaretlenir
   (dosya kesilip yazılırken G/Ç hatası ya da yazma sonrası denetim hatası).
-  Hunk'sız diff aynı içeriğin yazıldığı anlamına gelir.
+  Hunk'sız diff aynı içeriğin yazıldığı anlamına gelir. Dosya adına tıklamak
+  sağ paneli Değişiklikler'de o dosyada açar.
 -->
 <script lang="ts">
   import { SvelteSet } from 'svelte/reactivity';
@@ -21,7 +22,12 @@
   let {
     degisiklikler,
     belirsiz = false,
-  }: { degisiklikler: DosyaDegisikligi[]; belirsiz?: boolean } = $props();
+    ondosya,
+  }: {
+    degisiklikler: DosyaDegisikligi[];
+    belirsiz?: boolean;
+    ondosya: (yol: string) => void;
+  } = $props();
 
   const acik = new SvelteSet<number>();
 
@@ -38,7 +44,9 @@
   {#each dosyalar as d, i (`${i}:${d.yol}`)}
     <div class="dosya">
       <div class="ust">
-        <span class="yol" title={d.yol}>{d.yol}</span>
+        <button type="button" class="yol" title={d.yol} onclick={() => ondosya(d.yol)}>
+          {d.yol}
+        </button>
         <span class="arti">+{d.eklenen}</span>
         <span class="eksi">−{d.silinen}</span>
         {#if belirsiz}
@@ -94,11 +102,21 @@
   }
   .yol {
     min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-mono);
     color: var(--text-body);
+  }
+  .yol:hover {
+    color: var(--text-accent);
+    text-decoration: underline;
   }
   .arti {
     color: var(--status-ok);

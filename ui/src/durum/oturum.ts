@@ -21,6 +21,7 @@ import type {
   Kip,
   Kisayol,
   Olay,
+  OnayGirdisi,
   OnayOgesi,
   OnizlemeNedeni,
   OnizlemeOgesi,
@@ -67,6 +68,8 @@ export type EkranOgesi =
       islem: IslemId;
       ogeler: OnayOgesi[];
       durum: 'Bekliyor' | 'Yanitlandi' | 'Gecersiz';
+      /** Yanıtlanınca arayüzün gönderdiği kararların özeti (masaüstü arayüzü §3.2). */
+      karar?: OnayOzeti;
     })
   | (Ortak & { tip: 'SartIstegi'; surum: number; durum: 'Bekliyor' | 'Cozuldu' })
   | (Ortak & { tip: 'Hata'; mesaj: string })
@@ -146,6 +149,15 @@ export interface OturumEkrani {
   butce: ButceGorunumu | null;
 }
 
+/** Bir onay isteğine verilen kararların özeti. */
+export type OnayOzeti = 'Onaylandi' | 'Reddedildi' | 'Karisik';
+
+export function onayOzeti(kararlar: OnayGirdisi[]): OnayOzeti {
+  const onay = kararlar.filter((k) => k.karar.tip === 'Onayla').length;
+  if (onay === kararlar.length) return 'Onaylandi';
+  return onay === 0 ? 'Reddedildi' : 'Karisik';
+}
+
 /** Araç kartındaki denetim rozetinin durumu (3c Görev 8). */
 export type DenetimRozeti = { tip: 'Suruyor' } | { tip: 'Atlandi' } | DenetimSonucu;
 
@@ -153,7 +165,7 @@ export type Girdi =
   | { tip: 'Kanal'; mesaj: KanalMesaji }
   | { tip: 'EskiSayfa'; sayfa: GecmisSayfasi }
   | { tip: 'MesajGonderildi'; metin: string }
-  | { tip: 'OnayYanitlandi'; islem: IslemId }
+  | { tip: 'OnayYanitlandi'; islem: IslemId; karar: OnayOzeti }
   | { tip: 'ModelDegisti'; model: string }
   | { tip: 'EforDegisti'; efor: DusunceEforu }
   | { tip: 'KipDegisti'; kip: Kip }
@@ -279,7 +291,7 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
       d.ogeler = d.ogeler.map((o) => {
         if (o.tip === 'OnayIstegi' && o.islem === girdi.islem && o.durum === 'Bekliyor') {
           eslesenIstekGuncellendi = true;
-          return { ...o, durum: 'Yanitlandi' };
+          return { ...o, durum: 'Yanitlandi', karar: girdi.karar };
         }
         return o;
       });

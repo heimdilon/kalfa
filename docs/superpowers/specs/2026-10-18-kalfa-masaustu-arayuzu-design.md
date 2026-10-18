@@ -73,8 +73,9 @@ penceresinde sorulur.
 Bekleyen onay isteği, konuşmanın sonunda, yazma alanının hemen üstünde
 **yapışık** bir kart olarak çıkar (Claude Code'daki gibi). Yanıtlanınca
 yapışıklık kalkar; konuşmada küçük bir kayıt satırı kalır. Uygulamada bu
-satır "Yanıtlandı" ya da "Geçersiz" der: `OnayYanitlandi` kararı taşımadığı
-için onay ile ret ayrılmaz (plandaki farklar).
+satır "Onaylandı", "Reddedildi", "Kısmen onaylandı" ya da "Geçersiz" der.
+Karar özeti arayüzün gönderdiği kararlardan çıkar; kayıttan açılan geçmişte
+onay satırı yoktur.
 
 Kartın içeriği öğe başına:
 
@@ -83,9 +84,8 @@ Kartın içeriği öğe başına:
 - **Kabuk:** komut (tek aralıklı), dizin, yalıtım ve ağ rozetleri; ağlı
   komutta izinli hostlar.
 - **MCP:** `sunucu · araç`, erişim rozeti (yalıtımlı / tam erişim).
-- Uyarılar (sarı satır). "Bu değişiklik geri alınabilir" bilgisi
-  uygulamada kartta yoktur; yalnız İncele'deki tam sayfada görünür (plandaki
-  farklar).
+- Uyarılar (sarı satır) ve öğe başına "Geri alınabilir mi" satırı
+  (sayfadaki metinle; "Hayır" sarı).
 
 Düğmeler:
 
@@ -177,8 +177,7 @@ pub struct DosyaDegisikligi {
 
 `dosya_duzenle` / `dosya_yaz` kartı: başlıkta dosya adı ve `+N −M`; altında
 `DiffView` ile en çok 20 satır, fazlası "Tamamını göster" ile açılır. Dosya
-adına tıklayıp sağ paneli Değişiklikler'de o dosyada açma uygulanmadı (plandaki
-farklar).
+adına tıklamak sağ paneli Değişiklikler'de o dosyanın son değişikliğinde açar.
 
 ### 4.4 Testler
 

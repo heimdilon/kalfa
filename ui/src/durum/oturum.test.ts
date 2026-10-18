@@ -189,9 +189,9 @@ describe('kanal mesajı → oturum durumu (1c tasarımı §8.4)', () => {
     });
     expect(d.anlik).toBe('OnayBekliyor');
     expect(d.ogeler.at(-1)).toMatchObject({ tip: 'OnayIstegi', islem: 'i-1', durum: 'Bekliyor' });
-    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1' });
+    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1', karar: 'Onaylandi' });
     expect(d.anlik).toBe('Calisiyor');
-    expect(d.ogeler.at(-1)).toMatchObject({ durum: 'Yanitlandi' });
+    expect(d.ogeler.at(-1)).toMatchObject({ durum: 'Yanitlandi', karar: 'Onaylandi' });
   });
 
   it('önceki onayın gecikmiş yanıtı yeni bekleyen isteği temizlemez', () => {
@@ -199,14 +199,14 @@ describe('kanal mesajı → oturum durumu (1c tasarımı §8.4)', () => {
       tip: 'Kanal',
       mesaj: paket(1, { tip: 'TurBasladi' }, onayGerekiyor('i-1', 'c-1')),
     });
-    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1' });
+    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1', karar: 'Onaylandi' });
     d = uygula(d, {
       tip: 'Kanal',
       mesaj: paket(2, onayGerekiyor('i-2', 'c-2')),
     });
     expect(d.anlik).toBe('OnayBekliyor');
 
-    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1' });
+    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1', karar: 'Onaylandi' });
 
     expect(d.anlik).toBe('OnayBekliyor');
     expect(d.ogeler.at(-1)).toMatchObject({ tip: 'OnayIstegi', islem: 'i-2', durum: 'Bekliyor' });
@@ -222,7 +222,7 @@ describe('kanal mesajı → oturum durumu (1c tasarımı §8.4)', () => {
       mesaj: paket(2, onayGerekiyor('i-2', 'c-2')),
     });
 
-    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1' });
+    d = uygula(d, { tip: 'OnayYanitlandi', islem: 'i-1', karar: 'Onaylandi' });
 
     expect(d.anlik).toBe('OnayBekliyor');
     expect(d.ogeler.find((o) => o.tip === 'OnayIstegi' && o.islem === 'i-1')).toMatchObject({

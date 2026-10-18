@@ -117,7 +117,11 @@
     {/snippet}
     {#if oge.degisiklikler.length > 0}
       {@const basarili = oge.durum === 'Basarili' || oge.durum === 'Suruyor'}
-      <AracDiffi degisiklikler={oge.degisiklikler} belirsiz={!basarili} />
+      <AracDiffi
+        degisiklikler={oge.degisiklikler}
+        belirsiz={!basarili}
+        ondosya={(yol) => durum.degisiklikteGoster(yol)}
+      />
       <!-- Başarısız ya da iptal edilen yazmanın nedeni diff'in yanında kalır. -->
       {#if !basarili && oge.sonuc}
         {@const o = ciktiOnizlemesi(sonucGovdesi(oge.sonuc))}

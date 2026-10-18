@@ -1,7 +1,7 @@
 <!--
   Yazma alanının üstündeki yapışık onay kartı (masaüstü arayüzü tasarımı §3).
-  Öğe başına komut, dizin, yalıtım/ağ rozetleri, MCP erişimi, uyarılar ve
-  kısa diff görünür. Karar burada verilir: Reddet, "Bu oturumda izin ver"
+  Öğe başına komut, dizin, yalıtım/ağ rozetleri, MCP erişimi, uyarılar,
+  geri alınabilirlik ve kısa diff görünür. Karar burada verilir: Reddet, "Bu oturumda izin ver"
   (yalnız teklifi olan tek öğede), "Bir kez izin ver" ya da "İncele" ile tam
   sayfa. Kararlar sayfanın mühürlü `kararlariUret`'iyle üretilir; riskli öğe
   içeren istek burada onaylanamaz. Yerel onaylı öğe Rust'ın penceresinde
@@ -17,6 +17,7 @@
   import GorunurMetin from '../bilesenler/GorunurMetin.svelte';
   import Icon from '../bilesenler/Icon.svelte';
   import { kisayolCumlesi, m } from '../dil/tr';
+  import { geriAlinabilirlikMetni } from './geriAlma';
   import type { CagriId, OnayGirdisi, OnayOgesi } from '../ipc/tipler';
   import { kartKarariUret, kartKararlari, kisaAd, riskliMi, type KartKarari } from './onay';
 
@@ -134,6 +135,12 @@
                 : m('onay.bekleyen.tamami', { sayi: d.satir })}
             </Button>
           {/if}
+        {/if}
+        {#if o.geri_alinabilir}
+          <p class={['geri', { uyari: o.geri_alinabilir.tip === 'Hayir' }]}>
+            <Icon name="rotate-ccw" size={13} />
+            {m('onay.sayfa.geri_alinabilir')}: {geriAlinabilirlikMetni(o.geri_alinabilir)}
+          </p>
         {/if}
         {#each o.uyarilar as u (u)}
           <p class="uyari"><Icon name="triangle-alert" size={13} /><GorunurMetin metin={u} /></p>
@@ -270,9 +277,16 @@
     color: var(--text-muted);
   }
   .uyari,
-  .not {
+  .not,
+  .geri {
     margin: 0;
     font: var(--type-small);
+  }
+  .geri {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
   }
   .uyari {
     display: flex;

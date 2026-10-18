@@ -3,7 +3,13 @@
 // durumu `durum/oturum.ts`'deki saf işlevle güncellenir.
 import { SvelteMap } from 'svelte/reactivity';
 import { m } from '../dil/tr';
-import { acilistanEkran, uygula, type Girdi, type OturumEkrani } from '../durum/oturum';
+import {
+  acilistanEkran,
+  onayOzeti,
+  uygula,
+  type Girdi,
+  type OturumEkrani,
+} from '../durum/oturum';
 import { kanalIsleyicisi } from '../durum/dinleyici';
 import { sar as e2eSar } from '../e2e/kanca';
 import * as ipc from '../ipc/ana';
@@ -72,6 +78,8 @@ export class AnaDurum {
   /** Sağ panelin açık bölümü (masaüstü arayüzü tasarımı §6.1); son seçim hatırlanır. */
   sagBolum = $state<SagBolum | null>(sagBolumOku());
   sagBolmeAcik = $derived(this.sagBolum !== null);
+  /** Değişiklikler'de seçilecek dosya; panel seçince boşaltır (§4.3, §6). */
+  sagSecilecekYol = $state<string | null>(null);
   /** Soldaki kenar çubuğu açık mı (Ctrl+B ile gizlenir). */
   kenarAcik = $state(true);
   /** Windows'ta pencere çerçevesizdir; başlık çubuğunu arayüz çizer (masaüstü arayüzü §5). */
@@ -222,7 +230,7 @@ export class AnaDurum {
   async onayla(oturum: OturumId, islem: IslemId, kararlar: OnayGirdisi[]): Promise<void> {
     const gitti = await this.#dene(() => ipc.aracOnayi(oturum, kararlar));
     if (gitti === undefined) return;
-    this.#uygula(oturum, { tip: 'OnayYanitlandi', islem });
+    this.#uygula(oturum, { tip: 'OnayYanitlandi', islem, karar: onayOzeti(kararlar) });
     this.onay = null;
   }
 
@@ -283,6 +291,12 @@ export class AnaDurum {
   sagBolumuAc(bolum: SagBolum | null): void {
     this.sagBolum = bolum;
     yerelYaz(SAG_BOLUM_ANAHTARI, bolum ?? '');
+  }
+
+  /** Araç kartından ya da Ortam'dan: Değişiklikler'i o dosyanın son değişikliğinde açar. */
+  degisiklikteGoster(yol: string): void {
+    this.sagSecilecekYol = yol;
+    this.sagBolumuAc('degisiklikler');
   }
 
   /** Yükseltmede Rust yerel onay sorar; reddedilirse eski kip döner (1c tasarımı §6). */

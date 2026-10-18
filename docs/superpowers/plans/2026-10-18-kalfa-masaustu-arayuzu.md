@@ -117,14 +117,21 @@ Uygulamada plandan farklar:
 - **Salt okur oturum:** Kayıttan salt okunur açılan oturumda Ortam ve
   Dosyalar kapalıdır.
 
-Tasarımın uygulanmayan üç ayrıntısı (sonraki iş):
+Tasarımın plan sonrası tamamlanan üç ayrıntısı (`ui: masaüstü arayüzünün
+kalan üç ayrıntısı`):
 
-- Araç kartında dosya adına tıklayıp sağ paneli Değişiklikler'de o dosyada
-  açma (tasarım §4.3).
-- Yapışık onay kartında "Bu değişiklik geri alınabilir" bilgisi (§3.2). Bilgi
-  yalnız İncele'deki tam sayfada görünür.
-- Yanıtlanan onayın kayıt satırında "Onaylandı" / "Reddedildi" ayrımı (§3.2).
-  Satır "Yanıtlandı" der; `OnayYanitlandi` kararı taşımaz.
+- [x] Araç kartında dosya adına tıklamak sağ paneli Değişiklikler'de o
+  dosyanın son değişikliğinde açar (tasarım §4.3). Seçim
+  `AnaDurum.degisiklikteGoster` ile gelir; Ortam'daki çıktı da aynı yolu
+  kullanır. Dosya henüz listede yoksa (tur özeti gelmeden) panel ilk dosyada
+  açılır.
+- [x] Yapışık onay kartı öğe başına geri alınabilirliği sayfadaki metinle
+  gösterir (§3.2); "Hayır" uyarı renginde.
+- [x] Yanıtlanan onayın kayıt satırı "Onaylandı", "Reddedildi" ya da "Kısmen
+  onaylandı" der (§3.2). Özet, arayüzün gönderdiği kararlardan çıkar
+  (`OnayYanitlandi.karar`). Kayıttan açılan geçmişte onay satırı hiç yoktur
+  (`GorunumOgesi` onay isteği taşımaz); bu yüzden özet yalnız canlı oturumda
+  görünür.
 
 ## Doğrulama komutları
 
