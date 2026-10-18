@@ -341,7 +341,7 @@
     </div>
 
     <div class="alt">
-      {#if bekleyenOnay && !durum.onay}
+      {#if bekleyenOnay && durum.onay?.islem !== bekleyenOnay.islem}
         {@const { islem } = bekleyenOnay}
         {#key islem}
         <BekleyenOnay

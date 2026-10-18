@@ -111,6 +111,25 @@ describe('BekleyenOnay', () => {
     ]);
   });
 
+  it('yalıtımlı MCP çağrısında erişim ve izinli hostlar görünür', () => {
+    ciz([
+      onayOgesi({
+        cagri: 'm1',
+        arac: 'mcp__takvim__ekle',
+        muhur: 'mm',
+        mcp: {
+          sunucu: 'takvim',
+          arac: 'ekle',
+          erisim: 'Yalitimli',
+          ag_hostlari: ['api.takvim.ornek:443'],
+          ag_sinirsiz: false,
+        },
+      }),
+    ]);
+    expect(screen.getByText('Yalıtılmış süreç')).toBeTruthy();
+    expect(screen.getByText(/api\.takvim\.ornek:443/)).toBeTruthy();
+  });
+
   it('birden çok öğede toplu düğmeler', () => {
     ciz([duzenleme, kabuk(false)]);
     expect(screen.getByRole('button', { name: 'Tümünü onayla' })).toBeTruthy();

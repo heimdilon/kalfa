@@ -264,6 +264,20 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
     ]);
   });
 
+  it('geçersizleşen eski sayfa seçimi yeni isteğin kartını saklamaz', async () => {
+    const { arka } = await ciz();
+    onayIstegi(arka);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    arka.olaylar('o1', [
+      { tip: 'Tamamlandi', neden: { tip: 'Normal' } },
+      { tip: 'TurBasladi' },
+      { tip: 'OnayGerekiyor', islem: 'i3', ogeler: [onayOgesi({ cagri: 'c9', muhur: 'm9' })] },
+    ]);
+    expect(await screen.findByRole('region', { name: 'Onayınızı bekliyor: 1 işlem' })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('sayfa açıkken yapışık kart gizlenir; aynı karar iki yerden verilmez', async () => {
     const { arka } = await ciz();
     onayIstegi(arka);

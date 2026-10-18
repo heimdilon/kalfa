@@ -183,7 +183,6 @@ export const tr = {
   'onay.bekleyen.tumunu_reddet': 'Tümünü reddet',
   'onay.bekleyen.riskli':
     'Bu istekte tek tek seçilmesi gereken bir işlem var; onayı İncele\'den verin.',
-  'onay.bekleyen.tam_erisim': 'Tam sistem erişimi',
   'onay.bekleyen.ag': 'Ağ: {hostlar}',
   'onay.bekleyen.tamami': 'Tamamını göster ({sayi} satır)',
   'onay.bekleyen.daralt': 'Daralt',

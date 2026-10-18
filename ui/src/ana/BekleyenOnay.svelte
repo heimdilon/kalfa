@@ -98,9 +98,24 @@
               </Badge>
             {/if}
           </div>
-        {:else if o.mcp?.erisim === 'TamErisim'}
+        {:else if o.mcp}
+          <!-- Erişim ve ağ kapsamı sayfadakiyle aynı metinlerle. -->
+          {@const tam = o.mcp.erisim === 'TamErisim'}
           <div class="rozetler">
-            <Badge tone="danger">{m('onay.bekleyen.tam_erisim')}</Badge>
+            <Badge tone={tam ? 'danger' : 'accent'}>
+              {m(tam ? 'mcp.rozet.tam_erisim' : 'mcp.rozet.yalitimli')}
+            </Badge>
+            <span class="kapsam">
+              {#if tam}
+                {m('mcp.onay.tam_erisim')}
+              {:else if o.mcp.ag_hostlari.length === 0}
+                {m('mcp.onay.yalitimli_ag_yok')}
+              {:else}
+                <GorunurMetin
+                  metin={m('mcp.onay.yalitimli_ag', { hostlar: o.mcp.ag_hostlari.join(', ') })}
+                />
+              {/if}
+            </span>
           </div>
         {/if}
         {#if d && d.parcalar.length > 0}
@@ -244,6 +259,10 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
+  }
+  .kapsam {
+    font: var(--type-small);
+    color: var(--text-muted);
   }
   .dizin {
     font: var(--type-meta);
