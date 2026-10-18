@@ -509,6 +509,33 @@ export type OnarimSonucu =
   | { tip: 'Basarisiz'; mesaj: string }
   | { tip: 'KuruluDegil'; talimat: string };
 
+/** Sağ panelin dosya görünümü (masaüstü arayüzü tasarımı §6.3); kimlikler oturuma bağlıdır. */
+export interface DosyaGirdisi {
+  kimlik: number;
+  ad: string;
+  tur: 'Dosya' | 'Dizin' | 'Baglanti';
+  boyut: number | null;
+}
+
+export interface DizinIcerigi {
+  girdiler: DosyaGirdisi[];
+  /** Dizinde 2000'den çok girdi var. */
+  kirpildi: boolean;
+}
+
+export type DosyaIcerigi =
+  | { tip: 'Metin'; metin: string; kirpildi: boolean }
+  | { tip: 'Ikili' }
+  | { tip: 'Gizli' }
+  | { tip: 'CokAdli' };
+
+export type GitDurumu = { tip: 'Dal'; ad: string } | { tip: 'AyrikHead' } | { tip: 'GitDegil' };
+
+export interface CalismaAlaniOzeti {
+  kisa_yol: string;
+  git: GitDurumu;
+}
+
 export interface UygulamaDurumu {
   baglanti: 'Var' | 'Yok';
   anahtar_deposu: DepoTuru;

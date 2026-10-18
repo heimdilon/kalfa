@@ -5,7 +5,11 @@ import { onayOgesi, SahteArka } from '../sahte/arka';
 import Ana from './Ana.svelte';
 import { AnaDurum } from './anaDurum.svelte';
 
-afterEach(() => clearMocks());
+afterEach(() => {
+  clearMocks();
+  // Sağ panelin açık bölümü ve genişliği WebView deposunda hatırlanır.
+  localStorage.clear();
+});
 
 const DIFF = ['@@ -1,2 +1,2 @@', ' fn main() {', '-    eski();', '+    yeni();'].join('\n');
 

@@ -6,6 +6,9 @@ import { mockIPC } from '@tauri-apps/api/mocks';
 import { KIPLER } from '../ipc/tipler';
 import type {
   AgHostu,
+  CalismaAlaniOzeti,
+  DizinIcerigi,
+  DosyaIcerigi,
   AlanHedefi,
   EklentiSatiri,
   GizliAyarGorunumu,
@@ -228,6 +231,11 @@ export class SahteArka {
   geriAlmaBoyutu = 0;
   /** Başlık çubuğunun büyüt düğmesinin değiştirdiği pencere hâli. */
   pencereBuyuk = false;
+  /** Sağ panelin dosya görünümü: dizin kimliği (kök `null`) → girdiler. */
+  dosyaAgaci = new Map<number | null, DizinIcerigi>();
+  /** Dosya kimliği → önizleme. */
+  dosyaIcerikleri = new Map<number, DosyaIcerigi>();
+  alanOzeti: CalismaAlaniOzeti = { kisa_yol: '~\\projeler\\kalfa', git: { tip: 'Dal', ad: 'main' } };
   /** Gönderim günlüğü sayfaları; yoksa boş döner. */
   gonderimGunlukleri = new Map<OturumId, GunlukSayfasi>();
   /** `gonderim_ogesi` metinleri; anahtar: `${oturum}:${sira}`. */
@@ -778,6 +786,15 @@ export class SahteArka {
         if (alan) alan.izin = null;
         this.mcpDurumuYaz();
         return null;
+      }
+      case 'calisma_alani_ozeti':
+        return this.alanOzeti;
+      case 'calisma_alani_dizini':
+        return this.dosyaAgaci.get((a.dizin as number | null) ?? null) ?? { girdiler: [], kirpildi: false };
+      case 'calisma_alani_dosyasi': {
+        const icerik = this.dosyaIcerikleri.get(a.kimlik as number);
+        if (!icerik) throw { kod: 'GecersizGirdi', mesaj: 'Bu dosya bu oturumda bilinmiyor.' };
+        return icerik;
       }
       case 'pencere_buyut_degistir':
         this.pencereBuyuk = !this.pencereBuyuk;

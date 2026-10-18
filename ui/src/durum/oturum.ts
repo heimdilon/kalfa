@@ -136,6 +136,8 @@ export interface OturumEkrani {
   yerel_sayac: number;
   /** Geri alma sayfası açıksa gösterdiği plan. */
   geri_alma: GeriAlmaOnizlemesi | null;
+  /** Son isteğin istem tokenı (sağ paneldeki bağlam göstergesi); açılışta bilinmez. */
+  son_istem: number | null;
   /** Bu oturumdaki İstekBilgisi olaylarının sayısı (günlük ekranını yenilemek için). */
   istek_sayaci: number;
   /** "Bu oturumda izin ver" kısayolları (aşama 3 tasarımı §9.1); kayda yazılmaz. */
@@ -239,6 +241,7 @@ export function acilistanEkran(acilis: OturumAcilisi): OturumEkrani {
     yerel_sayac: 0,
     geri_alma: null,
     istek_sayaci: 0,
+    son_istem: null,
     kisayollar: [],
     butce: acilis.butce,
   };
@@ -475,6 +478,7 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
         tamamlama: d.ozet.tamamlama + yuk.tamamlama,
         dusunce: d.ozet.dusunce + yuk.dusunce,
       };
+      d.son_istem = yuk.istem;
       return;
     case 'IstekBilgisi':
       d.istek_sayaci += 1;

@@ -143,6 +143,36 @@ export function anaSenaryosu(windows = false, gunlukSinir = false): SahteArka {
       wde_kodlu: false,
     },
   ];
+  // Sağ panelin Dosyalar bölümü (masaüstü arayüzü tasarımı §6.3).
+  arka.dosyaAgaci.set(null, {
+    girdiler: [
+      { kimlik: 1, ad: 'src', tur: 'Dizin', boyut: null },
+      { kimlik: 2, ad: 'node_modules', tur: 'Dizin', boyut: null },
+      { kimlik: 3, ad: '.env', tur: 'Dosya', boyut: 48 },
+      { kimlik: 4, ad: 'README.md', tur: 'Dosya', boyut: 512 },
+      { kimlik: 5, ad: 'paylasilan', tur: 'Baglanti', boyut: null },
+    ],
+    kirpildi: false,
+  });
+  arka.dosyaAgaci.set(1, {
+    girdiler: [
+      { kimlik: 6, ad: 'auth.rs', tur: 'Dosya', boyut: 2048 },
+      { kimlik: 7, ad: 'logo.png', tur: 'Dosya', boyut: 9000 },
+    ],
+    kirpildi: false,
+  });
+  arka.dosyaIcerikleri.set(3, { tip: 'Gizli' });
+  arka.dosyaIcerikleri.set(4, {
+    tip: 'Metin',
+    metin: '# kalfa-api\n\nKimlik doğrulama servisi.\n',
+    kirpildi: false,
+  });
+  arka.dosyaIcerikleri.set(6, {
+    tip: 'Metin',
+    metin: 'pub fn dogrula(token: &str) -> bool {\n    !token.is_empty()\n}\n',
+    kirpildi: false,
+  });
+  arka.dosyaIcerikleri.set(7, { tip: 'Ikili' });
   // Ayarlar (aşama 2 tasarımı §10.4): "Yeniden dene" yalıtımı bulur.
   if (windows) {
     arka.uygulama.platform = 'windows';

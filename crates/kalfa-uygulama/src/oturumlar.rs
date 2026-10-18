@@ -57,6 +57,8 @@ pub(crate) struct AcikOturum {
     yol: PathBuf,
     pub(crate) calisma_alani: PathBuf,
     pub(crate) calisma_alani_kimligi: String,
+    /// Sağ panelin dosya görünümü; kimlik tablosu oturumla silinir.
+    pub(crate) gorunum: Arc<crate::dosya_gorunumu::DosyaGorunumu>,
 }
 
 pub(crate) struct KapananOturum {
@@ -203,6 +205,7 @@ impl Uygulama {
             yol,
             calisma_alani: kok.clone(),
             calisma_alani_kimligi: CalismaAlaniKaydi::kimlik(&kok),
+            gorunum: Default::default(),
         };
         if let Err(acik) = self.tabloya_ekle(oturum, acik) {
             Self::eklenemeyen_oturumu_kapat(acik).await;
@@ -300,6 +303,7 @@ impl Uygulama {
             yol: yol.clone(),
             calisma_alani: kok.clone(),
             calisma_alani_kimligi: CalismaAlaniKaydi::kimlik(&kok),
+            gorunum: Default::default(),
         };
         if let Err(acik) = self.tabloya_ekle(oturum, acik) {
             Self::eklenemeyen_oturumu_kapat(acik).await;

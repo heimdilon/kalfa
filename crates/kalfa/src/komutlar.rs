@@ -16,6 +16,7 @@ use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::protokol::ButceKarari;
 use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
+use kalfa_uygulama::dosya_gorunumu::{CalismaAlaniOzeti, DizinIcerigi, DosyaIcerigi};
 use kalfa_uygulama::hata::KomutHatasi;
 use kalfa_uygulama::mcp::komutlar::{
     McpDurumuDto, McpSunucuAyrintisiDto, McpSunucuFormu, McpTaslakDto,
@@ -122,6 +123,9 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         crate::pencereler::pencere_buyut_degistir,
         crate::pencereler::pencere_kapat,
         crate::pencereler::pencere_surukle,
+        calisma_alani_ozeti,
+        calisma_alani_dizini,
+        calisma_alani_dosyasi,
         sart_penceresi_durumu,
         anahtari_kaydet,
         sartlari_kabul_et,
@@ -763,4 +767,33 @@ pub async fn mcp_baslatma_izni_geri_al(
     ad: String,
 ) -> Sonuc<()> {
     u.mcp_baslatma_izni_geri_al(alan_kimligi, ad)
+}
+
+// Sağ panelin salt okur görünümü (masaüstü arayüzü tasarımı §6.2, §6.3):
+// arayüz yol göndermez, dizin ve dosyalar oturuma bağlı kimlikle anılır.
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn calisma_alani_ozeti(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+) -> Sonuc<CalismaAlaniOzeti> {
+    u.calisma_alani_ozeti(oturum).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn calisma_alani_dizini(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    dizin: Option<u64>,
+) -> Sonuc<DizinIcerigi> {
+    u.calisma_alani_dizini(oturum, dizin).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn calisma_alani_dosyasi(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    kimlik: u64,
+) -> Sonuc<DosyaIcerigi> {
+    u.calisma_alani_dosyasi(oturum, kimlik).await
 }
