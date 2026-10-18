@@ -8,6 +8,35 @@ import { kanalIsleyicisi } from '../durum/dinleyici';
 import { sar as e2eSar } from '../e2e/kanca';
 import * as ipc from '../ipc/ana';
 import { komutHatasi } from '../ipc/hata';
+
+export type SagBolum = 'ortam' | 'degisiklikler' | 'dosyalar';
+export const SAG_BOLUMLER: readonly SagBolum[] = ['ortam', 'degisiklikler', 'dosyalar'];
+const SAG_BOLUM_ANAHTARI = 'kalfa.sagBolum';
+
+/**
+ * Arayüzün kendi küçük ayarları (açık panel bölümü, panel genişliği) bu
+ * makinenin WebView deposunda durur; depo kullanılamazsa varsayılan döner.
+ */
+export function yerelOku(anahtar: string): string | null {
+  try {
+    return localStorage.getItem(anahtar);
+  } catch {
+    return null;
+  }
+}
+
+export function yerelYaz(anahtar: string, deger: string): void {
+  try {
+    localStorage.setItem(anahtar, deger);
+  } catch {
+    // Depo yoksa ayar yalnız bu açılışta geçerlidir.
+  }
+}
+
+function sagBolumOku(): SagBolum | null {
+  const b = yerelOku(SAG_BOLUM_ANAHTARI);
+  return SAG_BOLUMLER.find((x) => x === b) ?? null;
+}
 import type {
   ButceKarari,
   ButceSinirlari,
@@ -40,10 +69,13 @@ export class AnaDurum {
   hata = $state<string | null>(null);
   /** Açık onay sayfası. */
   onay = $state<{ oturum: OturumId; islem: IslemId } | null>(null);
-  /** Sağdaki bölünmüş değişiklik / inceleme bölmesi açık mı (varsayılan kapalı). */
-  sagBolmeAcik = $state(false);
+  /** Sağ panelin açık bölümü (masaüstü arayüzü tasarımı §6.1); son seçim hatırlanır. */
+  sagBolum = $state<SagBolum | null>(sagBolumOku());
+  sagBolmeAcik = $derived(this.sagBolum !== null);
   /** Soldaki kenar çubuğu açık mı (Ctrl+B ile gizlenir). */
   kenarAcik = $state(true);
+  /** Windows'ta pencere çerçevesizdir; başlık çubuğunu arayüz çizer (masaüstü arayüzü §5). */
+  ozelCerceve = $derived(this.uygulama?.platform === 'windows');
   /** Açık gönderim günlüğü (oturum kimliğiyle). */
   gunlukOturum = $state<OturumId | null>(null);
   gunlukAcik = $derived(this.gunlukOturum !== null);
@@ -79,6 +111,16 @@ export class AnaDurum {
   /** MCP sunucularının son görüntüsü; kanal eski revizyonu atar (1.1a-2). */
   mcp = $state<McpDurumu | null>(null);
   aktif = $derived(this.secili ? (this.ekranlar.get(this.secili) ?? null) : null);
+  /**
+   * Gösterilen sağ panel bölümü. Kayıttan salt okunur açılan oturumun
+   * çalışma alanı yoktur: Ortam ve Dosyalar ona açılmaz, Değişiklikler
+   * kayıttan gelir.
+   */
+  gorunenSagBolum = $derived(
+    this.sagBolum === 'degisiklikler' || (this.sagBolum && !this.aktif?.salt_okunur)
+      ? this.sagBolum
+      : null,
+  );
 
   /** Ayarlar'daki MCP bölümü açılınca güncel görüntüyü okur. */
   async mcpYenile(): Promise<void> {
@@ -233,16 +275,14 @@ export class AnaDurum {
     }
   }
 
-  sagBolmeyiAc(): void {
-    this.sagBolmeAcik = true;
+  /** Bölümü açar; açık bölümün düğmesine yeniden basmak paneli kapatır. */
+  sagBolumuDegistir(bolum: SagBolum): void {
+    this.sagBolumuAc(this.sagBolum === bolum ? null : bolum);
   }
 
-  sagBolmeyiKapat(): void {
-    this.sagBolmeAcik = false;
-  }
-
-  sagBolmeyiDegistir(): void {
-    this.sagBolmeAcik = !this.sagBolmeAcik;
+  sagBolumuAc(bolum: SagBolum | null): void {
+    this.sagBolum = bolum;
+    yerelYaz(SAG_BOLUM_ANAHTARI, bolum ?? '');
   }
 
   /** Yükseltmede Rust yerel onay sorar; reddedilirse eski kip döner (1c tasarımı §6). */

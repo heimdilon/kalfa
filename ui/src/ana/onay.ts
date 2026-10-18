@@ -47,6 +47,36 @@ export function riskliMi(o: OnayOgesi): boolean {
   return [o.kabuk?.komut, o.kabuk?.dizin, o.diff, ...o.hedefler].some(gorunmezVar);
 }
 
+/**
+ * Konuşmadaki onay kartının kararları (masaüstü arayüzü tasarımı §3.3).
+ * Kart yeni bir karar yolu açmaz; sayfanın `kararlariUret`'ini kullanır.
+ */
+export type KartKarari = 'bir_kez' | 'oturum' | 'reddet';
+
+/**
+ * Kartta verilebilecek kararlar. Riskli öğe varsa yalnız ret: onay tek tek
+ * seçimle sayfada verilir. "Bu oturumda" yalnız teklifi olan tek öğede.
+ */
+export function kartKararlari(ogeler: OnayOgesi[]): KartKarari[] {
+  if (ogeler.some(riskliMi)) return ['reddet'];
+  const tek = ogeler.length === 1 ? ogeler[0] : undefined;
+  return tek?.kisayol ? ['reddet', 'oturum', 'bir_kez'] : ['reddet', 'bir_kez'];
+}
+
+/** Kartın kararını mühürlü girdilere çevirir; kartta verilemeyen kararda `null`. */
+export function kartKarariUret(ogeler: OnayOgesi[], karar: KartKarari): OnayGirdisi[] | null {
+  if (!kartKararlari(ogeler).includes(karar)) return null;
+  const hepsi = new Set(ogeler.map((o) => o.cagri));
+  switch (karar) {
+    case 'bir_kez':
+      return kararlariUret(ogeler, 'tumu', new Set(), '');
+    case 'oturum':
+      return kararlariUret(ogeler, 'secilenler', hepsi, '', hepsi);
+    case 'reddet':
+      return kararlariUret(ogeler, 'hicbiri', new Set(), '');
+  }
+}
+
 /** Dosya listesinde gösterilen kısa ad: hedefin son bileşeni. */
 export function kisaAd(oge: OnayOgesi): string {
   if (oge.kabuk) return oge.kabuk.komut.split(/\s+/)[0] || oge.arac;

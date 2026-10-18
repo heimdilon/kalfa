@@ -90,23 +90,26 @@
 </script>
 
 <aside class="liste" aria-label={m('liste.baslik')}>
-  <div class="marka">
-    <button
-      type="button"
-      class="marka-dugme"
-      title={`${m('uygulama.adi')} — ${m('uygulama.slogan')}`}
-      onclick={() => durum.oturumlaraDon()}
-    >
-      <span class="amblem" aria-hidden="true"><Icon name="hexagon" size={13} /></span>
-      <span>{m('uygulama.adi')}</span>
-    </button>
-    <IconButton
-      icon="panel-left"
-      size="sm"
-      label={m('kenar.gizle')}
-      onclick={() => (durum.kenarAcik = false)}
-    />
-  </div>
+  <!-- Windows'ta marka ve kenar düğmesi başlık çubuğundadır. -->
+  {#if !durum.ozelCerceve}
+    <div class="marka">
+      <button
+        type="button"
+        class="marka-dugme"
+        title={`${m('uygulama.adi')} — ${m('uygulama.slogan')}`}
+        onclick={() => durum.oturumlaraDon()}
+      >
+        <span class="amblem" aria-hidden="true"><Icon name="hexagon" size={13} /></span>
+        <span>{m('uygulama.adi')}</span>
+      </button>
+      <IconButton
+        icon="panel-left"
+        size="sm"
+        label={m('kenar.gizle')}
+        onclick={() => (durum.kenarAcik = false)}
+      />
+    </div>
+  {/if}
 
   <button
     type="button"

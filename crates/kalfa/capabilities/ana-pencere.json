@@ -81,6 +81,13 @@
     "allow-mcp-sil",
     "allow-mcp-yeniden-baslat",
     "allow-mcp-baslatma-karti-yanitla",
-    "allow-mcp-baslatma-izni-geri-al"
+    "allow-mcp-baslatma-izni-geri-al",
+    "allow-pencere-kucult",
+    "allow-pencere-buyut-degistir",
+    "allow-pencere-kapat",
+    "allow-pencere-surukle",
+    "allow-calisma-alani-ozeti",
+    "allow-calisma-alani-dizini",
+    "allow-calisma-alani-dosyasi"
   ]
 }

@@ -4,7 +4,7 @@
 // denetler).
 
 /// Ana pencerenin komutları.
-pub const ANA_PENCERE_KOMUTLARI: [&str; 77] = [
+pub const ANA_PENCERE_KOMUTLARI: [&str; 84] = [
     "uygulama_durumu",
     "modelleri_yenile",
     "oturumlari_listele",
@@ -82,6 +82,13 @@ pub const ANA_PENCERE_KOMUTLARI: [&str; 77] = [
     "mcp_yeniden_baslat",
     "mcp_baslatma_karti_yanitla",
     "mcp_baslatma_izni_geri_al",
+    "pencere_kucult",
+    "pencere_buyut_degistir",
+    "pencere_kapat",
+    "pencere_surukle",
+    "calisma_alani_ozeti",
+    "calisma_alani_dizini",
+    "calisma_alani_dosyasi",
 ];
 
 /// Şart penceresinin komutları. Şart kabulüne giden tek yol buradaki
@@ -97,9 +104,10 @@ pub const SART_PENCERESI_KOMUTLARI: [&str; 6] = [
 
 /// Uçtan uca test derlemesinin komutları (`e2e` özelliği). Yalnızca o
 /// derlemede kayıtlıdır; yetkisi açılışta ana pencereye verilir.
-pub const E2E_KOMUTLARI: [&str; 4] = [
+pub const E2E_KOMUTLARI: [&str; 5] = [
     "e2e_olcumler",
     "e2e_olcumleri_sifirla",
     "e2e_kayit_uret",
     "e2e_ana_pencereyi_kapat",
+    "e2e_pencere_durumu",
 ];

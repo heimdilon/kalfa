@@ -5,7 +5,11 @@ import { onayOgesi, SahteArka } from '../sahte/arka';
 import Ana from './Ana.svelte';
 import { AnaDurum } from './anaDurum.svelte';
 
-afterEach(() => clearMocks());
+afterEach(() => {
+  clearMocks();
+  // Sağ panelin açık bölümü ve genişliği WebView deposunda hatırlanır.
+  localStorage.clear();
+});
 
 const DIFF = ['@@ -1,2 +1,2 @@', ' fn main() {', '-    eski();', '+    yeni();'].join('\n');
 
@@ -242,6 +246,48 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
       },
     ]);
     expect(screen.getByText('Yanıtlandı')).toBeTruthy();
+  });
+
+  it('yazma alanının üstündeki karttan sayfa açmadan onaylanır (masaüstü arayüzü §3)', async () => {
+    const { arka } = await ciz();
+    onayIstegi(arka);
+    const kart = await screen.findByRole('region', { name: 'Onayınızı bekliyor: 2 işlem' });
+    expect(screen.getByText('Kararınızı bekliyor')).toBeTruthy();
+    await fireEvent.click(within(kart).getByRole('button', { name: 'Tümünü onayla' }));
+    await waitFor(() => expect(screen.getByText('Yanıtlandı')).toBeTruthy());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('region', { name: /Onayınızı bekliyor/ })).toBeNull();
+    expect(arka.komutlar('arac_onayi')).toEqual([
+      {
+        oturum: 'o1',
+        kararlar: [
+          { cagri: 'c1', muhur: 'm1', karar: { tip: 'Onayla' }, kisayol: false },
+          { cagri: 'c2', muhur: 'm2', karar: { tip: 'Onayla' }, kisayol: false },
+        ],
+      },
+    ]);
+  });
+
+  it('geçersizleşen eski sayfa seçimi yeni isteğin kartını saklamaz', async () => {
+    const { arka } = await ciz();
+    onayIstegi(arka);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    arka.olaylar('o1', [
+      { tip: 'Tamamlandi', neden: { tip: 'Normal' } },
+      { tip: 'TurBasladi' },
+      { tip: 'OnayGerekiyor', islem: 'i3', ogeler: [onayOgesi({ cagri: 'c9', muhur: 'm9' })] },
+    ]);
+    expect(await screen.findByRole('region', { name: 'Onayınızı bekliyor: 1 işlem' })).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('sayfa açıkken yapışık kart gizlenir; aynı karar iki yerden verilmez', async () => {
+    const { arka } = await ciz();
+    onayIstegi(arka);
+    await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.queryByRole('region', { name: /Onayınızı bekliyor/ })).toBeNull();
   });
 
   it('kabuk öğesinde diff yerine komut, dizin, ağ ve yalıtım; yerel onay notu', async () => {
@@ -742,3 +788,53 @@ describe('tur özeti ve geri alma (aşama 3 tasarımı §5.11)', () => {
   });
 });
 
+
+describe('başlık çubuğu (masaüstü arayüzü tasarımı §5)', () => {
+  const pencereDugmesi = (ad: string) => screen.getByRole('button', { name: ad });
+
+  it("Linux'ta yerel çerçeve kalır; başlık çubuğu çizilmez", async () => {
+    await ciz();
+    expect(screen.queryByRole('button', { name: 'Simge durumuna küçült' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Kenar çubuğunu gizle' })).toBeTruthy();
+  });
+
+  it("Windows'ta pencere düğmeleri kendi komutlarını çağırır", async () => {
+    const { arka } = await ciz((a) => (a.uygulama.platform = 'windows'));
+    await fireEvent.click(pencereDugmesi('Simge durumuna küçült'));
+    expect(arka.komutlar('pencere_kucult')).toHaveLength(1);
+    await fireEvent.click(pencereDugmesi('Büyüt'));
+    await waitFor(() => expect(pencereDugmesi('Önceki boyutuna getir')).toBeTruthy());
+    await fireEvent.click(pencereDugmesi('Önceki boyutuna getir'));
+    await waitFor(() => expect(pencereDugmesi('Büyüt')).toBeTruthy());
+    await fireEvent.click(pencereDugmesi('Pencereyi kapat'));
+    expect(arka.komutlar('pencere_kapat')).toHaveLength(1);
+  });
+
+  it('boş yer sürükler, çift tıklama büyütür', async () => {
+    const { arka } = await ciz((a) => (a.uygulama.platform = 'windows'));
+    const cubuk = document.querySelector('.baslik-cubugu .orta')!;
+    await fireEvent.mouseDown(cubuk, { button: 0, detail: 1 });
+    expect(arka.komutlar('pencere_surukle')).toHaveLength(1);
+    await fireEvent.mouseDown(cubuk, { button: 0, detail: 2 });
+    expect(arka.komutlar('pencere_buyut_degistir')).toHaveLength(1);
+    await fireEvent.mouseDown(cubuk, { button: 2, detail: 1 });
+    expect(arka.komutlar('pencere_surukle')).toHaveLength(1);
+    // Düğmeye basmak pencereyi sürüklemez.
+    await fireEvent.mouseDown(screen.getByRole('button', { name: 'Pencereyi kapat' }), { button: 0, detail: 1 });
+    expect(arka.komutlar('pencere_surukle')).toHaveLength(1);
+  });
+
+  it('oturum başlığı ve proje başlık çubuğunda; kenar düğmesi tek', async () => {
+    await ciz((a) => (a.uygulama.platform = 'windows'));
+    const cubuk = document.querySelector<HTMLElement>('.baslik-cubugu')!;
+    expect(within(cubuk).getByText('Dosyaları incele')).toBeTruthy();
+    // Başlık ekran okuyucu için konuşmada da durur.
+    expect(screen.getByRole('heading', { name: 'Dosyaları incele' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Kenar çubuğunu gizle' })).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: 'Kenar çubuğunu gizle' }));
+    expect(screen.queryByRole('complementary', { name: 'Oturumlar' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Kenar çubuğunu göster' })).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: 'Kenar çubuğunu göster' }));
+    expect(screen.getByRole('complementary', { name: 'Oturumlar' })).toBeTruthy();
+  });
+});

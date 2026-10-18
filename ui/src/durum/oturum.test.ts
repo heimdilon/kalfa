@@ -123,6 +123,22 @@ describe('kanal mesajı → oturum durumu (1c tasarımı §8.4)', () => {
     expect(d.ogeler[1]).toMatchObject({ durum: 'Basarili', sonuc: 'içerik' });
   });
 
+  it('dosya değişiklikleri kendi çağrısına bağlanır (masaüstü arayüzü §4)', () => {
+    const degisiklik = { yol: 'a.py', islem: 'Degisti' as const, eklenen: 1, silinen: 1, diff: '@@ -1 +1 @@\n-x\n+y\n' };
+    const d = uygula(acilis(), {
+      tip: 'Kanal',
+      mesaj: paket(
+        1,
+        { tip: 'AracCagrisiBasladi', cagri: 'c-1', arac: 'dosya_oku', aciklama: 'a' },
+        { tip: 'AracCagrisiBasladi', cagri: 'c-2', arac: 'dosya_duzenle', aciklama: 'b' },
+        { tip: 'DosyaDegisiklikleri', cagri: 'c-2', dosyalar: [degisiklik] },
+      ),
+    });
+    const [a, b] = d.ogeler.filter((o) => o.tip === 'AracCagrisi');
+    expect(a.tip === 'AracCagrisi' && a.degisiklikler).toEqual([]);
+    expect(b.tip === 'AracCagrisi' && b.degisiklikler).toEqual([degisiklik]);
+  });
+
   it('kabuk çıktısı kendi çağrısının terminaline işlenir (aşama 2 tasarımı §10.1)', () => {
     const d = uygula(acilis(), {
       tip: 'Kanal',
@@ -314,6 +330,7 @@ describe('geçmiş ve canlı olaylar (1c tasarımı §5.5)', () => {
         argumanlar: '{}',
         durum: 'SonucuBilinmiyor',
         sonuc: null,
+        degisiklikler: [{ yol: 'a.py', islem: 'Olusturuldu', eklenen: 2, silinen: 0 }],
       },
       { tip: 'TurSonu', sira: 15, tur: 't-0', neden: { tip: 'Normal' } },
     ],
@@ -326,6 +343,9 @@ describe('geçmiş ve canlı olaylar (1c tasarımı §5.5)', () => {
     expect(new Set(d.ogeler.map((o) => o.anahtar)).size).toBe(4);
     expect(d.gecmis_son_sira).toBe(15);
     expect(d.daha_eski_var).toBe(true);
+    expect(d.ogeler[2]).toMatchObject({
+      degisiklikler: [{ yol: 'a.py', islem: 'Olusturuldu', eklenen: 2, silinen: 0 }],
+    });
   });
 
   it('geçmişte zaten olan sıradaki canlı olay atlanır', () => {

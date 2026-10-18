@@ -143,6 +143,36 @@ export function anaSenaryosu(windows = false, gunlukSinir = false): SahteArka {
       wde_kodlu: false,
     },
   ];
+  // Sağ panelin Dosyalar bölümü (masaüstü arayüzü tasarımı §6.3).
+  arka.dosyaAgaci.set(null, {
+    girdiler: [
+      { kimlik: 1, ad: 'src', tur: 'Dizin', boyut: null },
+      { kimlik: 2, ad: 'node_modules', tur: 'Dizin', boyut: null },
+      { kimlik: 3, ad: '.env', tur: 'Dosya', boyut: 48 },
+      { kimlik: 4, ad: 'README.md', tur: 'Dosya', boyut: 512 },
+      { kimlik: 5, ad: 'paylasilan', tur: 'Baglanti', boyut: null },
+    ],
+    kirpildi: false,
+  });
+  arka.dosyaAgaci.set(1, {
+    girdiler: [
+      { kimlik: 6, ad: 'auth.rs', tur: 'Dosya', boyut: 2048 },
+      { kimlik: 7, ad: 'logo.png', tur: 'Dosya', boyut: 9000 },
+    ],
+    kirpildi: false,
+  });
+  arka.dosyaIcerikleri.set(3, { tip: 'Gizli' });
+  arka.dosyaIcerikleri.set(4, {
+    tip: 'Metin',
+    metin: '# kalfa-api\n\nKimlik doğrulama servisi.\n',
+    kirpildi: false,
+  });
+  arka.dosyaIcerikleri.set(6, {
+    tip: 'Metin',
+    metin: 'pub fn dogrula(token: &str) -> bool {\n    !token.is_empty()\n}\n',
+    kirpildi: false,
+  });
+  arka.dosyaIcerikleri.set(7, { tip: 'Ikili' });
   // Ayarlar (aşama 2 tasarımı §10.4): "Yeniden dene" yalıtımı bulur.
   if (windows) {
     arka.uygulama.platform = 'windows';
@@ -455,15 +485,38 @@ export function anaSenaryosu(windows = false, gunlukSinir = false): SahteArka {
       [
         300,
         () =>
-          gonder(
-            kararlar.map((k, i) => ({
-              tip: 'AracSonucu',
-              cagri: k.cagri,
-              arac: 'dosya_duzenle',
-              durum: k.karar.tip === 'Onayla' ? 'Basarili' : 'Reddedildi',
-              icerik: i === 0 ? 'src/auth.rs: 1 satır değişti' : 'src/depo.rs: 2 satır değişti',
-            })),
-          ),
+          gonder([
+            // Onaylanan çağrı başlar ve diff'i araç kartına gelir (masaüstü arayüzü §4).
+            ...kararlar.flatMap((k, i): Olay[] =>
+              k.karar.tip === 'Onayla'
+                ? [
+                    { tip: 'AracCagrisiBasladi', cagri: k.cagri, arac: 'dosya_duzenle', aciklama: '' },
+                    {
+                      tip: 'DosyaDegisiklikleri',
+                      cagri: k.cagri,
+                      dosyalar: [
+                        {
+                          yol: i === 0 ? 'src/auth.rs' : 'src/depo.rs',
+                          islem: 'Degisti',
+                          eklenen: i === 0 ? 1 : 2,
+                          silinen: i === 0 ? 1 : 2,
+                          diff: i === 0 ? DIFF_AUTH : DIFF_DEPO,
+                        },
+                      ],
+                    },
+                  ]
+                : [],
+            ),
+            ...kararlar.map(
+              (k, i): Olay => ({
+                tip: 'AracSonucu',
+                cagri: k.cagri,
+                arac: 'dosya_duzenle',
+                durum: k.karar.tip === 'Onayla' ? 'Basarili' : 'Reddedildi',
+                icerik: i === 0 ? 'src/auth.rs: 1 satır değişti' : 'src/depo.rs: 2 satır değişti',
+              }),
+            ),
+          ]),
       ],
       [400, () => gonder([{ tip: 'TokenParcasi', metin: 'Değişiklikler uygulandı.' }])],
       [

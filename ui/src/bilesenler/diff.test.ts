@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffCozumle, diffSayilari } from './diff';
+import { diffCozumle, diffKirp, diffSayilari } from './diff';
 
 const DIFF = [
   '--- a/src/main.rs',
@@ -16,6 +16,23 @@ const DIFF = [
   '\\ No newline at end of file',
   '',
 ].join('\n');
+
+describe('diff önizlemesi', () => {
+  const parcalar = diffCozumle('@@ -1,2 +1,2 @@\n-a\n+b\n c\n@@ -10 +10 @@\n-d\n+e\n');
+
+  it('ilk n satırı bloklar arasında tutar', () => {
+    const { parcalar: kisa, kirpildi } = diffKirp(parcalar, 4);
+    expect(kirpildi).toBe(true);
+    expect(kisa.map((p) => p.satirlar.length)).toEqual([3, 1]);
+    expect(kisa[1].baslik).toBe('@@ -10 +10 @@');
+  });
+
+  it('sığan diff olduğu gibi kalır', () => {
+    const { parcalar: hepsi, kirpildi } = diffKirp(parcalar, 5);
+    expect(kirpildi).toBe(false);
+    expect(hepsi).toEqual(parcalar);
+  });
+});
 
 describe('birleşik diff', () => {
   it('bloklara ve numaralı satırlara çevrilir', () => {

@@ -6,6 +6,9 @@ import { mockIPC } from '@tauri-apps/api/mocks';
 import { KIPLER } from '../ipc/tipler';
 import type {
   AgHostu,
+  CalismaAlaniOzeti,
+  DizinIcerigi,
+  DosyaIcerigi,
   AlanHedefi,
   EklentiSatiri,
   GizliAyarGorunumu,
@@ -226,6 +229,20 @@ export class SahteArka {
   geriAlmaPlani: GeriAlmaPlani | null = null;
   /** `geri_alma_verisi_boyutu`'nun yanıtı. */
   geriAlmaBoyutu = 0;
+  /** Başlık çubuğunun büyüt düğmesinin değiştirdiği pencere hâli. */
+  pencereBuyuk = false;
+  /** Sağ panelin dosya görünümü: dizin kimliği (kök `null`) → girdiler. */
+  dosyaAgaci = new Map<number | null, DizinIcerigi>();
+  /** Dosya kimliği → önizleme. */
+  dosyaIcerikleri = new Map<number, DosyaIcerigi>();
+  /** Dosya kimliği → yanıtın bekleyeceği söz (yavaş okuma). */
+  dosyaGecikmeleri = new Map<number, Promise<void>>();
+  alanOzeti: CalismaAlaniOzeti = {
+    kisa_yol: '~\\projeler\\kalfa',
+    git: { tip: 'Dal', ad: 'main' },
+    ciktilar: [],
+    ozetlenen: 0,
+  };
   /** Gönderim günlüğü sayfaları; yoksa boş döner. */
   gonderimGunlukleri = new Map<OturumId, GunlukSayfasi>();
   /** `gonderim_ogesi` metinleri; anahtar: `${oturum}:${sira}`. */
@@ -777,7 +794,21 @@ export class SahteArka {
         this.mcpDurumuYaz();
         return null;
       }
+      case 'calisma_alani_ozeti':
+        return this.alanOzeti;
+      case 'calisma_alani_dizini':
+        return this.dosyaAgaci.get((a.dizin as number | null) ?? null) ?? { girdiler: [], kirpildi: false };
+      case 'calisma_alani_dosyasi': {
+        const icerik = this.dosyaIcerikleri.get(a.kimlik as number);
+        if (!icerik) throw { kod: 'GecersizGirdi', mesaj: 'Bu dosya bu oturumda bilinmiyor.' };
+        const gecikme = this.dosyaGecikmeleri.get(a.kimlik as number);
+        return gecikme ? gecikme.then(() => icerik) : icerik;
+      }
+      case 'pencere_buyut_degistir':
+        this.pencereBuyuk = !this.pencereBuyuk;
+        return this.pencereBuyuk;
       default:
+        // pencere_kucult, pencere_kapat, pencere_surukle,
         // mesaj_gonder, turu_iptal_et, arac_onayi, model_degistir, paketi_isledim,
         // baglanti_ac, anahtar_penceresini_ac, sart_penceresini_ac
         return null;

@@ -36,7 +36,7 @@ use crate::protokol::{
     AracDurumu, BitisNedeni, Komut, McpOnayKarti, Olay, OnayKarari, OnayOgesi,
     OnaysizDegisiklikler, OnizlemeNedeni, OnizlemeOgesi,
 };
-use crate::tur_ozeti::{GeriAlinabilirlik, KomutOzeti, YazilanDosya};
+use crate::tur_ozeti::{DosyaDegisikligi, GeriAlinabilirlik, KomutOzeti, YazilanDosya};
 use crate::yol::CalismaYolu;
 
 /// Araçlardan oturuma gelen ara çıktı kanalının kapasitesi (parça).
@@ -987,6 +987,8 @@ impl Oturum {
                     continue;
                 }
             };
+            let degisiklikler: Vec<DosyaDegisikligi> =
+                yedekler.iter().map(DosyaDegisikligi::from).collect();
             let oge = KayitOgesi::AracBasladi {
                 cagri: p.cagri,
                 model_cagri_id: p.model_id.clone(),
@@ -1013,6 +1015,13 @@ impl Oturum {
                 aciklama: p.hazirlik.aciklama.clone(),
             };
             self.yay(olay).await;
+            if !degisiklikler.is_empty() {
+                self.yay(Olay::DosyaDegisiklikleri {
+                    cagri: p.cagri,
+                    dosyalar: degisiklikler,
+                })
+                .await;
+            }
             calisacak.push(p);
         }
         // Henüz hiçbir future poll edilmedi. Grubun sonraki kaydı bozulduysa

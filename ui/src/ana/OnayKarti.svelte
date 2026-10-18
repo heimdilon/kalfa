@@ -1,19 +1,16 @@
 <!--
-  Konuşmadaki onay isteği (1c tasarımı §8.2): küçük bir kart. "İncele" onay
-  sayfasını açar; sayfa karar verilmeden kapatılırsa istek burada bekler.
+  Konuşmadaki onay isteğinin kaydı (1c tasarımı §8.2). Karar, yazma alanının
+  üstündeki yapışık kartta verilir (`BekleyenOnay`, masaüstü arayüzü
+  tasarımı §3); burada yalnız durum görünür.
 -->
 <script lang="ts">
   import Badge from '../bilesenler/Badge.svelte';
-  import Button from '../bilesenler/Button.svelte';
   import Card from '../bilesenler/Card.svelte';
   import { m } from '../dil/tr';
   import type { EkranOgesi } from '../durum/oturum';
   import { kisaAd } from './onay';
 
-  let {
-    oge,
-    onincele,
-  }: { oge: Extract<EkranOgesi, { tip: 'OnayIstegi' }>; onincele: () => void } = $props();
+  let { oge }: { oge: Extract<EkranOgesi, { tip: 'OnayIstegi' }> } = $props();
 
   const uyariSayisi = $derived(oge.ogeler.reduce((t, o) => t + o.uyarilar.length, 0));
 </script>
@@ -25,7 +22,7 @@
 >
   {#snippet actions()}
     {#if oge.durum === 'Bekliyor'}
-      <Button variant="primary" size="sm" onclick={onincele}>{m('onay.kart.incele')}</Button>
+      <Badge tone="accent">{m('onay.kart.bekliyor')}</Badge>
     {:else if oge.durum === 'Yanitlandi'}
       <Badge tone="ok">{m('onay.kart.yanitlandi')}</Badge>
     {:else}

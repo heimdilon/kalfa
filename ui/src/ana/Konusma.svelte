@@ -21,8 +21,10 @@
   import { AltaYapisma, kaydirmaNiyetiMi } from './altaYapisma';
   import type { AnaDurum } from './anaDurum.svelte';
   import { gunAy, projeAdi, satirBasligi } from './bicim';
+  import BekleyenOnay from './BekleyenOnay.svelte';
   import KonusmaOgesi from './KonusmaOgesi.svelte';
   import McpBaslatmaKarti from './McpBaslatmaKarti.svelte';
+  import PanelDugmeleri from './PanelDugmeleri.svelte';
 
   let { durum }: { durum: AnaDurum } = $props();
 
@@ -39,6 +41,13 @@
     })),
   );
   const kipler = KIPLER.map((k) => ({ value: k, label: m(KIP_ADI[k]) }));
+
+  /** Yazma alanının üstünde karar bekleyen son onay isteği (masaüstü arayüzü §3). */
+  const bekleyenOnay = $derived.by(() => {
+    if (!ekran || ekran.salt_okunur) return null;
+    const oge = ekran.ogeler.findLast((o) => o.tip === 'OnayIstegi' && o.durum === 'Bekliyor');
+    return oge?.tip === 'OnayIstegi' ? oge : null;
+  });
 
   const kapaliNedeni = $derived.by(() => {
     if (!ekran) return null;
@@ -173,7 +182,7 @@
 <section class="konusma" aria-label={m('konusma.ad')}>
   {#if ekran}
     <header class="ust">
-      {#if !durum.kenarAcik}
+      {#if !durum.kenarAcik && !durum.ozelCerceve}
         <IconButton
           icon="panel-left"
           size="sm"
@@ -181,8 +190,9 @@
           onclick={() => (durum.kenarAcik = true)}
         />
       {/if}
-      <h2>{baslik}</h2>
-      {#if ekran.calisma_alani}
+      <!-- Windows'ta başlık ve proje başlık çubuğunda görünür. -->
+      <h2 class={{ 'gizli-erisilebilir': durum.ozelCerceve }}>{baslik}</h2>
+      {#if ekran.calisma_alani && !durum.ozelCerceve}
         <span class="cip" title={ekran.calisma_alani}>
           <Icon name="folder" size={13} />{projeAdi(ekran.calisma_alani)}
         </span>
@@ -257,10 +267,12 @@
 
       <button
         type="button"
-        class={['degisiklik-dugme', { etkin: durum.sagBolmeAcik }]}
-        aria-label={durum.sagBolmeAcik ? m('konusma.sag_bolme_kapat') : m('konusma.sag_bolme_ac')}
-        aria-pressed={durum.sagBolmeAcik}
-        onclick={() => durum.sagBolmeyiDegistir()}
+        class={['degisiklik-dugme', { etkin: durum.sagBolum === 'degisiklikler' }]}
+        aria-label={durum.sagBolum === 'degisiklikler'
+          ? m('konusma.sag_bolme_kapat')
+          : m('konusma.sag_bolme_ac')}
+        aria-pressed={durum.sagBolum === 'degisiklikler'}
+        onclick={() => durum.sagBolumuDegistir('degisiklikler')}
       >
         <Icon name="code" size={14} />
         <span>{m('konusma.degisiklikler')}</span>
@@ -269,6 +281,10 @@
           <span class="eksi">−{degisenDosyaOzeti.silinen}</span>
         {/if}
       </button>
+      {#if !durum.ozelCerceve}
+        <!-- Linux'ta başlık çubuğu yok; panelin öbür bölümleri burada açılır. -->
+        <PanelDugmeleri {durum} bolumler={['ortam', 'dosyalar']} />
+      {/if}
 
       {#if ekran.kapandi}
         <Button size="sm" iconLeft="rotate-ccw" onclick={() => durum.yenidenAc(ekran.oturum)}>
@@ -333,6 +349,16 @@
     </div>
 
     <div class="alt">
+      {#if bekleyenOnay && durum.onay?.islem !== bekleyenOnay.islem}
+        {@const { islem } = bekleyenOnay}
+        {#key islem}
+        <BekleyenOnay
+          ogeler={bekleyenOnay.ogeler}
+          onkarar={(kararlar) => durum.onayla(ekran.oturum, islem, kararlar)}
+          onincele={() => durum.onayiAc(ekran.oturum, islem)}
+        />
+        {/key}
+      {/if}
       <Composer
         bind:value={metin}
         models={modeller}

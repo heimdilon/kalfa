@@ -842,6 +842,152 @@ fn sinirli_veri_oku(
     }
 }
 
+/// Mutlak yerel yoldaki dosyanın en çok `sinir` baytı. Kökten başlayarak her
+/// bileşen bağlantı izlenmeden ve bir önceki dizinin tutamacından açılır:
+/// doğrulama ile açma arasında bir bileşen bağlantıyla değiştirilse de
+/// izlenmez. Yol sözcüksel olarak normalleştirilmiş olmalıdır (`.`, `..`
+/// yok). Windows'ta yalnız sürücü harfli yol açılır: UNC, `\\?\` ve aygıt
+/// yollarını açmak ağa kimlik bilgisi gönderebilir.
+pub fn baglantisiz_oku(yol: &Path, sinir: u64) -> io::Result<Vec<u8>> {
+    use std::path::{Component, Prefix};
+    let red = || {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Yalnız bağlantısız, mutlak yerel yol okunur.",
+        )
+    };
+    if !yol.is_absolute() {
+        return Err(red());
+    }
+    let mut kok = PathBuf::new();
+    let mut adlar = Vec::new();
+    for parca in yol.components() {
+        match parca {
+            Component::Prefix(p) if matches!(p.kind(), Prefix::Disk(_)) => kok.push(parca),
+            Component::RootDir if adlar.is_empty() => kok.push(parca),
+            Component::Normal(ad) => adlar.push(ad),
+            _ => return Err(red()),
+        }
+    }
+    let (son, ustler) = adlar.split_last().ok_or_else(red)?;
+    let mut dizin = Dir::open_ambient_dir(&kok, ambient_authority())?;
+    for ad in ustler {
+        dizin = dizin.open_dir_nofollow(ad)?;
+    }
+    let mut secenek = OpenOptions::new();
+    secenek.read(true).follow(FollowSymlinks::No);
+    let dosya = dizin.open_with(son, &secenek)?;
+    if !dosya.metadata()?.is_file() {
+        return Err(red());
+    }
+    let mut veri = Vec::new();
+    dosya.into_std().take(sinir).read_to_end(&mut veri)?;
+    Ok(veri)
+}
+
+/// Salt okur dosya görünümünün bir dizin girdisi (masaüstü arayüzü tasarımı
+/// §6.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DizinGirdisi {
+    pub ad: String,
+    pub tur: GirdiTuru,
+    /// Yalnız normal dosyada.
+    pub boyut: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GirdiTuru {
+    Dizin,
+    Dosya,
+    /// Sembolik bağlantı ya da Windows bağlantı noktası: izlenmez, açılmaz.
+    Baglanti,
+}
+
+/// Dosya görünümünün önizlemesi. Gizli dosyanın ve başka adı (hard link)
+/// olan dosyanın içeriği dönmez: ikinci ad gizli bir dosyaya çıkabilir.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Onizleme {
+    Metin { metin: String, kirpildi: bool },
+    Ikili,
+    Gizli,
+    CokAdli,
+}
+
+impl CalismaAlani {
+    /// Dizinin girdileri; `yol` yoksa çalışma alanının kökü. Dizin ve
+    /// bileşenleri bağlantı izlenmeden açılır; `.git` ve çalışma alanı yolu
+    /// olamayan adlar (alternatif veri akışı, aygıt adı) gösterilmez. En çok
+    /// `sinir` girdi döner; fazlası varsa ikinci değer `true` olur.
+    pub fn dizini_listele(
+        &self,
+        yol: Option<&CalismaYolu>,
+        sinir: usize,
+    ) -> io::Result<(Vec<DizinGirdisi>, bool)> {
+        let dizin = match yol {
+            None => self.dizin.try_clone()?,
+            Some(yol) => {
+                let (ust, ad) = self.ust_dizin(yol, false)?;
+                let dizin = ust.open_dir_nofollow(&ad)?;
+                gercek_ad_dogrula(&ust, &ad, &dizin.try_clone()?.into_std_file())?;
+                dizin
+            }
+        };
+        let mut girdiler = Vec::new();
+        let mut kirpildi = false;
+        for giris in dizin.entries()? {
+            let Ok(giris) = giris else { continue };
+            let Ok(ad) = giris.file_name().into_string() else {
+                continue;
+            };
+            if ad.eq_ignore_ascii_case(".git") {
+                continue;
+            }
+            let goreli = yol.map_or_else(|| ad.clone(), |y| format!("{}/{ad}", y.as_str()));
+            if CalismaYolu::coz(&goreli).is_err() {
+                continue;
+            }
+            let Ok(tur) = giris.file_type() else { continue };
+            let (tur, boyut) = if tur.is_dir() {
+                (GirdiTuru::Dizin, None)
+            } else if tur.is_file() {
+                (GirdiTuru::Dosya, giris.metadata().ok().map(|m| m.len()))
+            } else {
+                (GirdiTuru::Baglanti, None)
+            };
+            if girdiler.len() == sinir {
+                kirpildi = true;
+                break;
+            }
+            girdiler.push(DizinGirdisi { ad, tur, boyut });
+        }
+        girdiler.sort_by(|a, b| (a.tur, &a.ad).cmp(&(b.tur, &b.ad)));
+        Ok((girdiler, kirpildi))
+    }
+
+    /// Dosyanın en çok `sinir` baytlık metin önizlemesi. Dosya bağlantı
+    /// izlenmeden açılır; gizli sınıftaki dosya hiç açılmaz.
+    pub fn onizle(&self, yol: &CalismaYolu, sinir: usize) -> io::Result<Onizleme> {
+        if self.siniflandirici.gizli_mi(yol) {
+            return Ok(Onizleme::Gizli);
+        }
+        let dosya = self.dosya_ac(yol)?.into_std();
+        if baglanti::sayi(&dosya)? > 1 {
+            return Ok(Onizleme::CokAdli);
+        }
+        let mut veri = Vec::new();
+        (&dosya).take(sinir as u64 + 1).read_to_end(&mut veri)?;
+        let kirpildi = veri.len() > sinir;
+        veri.truncate(sinir);
+        if ikili_mi(&veri) {
+            return Ok(Onizleme::Ikili);
+        }
+        Ok(Onizleme::Metin {
+            metin: String::from_utf8_lossy(&veri).into_owned(),
+            kirpildi,
+        })
+    }
+}
+
 #[cfg(test)]
 mod okuma_siniri_testleri {
     use super::*;

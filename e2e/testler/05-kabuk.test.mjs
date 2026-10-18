@@ -146,10 +146,11 @@ describe('kabuk', () => {
     }
   });
 
-  it('onaylanan komutun çıktısı canlı akar, sonucu modele gider', async () => {
+  it('karttan onaylanan komutun çıktısı canlı akar, sonucu modele gider', async () => {
     await k.gonder('kabuk');
     await k.metniBekle('Komutu çalıştırıyorum.');
-    await onayla(k);
+    // Yalıtımlı, ağsız komut karttan onaylanır (masaüstü arayüzü §3).
+    await k.dugme('Bir kez izin ver');
     assert.equal(await k.turSonuBekle(1), 'Normal');
     const terminal = await terminalMetni(k);
     assert.match(terminal, /kabuktan-merhaba/);
