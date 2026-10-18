@@ -8,7 +8,7 @@ import Ana from './Ana.svelte';
 import { AnaDurum } from './anaDurum.svelte';
 import KonusmaOgesi from './KonusmaOgesi.svelte';
 import OnizlemeKarti from './OnizlemeKarti.svelte';
-import type { DenetimRozeti } from '../durum/oturum';
+import type { DenetimRozeti, EkranOgesi } from '../durum/oturum';
 
 afterEach(() => clearMocks());
 
@@ -25,6 +25,7 @@ function aracKarti(denetim: DenetimRozeti | null) {
     durum: 'Basarili' as const,
     sonuc: 'içerik',
     terminal: null,
+    degisiklikler: [],
     denetim,
   };
 }
@@ -32,6 +33,44 @@ function aracKarti(denetim: DenetimRozeti | null) {
 function kartiCiz(denetim: DenetimRozeti | null) {
   render(KonusmaOgesi, { props: { oge: aracKarti(denetim), oturum: 'o1', durum: new AnaDurum() } });
 }
+
+describe('araç kartında dosya diff\'i (masaüstü arayüzü §4)', () => {
+  function diffKarti(ek: Partial<Extract<EkranOgesi, { tip: 'AracCagrisi' }>>) {
+    render(KonusmaOgesi, {
+      props: { oge: { ...aracKarti(null), arac: 'dosya_duzenle', ...ek }, oturum: 'o1', durum: new AnaDurum() },
+    });
+  }
+  const uzun = ['@@ -1,30 +1,30 @@', ...Array.from({ length: 30 }, (_, i) => `+satır ${i}`)].join('\n');
+
+  it('dosya adı, sayılar ve diff satırları görünür; uzun diff katlanır', async () => {
+    diffKarti({ degisiklikler: [{ yol: 'gorevler.py', islem: 'Degisti', eklenen: 30, silinen: 0, diff: uzun }] });
+    expect(screen.getByText('gorevler.py')).toBeTruthy();
+    expect(screen.getByText('+30')).toBeTruthy();
+    expect(screen.getByText('satır 19')).toBeTruthy();
+    expect(screen.queryByText('satır 20')).toBeNull();
+    expect(screen.queryByText('içerik')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Tamamını göster (30 satır)' }));
+    expect(screen.getByText('satır 29')).toBeTruthy();
+  });
+
+  it('başarısız yazma "uygulanmış olabilir" ve nedeniyle; diff yoksa nedeni yazılır', () => {
+    diffKarti({
+      durum: 'Basarisiz',
+      sonuc: 'yazılamadı: disk dolu',
+      degisiklikler: [{ yol: '.env', islem: 'Degisti', eklenen: 1, silinen: 1 }],
+    });
+    expect(screen.getByText('uygulanmış olabilir')).toBeTruthy();
+    expect(screen.queryByText('uygulanmadı')).toBeNull();
+    expect(screen.getByText(/disk dolu/)).toBeTruthy();
+    expect(screen.getByText(/Diff gösterilmiyor/)).toBeTruthy();
+  });
+
+  it('başarılı yazmada etiket yok; hunk\'sız diff aynı içerik demektir', () => {
+    diffKarti({ degisiklikler: [{ yol: 'a.py', islem: 'Degisti', eklenen: 0, silinen: 0, diff: '' }] });
+    expect(screen.queryByText('uygulanmış olabilir')).toBeNull();
+    expect(screen.getByText(/içerik öncekiyle aynı/)).toBeTruthy();
+  });
+});
 
 describe('araç kartında denetim rozeti', () => {
   it('denetleniyor', () => {

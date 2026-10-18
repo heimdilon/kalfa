@@ -32,6 +32,7 @@
   } from './bicim';
   import ButceKarti from './ButceKarti.svelte';
   import { geriAlmaSonucMetni } from './geriAlma';
+  import AracDiffi from './AracDiffi.svelte';
   import OnayKarti from './OnayKarti.svelte';
   import OnizlemeKarti from './OnizlemeKarti.svelte';
   import TerminalGorunumu from './TerminalGorunumu.svelte';
@@ -88,6 +89,7 @@
     status={d.status}
     statusLabel={d.etiket}
     icon={ARAC_IKONU[oge.arac] ?? 'box'}
+    acikBaslar={oge.degisiklikler.some((g) => g.diff)}
   >
     {#snippet rozet()}
       {#if mcp}
@@ -113,7 +115,15 @@
         <Badge tone="neutral" icon="shield-check">{m('denetim.rozet.atlandi')}</Badge>
       {/if}
     {/snippet}
-    {#if oge.terminal}
+    {#if oge.degisiklikler.length > 0}
+      {@const basarili = oge.durum === 'Basarili' || oge.durum === 'Suruyor'}
+      <AracDiffi degisiklikler={oge.degisiklikler} belirsiz={!basarili} />
+      <!-- Başarısız ya da iptal edilen yazmanın nedeni diff'in yanında kalır. -->
+      {#if !basarili && oge.sonuc}
+        {@const o = ciktiOnizlemesi(sonucGovdesi(oge.sonuc))}
+        <CodeBlock code={o.kod} truncated={o.kirpildi} maxHeight="320px" />
+      {/if}
+    {:else if oge.terminal}
       <TerminalGorunumu terminal={oge.terminal} />
     {:else if oge.sonuc}
       {@const o = ciktiOnizlemesi(sonucGovdesi(oge.sonuc))}

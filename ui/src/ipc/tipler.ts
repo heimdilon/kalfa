@@ -170,6 +170,16 @@ export interface DosyaOzeti {
   diff?: string | null;
 }
 
+/** Yazan çağrının bir dosyadaki değişikliği; araç kartında gösterilir. */
+export interface DosyaDegisikligi {
+  yol: string;
+  islem: 'Olusturuldu' | 'Degisti';
+  eklenen: number;
+  silinen: number;
+  /** Gizli dosyada, çok dosyalı yazmada ve 64 KiB üstünde yok. */
+  diff?: string | null;
+}
+
 export type DegisiklikTuru = 'Eklendi' | 'Degisti' | 'Silindi';
 
 /** Bir komutun çalışırken değişen dosyaları; geri alınamaz (K2). */
@@ -253,6 +263,8 @@ export type Olay =
   | { tip: 'TokenParcasi'; metin: string }
   | { tip: 'DusunceParcasi'; metin: string }
   | { tip: 'AracCagrisiBasladi'; cagri: CagriId; arac: string; aciklama: string }
+  /** Yazan çağrının değişiklikleri; `AracCagrisiBasladi`'dan hemen sonra. */
+  | { tip: 'DosyaDegisiklikleri'; cagri: CagriId; dosyalar: DosyaDegisikligi[] }
   | { tip: 'AracSonucu'; cagri: CagriId; arac: string; durum: AracDurumu; icerik: string }
   /** Aracın bildirdiği güvenlik uyarısı; `AracSonucu`'ndan sonra gelir. */
   | { tip: 'GuvenlikUyarisi'; cagri: CagriId; mesaj: string }
@@ -406,6 +418,7 @@ export type GorunumOgesi =
       durum: AracDurumu | null;
       sonuc: string | null;
       denetim?: DenetimSonucu | null;
+      degisiklikler?: DosyaDegisikligi[];
     }
   | { tip: 'TurSonu'; sira: number; tur: TurId | null; neden: BitisNedeni }
   | { tip: 'GuvenlikUyarisi'; sira: number; tur: TurId | null; mesaj: string }

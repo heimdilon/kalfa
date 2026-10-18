@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::arac::DosyaDegisiklikleri;
-use crate::geri_alma::GeriAlinamazNedeni;
+use crate::geri_alma::{DosyaYedegi, GeriAlinamazNedeni, OncekiHal};
 use crate::kimlik::{CagriId, TurId};
 use crate::protokol::AracDurumu;
 use crate::yol::CalismaYolu;
@@ -24,6 +24,35 @@ pub struct TurOzeti {
 pub enum DosyaIslemi {
     Olusturuldu,
     Degisti,
+}
+
+/// Yazan bir çağrının bir dosyadaki değişikliği; araç kartında gösterilir
+/// (masaüstü arayüzü tasarımı §4). "Başladı" kaydının yedeğinden üretilir;
+/// diff oradaki gibi süzülmüştür: yalnız tek dosyalı yazmada, en çok
+/// `DIFF_SINIRI` bayt, gizli dosyada hiç yok.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DosyaDegisikligi {
+    pub yol: CalismaYolu,
+    pub islem: DosyaIslemi,
+    pub eklenen: u32,
+    pub silinen: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
+}
+
+impl From<&DosyaYedegi> for DosyaDegisikligi {
+    fn from(y: &DosyaYedegi) -> Self {
+        Self {
+            yol: y.yol.clone(),
+            islem: match y.onceki {
+                OncekiHal::Yoktu => DosyaIslemi::Olusturuldu,
+                OncekiHal::Saklandi { .. } | OncekiHal::Buyuk { .. } => DosyaIslemi::Degisti,
+            },
+            eklenen: y.eklenen,
+            silinen: y.silinen,
+            diff: y.diff.clone(),
+        }
+    }
 }
 
 /// Bir değişikliğin geri alınıp alınamayacağı. Bilgiyi çekirdek verir;

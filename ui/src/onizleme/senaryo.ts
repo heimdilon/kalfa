@@ -455,15 +455,38 @@ export function anaSenaryosu(windows = false, gunlukSinir = false): SahteArka {
       [
         300,
         () =>
-          gonder(
-            kararlar.map((k, i) => ({
-              tip: 'AracSonucu',
-              cagri: k.cagri,
-              arac: 'dosya_duzenle',
-              durum: k.karar.tip === 'Onayla' ? 'Basarili' : 'Reddedildi',
-              icerik: i === 0 ? 'src/auth.rs: 1 satır değişti' : 'src/depo.rs: 2 satır değişti',
-            })),
-          ),
+          gonder([
+            // Onaylanan çağrı başlar ve diff'i araç kartına gelir (masaüstü arayüzü §4).
+            ...kararlar.flatMap((k, i): Olay[] =>
+              k.karar.tip === 'Onayla'
+                ? [
+                    { tip: 'AracCagrisiBasladi', cagri: k.cagri, arac: 'dosya_duzenle', aciklama: '' },
+                    {
+                      tip: 'DosyaDegisiklikleri',
+                      cagri: k.cagri,
+                      dosyalar: [
+                        {
+                          yol: i === 0 ? 'src/auth.rs' : 'src/depo.rs',
+                          islem: 'Degisti',
+                          eklenen: i === 0 ? 1 : 2,
+                          silinen: i === 0 ? 1 : 2,
+                          diff: i === 0 ? DIFF_AUTH : DIFF_DEPO,
+                        },
+                      ],
+                    },
+                  ]
+                : [],
+            ),
+            ...kararlar.map(
+              (k, i): Olay => ({
+                tip: 'AracSonucu',
+                cagri: k.cagri,
+                arac: 'dosya_duzenle',
+                durum: k.karar.tip === 'Onayla' ? 'Basarili' : 'Reddedildi',
+                icerik: i === 0 ? 'src/auth.rs: 1 satır değişti' : 'src/depo.rs: 2 satır değişti',
+              }),
+            ),
+          ]),
       ],
       [400, () => gonder([{ tip: 'TokenParcasi', metin: 'Değişiklikler uygulandı.' }])],
       [

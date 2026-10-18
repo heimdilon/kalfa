@@ -8,6 +8,7 @@ import type {
   ButceGorunumu,
   CagriId,
   DenetimSonucu,
+  DosyaDegisikligi,
   DurumOzeti,
   DusunceEforu,
   GecmisSayfasi,
@@ -58,6 +59,8 @@ export type EkranOgesi =
       terminal: Terminal | null;
       /** Güvenlik denetçisinin rozeti (3c); eski kayıtta ve kapalı kipte yok. */
       denetim: DenetimRozeti | null;
+      /** Yazan çağrının dosya değişiklikleri; yazmayan çağrıda boş. */
+      degisiklikler: DosyaDegisikligi[];
     })
   | (Ortak & {
       tip: 'OnayIstegi';
@@ -190,6 +193,7 @@ export function gecmisOgesi(o: GorunumOgesi): EkranOgesi {
         sonuc: o.sonuc,
         terminal: null,
         denetim: o.denetim ?? null,
+        degisiklikler: o.degisiklikler ?? [],
       };
     case 'TurSonu':
       return { ...o, anahtar: `g-${o.sira}-s` };
@@ -385,8 +389,15 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
         sonuc: null,
         terminal: null,
         denetim: null,
+        degisiklikler: [],
       });
       return;
+    case 'DosyaDegisiklikleri': {
+      const i = d.ogeler.findLastIndex((o) => o.tip === 'AracCagrisi' && o.cagri === yuk.cagri);
+      const o = d.ogeler[i];
+      if (o?.tip === 'AracCagrisi') d.ogeler[i] = { ...o, degisiklikler: yuk.dosyalar };
+      return;
+    }
     case 'AracSonucu': {
       // Eşi olmayan sonuç (kurtarmadaki bilinmeyen çağrı) geçmişte zaten görünür.
       const i = d.ogeler.findLastIndex((o) => o.tip === 'AracCagrisi' && o.cagri === yuk.cagri);
