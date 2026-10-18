@@ -515,9 +515,12 @@ hedefin kendi önekini bir **izin listesine** göre denetler: yalnız göreli
 yollar ve sürücü harfi yazımları (`C:\…`, `\\?\C:\…`) açılır. Ağa
 çıkabilen bütün önekler — `\\pay\…`, `\\?\UNC\…`, `\\.\UNC\…`,
 `\\?\GLOBALROOT\Device\Mup\…` — reddedilir ve dosya sistemine hiç
-dokunulmaz. Ayrıca `git config` çağrısı `--no-includes` ile yapılır ve
-`.git` git'i reddedilen bir yola yönlendiriyorsa git hiç çalıştırılmaz:
-git'in kendi depo keşfi ve `include.path` yönergeleri de ağa çıkabiliyordu.
+dokunulmaz. Ayrıca `git config` çalıştırılmadan önce git'in depo keşfinde
+izleyeceği zincir (`.git`'in `gitdir:` satırı, sonra onun `commondir`'i)
+aynı listeden geçirilir; zincirde reddedilen bir yol varsa git hiç
+çalıştırılmaz. `include.path` çözümü **kapatılmadı**: `--no-includes`
+denendi ve geri alındı, çünkü include edilen dosyadaki `core.hooksPath`
+görülmeyince o kanca dizini korumasız kalıyordu.
 
 Reddedilen hedefte **kapalı düşülür**: dosya araçlarının korumasını
 hesaplayan `goreli_yap` çalışma alanının tamamını korur. "Reddedilen yol

@@ -348,11 +348,16 @@ fn hooks_path(kok: &Path) -> Option<String> {
 /// `core.hooksPath`'in etkin değeri (depo + kullanıcı yapılandırması).
 /// `git config` yapılandırmayı yalnızca okur; kanca ya da fsmonitor çalıştırmaz.
 ///
-/// Dönen değer sonradan denetlenmeden önce git'in kendisi ağa çıkabilir:
-/// depo keşfi `.git`'teki `gitdir:` satırını izler ve `include.path`
-/// yönergeleri başka bir dosyayı okutur. İkisi de ağ yolu olabilir, bu
-/// yüzden `.git`'in yönlendirmesi önce burada denetlenir ve `--no-includes`
-/// ile include çözümü kapatılır.
+/// Dönen değer denetlenmeden önce git'in kendi depo keşfi ağa çıkabilir:
+/// `.git`'in `gitdir:` satırı ve onun `commondir`'i izlenir. İkisi de
+/// burada, git çalıştırılmadan önce denetlenir.
+///
+/// `include.path` çözümü kapatılmaz (`--no-includes` denendi ve geri
+/// alındı): include'u atlamak, include edilen dosyadaki `core.hooksPath`'i
+/// göremediğimiz için o kanca dizinini korumasız bırakırdı. Kalan sınır:
+/// include edilen bir yol ağ paylaşımını gösterebilir. Bunun için
+/// saldırganın okunan yapılandırma dosyalarından birini yazması gerekir;
+/// `.git` yalıtımda salt okunurdur ve klonlama yapılandırma taşımaz.
 fn hooks_path_degeri(kok: &Path) -> Option<String> {
     if git_agi_izleyebilir_mi(kok) {
         return None;
@@ -360,7 +365,7 @@ fn hooks_path_degeri(kok: &Path) -> Option<String> {
     let cikti = Command::new("git")
         .arg("-C")
         .arg(kok)
-        .args(["config", "--no-includes", "--get", "core.hooksPath"])
+        .args(["config", "--get", "core.hooksPath"])
         .output()
         .ok()?;
     if !cikti.status.success() {
@@ -404,17 +409,28 @@ mod testler {
     }
 }
 
-/// Çalışma alanının `.git`'i git'i bir ağ yoluna yönlendiriyor mu. Doğruysa
-/// git çalıştırılmaz: depo keşfi sırasında o yolu git kendisi açardı.
+/// Git'in depo keşfi sırasında izleyeceği zincirde izin listesi dışında bir
+/// yol var mı: önce `.git`'in `gitdir:` satırı, sonra onun `commondir`'i.
+/// Doğruysa git çalıştırılmaz, çünkü o yolu git kendisi açardı.
 fn git_agi_izleyebilir_mi(kok: &Path) -> bool {
     // `.git` dizinse ya da okunamıyorsa yönlendirme yoktur.
     let Ok(icerik) = std::fs::read_to_string(kok.join(".git")) else {
         return false;
     };
-    icerik
+    let Some(hedef) = icerik
         .lines()
         .find_map(|s| s.trim().strip_prefix("gitdir:"))
-        .is_some_and(|hedef| !yerel_hedef_mi(Path::new(hedef.trim())))
+        .map(str::trim)
+    else {
+        return false;
+    };
+    let Some(gitdir) = yerel_birlestir(kok, hedef).and_then(|g| g.canonicalize().ok()) else {
+        // İzin listesi dışı ya da çözülemeyen gitdir: git çalıştırılmaz.
+        return true;
+    };
+    // Git ortak dizini de bu zincirden izler.
+    std::fs::read_to_string(gitdir.join("commondir"))
+        .is_ok_and(|m| !yerel_hedef_mi(Path::new(m.trim())))
 }
 
 fn goreli_yap(kok: &Path, hedef: &Path) -> Option<String> {
