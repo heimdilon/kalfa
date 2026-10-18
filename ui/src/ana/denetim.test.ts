@@ -53,10 +53,22 @@ describe('araç kartında dosya diff\'i (masaüstü arayüzü §4)', () => {
     expect(screen.getByText('satır 29')).toBeTruthy();
   });
 
-  it('başarısız çağrının değişikliği uygulanmadı; diff yoksa nedeni yazılır', () => {
-    diffKarti({ durum: 'Basarisiz', degisiklikler: [{ yol: '.env', islem: 'Degisti', eklenen: 1, silinen: 1 }] });
-    expect(screen.getByText('uygulanmadı')).toBeTruthy();
+  it('başarısız yazma "uygulanmış olabilir" ve nedeniyle; diff yoksa nedeni yazılır', () => {
+    diffKarti({
+      durum: 'Basarisiz',
+      sonuc: 'yazılamadı: disk dolu',
+      degisiklikler: [{ yol: '.env', islem: 'Degisti', eklenen: 1, silinen: 1 }],
+    });
+    expect(screen.getByText('uygulanmış olabilir')).toBeTruthy();
+    expect(screen.queryByText('uygulanmadı')).toBeNull();
+    expect(screen.getByText(/disk dolu/)).toBeTruthy();
     expect(screen.getByText(/Diff gösterilmiyor/)).toBeTruthy();
+  });
+
+  it('başarılı yazmada etiket yok; hunk\'sız diff aynı içerik demektir', () => {
+    diffKarti({ degisiklikler: [{ yol: 'a.py', islem: 'Degisti', eklenen: 0, silinen: 0, diff: '' }] });
+    expect(screen.queryByText('uygulanmış olabilir')).toBeNull();
+    expect(screen.getByText(/içerik öncekiyle aynı/)).toBeTruthy();
   });
 });
 

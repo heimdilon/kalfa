@@ -2,8 +2,10 @@
   Yazan araç çağrısının dosya değişiklikleri (masaüstü arayüzü tasarımı §4).
   Dosya başına ad, "+N −M" ve diff'in ilk 20 satırı; fazlası "Tamamını
   göster" ile açılır. Diff çekirdekten süzülmüş gelir: gizli dosyada, çok
-  dosyalı yazmada ve 64 KiB üstünde yoktur. Çağrı başarısızsa ya da iptal
-  edildiyse değişiklik "uygulanmadı" diye işaretlenir.
+  dosyalı yazmada ve 64 KiB üstünde yoktur. Çağrı başarılı bitmediyse yazma
+  yarıda kalmış olabilir: değişiklik "uygulanmış olabilir" diye işaretlenir
+  (dosya kesilip yazılırken G/Ç hatası ya da yazma sonrası denetim hatası).
+  Hunk'sız diff aynı içeriğin yazıldığı anlamına gelir.
 -->
 <script lang="ts">
   import { SvelteSet } from 'svelte/reactivity';
@@ -18,8 +20,8 @@
 
   let {
     degisiklikler,
-    uygulanmadi = false,
-  }: { degisiklikler: DosyaDegisikligi[]; uygulanmadi?: boolean } = $props();
+    belirsiz = false,
+  }: { degisiklikler: DosyaDegisikligi[]; belirsiz?: boolean } = $props();
 
   const acik = new SvelteSet<number>();
 
@@ -39,7 +41,11 @@
         <span class="yol" title={d.yol}>{d.yol}</span>
         <span class="arti">+{d.eklenen}</span>
         <span class="eksi">−{d.silinen}</span>
-        {#if uygulanmadi}<Badge tone="warn">{m('arac.diff.uygulanmadi')}</Badge>{/if}
+        {#if belirsiz}
+          <span title={m('arac.diff.belirsiz_aciklama')}>
+            <Badge tone="warn">{m('arac.diff.belirsiz')}</Badge>
+          </span>
+        {/if}
       </div>
       {#if d.parcalar.length > 0}
         {@const gosterilen = acik.has(i) ? d.parcalar : d.kisa.parcalar}
@@ -55,6 +61,8 @@
             {acik.has(i) ? m('arac.diff.daralt') : m('arac.diff.tamami', { sayi: d.satir })}
           </Button>
         {/if}
+      {:else if d.diff != null}
+        <p class="yok">{m('arac.diff.ayni')}</p>
       {:else}
         <p class="yok">{m('arac.diff.yok')}</p>
       {/if}
