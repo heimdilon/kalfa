@@ -10,22 +10,34 @@ use std::process::Command;
 
 use crate::yol::CalismaYolu;
 
-/// Çalışma alanından okunan bir git hedefinin kendi öneki yerel disk mi.
-/// UNC (`\\pay\…`), `\\?\` ve aygıt yazımları reddedilir: Windows'ta böyle
-/// bir yolu açmak ağa kimlik bilgisi gönderebilir. `kalfa-tools`'taki
-/// `baglantisiz_oku` ile aynı kuraldır ve her platformda uygulanır.
+/// Çalışma alanından okunan bir git hedefi açılabilir mi. İzin listesidir:
+/// yalnız öneksiz (göreli) yollar, sürücü harfi (`C:\…`) ve onun
+/// normalleştirmesi kapatılmış hâli (`\\?\C:\…`) kabul edilir.
+///
+/// Geri kalan bütün önekler ağa çıkabilir, bu yüzden açılmazlar: `\\pay\…`
+/// ve `\\?\UNC\…` doğrudan; `\\.\UNC\pay\…` aygıt ad alanı üzerinden;
+/// `\\?\GLOBALROOT\Device\Mup\…` çok yollu sağlayıcı üzerinden. Windows'ta
+/// böyle bir yolu açmak ağa kimlik bilgisi gönderebilir. Engel listesi
+/// yazmak bu yüzden yetmez (güvenlik sınırları izin listesiyle yazılır).
 ///
 /// Yalnız hedefin kendi öneki denetlenir; tabanın öneki denetlenmez, çünkü
 /// kanonik yollar Windows'ta zaten `\\?\C:\…` yazımındadır.
+///
+/// Bilinen sınır: `Prefix::Disk` sürücü harfi demektir, yerel disk değil.
+/// Ağa bağlanmış bir sürücü (`Z:`) bu denetimden geçer. Taban sürücüye
+/// kısıtlamak, git dizini başka bir yerel sürücüde olan depolarda korumayı
+/// düşüreceği için seçilmedi; harfi kullanıcı kendisi bağlar.
 fn yerel_hedef_mi(hedef: &Path) -> bool {
-    !matches!(
-        hedef.components().next(),
-        Some(Component::Prefix(onek)) if !matches!(onek.kind(), Prefix::Disk(_))
-    )
+    match hedef.components().next() {
+        Some(Component::Prefix(onek)) => {
+            matches!(onek.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
+        }
+        _ => true,
+    }
 }
 
-/// `taban`'a eklenmiş hedef; hedef yerel disk yolu değilse birleştirilmez,
-/// böylece dosya sistemine hiç dokunulmaz.
+/// `taban`'a eklenmiş hedef; hedef açılabilir değilse birleştirilmez, böylece
+/// dosya sistemine hiç dokunulmaz.
 fn yerel_birlestir(taban: &Path, deger: &str) -> Option<PathBuf> {
     let hedef = Path::new(deger);
     yerel_hedef_mi(hedef).then(|| taban.join(hedef))
@@ -67,11 +79,19 @@ pub struct KorumaliYol {
 /// - `core.hooksPath` hedefi yalıtımda görünen, `.git`'in ve dış git
 ///   dizinlerinin dışındaki bir yerdeyse ayrıca korunur.
 /// - `.git` sembolik bağlantıysa korunmaz ve izlenmez (bilinen sınır).
-/// - `.git`'ten, `commondir`'den ya da `core.hooksPath`'ten okunan hedef ağ
-///   yolu (UNC), `\\?\` ya da aygıt yazımındaysa açılmaz: Windows'ta böyle
-///   bir yolu açmak ağa kimlik bilgisi gönderebilir. Bilinen sınır: hedef
-///   düz bir yerel yolken yoldaki bir bağlantı ağ paylaşımını gösteriyorsa
-///   `canonicalize` onu yine izler; burada tutamaçlarla yürünmez.
+/// - `.git`'ten, `commondir`'den ya da `core.hooksPath`'ten okunan hedef
+///   yalnız izin listesindeyse açılır (göreli yol ya da sürücü harfi;
+///   bkz. [`yerel_hedef_mi`]). Ağa çıkabilen her önek açılmaz: Windows'ta
+///   böyle bir yolu açmak ağa kimlik bilgisi gönderebilir. Dosya
+///   araçlarının korumasını hesaplayan yolda reddedilen hedef kapalı
+///   düşer: alanın tamamı korunur.
+///   Bilinen sınırlar: (a) hedef izin listesindeyken yoldaki bir bağlantı
+///   ağ paylaşımını gösteriyorsa `canonicalize` onu yine izler, burada
+///   tutamaçlarla yürünmez; (b) ağa bağlanmış bir sürücü harfi (`Z:`)
+///   yerel sayılır; (c) reddedilen hedefi olan bir `.git` dosyasının
+///   yönlendirdiği dizin yalıtımda salt okunur yapılmaz — yalıtımda yeni
+///   oluşturulan `.git` dosyası ve `commondir` zaten
+///   `kalfa-sandbox`'ın `yeni_git_denetle` izin listesinde tehlikelidir.
 pub fn git_yerlesimi(kok: &Path) -> GitYerlesimi {
     let Ok(kok) = kok.canonicalize() else {
         return GitYerlesimi::default();
@@ -327,11 +347,20 @@ fn hooks_path(kok: &Path) -> Option<String> {
 
 /// `core.hooksPath`'in etkin değeri (depo + kullanıcı yapılandırması).
 /// `git config` yapılandırmayı yalnızca okur; kanca ya da fsmonitor çalıştırmaz.
+///
+/// Dönen değer sonradan denetlenmeden önce git'in kendisi ağa çıkabilir:
+/// depo keşfi `.git`'teki `gitdir:` satırını izler ve `include.path`
+/// yönergeleri başka bir dosyayı okutur. İkisi de ağ yolu olabilir, bu
+/// yüzden `.git`'in yönlendirmesi önce burada denetlenir ve `--no-includes`
+/// ile include çözümü kapatılır.
 fn hooks_path_degeri(kok: &Path) -> Option<String> {
+    if git_agi_izleyebilir_mi(kok) {
+        return None;
+    }
     let cikti = Command::new("git")
         .arg("-C")
         .arg(kok)
-        .args(["config", "--get", "core.hooksPath"])
+        .args(["config", "--no-includes", "--get", "core.hooksPath"])
         .output()
         .ok()?;
     if !cikti.status.success() {
@@ -343,9 +372,55 @@ fn hooks_path_degeri(kok: &Path) -> Option<String> {
     (!deger.is_empty()).then_some(deger)
 }
 
+#[cfg(all(test, windows))]
+mod testler {
+    use super::yerel_hedef_mi;
+    use std::path::Path;
+
+    /// İzin listesi: yalnız göreli yollar ve sürücü harfi yazımları açılır.
+    /// Aygıt ad alanı da reddedilir, çünkü `\\.\UNC\…` ve
+    /// `GLOBALROOT\Device\Mup\…` ağa çıkar.
+    #[test]
+    fn yalniz_goreli_ve_surucu_yollari_acilir() {
+        for red in [
+            r"\\pay\dizin",
+            r"\\127.0.0.1\pay\gd",
+            "//127.0.0.1/pay/gd",
+            r"\\?\UNC\pay\dizin",
+            r"\\.\UNC\pay\dizin",
+            r"\\.\C:\depo",
+            r"\\?\GLOBALROOT\Device\Mup\pay\depo",
+        ] {
+            assert!(!yerel_hedef_mi(Path::new(red)), "{red}");
+        }
+        for kabul in [
+            "modul-git",
+            "../ana/.git/worktrees/dal",
+            r"C:\depo\.git",
+            r"\\?\C:\depo\.git",
+        ] {
+            assert!(yerel_hedef_mi(Path::new(kabul)), "{kabul}");
+        }
+    }
+}
+
+/// Çalışma alanının `.git`'i git'i bir ağ yoluna yönlendiriyor mu. Doğruysa
+/// git çalıştırılmaz: depo keşfi sırasında o yolu git kendisi açardı.
+fn git_agi_izleyebilir_mi(kok: &Path) -> bool {
+    // `.git` dizinse ya da okunamıyorsa yönlendirme yoktur.
+    let Ok(icerik) = std::fs::read_to_string(kok.join(".git")) else {
+        return false;
+    };
+    icerik
+        .lines()
+        .find_map(|s| s.trim().strip_prefix("gitdir:"))
+        .is_some_and(|hedef| !yerel_hedef_mi(Path::new(hedef.trim())))
+}
+
 fn goreli_yap(kok: &Path, hedef: &Path) -> Option<String> {
-    // Ağ ya da `\\?\` yazımlı hedef açılmaz. Burada koruma hesaplanır:
-    // çözemediğimiz hedef korumayı düşürmez, alanın tamamı korunur.
+    // Ağ yolu açılmaz; açmadan da içeride mi dışarıda mı olduğu bilinemez
+    // (çalışma alanının kendisi bir paylaşımda olabilir). Kapalı düşülür:
+    // alanın tamamı korunur, tıpkı belirsiz git hedefinde olduğu gibi.
     if !yerel_hedef_mi(hedef) {
         return Some(".".to_string());
     }

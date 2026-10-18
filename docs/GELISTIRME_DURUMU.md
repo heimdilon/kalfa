@@ -511,18 +511,30 @@ UNC (`\\pay\…`), `\\?\` ya da aygıt yazımındaysa Windows bu yolu açarken
 ağa kimlik bilgisi gönderebiliyordu.
 
 Artık tek bir `yerel_hedef_mi`/`yerel_birlestir` çifti bütün bu noktalarda
-hedefin kendi önekini denetler ve yerel disk değilse dosya sistemine hiç
-dokunmaz; kural `kalfa-tools`'taki `baglantisiz_oku` ile aynıdır ve her
-platformda uygulanır. Yalıtıma dizin açan yolda (`git_yerlesimi`,
-`yonlendirilen_dizinler`) hedef reddedilir; dosya araçlarının korumasını
-hesaplayan `goreli_yap`'ta ise çözülemeyen hedef korumayı düşürmesin diye
-çalışma alanının tamamı korunur. Bilinen sınır: hedef düz yerel yolken
-yoldaki bir bağlantı ağ paylaşımını gösteriyorsa `canonicalize` onu yine
-izler; burada tutamaçlarla yürünmez.
+hedefin kendi önekini bir **izin listesine** göre denetler: yalnız göreli
+yollar ve sürücü harfi yazımları (`C:\…`, `\\?\C:\…`) açılır. Ağa
+çıkabilen bütün önekler — `\\pay\…`, `\\?\UNC\…`, `\\.\UNC\…`,
+`\\?\GLOBALROOT\Device\Mup\…` — reddedilir ve dosya sistemine hiç
+dokunulmaz. Ayrıca `git config` çağrısı `--no-includes` ile yapılır ve
+`.git` git'i reddedilen bir yola yönlendiriyorsa git hiç çalıştırılmaz:
+git'in kendi depo keşfi ve `include.path` yönergeleri de ağa çıkabiliyordu.
 
-İki yeni test (`izin.rs`) önce düştü, sonra geçti: yerel bir dizini `\\?\`
-yazımıyla gösteren `gitdir:` artık açılmıyor, aynı yazım dosya araçlarının
-korumasında alanın tamamını koruyor. Windows workspace **1478/0/19**,
+Reddedilen hedefte **kapalı düşülür**: dosya araçlarının korumasını
+hesaplayan `goreli_yap` çalışma alanının tamamını korur. "Reddedilen yol
+zaten çalışma alanının dışındadır" varsayımı yanlıştı; hem çalışma alanı
+bir paylaşımda olabilir hem de aygıt ad alanı alanın içini başka yazımla
+adlandırabilir.
+
+Bilinen sınırlar modül belgesinde: yoldaki bir bağlantının ağ paylaşımını
+göstermesi, ağa bağlanmış sürücü harfi (`Z:`) ve reddedilen hedefli bir
+`.git` dosyasının yönlendirdiği dizinin yalıtımda salt okunur
+yapılmaması — sonuncusunu `kalfa-sandbox`'ın `yeni_git_denetle` izin
+listesi karşılıyor: yalıtımda yeni oluşturulan `.git` dosyası ve
+`commondir` zaten tehlikeli sayılıyor.
+
+Üç yeni test: izin listesinin kendisi (birim; dolaylı ağ yazımları dahil),
+yerel `\\?\C:\…` yönlendirmesinin yalıtımda salt okunur kalması ve ağ
+hedefinde korumanın alanın tamamına düşmesi. Windows workspace **1479/0/19**,
 Ubuntu 24.04 (WSL) workspace **1431/0/19**; iki platformda workspace clippy
 ve `cargo fmt` temiz. Güvenlik sınırına dokunduğu için gerçek yalıtım da
 koştu: Windows AppContainer uyumluluk **24/24**, Linux yalıtım **32/32** ve
