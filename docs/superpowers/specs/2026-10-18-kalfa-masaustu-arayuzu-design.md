@@ -1,8 +1,9 @@
 # Kalfa masaüstü arayüzü: onay kartı, araç diff'i, başlık çubuğu, sağ panel — Tasarım
 
 **Tarih:** 2026-10-18.
-**Durum:** r2; kullanıcı 18 Ekim'de onayladı. r2: §4 yeni kayıt türü yerine
-mevcut `AracBasladi.yedekler`'i kullanır. Plan:
+**Durum:** r2, uygulandı: #25 (§4), #26 (§3), #27 (§5) ve #28 (§6) 18 Ekim'de
+birleşti (main `032e9a3`). Uygulamadaki farklar planın Görev 4 notundadır.
+r2: §4 yeni kayıt türü yerine mevcut `AracBasladi.yedekler`'i kullanır. Plan:
 [2026-10-18-kalfa-masaustu-arayuzu.md](../plans/2026-10-18-kalfa-masaustu-arayuzu.md).
 **Kaynak:** Kullanıcının 18 Ekim denemesi (CI kurucusu `bfe198a`, deneme
 projesi `kalfa-deneme`). Açılır liste hatası ayrı PR'da (#23) düzeltildi.

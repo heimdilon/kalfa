@@ -487,17 +487,18 @@ ve CI'ın yedi işi yeşilken birleşti: main `bfe198a`. Birleşmeden önce Code
 PR incelemesinin yedi bulgusu `20ec2ce` ile düzeltildi. PR worktree'si ve
 WSL kopyası kaldırıldı. **Yerel MCP (1.1a) tamamlandı.**
 
-**Masaüstü arayüzü (18 Ekim, KALFA-25):** Kullanıcının ilk denemesindeki
-geri bildirimle dört adım birleşti:
+**Masaüstü arayüzü tamamlandı (18 Ekim, KALFA-25):** Kullanıcının ilk
+denemesindeki geri bildirimle şunlar birleşti:
 - açılır liste düzeltmesi (#23);
 - araç kartında dosya diff'i (#25);
 - konuşmadaki onay kartı (#26);
-- Windows'ta Kalfa'ya özel başlık çubuğu (#27).
+- Windows'ta Kalfa'ya özel başlık çubuğu (#27);
+- sağ panel: Ortam, Değişiklikler, Dosyalar (#28, main `032e9a3`).
 
-Sağ panel (Ortam, Değişiklikler, Dosyalar) bu planın son görevidir. Dosyalar
-bölümü salt okurdur ve yol değil oturuma bağlı kimlik alır. Tasarım ve plan
-taslak PR #24'tedir. Terminal, tarayıcı, yan sohbet ve plan bölümleri sonraya
-kaldı.
+Dosyalar bölümü salt okurdur ve yol değil oturuma bağlı kimlik alır.
+[Tasarım](superpowers/specs/2026-10-18-kalfa-masaustu-arayuzu-design.md),
+[plan](superpowers/plans/2026-10-18-kalfa-masaustu-arayuzu.md). Terminal,
+tarayıcı, yan sohbet ve plan bölümleri sonraya kaldı.
 
 **Sıradaki tek iş:** MCP 1.1b'nin (uzak Streamable HTTP ve OAuth, 1.1a
 tasarımı §2) tasarım belgesini Claude yazar:
