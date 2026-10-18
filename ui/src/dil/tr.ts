@@ -137,6 +137,10 @@ export const tr = {
   'konusma.diger': 'Diğer seçenekler',
   'kenar.gizle': 'Kenar çubuğunu gizle',
   'kenar.goster': 'Kenar çubuğunu göster',
+  'pencere.kucult': 'Simge durumuna küçült',
+  'pencere.buyut': 'Büyüt',
+  'pencere.geri_yukle': 'Önceki boyutuna getir',
+  'pencere.kapat': 'Pencereyi kapat',
   'konusma.karsilama.baslik': 'Bir oturum seçin ya da yeni bir oturum başlatın.',
   'konusma.karsilama.metin':
     'Kalfa seçtiğiniz klasörde çalışır. Dosya yazmadan önce onayınızı ister.',

@@ -118,6 +118,10 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         mcp_yeniden_baslat,
         mcp_baslatma_karti_yanitla,
         mcp_baslatma_izni_geri_al,
+        crate::pencereler::pencere_kucult,
+        crate::pencereler::pencere_buyut_degistir,
+        crate::pencereler::pencere_kapat,
+        crate::pencereler::pencere_surukle,
         sart_penceresi_durumu,
         anahtari_kaydet,
         sartlari_kabul_et,
@@ -131,6 +135,8 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         crate::e2e::e2e_kayit_uret,
         #[cfg(feature = "e2e")]
         crate::e2e::e2e_ana_pencereyi_kapat,
+        #[cfg(feature = "e2e")]
+        crate::e2e::e2e_pencere_durumu,
     ])
 }
 

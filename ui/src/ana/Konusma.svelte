@@ -181,7 +181,7 @@
 <section class="konusma" aria-label={m('konusma.ad')}>
   {#if ekran}
     <header class="ust">
-      {#if !durum.kenarAcik}
+      {#if !durum.kenarAcik && !durum.ozelCerceve}
         <IconButton
           icon="panel-left"
           size="sm"
@@ -189,8 +189,9 @@
           onclick={() => (durum.kenarAcik = true)}
         />
       {/if}
-      <h2>{baslik}</h2>
-      {#if ekran.calisma_alani}
+      <!-- Windows'ta başlık ve proje başlık çubuğunda görünür. -->
+      <h2 class={{ 'gizli-erisilebilir': durum.ozelCerceve }}>{baslik}</h2>
+      {#if ekran.calisma_alani && !durum.ozelCerceve}
         <span class="cip" title={ekran.calisma_alani}>
           <Icon name="folder" size={13} />{projeAdi(ekran.calisma_alani)}
         </span>
