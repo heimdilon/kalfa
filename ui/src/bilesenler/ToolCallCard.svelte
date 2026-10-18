@@ -26,6 +26,8 @@
     children?: Snippet;
     /** Satırın altında rozetler (örneğin güvenlik denetçisinin, 3c). */
     rozet?: Snippet;
+    /** Çıktı bittiğinde de açık başlar (örneğin dosya diff'i). */
+    acikBaslar?: boolean;
   }
 
   let {
@@ -38,6 +40,7 @@
     class: sinif,
     children,
     rozet,
+    acikBaslar = false,
   }: Props = $props();
 
   const DURUM_IKONU: Record<Durum, IkonAdi> = {
@@ -67,7 +70,7 @@
 
 <section class={['arac', sinif]}>
   {#if children}
-    <details open={status === 'running' || status === 'failed'}>
+    <details open={acikBaslar || status === 'running' || status === 'failed'}>
       <summary class="satir">{@render satir()}</summary>
       <div class="cikti">{@render children()}</div>
     </details>

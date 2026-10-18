@@ -13,7 +13,7 @@ use crate::izin::Kip;
 use crate::kabuk::KabukTarifi;
 use crate::kimlik::{CagriId, IslemId, OturumId, TurId};
 use crate::muhur::OnayMuhru;
-use crate::tur_ozeti::{GeriAlinabilirlik, TurOzeti};
+use crate::tur_ozeti::{DosyaDegisikligi, GeriAlinabilirlik, TurOzeti};
 
 pub const SEMA_SURUMU: u32 = 1;
 
@@ -267,6 +267,12 @@ pub enum Olay {
         cagri: CagriId,
         arac: String,
         aciklama: String,
+    },
+    /// Yazan çağrının dosya değişiklikleri (masaüstü arayüzü tasarımı §4);
+    /// `AracCagrisiBasladi`'nın hemen ardından, sonuçtan önce gelir.
+    DosyaDegisiklikleri {
+        cagri: CagriId,
+        dosyalar: Vec<DosyaDegisikligi>,
     },
     AracSonucu {
         cagri: CagriId,

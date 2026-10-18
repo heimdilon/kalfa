@@ -226,6 +226,22 @@ async fn gizli_dosyanin_diffi_kayda_yazilmaz() {
     let mut d = o.surucu(yaz, ".env", Kip::Proje, true);
     d.gonder(mesaj()).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    // Araç kartına giden değişiklik de diff taşımaz (masaüstü arayüzü §4).
+    let degisiklikler: Vec<_> = d
+        .gecmis
+        .iter()
+        .filter_map(|z| match &z.yuk {
+            Olay::DosyaDegisiklikleri { dosyalar, .. } => Some(dosyalar.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert_eq!(degisiklikler.len(), 1);
+    assert_eq!(degisiklikler[0].yol.as_str(), ".env");
+    assert_eq!(
+        degisiklikler[0].diff, None,
+        "gizli dosyanın diff'i arayüze gitmez"
+    );
     d.kapat().await;
     let yedekler = o.yedekler();
     assert_eq!(yedekler[0].yol.as_str(), ".env");

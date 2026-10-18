@@ -64,6 +64,26 @@ export function diffCozumle(metin: string): DiffParcasi[] {
   return parcalar;
 }
 
+/**
+ * İlk `enCok` satırı tutar (blok başlıkları sayılmaz); araç kartındaki kısa
+ * önizleme. `kirpildi`: atılan satır vardı.
+ */
+export function diffKirp(
+  parcalar: DiffParcasi[],
+  enCok: number,
+): { parcalar: DiffParcasi[]; kirpildi: boolean } {
+  const sonuc: DiffParcasi[] = [];
+  let kalan = enCok;
+  for (const p of parcalar) {
+    if (kalan <= 0) return { parcalar: sonuc, kirpildi: true };
+    const satirlar = p.satirlar.slice(0, kalan);
+    sonuc.push({ baslik: p.baslik, satirlar });
+    kalan -= satirlar.length;
+    if (satirlar.length < p.satirlar.length) return { parcalar: sonuc, kirpildi: true };
+  }
+  return { parcalar: sonuc, kirpildi: false };
+}
+
 /** Eklenen ve silinen satır sayısı: dosya listesindeki "+12 −4" notu. */
 export function diffSayilari(parcalar: DiffParcasi[]): { eklenen: number; silinen: number } {
   let eklenen = 0;
