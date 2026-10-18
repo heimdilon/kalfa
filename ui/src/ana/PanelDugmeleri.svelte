@@ -32,7 +32,7 @@
     size="sm"
     label={m(AD[b])}
     active={durum.sagBolum === b}
-    disabled={!durum.aktif}
+    disabled={!durum.aktif || (b !== 'degisiklikler' && !!durum.aktif.salt_okunur)}
     onclick={() => durum.sagBolumuDegistir(b)}
   />
 {/each}

@@ -1,11 +1,12 @@
 <!--
   Sağ panelin Ortam bölümü (masaüstü arayüzü tasarımı §6.2): çalışma alanı
   ve git dalı, izin kipi, yalıtım, model ve efor; son isteğin bağlam
-  kullanımı; bu oturumda değişen dosyalar. Dosyaya tıklamak Değişiklikler
-  bölümünde açar.
+  kullanımı; bu oturumda değişen dosyalar. Değişen dosyalar ve özetleme
+  sayısı bütün kayıttan Rust'ta toplanır (yüklenen geçmiş sayfasından
+  bağımsız); yeni tur özeti, geri alma ya da bağlam özeti gelince yenilenir.
+  Dosyaya tıklamak Değişiklikler bölümünde açar.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { EFOR_ADI, KIP_ADI, m } from '../dil/tr';
   import * as ipc from '../ipc/ana';
   import { komutHatasi } from '../ipc/hata';
@@ -25,29 +26,27 @@
   let ozet = $state<CalismaAlaniOzeti | null>(null);
   let hata = $state<string | null>(null);
 
-  onMount(() => {
-    if (!ekran) return;
-    ipc.calismaAlaniOzeti(ekran.oturum).then(
-      (o) => (ozet = o),
-      (e) => (hata = komutHatasi(e).mesaj),
-    );
-  });
-
-  const ozetlemeSayisi = $derived(
-    ekran?.ogeler.filter((o) => o.tip === 'BaglamOzetlendi').length ?? 0,
+  /** Toplamları değiştiren canlı öğelerin sayısı; değişince özet yeniden okunur. */
+  const degisimler = $derived(
+    ekran?.ogeler.filter(
+      (o) => o.tip === 'TurOzeti' || o.tip === 'GeriAlma' || o.tip === 'BaglamOzetlendi',
+    ).length ?? 0,
   );
 
-  /** Tur özetlerinin birleşimi: geri alınmamış turlarda değişen dosyalar. */
-  const ciktilar = $derived.by(() => {
-    const dosyalar = new Map<string, { eklenen: number; silinen: number }>();
-    for (const oge of ekran?.ogeler ?? []) {
-      if (oge.tip !== 'TurOzeti' || oge.geri_alindi) continue;
-      for (const d of oge.ozet.dosyalar) {
-        const t = dosyalar.get(d.yol) ?? { eklenen: 0, silinen: 0 };
-        dosyalar.set(d.yol, { eklenen: t.eklenen + d.eklenen, silinen: t.silinen + d.silinen });
-      }
-    }
-    return [...dosyalar];
+  const oturum = $derived(ekran?.oturum);
+
+  // Yalnız oturum ya da toplamı değiştiren öğe sayısı değişince: her akış
+  // parçasında bütün kaydı yeniden okutmaz.
+  $effect(() => {
+    void degisimler;
+    if (!oturum) return;
+    ipc.calismaAlaniOzeti(oturum).then(
+      (o) => {
+        ozet = o;
+        hata = null;
+      },
+      (e) => (hata = komutHatasi(e).mesaj),
+    );
   });
 </script>
 
@@ -112,23 +111,23 @@
           })}
         </p>
       {/if}
-      {#if ozetlemeSayisi > 0}
-        <p class="soluk">{m('sag.baglam_ozetleme', { sayi: ozetlemeSayisi })}</p>
+      {#if ozet && ozet.ozetlenen > 0}
+        <p class="soluk">{m('sag.baglam_ozetleme', { sayi: ozet.ozetlenen })}</p>
       {/if}
     </section>
 
     <section>
       <h3>{m('sag.ciktilar')}</h3>
-      {#if ciktilar.length === 0}
+      {#if !ozet || ozet.ciktilar.length === 0}
         <p class="soluk">{m('sag.ciktilar_bos')}</p>
       {:else}
         <ul>
-          {#each ciktilar as [yol, s] (yol)}
+          {#each ozet.ciktilar as { yol, eklenen, silinen } (yol)}
             <li>
               <button type="button" onclick={() => ondosya(yol)}>
                 <span class="yol-ad">{yol}</span>
-                <span class="arti">+{s.eklenen}</span>
-                <span class="eksi">−{s.silinen}</span>
+                <span class="arti">+{eklenen}</span>
+                <span class="eksi">−{silinen}</span>
               </button>
             </li>
           {/each}

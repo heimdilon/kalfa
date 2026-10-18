@@ -154,3 +154,32 @@ async fn ozet_git_dalini_okur() {
             .unwrap();
     assert!(dizin.girdiler.iter().all(|g| g.ad != ".git"));
 }
+
+/// Görünüm oturumun açılışta aldığı tutamacı kullanır: çalışma alanının
+/// yolu sonradan başka bir yere bağlansa da seçilen klasörde kalır. (Linux:
+/// Windows açık tutamaçlı dizinin adının değişmesine izin vermez.)
+#[cfg(unix)]
+#[tokio::test]
+async fn calisma_alani_yolu_degistirilse_de_secilen_klasor_gorunur() {
+    let o = ortam().await;
+    let kok = o.alan.path().join("proje");
+    std::fs::create_dir(&kok).unwrap();
+    std::fs::write(kok.join("ic.txt"), "ic").unwrap();
+    let dis = tempfile::tempdir().unwrap();
+    std::fs::write(dis.path().join("dis.txt"), "dis").unwrap();
+    let oturum = o.oturum(&kok).await;
+
+    std::fs::rename(&kok, o.alan.path().join("eski-proje")).unwrap();
+    std::os::unix::fs::symlink(dis.path(), &kok).unwrap();
+
+    let adlar: Vec<String> =
+        o.t.uygulama
+            .calisma_alani_dizini(oturum, None)
+            .await
+            .unwrap()
+            .girdiler
+            .into_iter()
+            .map(|g| g.ad)
+            .collect();
+    assert_eq!(adlar, vec!["ic.txt".to_string()]);
+}

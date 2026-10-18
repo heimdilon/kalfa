@@ -81,7 +81,12 @@ describe('sağ panel (masaüstü arayüzü tasarımı §6)', () => {
 
   it('Ortam çalışma alanını, git dalını, kipi ve bağlam kullanımını gösterir', async () => {
     const { arka } = await ciz((a) => {
-      a.alanOzeti = { kisa_yol: '~\\kalfa-deneme', git: { tip: 'Dal', ad: 'ozellik/sag-panel' } };
+      a.alanOzeti = {
+        kisa_yol: '~\\kalfa-deneme',
+        git: { tip: 'Dal', ad: 'ozellik/sag-panel' },
+        ciktilar: [],
+        ozetlenen: 3,
+      };
     });
     await fireEvent.click(dugme('Ortam'));
     const ortam = panel('Ortam')!;
@@ -89,12 +94,39 @@ describe('sağ panel (masaüstü arayüzü tasarımı §6)', () => {
     expect(within(ortam).getByText('~\\kalfa-deneme')).toBeTruthy();
     expect(within(ortam).getByText('Bu açılışta henüz istek yapılmadı.')).toBeTruthy();
 
+    expect(within(ortam).getByText('3 eski araç çıktısı özetlendi.')).toBeTruthy();
+
     arka.olaylar('o1', [{ tip: 'TokenKullanimi', istem: 32000, tamamlama: 10, dusunce: 0 }]);
     expect(await within(ortam).findByText(/32\.000 \/ 64\.000 token \(%50\)/)).toBeTruthy();
   });
 
+  it('Ortam toplamları kayıttan gelir; yeni tur özetiyle yenilenir', async () => {
+    const { arka } = await ciz();
+    await fireEvent.click(dugme('Ortam'));
+    const ortam = panel('Ortam')!;
+    expect(await within(ortam).findByText('Bu oturumda henüz dosya değişmedi.')).toBeTruthy();
+
+    // Toplamı değiştirmeyen olay özeti yeniden okutmaz.
+    arka.olaylar('o1', [{ tip: 'TokenKullanimi', istem: 10, tamamlama: 1, dusunce: 0 }]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(arka.komutlar('calisma_alani_ozeti')).toHaveLength(1);
+
+    // Yüklenmemiş eski sayfalardaki dosya da Rust'ın toplamındadır.
+    arka.alanOzeti = { ...arka.alanOzeti, ciktilar: [{ yol: 'eski.py', eklenen: 4, silinen: 2 }] };
+    arka.olaylar('o1', [turOzeti('t2', [{ yol: 'yeni.py', eklenen: 1, silinen: 0 }])]);
+    expect(await within(ortam).findByText('eski.py')).toBeTruthy();
+    expect(arka.komutlar('calisma_alani_ozeti')).toHaveLength(2);
+  });
+
   it("Ortam'daki çıktı Değişiklikler'de o dosyayı açar", async () => {
     const { arka } = await ciz();
+    arka.alanOzeti = {
+      ...arka.alanOzeti,
+      ciktilar: [
+        { yol: 'a.py', eklenen: 1, silinen: 0 },
+        { yol: 'b.py', eklenen: 1, silinen: 1 },
+      ],
+    };
     arka.olaylar('o1', [
       turOzeti('t1', [
         { yol: 'a.py', eklenen: 1, silinen: 0 },
@@ -140,6 +172,54 @@ describe('sağ panel (masaüstü arayüzü tasarımı §6)', () => {
     expect(await within(dosyalar).findByText('Gizli dosya; içerik gösterilmez.')).toBeTruthy();
     expect(within(agac).queryByRole('button', { name: 'dis' })).toBeNull();
     expect(within(agac).getByText('bağlantı; izlenmez')).toBeTruthy();
+  });
+
+  it('yavaş dönen eski önizleme yeni seçimin yerine geçmez', async () => {
+    let birak!: () => void;
+    await ciz((a) => {
+      a.dosyaAgaci.set(null, {
+        girdiler: [
+          { kimlik: 1, ad: 'yavas.txt', tur: 'Dosya', boyut: 1 },
+          { kimlik: 2, ad: 'hizli.txt', tur: 'Dosya', boyut: 1 },
+        ],
+        kirpildi: false,
+      });
+      a.dosyaIcerikleri.set(1, { tip: 'Metin', metin: 'YAVAŞ İÇERİK', kirpildi: false });
+      a.dosyaIcerikleri.set(2, { tip: 'Metin', metin: 'HIZLI İÇERİK', kirpildi: false });
+      a.dosyaGecikmeleri.set(1, new Promise((r) => (birak = r)));
+    });
+    await fireEvent.click(dugme('Dosyalar'));
+    const dosyalar = panel('Dosyalar')!;
+    await fireEvent.click(await within(dosyalar).findByRole('button', { name: 'yavas.txt' }));
+    await fireEvent.click(within(dosyalar).getByRole('button', { name: 'hizli.txt' }));
+    expect(await within(dosyalar).findByText('HIZLI İÇERİK')).toBeTruthy();
+    birak();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(within(dosyalar).getByText('HIZLI İÇERİK')).toBeTruthy();
+    expect(within(dosyalar).queryByText('YAVAŞ İÇERİK')).toBeNull();
+  });
+
+  it('salt okunur geçmişte Ortam ve Dosyalar açılmaz; Değişiklikler açılır', async () => {
+    localStorage.setItem('kalfa.sagBolum', 'dosyalar');
+    await ciz((a) =>
+      a.oturumEkle(
+        {
+          oturum: 'o1',
+          salt_okunur: { tip: 'CalismaAlaniYok', yol: 'C:\\silindi' },
+          gecmis: {
+            ogeler: [{ tip: 'KullaniciMesaji', sira: 1, tur: 't1', metin: 'Görevleri düzelt' }],
+            daha_eski_var: false,
+          },
+        },
+        { baslik: 'Görevleri düzelt' },
+      ),
+    );
+    // Hatırlanan Dosyalar bölümü çalışma alanı olmayan oturuma açılmaz.
+    expect(panel('Dosyalar')).toBeNull();
+    expect(dugme('Ortam').hasAttribute('disabled')).toBe(true);
+    expect(dugme('Dosyalar').hasAttribute('disabled')).toBe(true);
+    await fireEvent.click(dugme('İnceleme bölmesini aç'));
+    expect(panel('Değişiklikler')).toBeTruthy();
   });
 
   it('açık bölüm ve genişlik sonraki açılışta hatırlanır', async () => {

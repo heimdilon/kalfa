@@ -140,8 +140,8 @@
     {:else}
       <Konusma {durum} />
 
-      {#if durum.sagBolum && durum.aktif}
-        {@const bolum = durum.sagBolum}
+      {#if durum.gorunenSagBolum && durum.aktif}
+        {@const bolum = durum.gorunenSagBolum}
         <button
           type="button"
           aria-label={m('konusma.bolme_boyutlandir')}

@@ -842,6 +842,49 @@ fn sinirli_veri_oku(
     }
 }
 
+/// Mutlak yerel yoldaki dosyanın en çok `sinir` baytı. Kökten başlayarak her
+/// bileşen bağlantı izlenmeden ve bir önceki dizinin tutamacından açılır:
+/// doğrulama ile açma arasında bir bileşen bağlantıyla değiştirilse de
+/// izlenmez. Yol sözcüksel olarak normalleştirilmiş olmalıdır (`.`, `..`
+/// yok). Windows'ta yalnız sürücü harfli yol açılır: UNC, `\\?\` ve aygıt
+/// yollarını açmak ağa kimlik bilgisi gönderebilir.
+pub fn baglantisiz_oku(yol: &Path, sinir: u64) -> io::Result<Vec<u8>> {
+    use std::path::{Component, Prefix};
+    let red = || {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Yalnız bağlantısız, mutlak yerel yol okunur.",
+        )
+    };
+    if !yol.is_absolute() {
+        return Err(red());
+    }
+    let mut kok = PathBuf::new();
+    let mut adlar = Vec::new();
+    for parca in yol.components() {
+        match parca {
+            Component::Prefix(p) if matches!(p.kind(), Prefix::Disk(_)) => kok.push(parca),
+            Component::RootDir if adlar.is_empty() => kok.push(parca),
+            Component::Normal(ad) => adlar.push(ad),
+            _ => return Err(red()),
+        }
+    }
+    let (son, ustler) = adlar.split_last().ok_or_else(red)?;
+    let mut dizin = Dir::open_ambient_dir(&kok, ambient_authority())?;
+    for ad in ustler {
+        dizin = dizin.open_dir_nofollow(ad)?;
+    }
+    let mut secenek = OpenOptions::new();
+    secenek.read(true).follow(FollowSymlinks::No);
+    let dosya = dizin.open_with(son, &secenek)?;
+    if !dosya.metadata()?.is_file() {
+        return Err(red());
+    }
+    let mut veri = Vec::new();
+    dosya.into_std().take(sinir).read_to_end(&mut veri)?;
+    Ok(veri)
+}
+
 /// Salt okur dosya görünümünün bir dizin girdisi (masaüstü arayüzü tasarımı
 /// §6.3).
 #[derive(Debug, Clone, PartialEq, Eq)]

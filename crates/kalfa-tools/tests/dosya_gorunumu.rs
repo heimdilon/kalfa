@@ -111,6 +111,19 @@ fn baglanti_gosterilir_ama_izlenmez() {
     assert!(a.dizini_listele(Some(&yol("dis")), 2000).is_err());
     assert!(a.onizle(&yol("dis/gizem.txt"), 1024).is_err());
     assert!(a.onizle(&yol("kisayol.txt"), 1024).is_err());
+
+    // Çalışma alanının içine giden göreli bağlantı da izlenmez: izlenseydi
+    // bu açmalar başarırdı.
+    dosya(&d, "src/a.txt", b"a");
+    dizin_baglantisi(std::path::Path::new("src"), &d.path().join("ic"));
+    dosya_baglantisi(
+        &std::path::Path::new("src").join("a.txt"),
+        &d.path().join("ic.txt"),
+    );
+    assert!(d.path().join("ic").join("a.txt").exists());
+    assert!(a.dizini_listele(Some(&yol("ic")), 2000).is_err());
+    assert!(a.onizle(&yol("ic/a.txt"), 1024).is_err());
+    assert!(a.onizle(&yol("ic.txt"), 1024).is_err());
 }
 
 #[test]
@@ -163,4 +176,65 @@ fn metin_ikili_ve_kirpma() {
     // Dizin dosya gibi açılmaz.
     dosya(&d, "klasor/x", b"");
     assert!(a.onizle(&yol("klasor"), 256).is_err());
+}
+
+#[test]
+fn baglantisiz_oku_mutlak_yerel_yolu_tutamaclarla_okur() {
+    use kalfa_tools::baglantisiz_oku;
+    let d = tempfile::tempdir().unwrap();
+    dosya(&d, "gd/HEAD", b"ref: refs/heads/main\n");
+    let yol = d.path().join("gd").join("HEAD");
+    assert_eq!(
+        baglantisiz_oku(&yol, 4096).unwrap(),
+        b"ref: refs/heads/main\n"
+    );
+    assert_eq!(baglantisiz_oku(&yol, 3).unwrap(), b"ref");
+    // Göreli yol ve `..` kabul edilmez; dizin dosya gibi okunmaz.
+    assert!(baglantisiz_oku(std::path::Path::new("gd/HEAD"), 4096).is_err());
+    assert!(
+        baglantisiz_oku(
+            &d.path().join("gd").join("..").join("gd").join("HEAD"),
+            4096
+        )
+        .is_err()
+    );
+    assert!(baglantisiz_oku(&d.path().join("gd"), 4096).is_err());
+}
+
+#[test]
+fn baglantisiz_oku_ara_ve_son_baglantiyi_izlemez() {
+    use kalfa_tools::baglantisiz_oku;
+    let d = tempfile::tempdir().unwrap();
+    dosya(&d, "gercek/gd/HEAD", b"ref: refs/heads/dis\n");
+    // Hedef aynı dizinde, göreli: bağlantı izlenseydi okuma başarırdı. (Ağ
+    // yoluna çıkan bağlantı da aynı adımda reddedilir.)
+    dizin_baglantisi(std::path::Path::new("gercek"), &d.path().join("bag"));
+    dosya_baglantisi(
+        &std::path::Path::new("gercek").join("gd").join("HEAD"),
+        &d.path().join("HEAD"),
+    );
+    assert!(d.path().join("bag").join("gd").join("HEAD").exists());
+    assert!(d.path().join("HEAD").exists());
+    assert!(baglantisiz_oku(&d.path().join("bag").join("gd").join("HEAD"), 4096).is_err());
+    assert!(baglantisiz_oku(&d.path().join("HEAD"), 4096).is_err());
+    // Aynı dosya bağlantısız yoldan okunur.
+    assert!(baglantisiz_oku(&d.path().join("gercek").join("gd").join("HEAD"), 4096).is_ok());
+}
+
+/// `\\?\` ve UNC biçimleri açılmaz: Windows'ta ağa kimlik bilgisi gönderebilir.
+#[cfg(windows)]
+#[test]
+fn baglantisiz_oku_ozel_onekli_yolu_acmaz() {
+    use kalfa_tools::baglantisiz_oku;
+    let d = tempfile::tempdir().unwrap();
+    dosya(&d, "HEAD", b"x");
+    let ozel = std::path::PathBuf::from(format!(r"\\?\{}", d.path().join("HEAD").display()));
+    assert!(ozel.exists(), "{}", ozel.display());
+    assert!(baglantisiz_oku(&ozel, 16).is_err());
+    for ag in [r"\\127.0.0.1\pay\HEAD", "//127.0.0.1/pay/HEAD"] {
+        assert!(
+            baglantisiz_oku(std::path::Path::new(ag), 16).is_err(),
+            "{ag}"
+        );
+    }
 }

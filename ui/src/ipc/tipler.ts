@@ -534,6 +534,10 @@ export type GitDurumu = { tip: 'Dal'; ad: string } | { tip: 'AyrikHead' } | { ti
 export interface CalismaAlaniOzeti {
   kisa_yol: string;
   git: GitDurumu;
+  /** Bütün kayıttan: geri alınmamış turlarda değişen dosyalar. */
+  ciktilar: { yol: string; eklenen: number; silinen: number }[];
+  /** Bağlam yönetiminin özetlediği araç çıktısı sayısı (5a). */
+  ozetlenen: number;
 }
 
 export interface UygulamaDurumu {

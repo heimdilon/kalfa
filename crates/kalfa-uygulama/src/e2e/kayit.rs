@@ -16,7 +16,7 @@ impl Uygulama {
     /// `kok` çalışma alanında `tur` turluk bir oturum kaydı üretir ve oturumu
     /// kapatır. Şartlar kabul edilmiş olmalıdır.
     pub async fn e2e_kayit_uret(&self, kok: PathBuf, tur: u32) -> Result<OturumId, KomutHatasi> {
-        let baglam = self.baglam(&kok).await?;
+        let (baglam, _) = self.baglam(&kok).await?;
         std::fs::create_dir_all(&self.oturum_dizini)?;
         let oturum = OturumId::yeni();
         let mut ayarlar = OturumAyarlari::yeni(modeller::VARSAYILAN_MODEL, &kok);

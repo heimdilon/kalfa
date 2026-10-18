@@ -43,14 +43,16 @@
     if (!dizinler.has(g.kimlik)) await yukle(g.kimlik);
   }
 
+  /** Yavaş bir önceki okuma sonradan dönerse yok sayılır: yalnız seçili dosya gösterilir. */
   async function dosyaSec(g: DosyaGirdisi) {
     secili = g;
     icerik = null;
+    hata = null;
     try {
-      icerik = await ipc.calismaAlaniDosyasi(oturum, g.kimlik);
-      hata = null;
+      const yeni = await ipc.calismaAlaniDosyasi(oturum, g.kimlik);
+      if (secili?.kimlik === g.kimlik) icerik = yeni;
     } catch (e) {
-      hata = komutHatasi(e).mesaj;
+      if (secili?.kimlik === g.kimlik) hata = komutHatasi(e).mesaj;
     }
   }
 </script>

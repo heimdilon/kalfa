@@ -235,7 +235,14 @@ export class SahteArka {
   dosyaAgaci = new Map<number | null, DizinIcerigi>();
   /** Dosya kimliği → önizleme. */
   dosyaIcerikleri = new Map<number, DosyaIcerigi>();
-  alanOzeti: CalismaAlaniOzeti = { kisa_yol: '~\\projeler\\kalfa', git: { tip: 'Dal', ad: 'main' } };
+  /** Dosya kimliği → yanıtın bekleyeceği söz (yavaş okuma). */
+  dosyaGecikmeleri = new Map<number, Promise<void>>();
+  alanOzeti: CalismaAlaniOzeti = {
+    kisa_yol: '~\\projeler\\kalfa',
+    git: { tip: 'Dal', ad: 'main' },
+    ciktilar: [],
+    ozetlenen: 0,
+  };
   /** Gönderim günlüğü sayfaları; yoksa boş döner. */
   gonderimGunlukleri = new Map<OturumId, GunlukSayfasi>();
   /** `gonderim_ogesi` metinleri; anahtar: `${oturum}:${sira}`. */
@@ -794,7 +801,8 @@ export class SahteArka {
       case 'calisma_alani_dosyasi': {
         const icerik = this.dosyaIcerikleri.get(a.kimlik as number);
         if (!icerik) throw { kod: 'GecersizGirdi', mesaj: 'Bu dosya bu oturumda bilinmiyor.' };
-        return icerik;
+        const gecikme = this.dosyaGecikmeleri.get(a.kimlik as number);
+        return gecikme ? gecikme.then(() => icerik) : icerik;
       }
       case 'pencere_buyut_degistir':
         this.pencereBuyuk = !this.pencereBuyuk;

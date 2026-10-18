@@ -18,6 +18,7 @@ pub mod yaz;
 pub use ara::IcerikAra;
 pub use calisma_alani::{
     CalismaAlani, DizinGirdisi, GirdiTuru, Onizleme, YazmaBildirimi, YazmaBitisBildirimi,
+    baglantisiz_oku,
 };
 pub use duzenle::DosyaDuzenle;
 pub use kabuk::{KabukAraci, KabukGuveni, YalitimsizIzni};

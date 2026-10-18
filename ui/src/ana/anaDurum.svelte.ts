@@ -111,6 +111,16 @@ export class AnaDurum {
   /** MCP sunucularının son görüntüsü; kanal eski revizyonu atar (1.1a-2). */
   mcp = $state<McpDurumu | null>(null);
   aktif = $derived(this.secili ? (this.ekranlar.get(this.secili) ?? null) : null);
+  /**
+   * Gösterilen sağ panel bölümü. Kayıttan salt okunur açılan oturumun
+   * çalışma alanı yoktur: Ortam ve Dosyalar ona açılmaz, Değişiklikler
+   * kayıttan gelir.
+   */
+  gorunenSagBolum = $derived(
+    this.sagBolum === 'degisiklikler' || (this.sagBolum && !this.aktif?.salt_okunur)
+      ? this.sagBolum
+      : null,
+  );
 
   /** Ayarlar'daki MCP bölümü açılınca güncel görüntüyü okur. */
   async mcpYenile(): Promise<void> {

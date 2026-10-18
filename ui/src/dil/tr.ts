@@ -148,7 +148,7 @@ export const tr = {
   'sag.baglam': 'Bağlam',
   'sag.baglam_bilinmiyor': 'Bu açılışta henüz istek yapılmadı.',
   'sag.baglam_kullanim': '{token} / {esik} token (%{yuzde})',
-  'sag.baglam_ozetleme': 'Eski araç çıktıları {sayi} kez özetlendi.',
+  'sag.baglam_ozetleme': '{sayi} eski araç çıktısı özetlendi.',
   'sag.ciktilar': 'Çıktılar',
   'sag.ciktilar_bos': 'Bu oturumda henüz dosya değişmedi.',
   'sag.okunamadi': 'Okunamadı: {neden}',
