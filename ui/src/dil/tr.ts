@@ -156,7 +156,10 @@ export const tr = {
   'arac.dosya_duzenle.suruyor': 'Dosya düzenleniyor',
   'arac.dosya_duzenle.bitti': 'Dosya düzenlendi',
   'arac.dosya_duzenle.ad': 'Dosya düzenleme',
-  'arac.diff.uygulanmadi': 'uygulanmadı',
+  'arac.diff.belirsiz': 'uygulanmış olabilir',
+  'arac.diff.belirsiz_aciklama':
+    'Araç başarılı bitmedi; yazma yarıda kalmış olabilir. Dosyayı denetleyin.',
+  'arac.diff.ayni': 'Değişiklik yok: yazılan içerik öncekiyle aynı.',
   'arac.diff.yok':
     'Diff gösterilmiyor: dosya gizli, diff çok büyük ya da çağrı birden çok dosyaya yazdı.',
   'arac.diff.tamami': 'Tamamını göster ({sayi} satır)',
