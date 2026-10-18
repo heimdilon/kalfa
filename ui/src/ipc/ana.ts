@@ -19,6 +19,9 @@ import type {
   GizliAyarGorunumu,
   CagriId,
   CalismaAlani,
+  CalismaAlaniOzeti,
+  DizinIcerigi,
+  DosyaIcerigi,
   DenetciDurumu,
   DenetimKipi,
   DusunceEforu,
@@ -339,3 +342,11 @@ export const pencereKucult = () => invoke<void>('pencere_kucult');
 export const pencereBuyutDegistir = () => invoke<boolean>('pencere_buyut_degistir');
 export const pencereKapat = () => invoke<void>('pencere_kapat');
 export const pencereSurukle = () => invoke<void>('pencere_surukle');
+
+// Sağ panel (masaüstü arayüzü tasarımı §6.2, §6.3): yol gönderilmez, kimlik gider.
+export const calismaAlaniOzeti = (oturum: OturumId) =>
+  invoke<CalismaAlaniOzeti>('calisma_alani_ozeti', { oturum });
+export const calismaAlaniDizini = (oturum: OturumId, dizin: number | null) =>
+  invoke<DizinIcerigi>('calisma_alani_dizini', { oturum, dizin });
+export const calismaAlaniDosyasi = (oturum: OturumId, kimlik: number) =>
+  invoke<DosyaIcerigi>('calisma_alani_dosyasi', { oturum, kimlik });

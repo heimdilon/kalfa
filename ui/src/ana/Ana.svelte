@@ -8,13 +8,8 @@
 -->
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import Button from '../bilesenler/Button.svelte';
-  import DiffView from '../bilesenler/DiffView.svelte';
-  import { diffCozumle } from '../bilesenler/diff';
-  import Icon from '../bilesenler/Icon.svelte';
-  import IconButton from '../bilesenler/IconButton.svelte';
   import { m } from '../dil/tr';
-  import { AnaDurum } from './anaDurum.svelte';
+  import { AnaDurum, yerelOku, yerelYaz } from './anaDurum.svelte';
   import Ayarlar from './Ayarlar.svelte';
   import BaslikCubugu from './BaslikCubugu.svelte';
   import DurumCubugu from './DurumCubugu.svelte';
@@ -25,6 +20,7 @@
   import Menu from './Menu.svelte';
   import OnaySayfasi from './OnaySayfasi.svelte';
   import OturumListesi from './OturumListesi.svelte';
+  import SagPanel from './SagPanel.svelte';
 
   let { durum = new AnaDurum() }: { durum?: AnaDurum } = $props();
 
@@ -32,11 +28,14 @@
     void durum.baslat();
   });
 
-  // Sağ diff/inceleme bölmesi: %28'den %50'ye (yarı yarıya) kadar çekilebilir (2'şer puan adımlarla).
-  let sagOran = $state(38);
+  // Sağ panel: %28'den %50'ye (yarı yarıya) kadar çekilebilir (2'şer puan adımlarla).
+  // Genişlik bu makinede hatırlanır (masaüstü arayüzü tasarımı §6.1).
+  const SAG_ORAN_ANAHTARI = 'kalfa.sagOran';
+  let sagOran = $state(Math.min(50, Math.max(28, Number(yerelOku(SAG_ORAN_ANAHTARI)) || 38)));
   let suruklenen = $state(false);
   let govdeKutu = $state<HTMLDivElement>();
-  let seciliDiffIndeksi = $state(0);
+
+  $effect(() => yerelYaz(SAG_ORAN_ANAHTARI, String(Math.round(sagOran))));
 
   function sagOranSinifi(oran: number): string {
     const sinirli = Math.min(50, Math.max(28, Math.round(oran / 2) * 2));
@@ -113,59 +112,6 @@
       baslik: ilk?.tip === 'KullaniciMesaji' ? ilk.metin : null,
     };
   });
-
-  /** Sağ diff bölmesinde gösterilecek dosya değişiklikleri. */
-  const sagBolmeDosyalari = $derived.by(() => {
-    const ekran = durum.aktif;
-    if (!ekran) return [];
-    const liste: {
-      yol: string;
-      eklenen: number;
-      silinen: number;
-      diff: string | null;
-      tur: string | null;
-      geriAlinabilir: boolean;
-    }[] = [];
-    for (const oge of ekran.ogeler) {
-      if (oge.tip === 'OnayIstegi' && oge.durum === 'Bekliyor') {
-        for (const o of oge.ogeler) {
-          if (o.hedefler[0] || o.diff) {
-            liste.push({
-              yol: o.hedefler[0] ?? o.arac,
-              eklenen: 0,
-              silinen: 0,
-              diff: o.diff ?? null,
-              tur: null,
-              geriAlinabilir: o.geri_alinabilir?.tip === 'Evet',
-            });
-          }
-        }
-      } else if (oge.tip === 'TurOzeti' && !oge.geri_alindi) {
-        for (const d of oge.ozet.dosyalar) {
-          const planDiff =
-            ekran.geri_alma?.tur === oge.ozet.tur
-              ? (ekran.geri_alma.plan.ogeler.find((p) => p.yol === d.yol)?.diff ?? null)
-              : null;
-          liste.push({
-            yol: d.yol,
-            eklenen: d.eklenen,
-            silinen: d.silinen,
-            diff: d.diff ?? planDiff ?? null,
-            tur: oge.ozet.tur,
-            geriAlinabilir: d.geri_alinabilir.tip === 'Evet',
-          });
-        }
-      }
-    }
-    return liste;
-  });
-
-  const seciliSagDosya = $derived(
-    sagBolmeDosyalari[seciliDiffIndeksi] ?? sagBolmeDosyalari[0] ?? null,
-  );
-  const seciliSagParcalar = $derived(
-    seciliSagDosya?.diff ? diffCozumle(seciliSagDosya.diff) : [],
-  );
 </script>
 
 <svelte:window
@@ -194,7 +140,8 @@
     {:else}
       <Konusma {durum} />
 
-      {#if durum.sagBolmeAcik && durum.aktif}
+      {#if durum.gorunenSagBolum && durum.aktif}
+        {@const bolum = durum.gorunenSagBolum}
         <button
           type="button"
           aria-label={m('konusma.bolme_boyutlandir')}
@@ -206,70 +153,11 @@
 
         <aside
           class={['sag-bolme', sagOranSinifi(sagOran)]}
-          aria-label={m('konusma.degisiklikler')}
+          aria-label={m(`sag.${bolum}`)}
         >
-          <header class="sag-ust">
-            <div class="sag-baslik">
-              <Icon name="code" size={15} />
-              <span>{m('konusma.degisiklikler')}</span>
-              <span class="sag-sayi">{sagBolmeDosyalari.length}</span>
-            </div>
-            <IconButton
-              icon="x"
-              size="sm"
-              label={m('konusma.sag_bolme_kapat')}
-              onclick={() => (durum.sagBolmeAcik = false)}
-            />
-          </header>
-
-          {#if sagBolmeDosyalari.length > 0}
-            <div class="sag-dosyalar">
-              {#each sagBolmeDosyalari as d, i (`${i}:${d.yol}`)}
-                <button
-                  type="button"
-                  class={['sag-dosya', { secili: i === seciliDiffIndeksi }]}
-                  onclick={() => (seciliDiffIndeksi = i)}
-                >
-                  <span class="sag-yol">{d.yol}</span>
-                  {#if d.eklenen > 0 || d.silinen > 0}
-                    <span class="sag-arti">+{d.eklenen}</span>
-                    <span class="sag-eksi">−{d.silinen}</span>
-                  {/if}
-                </button>
-              {/each}
-            </div>
-
-            {#if seciliSagDosya}
-              <div class="sag-icerik">
-                <div class="sag-dosya-ust">
-                  <span class="sag-dosya-ad">{seciliSagDosya.yol}</span>
-                  {#if seciliSagDosya.tur && seciliSagDosya.geriAlinabilir && durum.aktif}
-                    {@const aktifOturum = durum.aktif.oturum}
-                    {@const hedefTur = seciliSagDosya.tur}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      iconLeft="rotate-ccw"
-                      onclick={() => durum.geriAlmaOnizle(aktifOturum, hedefTur)}
-                    >
-                      {m('tur_ozeti.geri_al')}
-                    </Button>
-                  {/if}
-                </div>
-                {#if seciliSagParcalar.length > 0}
-                  <div class="sag-diff">
-                    {#each seciliSagParcalar as p, i (i)}
-                      <DiffView hunkHeader={p.baslik} lines={p.satirlar} />
-                    {/each}
-                  </div>
-                {:else}
-                  <p class="sag-bos">{m('onay.sayfa.diff_yok')}</p>
-                {/if}
-              </div>
-            {/if}
-          {:else}
-            <p class="sag-bos">{m('geri_alma.sayfa.yapilacak_yok')}</p>
-          {/if}
+          {#key durum.aktif.oturum}
+            <SagPanel {durum} {bolum} />
+          {/key}
         </aside>
       {/if}
     {/if}
@@ -409,103 +297,5 @@
   }
   .sag-oran-50 {
     width: 50%;
-  }
-  .sag-ust {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 46px;
-    flex: 0 0 auto;
-    padding: 0 12px 0 16px;
-    border-bottom: var(--border-width) solid var(--border-subtle);
-  }
-  .sag-baslik {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font: var(--fw-semibold) var(--text-small) / 1.2 var(--font-sans);
-    color: var(--text-title);
-  }
-  .sag-sayi {
-    font: var(--type-meta);
-    color: var(--text-muted);
-  }
-  .sag-dosyalar {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 8px;
-    border-bottom: var(--border-width) solid var(--border-subtle);
-    max-height: 180px;
-    overflow-y: auto;
-  }
-  .sag-dosya {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-secondary);
-    font: var(--type-small);
-    text-align: left;
-    cursor: pointer;
-  }
-  .sag-dosya:hover {
-    background: var(--surface-raised);
-    color: var(--text-body);
-  }
-  .sag-dosya.secili {
-    background: var(--surface-selected);
-    color: var(--text-title);
-  }
-  .sag-yol {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--font-mono);
-    font-size: var(--text-micro);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .sag-arti {
-    font: var(--type-meta);
-    color: var(--status-ok);
-  }
-  .sag-eksi {
-    font: var(--type-meta);
-    color: var(--status-danger);
-  }
-  .sag-icerik {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .sag-dosya-ust {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 14px;
-    border-bottom: var(--border-width) solid var(--border-subtle);
-  }
-  .sag-dosya-ad {
-    font-family: var(--font-mono);
-    font-size: var(--text-micro);
-    color: var(--text-body);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .sag-diff {
-    flex: 1;
-    overflow: auto;
-  }
-  .sag-bos {
-    margin: 18px 14px;
-    font: var(--type-small);
-    color: var(--text-muted);
   }
 </style>

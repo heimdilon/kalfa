@@ -85,6 +85,9 @@
     "allow-pencere-kucult",
     "allow-pencere-buyut-degistir",
     "allow-pencere-kapat",
-    "allow-pencere-surukle"
+    "allow-pencere-surukle",
+    "allow-calisma-alani-ozeti",
+    "allow-calisma-alani-dizini",
+    "allow-calisma-alani-dosyasi"
   ]
 }

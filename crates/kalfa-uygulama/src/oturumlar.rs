@@ -28,6 +28,7 @@ use tokio::task::JoinHandle;
 
 use crate::arayuz::KanalYazici;
 use crate::calisma_alanlari::{AlanGuveni, CalismaAlaniKaydi};
+use crate::dosya_gorunumu::DosyaGorunumu;
 use crate::hata::KomutHatasi;
 use crate::sozlesme::{
     CalismaAlani, ModelSecenegi, OnayGirdisi, OturumAcilisi, OturumSatiri, SaltOkunurNedeni,
@@ -57,6 +58,8 @@ pub(crate) struct AcikOturum {
     yol: PathBuf,
     pub(crate) calisma_alani: PathBuf,
     pub(crate) calisma_alani_kimligi: String,
+    /// Sağ panelin dosya görünümü; kimlik tablosu oturumla silinir.
+    pub(crate) gorunum: Arc<DosyaGorunumu>,
 }
 
 pub(crate) struct KapananOturum {
@@ -177,7 +180,7 @@ impl Uygulama {
             .ok_or_else(|| {
                 KomutHatasi::gecersiz("Çalışma alanı seçilmemiş. Klasörü yeniden seçin.")
             })?;
-        let baglam = self.baglam(&kok).await?;
+        let (baglam, gorunum) = self.baglam(&kok).await?;
         std::fs::create_dir_all(&self.oturum_dizini)?;
         let oturum = OturumId::yeni();
         let yol = dizin::kayit_yolu(&self.oturum_dizini, oturum);
@@ -203,6 +206,7 @@ impl Uygulama {
             yol,
             calisma_alani: kok.clone(),
             calisma_alani_kimligi: CalismaAlaniKaydi::kimlik(&kok),
+            gorunum,
         };
         if let Err(acik) = self.tabloya_ekle(oturum, acik) {
             Self::eklenemeyen_oturumu_kapat(acik).await;
@@ -261,7 +265,7 @@ impl Uygulama {
                 .acilis(oturum, yol, Some(kok), Some(neden), butce)
                 .await;
         }
-        let baglam = self.baglam(&kok).await?;
+        let (baglam, gorunum) = self.baglam(&kok).await?;
         let mut ayarlar = OturumAyarlari::yeni(durum.model.clone(), &kok);
         let baslangic_efor = {
             let ic = self.ic();
@@ -300,6 +304,7 @@ impl Uygulama {
             yol: yol.clone(),
             calisma_alani: kok.clone(),
             calisma_alani_kimligi: CalismaAlaniKaydi::kimlik(&kok),
+            gorunum,
         };
         if let Err(acik) = self.tabloya_ekle(oturum, acik) {
             Self::eklenemeyen_oturumu_kapat(acik).await;
@@ -874,7 +879,12 @@ impl Uygulama {
     /// etkin ya da açık olmasından bağımsız: kapalı olanlar `sunulur_mu` ile
     /// gizlenir, böylece anahtar açık oturumda canlı çalışır (aşama 4 tasarımı
     /// §13.3). Yüklenemeyen eklenti oturumu düşürmez; yalnızca araçsız kalır.
-    pub(crate) async fn baglam(&self, kok: &Path) -> Result<OturumBaglami, KomutHatasi> {
+    /// İkinci değer sağ panelin dosya görünümüdür: araçlarla aynı çalışma
+    /// alanı tutamacını kullanır (masaüstü arayüzü tasarımı §6.3).
+    pub(crate) async fn baglam(
+        &self,
+        kok: &Path,
+    ) -> Result<(OturumBaglami, Arc<DosyaGorunumu>), KomutHatasi> {
         let siniflandirici = Arc::new(
             Siniflandirici::yeni_ayarla(kok, self.ayarlar.gizli_ayarlari()).map_err(ic_hata)?,
         );
@@ -897,6 +907,7 @@ impl Uygulama {
         let kilitler = self.kilitler.al(kok)?;
         let mut araclar = varsayilan_araclar(alan.clone());
         let geri_yukleyici: Arc<dyn GeriYukleyici> = alan.clone();
+        let gorunum = Arc::new(DosyaGorunumu::yeni(alan.clone()));
         let eklenti_araclari = self
             .eklentiler
             .araclar(&alan, &kilitler, &alan_kimligi)
@@ -936,16 +947,19 @@ impl Uygulama {
         );
         let araclar =
             Arc::new(AracKayitDefteri::yeni_kaynakli(araclar, mcp_kaynagi).map_err(ic_hata)?);
-        Ok(OturumBaglami {
-            saglayici: self.evren.clone(),
-            araclar,
-            siniflandirici,
-            kilitler,
-            sart_kapisi: self.kapi.clone(),
-            geri_yukleyici: Some(geri_yukleyici),
-            denetci: self.denetci.clone(),
-            denetci_kipi: Some(self.ayarlar.denetci_kipi_kaynagi()),
-        })
+        Ok((
+            OturumBaglami {
+                saglayici: self.evren.clone(),
+                araclar,
+                siniflandirici,
+                kilitler,
+                sart_kapisi: self.kapi.clone(),
+                geri_yukleyici: Some(geri_yukleyici),
+                denetci: self.denetci.clone(),
+                denetci_kipi: Some(self.ayarlar.denetci_kipi_kaynagi()),
+            },
+            gorunum,
+        ))
     }
 
     /// Bağlantıyı sistem tarayıcısında açar: yalnızca http/https ve yalnızca

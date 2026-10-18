@@ -24,6 +24,7 @@
   import BekleyenOnay from './BekleyenOnay.svelte';
   import KonusmaOgesi from './KonusmaOgesi.svelte';
   import McpBaslatmaKarti from './McpBaslatmaKarti.svelte';
+  import PanelDugmeleri from './PanelDugmeleri.svelte';
 
   let { durum }: { durum: AnaDurum } = $props();
 
@@ -266,10 +267,12 @@
 
       <button
         type="button"
-        class={['degisiklik-dugme', { etkin: durum.sagBolmeAcik }]}
-        aria-label={durum.sagBolmeAcik ? m('konusma.sag_bolme_kapat') : m('konusma.sag_bolme_ac')}
-        aria-pressed={durum.sagBolmeAcik}
-        onclick={() => durum.sagBolmeyiDegistir()}
+        class={['degisiklik-dugme', { etkin: durum.sagBolum === 'degisiklikler' }]}
+        aria-label={durum.sagBolum === 'degisiklikler'
+          ? m('konusma.sag_bolme_kapat')
+          : m('konusma.sag_bolme_ac')}
+        aria-pressed={durum.sagBolum === 'degisiklikler'}
+        onclick={() => durum.sagBolumuDegistir('degisiklikler')}
       >
         <Icon name="code" size={14} />
         <span>{m('konusma.degisiklikler')}</span>
@@ -278,6 +281,10 @@
           <span class="eksi">−{degisenDosyaOzeti.silinen}</span>
         {/if}
       </button>
+      {#if !durum.ozelCerceve}
+        <!-- Linux'ta başlık çubuğu yok; panelin öbür bölümleri burada açılır. -->
+        <PanelDugmeleri {durum} bolumler={['ortam', 'dosyalar']} />
+      {/if}
 
       {#if ekran.kapandi}
         <Button size="sm" iconLeft="rotate-ccw" onclick={() => durum.yenidenAc(ekran.oturum)}>

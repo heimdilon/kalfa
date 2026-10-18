@@ -1,7 +1,7 @@
 <!--
   Windows'ta ana pencerenin başlık çubuğu (masaüstü arayüzü tasarımı §5).
   Pencere çerçevesizdir: çubuğun boş yeri sürükleme alanıdır, çift tıklama
-  büyütür ya da geri yükler. Pencere düğmeleri Tauri'nin `core:window`
+  büyütür ya da geri yükler. Sağda sağ panelin bölüm düğmeleri (§6.1). Pencere düğmeleri Tauri'nin `core:window`
   izinleri yerine ana pencerenin kendi komutlarını çağırır.
 -->
 <script lang="ts">
@@ -10,6 +10,7 @@
   import { m } from '../dil/tr';
   import { pencereBuyutDegistir, pencereKapat, pencereKucult, pencereSurukle } from '../ipc/ana';
   import type { AnaDurum } from './anaDurum.svelte';
+  import PanelDugmeleri from './PanelDugmeleri.svelte';
   import { projeAdi, satirBasligi } from './bicim';
 
   let { durum }: { durum: AnaDurum } = $props();
@@ -55,6 +56,10 @@
       <span class="oturum">{satirBasligi(satir)}</span>
       {#if alan}<span class="proje" title={alan}>{projeAdi(alan)}</span>{/if}
     {/if}
+  </div>
+
+  <div class="panel">
+    <PanelDugmeleri {durum} />
   </div>
 
   <div class="pencere">
@@ -140,6 +145,14 @@
   .proje::before {
     content: '·';
     margin-right: 6px;
+  }
+  .panel {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 8px;
+    border-right: var(--border-width) solid var(--border-subtle);
+    margin: 6px 0;
   }
   .pencere {
     display: flex;
