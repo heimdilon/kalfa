@@ -44,6 +44,8 @@ export class AnaDurum {
   sagBolmeAcik = $state(false);
   /** Soldaki kenar çubuğu açık mı (Ctrl+B ile gizlenir). */
   kenarAcik = $state(true);
+  /** Windows'ta pencere çerçevesizdir; başlık çubuğunu arayüz çizer (masaüstü arayüzü §5). */
+  ozelCerceve = $derived(this.uygulama?.platform === 'windows');
   /** Açık gönderim günlüğü (oturum kimliğiyle). */
   gunlukOturum = $state<OturumId | null>(null);
   gunlukAcik = $derived(this.gunlukOturum !== null);

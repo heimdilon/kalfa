@@ -226,6 +226,8 @@ export class SahteArka {
   geriAlmaPlani: GeriAlmaPlani | null = null;
   /** `geri_alma_verisi_boyutu`'nun yanıtı. */
   geriAlmaBoyutu = 0;
+  /** Başlık çubuğunun büyüt düğmesinin değiştirdiği pencere hâli. */
+  pencereBuyuk = false;
   /** Gönderim günlüğü sayfaları; yoksa boş döner. */
   gonderimGunlukleri = new Map<OturumId, GunlukSayfasi>();
   /** `gonderim_ogesi` metinleri; anahtar: `${oturum}:${sira}`. */
@@ -777,7 +779,11 @@ export class SahteArka {
         this.mcpDurumuYaz();
         return null;
       }
+      case 'pencere_buyut_degistir':
+        this.pencereBuyuk = !this.pencereBuyuk;
+        return this.pencereBuyuk;
       default:
+        // pencere_kucult, pencere_kapat, pencere_surukle,
         // mesaj_gonder, turu_iptal_et, arac_onayi, model_degistir, paketi_isledim,
         // baglanti_ac, anahtar_penceresini_ac, sart_penceresini_ac
         return null;

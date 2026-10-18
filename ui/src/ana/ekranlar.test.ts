@@ -784,3 +784,53 @@ describe('tur özeti ve geri alma (aşama 3 tasarımı §5.11)', () => {
   });
 });
 
+
+describe('başlık çubuğu (masaüstü arayüzü tasarımı §5)', () => {
+  const pencereDugmesi = (ad: string) => screen.getByRole('button', { name: ad });
+
+  it("Linux'ta yerel çerçeve kalır; başlık çubuğu çizilmez", async () => {
+    await ciz();
+    expect(screen.queryByRole('button', { name: 'Simge durumuna küçült' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Kenar çubuğunu gizle' })).toBeTruthy();
+  });
+
+  it("Windows'ta pencere düğmeleri kendi komutlarını çağırır", async () => {
+    const { arka } = await ciz((a) => (a.uygulama.platform = 'windows'));
+    await fireEvent.click(pencereDugmesi('Simge durumuna küçült'));
+    expect(arka.komutlar('pencere_kucult')).toHaveLength(1);
+    await fireEvent.click(pencereDugmesi('Büyüt'));
+    await waitFor(() => expect(pencereDugmesi('Önceki boyutuna getir')).toBeTruthy());
+    await fireEvent.click(pencereDugmesi('Önceki boyutuna getir'));
+    await waitFor(() => expect(pencereDugmesi('Büyüt')).toBeTruthy());
+    await fireEvent.click(pencereDugmesi('Pencereyi kapat'));
+    expect(arka.komutlar('pencere_kapat')).toHaveLength(1);
+  });
+
+  it('boş yer sürükler, çift tıklama büyütür', async () => {
+    const { arka } = await ciz((a) => (a.uygulama.platform = 'windows'));
+    const cubuk = document.querySelector('.baslik-cubugu .orta')!;
+    await fireEvent.mouseDown(cubuk, { button: 0, detail: 1 });
+    expect(arka.komutlar('pencere_surukle')).toHaveLength(1);
+    await fireEvent.mouseDown(cubuk, { button: 0, detail: 2 });
+    expect(arka.komutlar('pencere_buyut_degistir')).toHaveLength(1);
+    await fireEvent.mouseDown(cubuk, { button: 2, detail: 1 });
+    expect(arka.komutlar('pencere_surukle')).toHaveLength(1);
+    // Düğmeye basmak pencereyi sürüklemez.
+    await fireEvent.mouseDown(screen.getByRole('button', { name: 'Pencereyi kapat' }), { button: 0, detail: 1 });
+    expect(arka.komutlar('pencere_surukle')).toHaveLength(1);
+  });
+
+  it('oturum başlığı ve proje başlık çubuğunda; kenar düğmesi tek', async () => {
+    await ciz((a) => (a.uygulama.platform = 'windows'));
+    const cubuk = document.querySelector<HTMLElement>('.baslik-cubugu')!;
+    expect(within(cubuk).getByText('Dosyaları incele')).toBeTruthy();
+    // Başlık ekran okuyucu için konuşmada da durur.
+    expect(screen.getByRole('heading', { name: 'Dosyaları incele' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Kenar çubuğunu gizle' })).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: 'Kenar çubuğunu gizle' }));
+    expect(screen.queryByRole('complementary', { name: 'Oturumlar' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Kenar çubuğunu göster' })).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: 'Kenar çubuğunu göster' }));
+    expect(screen.getByRole('complementary', { name: 'Oturumlar' })).toBeTruthy();
+  });
+});

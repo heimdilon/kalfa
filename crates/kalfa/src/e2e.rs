@@ -14,7 +14,7 @@ use kalfa_uygulama::e2e::{E2eAyarlari, Olcumler, SahteIletisim, SahteUretici, ol
 use kalfa_uygulama::evren::SaglayiciUretici;
 use kalfa_uygulama::hata::KomutHatasi;
 use tauri::ipc::CapabilityBuilder;
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 
 use crate::komut_adlari::E2E_KOMUTLARI;
 use crate::pencereler::ANA;
@@ -90,4 +90,17 @@ pub(crate) async fn e2e_ana_pencereyi_kapat<R: Runtime>(
             .map_err(|e| KomutHatasi::ic(e.to_string()))?;
     }
     Ok(())
+}
+
+/// Çağıran pencerenin `[simge durumunda mı, büyük mü]` bilgisi: başlık
+/// çubuğunun düğmeleri sınanırken okunur.
+#[tauri::command(rename_all = "snake_case")]
+pub(crate) async fn e2e_pencere_durumu<R: Runtime>(
+    pencere: WebviewWindow<R>,
+) -> Result<[bool; 2], KomutHatasi> {
+    let hata = |e: tauri::Error| KomutHatasi::ic(e.to_string());
+    Ok([
+        pencere.is_minimized().map_err(hata)?,
+        pencere.is_maximized().map_err(hata)?,
+    ])
 }

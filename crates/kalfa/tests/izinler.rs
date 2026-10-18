@@ -57,8 +57,10 @@ fn pencere(app: &App<MockRuntime>, etiket: &str) -> WebviewWindow<MockRuntime> {
 
 /// Tauri'nin ve eklentilerin, webview'dan çağrılırsa tehlikeli olacak
 /// komutları.
-const CEKIRDEK_KOMUTLARI: [&str; 8] = [
+const CEKIRDEK_KOMUTLARI: [&str; 10] = [
     "plugin:window|close",
+    "plugin:window|minimize",
+    "plugin:window|start_dragging",
     "plugin:webview|create_webview_window",
     "plugin:event|emit",
     "plugin:path|resolve_directory",
@@ -125,6 +127,28 @@ fn butce_komutlari_yalnizca_ana_pencerede() {
     let ana = pencere(&app, "ana");
     let sartlar = pencere(&app, "sartlar");
     for komut in ["oturum_butcesi", "oturum_butcesini_ayarla", "butce_karari"] {
+        assert!(ANA_PENCERE_KOMUTLARI.contains(&komut), "{komut}");
+        assert!(izinli(&ana, komut), "ana pencere {komut} çağıramadı");
+        assert!(
+            !izinli(&sartlar, komut),
+            "şart penceresi {komut} çağırabildi"
+        );
+    }
+}
+
+/// Başlık çubuğunun komutları yalnızca ana pencereye açıktır; Tauri'nin
+/// pencere izinleri kapalı kalır (masaüstü arayüzü tasarımı §5.2).
+#[test]
+fn pencere_komutlari_yalnizca_ana_pencerede() {
+    let app = uygulama();
+    let ana = pencere(&app, "ana");
+    let sartlar = pencere(&app, "sartlar");
+    for komut in [
+        "pencere_kucult",
+        "pencere_buyut_degistir",
+        "pencere_kapat",
+        "pencere_surukle",
+    ] {
         assert!(ANA_PENCERE_KOMUTLARI.contains(&komut), "{komut}");
         assert!(izinli(&ana, komut), "ana pencere {komut} çağıramadı");
         assert!(

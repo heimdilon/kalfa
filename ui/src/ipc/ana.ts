@@ -332,3 +332,10 @@ export const mcpBaslatmaKartiYanitla = (istekKimligi: string, kabul: boolean) =>
 
 export const mcpBaslatmaIzniGeriAl = (alanKimligi: string, ad: string) =>
   invoke<void>('mcp_baslatma_izni_geri_al', { alan_kimligi: alanKimligi, ad });
+
+// Başlık çubuğu (masaüstü arayüzü tasarımı §5.2): yalnız çağıran pencereye uygulanır.
+export const pencereKucult = () => invoke<void>('pencere_kucult');
+/** Pencerenin yeni hâli: büyük mü. */
+export const pencereBuyutDegistir = () => invoke<boolean>('pencere_buyut_degistir');
+export const pencereKapat = () => invoke<void>('pencere_kapat');
+export const pencereSurukle = () => invoke<void>('pencere_surukle');

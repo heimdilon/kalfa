@@ -1,5 +1,6 @@
 <!--
-  Ana pencere (1c tasarımı §8.1): solda kenar çubuğu (oturumlar ve menü),
+  Ana pencere (1c tasarımı §8.1): Windows'ta en üstte başlık çubuğu (masaüstü
+  arayüzü §5), solda kenar çubuğu (oturumlar ve menü),
   ortada konuşma, istenirse sağda inceleme bölmesi; en altta durum çubuğu.
   Onay sayfası konuşmanın üstünde açılır. Menüden Ayarlar ya da Eklentiler
   seçilince konuşmanın yerine o ekran gelir. Ctrl+N yeni oturum açar, Ctrl+K
@@ -15,6 +16,7 @@
   import { m } from '../dil/tr';
   import { AnaDurum } from './anaDurum.svelte';
   import Ayarlar from './Ayarlar.svelte';
+  import BaslikCubugu from './BaslikCubugu.svelte';
   import DurumCubugu from './DurumCubugu.svelte';
   import Eklentiler from './Eklentiler.svelte';
   import GeriAlmaSayfasi from './GeriAlmaSayfasi.svelte';
@@ -175,6 +177,9 @@
 />
 
 <div class={['ana', { surukleniyor: suruklenen }]}>
+  {#if durum.ozelCerceve}
+    <BaslikCubugu {durum} />
+  {/if}
   <div bind:this={govdeKutu} class="govde">
     {#if durum.kenarAcik}
       <div class="kenar">

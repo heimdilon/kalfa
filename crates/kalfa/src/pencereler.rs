@@ -3,6 +3,7 @@
 
 use kalfa_uygulama::arayuz::Pencereler;
 use kalfa_uygulama::guvenlik::gezinme_izinli;
+use kalfa_uygulama::hata::KomutHatasi;
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
@@ -108,7 +109,55 @@ fn kur<R: Runtime>(app: &AppHandle<R>, tanim: &PencereTanimi) -> tauri::Result<W
         .inner_size(tanim.boyut.0, tanim.boyut.1)
         .min_inner_size(tanim.en_kucuk.0, tanim.en_kucuk.1)
         .center()
+        // Windows'ta ana pencerenin başlık çubuğunu arayüz çizer (masaüstü
+        // arayüzü tasarımı §5); Linux'ta ve öbür pencerelerde yerel çerçeve.
+        .decorations(!(cfg!(windows) && tanim.etiket == ANA))
         .on_navigation(move |adres| gezinme_izinli(adres, gelistirme.as_ref()))
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .build()
+}
+
+// Başlık çubuğunun düğmeleri (masaüstü arayüzü tasarımı §5.2). Tauri'nin
+// `core:window` izinleri pencerelere verilmez; bu komutlar yalnız ana
+// pencereye açıktır ve yalnız çağıran pencereye uygulanır.
+
+fn ic(e: tauri::Error) -> KomutHatasi {
+    KomutHatasi::ic(e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn pencere_kucult<R: Runtime>(
+    pencere: WebviewWindow<R>,
+) -> Result<(), KomutHatasi> {
+    pencere.minimize().map_err(ic)
+}
+
+/// Büyükse geri yükler, değilse büyütür; pencerenin yeni hâlini (büyük mü) döner.
+#[tauri::command]
+pub(crate) async fn pencere_buyut_degistir<R: Runtime>(
+    pencere: WebviewWindow<R>,
+) -> Result<bool, KomutHatasi> {
+    if pencere.is_maximized().map_err(ic)? {
+        pencere.unmaximize().map_err(ic)?;
+        Ok(false)
+    } else {
+        pencere.maximize().map_err(ic)?;
+        Ok(true)
+    }
+}
+
+/// Kapatma düğmesiyle aynı yol: kapanma isteği ve yok olma olayları
+/// oturumları kapatır (lib.rs).
+#[tauri::command]
+pub(crate) async fn pencere_kapat<R: Runtime>(
+    pencere: WebviewWindow<R>,
+) -> Result<(), KomutHatasi> {
+    pencere.close().map_err(ic)
+}
+
+#[tauri::command]
+pub(crate) async fn pencere_surukle<R: Runtime>(
+    pencere: WebviewWindow<R>,
+) -> Result<(), KomutHatasi> {
+    pencere.start_dragging().map_err(ic)
 }
