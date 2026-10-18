@@ -21,6 +21,7 @@
   import { AltaYapisma, kaydirmaNiyetiMi } from './altaYapisma';
   import type { AnaDurum } from './anaDurum.svelte';
   import { gunAy, projeAdi, satirBasligi } from './bicim';
+  import BekleyenOnay from './BekleyenOnay.svelte';
   import KonusmaOgesi from './KonusmaOgesi.svelte';
   import McpBaslatmaKarti from './McpBaslatmaKarti.svelte';
 
@@ -39,6 +40,13 @@
     })),
   );
   const kipler = KIPLER.map((k) => ({ value: k, label: m(KIP_ADI[k]) }));
+
+  /** Yazma alanının üstünde karar bekleyen son onay isteği (masaüstü arayüzü §3). */
+  const bekleyenOnay = $derived.by(() => {
+    if (!ekran || ekran.salt_okunur) return null;
+    const oge = ekran.ogeler.findLast((o) => o.tip === 'OnayIstegi' && o.durum === 'Bekliyor');
+    return oge?.tip === 'OnayIstegi' ? oge : null;
+  });
 
   const kapaliNedeni = $derived.by(() => {
     if (!ekran) return null;
@@ -333,6 +341,16 @@
     </div>
 
     <div class="alt">
+      {#if bekleyenOnay && !durum.onay}
+        {@const { islem } = bekleyenOnay}
+        {#key islem}
+        <BekleyenOnay
+          ogeler={bekleyenOnay.ogeler}
+          onkarar={(kararlar) => durum.onayla(ekran.oturum, islem, kararlar)}
+          onincele={() => durum.onayiAc(ekran.oturum, islem)}
+        />
+        {/key}
+      {/if}
       <Composer
         bind:value={metin}
         models={modeller}

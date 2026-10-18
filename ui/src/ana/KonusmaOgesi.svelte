@@ -128,7 +128,7 @@
     {/if}
   </ToolCallCard>
 {:else if oge.tip === 'OnayIstegi'}
-  <OnayKarti {oge} onincele={() => durum.onayiAc(oturum, oge.islem)} />
+  <OnayKarti {oge} />
 {:else if oge.tip === 'ButceKarari'}
   <ButceKarti {oge} onkarar={(karar) => durum.butceKarari(oturum, karar)} />
 {:else if oge.tip === 'GonderimOnizlemesi'}
