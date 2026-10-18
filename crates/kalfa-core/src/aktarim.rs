@@ -83,6 +83,7 @@ pub fn kritik_mi(olay: &Olay) -> bool {
             | Olay::Hata { .. }
             | Olay::Tamamlandi { .. }
             | Olay::AracCagrisiBasladi { .. }
+            | Olay::DosyaDegisiklikleri { .. }
             | Olay::AracSonucu { .. }
             | Olay::SartOnayiGerekiyor { .. }
             | Olay::ButceKarariGerekli { .. }

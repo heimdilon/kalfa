@@ -20,7 +20,7 @@ use crate::izin::Kip;
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, TurId};
 use crate::protokol::{AracDurumu, BitisNedeni, Zarf};
-use crate::tur_ozeti::{TurOzeti, veri_silindi_isle};
+use crate::tur_ozeti::{DosyaDegisikligi, TurOzeti, veri_silindi_isle};
 
 /// Ekranda gösterilen bir geçmiş öğesi.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -50,6 +50,10 @@ pub enum GorunumOgesi {
         sonuc: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         denetim: Option<DenetimSonucu>,
+        /// Yazan çağrının dosya değişiklikleri; "başladı" kaydının
+        /// yedeklerinden (masaüstü arayüzü tasarımı §4).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        degisiklikler: Vec<DosyaDegisikligi>,
     },
     TurSonu {
         sira: u64,
@@ -151,6 +155,7 @@ pub fn gorunum_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GorunumOgesi> {
                             durum: None,
                             sonuc: None,
                             denetim: None,
+                            degisiklikler: Vec::new(),
                         });
                     }
                 }
@@ -170,13 +175,20 @@ pub fn gorunum_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GorunumOgesi> {
             KayitOgesi::AracBasladi {
                 cagri,
                 model_cagri_id,
+                yedekler,
                 ..
             } => {
                 if let Some(&i) = model_yeri.get(model_cagri_id) {
                     kalfa_yeri.insert(*cagri, i);
-                    if let Some(GorunumOgesi::AracCagrisi { durum, .. }) = ogeler.get_mut(i) {
+                    if let Some(GorunumOgesi::AracCagrisi {
+                        durum,
+                        degisiklikler,
+                        ..
+                    }) = ogeler.get_mut(i)
+                    {
                         // "Bitti" kaydı gelene kadar sonuç bilinmiyor.
                         *durum = Some(AracDurumu::SonucuBilinmiyor);
+                        *degisiklikler = yedekler.iter().map(DosyaDegisikligi::from).collect();
                     }
                 }
             }

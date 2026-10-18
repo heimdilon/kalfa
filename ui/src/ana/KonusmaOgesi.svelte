@@ -32,6 +32,7 @@
   } from './bicim';
   import ButceKarti from './ButceKarti.svelte';
   import { geriAlmaSonucMetni } from './geriAlma';
+  import AracDiffi from './AracDiffi.svelte';
   import OnayKarti from './OnayKarti.svelte';
   import OnizlemeKarti from './OnizlemeKarti.svelte';
   import TerminalGorunumu from './TerminalGorunumu.svelte';
@@ -88,6 +89,7 @@
     status={d.status}
     statusLabel={d.etiket}
     icon={ARAC_IKONU[oge.arac] ?? 'box'}
+    acikBaslar={oge.degisiklikler.some((g) => g.diff)}
   >
     {#snippet rozet()}
       {#if mcp}
@@ -113,7 +115,12 @@
         <Badge tone="neutral" icon="shield-check">{m('denetim.rozet.atlandi')}</Badge>
       {/if}
     {/snippet}
-    {#if oge.terminal}
+    {#if oge.degisiklikler.length > 0}
+      <AracDiffi
+        degisiklikler={oge.degisiklikler}
+        uygulanmadi={oge.durum === 'Basarisiz' || oge.durum === 'IptalEdildi'}
+      />
+    {:else if oge.terminal}
       <TerminalGorunumu terminal={oge.terminal} />
     {:else if oge.sonuc}
       {@const o = ciktiOnizlemesi(sonucGovdesi(oge.sonuc))}

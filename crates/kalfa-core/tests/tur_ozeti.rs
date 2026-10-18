@@ -13,7 +13,8 @@ use kalfa_core::oturum::OturumAyarlari;
 use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf};
 use kalfa_core::test_destek::*;
 use kalfa_core::tur_ozeti::{
-    AgHostOzeti, AgKomutOzeti, DosyaIslemi, DosyaOzeti, GeriAlinabilirlik, IstekOzeti, TurOzeti,
+    AgHostOzeti, AgKomutOzeti, DosyaDegisikligi, DosyaIslemi, DosyaOzeti, GeriAlinabilirlik,
+    IstekOzeti, TurOzeti,
 };
 use kalfa_core::yol::CalismaYolu;
 use kalfa_evren::AkisOlayi;
@@ -509,4 +510,74 @@ fn kontrol_karakterli_diffler_json_butcesine_sigar() {
     );
     let olay_bayt = serde_json::to_vec(&Olay::TurOzeti { ozet }).unwrap().len();
     assert!(olay_bayt < OlayButcesi::default().azami_bayt());
+}
+
+/// Masaüstü arayüzü tasarımı §4: yazan çağrının dosya değişiklikleri
+/// `AracCagrisiBasladi`'nın hemen ardından, sonuçtan önce yayımlanır; geçmiş
+/// aynı bilgiyi "başladı" kaydının yedeklerinden üretir.
+#[tokio::test]
+async fn yazan_cagrinin_degisiklikleri_sonuctan_once_gelir_ve_gecmiste_gorunur() {
+    let o = Ortam::yeni();
+    o.dosyalar.yaz("a.txt", b"eski");
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac("yaz", json!({"yol": "a.txt", "icerik": "yeni"})),
+        SahteYanit::metin("tamam"),
+    ]);
+    let mut d = o.surucu(s, Kip::Serbest, true);
+    d.gonder(mesaj("değiştir")).await;
+    let basladi = d
+        .bekle(|o| matches!(o, Olay::AracCagrisiBasladi { .. }))
+        .await;
+    let Olay::AracCagrisiBasladi { cagri, .. } = basladi.yuk else {
+        unreachable!()
+    };
+    let beklenen = vec![DosyaDegisikligi {
+        yol: y("a.txt"),
+        islem: DosyaIslemi::Degisti,
+        eklenen: 1,
+        silinen: 0,
+        diff: Some("+sahte yaz".into()),
+    }];
+    assert_eq!(
+        d.sonraki().await.yuk,
+        Olay::DosyaDegisiklikleri {
+            cagri,
+            dosyalar: beklenen.clone(),
+        },
+        "değişiklikler sonuçtan önce gelir"
+    );
+    assert!(matches!(d.sonraki().await.yuk, Olay::AracSonucu { .. }));
+    d.tur_sonu().await;
+    d.kapat().await;
+
+    let gorunum = gorunum_uret(&OturumKaydi::oku(&o.kayit()).unwrap());
+    let degisiklikler = gorunum
+        .iter()
+        .find_map(|g| match g {
+            GorunumOgesi::AracCagrisi { degisiklikler, .. } => Some(degisiklikler.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(degisiklikler, beklenen);
+}
+
+/// Yazmayan çağrı değişiklik olayı yayımlamaz.
+#[tokio::test]
+async fn yazmayan_cagri_degisiklik_olayi_yayimlamaz() {
+    let o = Ortam::yeni();
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac("kabuk", json!({"yol": "."})),
+        SahteYanit::metin("tamam"),
+    ]);
+    let mut d = o.surucu(s, Kip::Serbest, true);
+    d.gonder(mesaj("çalıştır")).await;
+    d.bekle(|o| matches!(o, Olay::AracCagrisiBasladi { .. }))
+        .await;
+    loop {
+        let olay = d.sonraki().await.yuk;
+        assert!(!matches!(olay, Olay::DosyaDegisiklikleri { .. }));
+        if matches!(olay, Olay::Tamamlandi { .. }) {
+            break;
+        }
+    }
 }
