@@ -61,6 +61,36 @@ describe('Select', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 
+  // Liste kartın `overflow`'una takılmasın diye pencereye göre konumlanır.
+  function tetikKonumu(tetik: HTMLElement, ust: number, sol: number) {
+    const kutu = tetik.parentElement as HTMLElement;
+    kutu.getBoundingClientRect = () =>
+      ({ top: ust, bottom: ust + 28, left: sol, right: sol + 90, width: 90, height: 28 }) as DOMRect;
+  }
+
+  it('altta yer yoksa liste yukarı ve sağdan hizalı açılır', async () => {
+    render(Select, { props: { label: 'Kip', value: 'Siki', options: KIPLER } });
+    const tetik = screen.getByRole('combobox', { name: 'Kip' });
+    tetikKonumu(tetik, window.innerHeight - 40, window.innerWidth - 100);
+    await fireEvent.click(tetik);
+    const liste = screen.getByRole('listbox');
+    expect(liste.style.top).toBe('');
+    expect(liste.style.bottom).toBe('46px');
+    expect(liste.style.right).toBe('10px');
+    expect(liste.style.minWidth).toBe('90px');
+  });
+
+  it('yer varsa liste tetiğin altında açılır ve pencereye sığar', async () => {
+    render(Select, { props: { label: 'Kip', value: 'Siki', options: KIPLER } });
+    const tetik = screen.getByRole('combobox', { name: 'Kip' });
+    tetikKonumu(tetik, 100, 20);
+    await fireEvent.click(tetik);
+    const liste = screen.getByRole('listbox');
+    expect(liste.style.top).toBe('134px');
+    expect(liste.style.left).toBe('20px');
+    expect(liste.style.maxHeight).toBe(`${window.innerHeight - 128 - 14}px`);
+  });
+
   it('Escape kapatır, seçim değişmez', async () => {
     const onchange = vi.fn();
     render(Select, { props: { label: 'Kip', value: 'Siki', options: KIPLER, onchange } });

@@ -1,6 +1,8 @@
 <!--
   Açılır seçim listesi. Odak düğmede kalır; seçenekler aria-activedescendant
-  ile gösterilir. Ok tuşları, Enter, Boşluk ve Escape çalışır.
+  ile gösterilir. Ok tuşları, Enter, Boşluk ve Escape çalışır. Liste,
+  kartların `overflow`'una takılmasın diye pencereye göre konumlanır; altta
+  yer yoksa yukarı, sağda yer yoksa sola doğru açılır.
 -->
 <script lang="ts" module>
   export interface Secenek {
@@ -47,14 +49,56 @@
 
   const secili = $derived(options.find((o) => o.value === value));
 
+  /** Tetikle liste arası ve pencere kenarı payı (px). */
+  const ARA = 6;
+  const KENAR = 8;
+  /** Bir seçeneğin yaklaşık yüksekliği; yalnız yön seçiminde kullanılır. */
+  const SATIR = 34;
+
+  interface Konum {
+    ust: number | null;
+    alt: number | null;
+    sol: number | null;
+    sag: number | null;
+    genislik: number;
+    yukseklik: number;
+  }
+  let konum = $state<Konum>();
+
+  function konumla() {
+    const r = kok?.getBoundingClientRect();
+    if (!r) return;
+    const { innerHeight: h, innerWidth: w } = window;
+    const asagi = h - r.bottom - ARA - KENAR;
+    const yukari = r.top - ARA - KENAR;
+    const istenen = options.length * SATIR + 10;
+    const yukariAc = asagi < istenen && yukari > asagi;
+    const solaAc = r.left > w / 2;
+    konum = {
+      ust: yukariAc ? null : r.bottom + ARA,
+      alt: yukariAc ? h - r.top + ARA : null,
+      sol: solaAc ? null : r.left,
+      sag: solaAc ? w - r.right : null,
+      genislik: r.width,
+      yukseklik: Math.max(0, yukariAc ? yukari : asagi),
+    };
+  }
+
   function ac() {
     if (disabled) return;
     vurgu = Math.max(
       0,
       options.findIndex((o) => o.value === value),
     );
+    konumla();
     acik = true;
   }
+
+  function yenidenKonumla() {
+    if (acik) konumla();
+  }
+
+  const px = (n: number | null | undefined) => (n == null ? null : `${n}px`);
 
   function sec(secenek: Secenek) {
     acik = false;
@@ -89,7 +133,11 @@
   }
 </script>
 
-<svelte:window onpointerdown={disariBasildi} />
+<svelte:window
+  onpointerdown={disariBasildi}
+  onresize={yenidenKonumla}
+  onscrollcapture={yenidenKonumla}
+/>
 
 <div bind:this={kok} class={['secim', sinif]}>
   <button
@@ -110,7 +158,18 @@
     <span class="ok"><Icon name="chevron-down" size={14} /></span>
   </button>
   {#if acik}
-    <div id={`${kimlik}-liste`} role="listbox" aria-label={label} class="liste">
+    <div
+      id={`${kimlik}-liste`}
+      role="listbox"
+      aria-label={label}
+      class="liste"
+      style:top={px(konum?.ust)}
+      style:bottom={px(konum?.alt)}
+      style:left={px(konum?.sol)}
+      style:right={px(konum?.sag)}
+      style:min-width={px(konum?.genislik)}
+      style:max-height={px(konum?.yukseklik)}
+    >
       {#each options as secenek, i (secenek.value)}
         <button
           type="button"
@@ -183,11 +242,9 @@
     text-align: left;
   }
   .liste {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    min-width: 100%;
+    position: fixed;
     z-index: 40;
+    overflow-y: auto;
     padding: 4px;
     background: var(--surface-card);
     border: var(--border-width) solid var(--border-default);
