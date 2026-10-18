@@ -236,14 +236,25 @@ pub(crate) fn git_durumu(kok: &Path) -> GitDurumu {
         match kisa_oku(&git)
             .as_deref()
             .and_then(|s| s.trim().strip_prefix("gitdir:"))
+            .map(|d| Path::new(d.trim()))
         {
-            Some(d) => kok.join(d.trim()),
-            None => return GitDurumu::GitDegil,
+            // `.git` dosyasını çalışma alanına kim yazdıysa (klonlanan depo,
+            // model) seçer: ağ yolu açılmaz.
+            Some(d) if yerel_yol_mu(d) => kok.join(d),
+            _ => return GitDurumu::GitDegil,
         }
     } else {
         return GitDurumu::GitDegil;
     };
-    match kisa_oku(&git_dizini.join("HEAD")) {
+    let head = git_dizini.join("HEAD");
+    // gitdir ve HEAD bağlantı olamaz: bağlantı ağ yoluna çıkabilir.
+    let gercek = |yol: &Path, dizin: bool| {
+        std::fs::symlink_metadata(yol).is_ok_and(|m| if dizin { m.is_dir() } else { m.is_file() })
+    };
+    if !gercek(&git_dizini, true) || !gercek(&head, false) {
+        return GitDurumu::GitDegil;
+    }
+    match kisa_oku(&head) {
         Some(head) => match head.trim().strip_prefix("ref:") {
             Some(r) => {
                 let r = r.trim();
@@ -254,6 +265,16 @@ pub(crate) fn git_durumu(kok: &Path) -> GitDurumu {
             None => GitDurumu::AyrikHead,
         },
         None => GitDurumu::GitDegil,
+    }
+}
+
+/// Göreli ya da sürücü harfli yerel yol mu? Windows'ta UNC (`\\sunucu\pay`),
+/// `\\?\` ve aygıt yollarını açmak ağa kimlik bilgisi gönderebilir.
+fn yerel_yol_mu(yol: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    match yol.components().next() {
+        Some(Component::Prefix(p)) => matches!(p.kind(), Prefix::Disk(_)),
+        _ => true,
     }
 }
 
@@ -301,6 +322,57 @@ mod testler {
         )
         .unwrap();
         assert_eq!(git_durumu(w.path()), GitDurumu::Dal { ad: "main".into() });
+
+        // Göreli gitdir de okunur.
+        std::fs::create_dir_all(w.path().join("modul/.git-dizin")).unwrap();
+        std::fs::write(
+            w.path().join("modul/.git-dizin/HEAD"),
+            "ref: refs/heads/alt\n",
+        )
+        .unwrap();
+        std::fs::write(w.path().join(".git"), "gitdir: modul/.git-dizin\n").unwrap();
+        assert_eq!(git_durumu(w.path()), GitDurumu::Dal { ad: "alt".into() });
+    }
+
+    /// Aynı yerel gitdir'e `\\?\` ya da UNC biçimiyle gidilmez: Windows'ta
+    /// bu yolları açmak ağa kimlik bilgisi gönderebilir.
+    #[cfg(windows)]
+    #[test]
+    fn ag_ve_ozel_onekli_gitdir_acilmaz() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir(d.path().join("gd")).unwrap();
+        std::fs::write(d.path().join("gd/HEAD"), "ref: refs/heads/main\n").unwrap();
+        let w = tempfile::tempdir().unwrap();
+        let yerel = d.path().join("gd");
+        std::fs::write(
+            w.path().join(".git"),
+            format!("gitdir: {}\n", yerel.display()),
+        )
+        .unwrap();
+        assert_eq!(git_durumu(w.path()), GitDurumu::Dal { ad: "main".into() });
+
+        let ozel = format!(r"\\?\{}", yerel.display());
+        std::fs::write(w.path().join(".git"), format!("gitdir: {ozel}\n")).unwrap();
+        assert!(Path::new(&ozel).join("HEAD").exists(), "{ozel}");
+        assert_eq!(git_durumu(w.path()), GitDurumu::GitDegil);
+
+        for ag in [r"\\127.0.0.1\pay\gd", "//127.0.0.1/pay/gd"] {
+            std::fs::write(w.path().join(".git"), format!("gitdir: {ag}\n")).unwrap();
+            assert_eq!(git_durumu(w.path()), GitDurumu::GitDegil, "{ag}");
+            assert!(!yerel_yol_mu(Path::new(ag)), "{ag}");
+        }
+    }
+
+    /// HEAD bağlantıysa izlenmez.
+    #[cfg(unix)]
+    #[test]
+    fn baglanti_head_izlenmez() {
+        let d = tempfile::tempdir().unwrap();
+        let dis = tempfile::tempdir().unwrap();
+        std::fs::write(dis.path().join("HEAD"), "ref: refs/heads/dis\n").unwrap();
+        std::fs::create_dir(d.path().join(".git")).unwrap();
+        std::os::unix::fs::symlink(dis.path().join("HEAD"), d.path().join(".git/HEAD")).unwrap();
+        assert_eq!(git_durumu(d.path()), GitDurumu::GitDegil);
     }
 
     #[test]
