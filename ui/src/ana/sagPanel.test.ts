@@ -141,6 +141,28 @@ describe('sağ panel (masaüstü arayüzü tasarımı §6)', () => {
     expect(within(degisiklikler).getByText('yeni b')).toBeTruthy();
   });
 
+  it("araç kartındaki dosya adı Değişiklikler'de o dosyayı açar (§4.3)", async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      { tip: 'AracCagrisiBasladi', cagri: 'c1', arac: 'dosya_duzenle', aciklama: 'b.py' },
+      {
+        tip: 'DosyaDegisiklikleri',
+        cagri: 'c1',
+        dosyalar: [{ yol: 'b.py', islem: 'Degisti', eklenen: 1, silinen: 1, diff: DIFF_B }],
+      },
+      { tip: 'AracSonucu', cagri: 'c1', arac: 'dosya_duzenle', durum: 'Basarili', icerik: 'tamam' },
+      turOzeti('t1', [
+        { yol: 'a.py', eklenen: 1, silinen: 0 },
+        { yol: 'b.py', eklenen: 1, silinen: 1, diff: DIFF_B },
+      ]),
+    ]);
+    expect(panel('Değişiklikler')).toBeNull();
+    await fireEvent.click(await screen.findByRole('button', { name: 'b.py' }));
+    const degisiklikler = panel('Değişiklikler')!;
+    expect(degisiklikler).toBeTruthy();
+    expect(within(degisiklikler).getByText('yeni b')).toBeTruthy();
+  });
+
   it('Dosyalar kimlikle açılır; gizli dosyanın içeriği yok, bağlantı açılmaz', async () => {
     const { arka } = await ciz((a) => {
       a.dosyaAgaci.set(null, {

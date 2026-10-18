@@ -1,7 +1,8 @@
 <!--
   Sağ panel (masaüstü arayüzü tasarımı §6): Ortam, Değişiklikler ve Dosyalar
   bölümleri. Kabı (sürüklenebilir tutamaç ve genişlik) Ana'dadır. Ortam'daki
-  bir çıktıya tıklamak Değişiklikler'de o dosyayı seçer.
+  bir çıktıya ya da araç kartındaki dosya adına tıklamak Değişiklikler'de o
+  dosyayı seçer.
 -->
 <script lang="ts">
   import Button from '../bilesenler/Button.svelte';
@@ -78,12 +79,14 @@
     seciliSagDosya?.diff ? diffCozumle(seciliSagDosya.diff) : [],
   );
 
-  /** Ortam'daki çıktıdan gelinir: o dosyanın son değişikliği seçilir. */
-  function dosyayiGoster(yol: string) {
+  // Araç kartından ya da Ortam'dan istenen dosyanın son değişikliği seçilir.
+  $effect(() => {
+    const yol = durum.sagSecilecekYol;
+    if (yol === null) return;
     const i = sagBolmeDosyalari.findLastIndex((d) => d.yol === yol);
     if (i >= 0) seciliDiffIndeksi = i;
-    durum.sagBolumuAc('degisiklikler');
-  }
+    durum.sagSecilecekYol = null;
+  });
 </script>
 
 <header class="sag-ust">
@@ -103,7 +106,7 @@
 </header>
 
 {#if bolum === 'ortam'}
-  <OrtamBolumu {durum} ondosya={dosyayiGoster} />
+  <OrtamBolumu {durum} ondosya={(yol) => durum.degisiklikteGoster(yol)} />
 {:else if bolum === 'dosyalar' && durum.aktif}
   <DosyalarBolumu oturum={durum.aktif.oturum} />
 {:else if bolum === 'degisiklikler'}

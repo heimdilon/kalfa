@@ -130,6 +130,16 @@ describe('BekleyenOnay', () => {
     expect(screen.getByText(/api\.takvim\.ornek:443/)).toBeTruthy();
   });
 
+  it('öğe başına geri alınabilirlik sayfadaki metinle görünür (§3.2)', () => {
+    ciz([
+      { ...duzenleme, geri_alinabilir: { tip: 'Evet' } },
+      { ...kabuk(false), geri_alinabilir: { tip: 'Hayir', neden: 'Kabuk' } },
+    ]);
+    expect(screen.getByText('Geri alınabilir mi: Evet: turu geri alarak')).toBeTruthy();
+    const hayir = screen.getByText('Geri alınabilir mi: Hayır: komutların etkileri geri alınamaz');
+    expect(hayir.classList.contains('uyari')).toBe(true);
+  });
+
   it('birden çok öğede toplu düğmeler', () => {
     ciz([duzenleme, kabuk(false)]);
     expect(screen.getByRole('button', { name: 'Tümünü onayla' })).toBeTruthy();

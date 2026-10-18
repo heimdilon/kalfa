@@ -1,16 +1,24 @@
 <!--
   Konuşmadaki onay isteğinin kaydı (1c tasarımı §8.2). Karar, yazma alanının
   üstündeki yapışık kartta verilir (`BekleyenOnay`, masaüstü arayüzü
-  tasarımı §3); burada yalnız durum görünür.
+  tasarımı §3); burada yalnız durum görünür. Yanıtlanan istekte arayüzün
+  gönderdiği kararların özeti yazar; kayıttan açılan geçmişte onay satırı
+  yoktur.
 -->
 <script lang="ts">
   import Badge from '../bilesenler/Badge.svelte';
   import Card from '../bilesenler/Card.svelte';
   import { m } from '../dil/tr';
-  import type { EkranOgesi } from '../durum/oturum';
+  import type { EkranOgesi, OnayOzeti } from '../durum/oturum';
   import { kisaAd } from './onay';
 
   let { oge }: { oge: Extract<EkranOgesi, { tip: 'OnayIstegi' }> } = $props();
+
+  const KARAR_TONU: Record<OnayOzeti, 'ok' | 'danger' | 'warn'> = {
+    Onaylandi: 'ok',
+    Reddedildi: 'danger',
+    Karisik: 'warn',
+  };
 
   const uyariSayisi = $derived(oge.ogeler.reduce((t, o) => t + o.uyarilar.length, 0));
 </script>
@@ -24,7 +32,11 @@
     {#if oge.durum === 'Bekliyor'}
       <Badge tone="accent">{m('onay.kart.bekliyor')}</Badge>
     {:else if oge.durum === 'Yanitlandi'}
-      <Badge tone="ok">{m('onay.kart.yanitlandi')}</Badge>
+      {#if oge.karar}
+        <Badge tone={KARAR_TONU[oge.karar]}>{m(`onay.kart.${oge.karar}`)}</Badge>
+      {:else}
+        <Badge tone="ok">{m('onay.kart.yanitlandi')}</Badge>
+      {/if}
     {:else}
       <Badge>{m('onay.kart.gecersiz')}</Badge>
     {/if}

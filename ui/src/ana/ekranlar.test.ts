@@ -220,7 +220,7 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
     expect(document.activeElement).toBe(sayfa);
   });
 
-  it('seçilmeyen değişiklik gerekçeyle reddedilir; kart yanıtlandı olur', async () => {
+  it('seçilmeyen değişiklik gerekçeyle reddedilir; kart kısmen onaylandı olur', async () => {
     const { arka } = await ciz();
     onayIstegi(arka);
     await fireEvent.click(await screen.findByRole('button', { name: 'İncele' }));
@@ -245,7 +245,7 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
         ],
       },
     ]);
-    expect(screen.getByText('Yanıtlandı')).toBeTruthy();
+    expect(screen.getByText('Kısmen onaylandı')).toBeTruthy();
   });
 
   it('yazma alanının üstündeki karttan sayfa açmadan onaylanır (masaüstü arayüzü §3)', async () => {
@@ -254,7 +254,7 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
     const kart = await screen.findByRole('region', { name: 'Onayınızı bekliyor: 2 işlem' });
     expect(screen.getByText('Kararınızı bekliyor')).toBeTruthy();
     await fireEvent.click(within(kart).getByRole('button', { name: 'Tümünü onayla' }));
-    await waitFor(() => expect(screen.getByText('Yanıtlandı')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Onaylandı')).toBeTruthy());
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByRole('region', { name: /Onayınızı bekliyor/ })).toBeNull();
     expect(arka.komutlar('arac_onayi')).toEqual([
@@ -266,6 +266,15 @@ describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {
         ],
       },
     ]);
+  });
+
+  it('karttan ret kayıt satırında "Reddedildi" yazar (masaüstü arayüzü §3.2)', async () => {
+    const { arka } = await ciz();
+    onayIstegi(arka);
+    const kart = await screen.findByRole('region', { name: 'Onayınızı bekliyor: 2 işlem' });
+    await fireEvent.click(within(kart).getByRole('button', { name: 'Tümünü reddet' }));
+    await waitFor(() => expect(screen.getByText('Reddedildi')).toBeTruthy());
+    expect(screen.queryByText('Yanıtlandı')).toBeNull();
   });
 
   it('geçersizleşen eski sayfa seçimi yeni isteğin kartını saklamaz', async () => {
