@@ -1,7 +1,9 @@
 # Kalfa masaüstü arayüzü: onay kartı, araç diff'i, başlık çubuğu, sağ panel — Tasarım
 
 **Tarih:** 2026-10-18.
-**Durum:** Taslak r1; kullanıcı onayı bekler. Kod bu belge onaylanmadan yazılmaz.
+**Durum:** r2; kullanıcı 18 Ekim'de onayladı. r2: §4 yeni kayıt türü yerine
+mevcut `AracBasladi.yedekler`'i kullanır. Plan:
+[2026-10-18-kalfa-masaustu-arayuzu.md](../plans/2026-10-18-kalfa-masaustu-arayuzu.md).
 **Kaynak:** Kullanıcının 18 Ekim denemesi (CI kurucusu `bfe198a`, deneme
 projesi `kalfa-deneme`). Açılır liste hatası ayrı PR'da (#23) düzeltildi.
 **Taban:** `main`, `117dd8c`.
@@ -132,31 +134,39 @@ değişiklik yapıldı").
 
 ### 4.2 Yeni olay
 
-Çekirdek, `tur_ozeti.yazma_basladi` çağrısının yanında her yazılan dosya için
-yeni bir olay yayımlar:
+Yazan çağrının "başladı" kaydı (`KayitOgesi::AracBasladi.yedekler`) dosya
+başına yol, önceki hâl, `eklenen`, `silinen` ve diff'i zaten taşır. Diff
+kayda girerken süzülmüştür: yalnız tek dosyalı yazmada, en çok `DIFF_SINIRI`
+(64 KiB) ve gizli dosyada hiç yok. Yeni olay bu yedeklerden üretilir:
 
 ```rust
-Olay::DosyaDegisikligi {
+Olay::DosyaDegisiklikleri {
     cagri: CagriId,
-    yol: CalismaYolu,          // çalışma alanına göreli, gösterim için
-    islem: DosyaIslemi,        // Olusturuldu | Degisti
-    eklenen: u32,
-    silinen: u32,
-    diff: Option<String>,      // sınırlı; aşınca None ve `kirpildi: true`
-    kirpildi: bool,
+    dosyalar: Vec<DosyaDegisikligi>,
+}
+
+pub struct DosyaDegisikligi {
+    pub yol: CalismaYolu,      // çalışma alanına göreli
+    pub islem: DosyaIslemi,    // Olusturuldu | Degisti
+    pub eklenen: u32,
+    pub silinen: u32,
+    pub diff: Option<String>,  // kayıttaki süzülmüş diff
 }
 ```
 
-- Olay `AracSonucu`'ndan önce gelir. Sonuç `Basarisiz` ya da `Reddedildi`
-  olursa kart diff'i "uygulanmadı" etiketiyle gösterir.
-- JSONL kayda yazılır: oturum yeniden açılınca diff görünür. Eski kayıtta
-  olay yoktur; kart bugünkü gibi davranır.
-- Boyut sınırı `TurOzeti`'nin diff bütçesiyle aynı mantıktadır: tek olayın
-  diff'i 256 KiB'ı aşarsa gönderilmez, `kirpildi` işaretlenir; kart "Diff
-  çok büyük; Değişiklikler'de açın" der.
+- Olay `AracCagrisiBasladi`'nın hemen ardından, `AracSonucu`'ndan önce
+  gelir. Sonuç `Basarisiz` ya da `IptalEdildi` olursa kart diff'i
+  "uygulanmadı" etiketiyle gösterir. Reddedilen çağrı başlamadığı için olay
+  yoktur.
+- Yeni kayıt türü gerekmez: geçmiş görünümü (`gecmis`) aynı bilgiyi
+  `AracBasladi.yedekler`'den `GorunumOgesi::AracCagrisi.degisiklikler`'e
+  koyar. Oturum yeniden açılınca diff görünür; yedeksiz eski kayıtta liste
+  boştur ve kart bugünkü gibi davranır.
+- `diff` yoksa (çok büyük, çok dosyalı ya da gizli) kart yalnız `+N −M`
+  gösterir ve "Diff gösterilmiyor" der.
 - Modelin gördüğü sonuç metni değişmez (`duzenle.rs`).
-- Diff bugün de `TurOzeti` ile arayüze gidiyor; yeni bir veri çıkışı
-  yoktur (diff modele ya da EVREN'e gitmez).
+- Diff bugün de kayda ve `TurOzeti` ile arayüze gidiyor; yeni bir veri
+  çıkışı yoktur (diff modele ya da EVREN'e gitmez).
 
 ### 4.3 Kart
 
@@ -167,9 +177,10 @@ adına tıklamak sağ paneli Değişiklikler'de o dosyada açar.
 ### 4.4 Testler
 
 - Çekirdek: başarılı düzenlemede olay sırası `AracCagrisiBasladi →
-  DosyaDegisikligi → AracSonucu`; reddedilen çağrıda olay yok; büyük diff'te
-  `kirpildi`.
-- Kayıt: olay JSONL'a yazılır ve geri okunur; eski kayıt okunur.
+  DosyaDegisiklikleri → AracSonucu`; reddedilen çağrıda olay yok; gizli
+  dosyada ve büyük diff'te `diff: None`.
+- Geçmiş: kayıttan açılan oturumda `degisiklikler` dolu; yedeksiz eski kayıt
+  okunur.
 - Arayüz: kart diff'i gösterir, uygulanmayanı etiketler.
 
 ## 5. Kalfa'ya özel başlık çubuğu
