@@ -592,7 +592,13 @@ başlatılamıyor (`Erişim engellendi (os error 5)`); aynı iki test
 `main` kodunda da aynı hatayla düştü. WSL'de `04-kabul` gecikme p95'i
 50 ms eşiğinin kıyısında dalgalanıyor: aynı makinede art arda taban
 (`47f3abc`) ve PR başı üçer koşuda üçer düşüş verdi (p95 50–58,6 ms).
-İkisi ayrı iş olarak ele alınmalı.
+Kök nedenler ([e2e ortam bulguları](superpowers/bulgular/2026-10-19-kalfa-e2e-ortam.md)):
+Windows'ta 0.1.1 yükseltmesi `C:\Program Files\nodejs` ve `C:\Python314`
+araç zinciri izinlerini tasarım gereği geri aldı; "Onar" ya da
+`kalfa-yalitim izin-ver` ile açılır (kullanıcı, yönetici). Linux'ta gerileme
+yok: Windows'ta yük yokken 14 Ekim `main`'i, taban ve PR başı p95
+35–46 ms ile geçiyor; düşüşler eşzamanlı yükten. Makinedeki yedi artık
+`Kalfa.Alan.*` profili (17 Ekim) kullanıcı onayıyla silinecek.
 
 **Sıradaki tek iş:** Kullanıcının açık onayıyla PR
 [#32](https://github.com/heimdilon/kalfa/pull/32) squash birleştirilir.
