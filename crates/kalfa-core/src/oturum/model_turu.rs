@@ -42,9 +42,14 @@ impl Oturum {
         let goruntu = self.baglam.araclar.anlik_goruntu(self.ayarlar.kip);
         let tahmin = self.oran.tahmin(self.baglam_bayti(&goruntu));
         let esik = super::compact::esik(&self.ayarlar.model, self.ayarlar.sinirlar.etkin_pencere);
-        if tahmin > esik {
-            self.baglami_ozetle(OzetTetigi::Otomatik, None, &goruntu)
+        let ozetlendi = tahmin > esik
+            && self
+                .baglami_ozetle(OzetTetigi::Otomatik, None, &goruntu)
                 .await?;
+        // Gösterge her ana istekten önce güncellenir; yanıtın kullanım
+        // bildirmesine bağlı kalmaz. Özetleme başarılıysa kendisi yaydı.
+        if !ozetlendi {
+            self.yay(Olay::BaglamDurumu { tahmin, esik }).await;
         }
         let istek = self.istek_olustur(&goruntu);
         let (

@@ -14,12 +14,6 @@
   import type { AnaDurum } from './anaDurum.svelte';
   import { projeAdi, sayi } from './bicim';
 
-  /**
-   * 5a'nın bağlam eşiği (`kalfa_core::oturum::Sinirlar::baglam_esigi`): bunu
-   * aşan istemde eski araç çıktıları özetlenir.
-   */
-  const BAGLAM_ESIGI = 64_000;
-
   let { durum, ondosya }: { durum: AnaDurum; ondosya: (yol: string) => void } = $props();
 
   const ekran = $derived(durum.aktif);
@@ -99,15 +93,17 @@
 
     <section>
       <h3>{m('sag.baglam')}</h3>
-      {#if ekran.son_istem === null}
+      {#if ekran.baglam === null || ekran.baglam.esik <= 0}
         <p class="soluk">{m('sag.baglam_bilinmiyor')}</p>
       {:else}
-        <progress max={BAGLAM_ESIGI} value={Math.min(ekran.son_istem, BAGLAM_ESIGI)}></progress>
+        <!-- Oturumun yaydığı tahmin ve compact eşiği (etkin pencerenin %90'ı). -->
+        {@const { tahmin, esik } = ekran.baglam}
+        <progress max={esik} value={Math.min(tahmin, esik)}></progress>
         <p>
           {m('sag.baglam_kullanim', {
-            token: sayi(ekran.son_istem),
-            esik: sayi(BAGLAM_ESIGI),
-            yuzde: Math.round((ekran.son_istem / BAGLAM_ESIGI) * 100),
+            token: sayi(tahmin),
+            esik: sayi(esik),
+            yuzde: Math.min(100, Math.round((tahmin / esik) * 100)),
           })}
         </p>
       {/if}

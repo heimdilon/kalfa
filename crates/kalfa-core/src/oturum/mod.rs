@@ -1372,6 +1372,8 @@ impl Oturum {
             Komut::ModelDegistir { model } => {
                 self.ayarlar.model = model.clone();
                 self.kaydet(KayitOgesi::ModelDegisti { model }).await;
+                // Eşik modelin penceresine bağlı.
+                self.baglam_durumu_yay_anlik().await;
             }
             Komut::EforDegistir { efor } => {
                 self.ayarlar.efor = Some(efor);

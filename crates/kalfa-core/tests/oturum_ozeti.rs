@@ -638,3 +638,42 @@ async fn elle_compact_sonrası_bağlam_yalnız_özet() {
     assert_eq!(m[2].role, Role::User);
     assert_eq!(icerik(&m[2]), "yeni kullanıcı mesajı");
 }
+
+#[tokio::test]
+async fn bağlam_durumu_kullanımsız_yanıtta_ve_model_değişince_yayılır() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (mut ayar, _) = ayarlar(dizin.path());
+    ayar.sinirlar.etkin_pencere = 1_000_000;
+    // Kullanım bildirmeyen geçerli yanıt.
+    let s = SahteSaglayici::yeni(vec![SahteYanit::Akis(vec![
+        Ok(AkisOlayi::Metin("tamam".into())),
+        Ok(AkisOlayi::Bitti {
+            neden: "stop".into(),
+        }),
+    ])]);
+    let mut d = surucu(&s, oku("x"), ayar);
+    let esikler = |d: &Surucu| -> Vec<u64> {
+        d.olaylar()
+            .iter()
+            .filter_map(|o| match o {
+                Olay::BaglamDurumu { esik, .. } => Some(*esik),
+                _ => None,
+            })
+            .collect()
+    };
+
+    d.gonder(Komut::KullaniciMesaji {
+        metin: "selam".into(),
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    // glm-5.3: min(524 288, 1 000 000) × 0,9.
+    assert_eq!(esikler(&d).last(), Some(&471_859));
+
+    d.gonder(Komut::ModelDegistir {
+        model: "qwen3.8-flash-next".into(),
+    })
+    .await;
+    d.bekle(|o| matches!(o, Olay::BaglamDurumu { esik: 235_929, .. }))
+        .await;
+}

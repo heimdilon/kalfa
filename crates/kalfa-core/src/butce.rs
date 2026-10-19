@@ -112,16 +112,27 @@ impl ButceDurumu {
         }
     }
 
-    /// Kayıt öğelerini sırayla oynatır. Bütçe satırı hiç yoksa eski kayıt
-    /// devri bellekte uygulanır (kayda yazılmaz).
+    /// Kayıt öğelerini sırayla oynatır. İlk bütçe satırından önceki 5b öncesi
+    /// önek, kayıt `ButceAyarlandi` ile başlamıyorsa her açılışta bellekte
+    /// devralınır (kayda yazılmaz); böylece devirden sonra yazılan kimlikler
+    /// sonraki açılışlarda da sırasında kalır.
     pub fn kayittan<'a>(
         ogeler: impl IntoIterator<Item = &'a KayitOgesi> + Clone,
     ) -> Result<Self, ButceHatasi> {
         let mut durum = Self::yeni();
-        let butce_satiri_var = ogeler.clone().into_iter().any(butce_kaydi_mi);
-        if !butce_satiri_var {
-            durum.devral(eski_kayit_devri(ogeler));
-            return Ok(durum);
+        let ilk_butce = ogeler.clone().into_iter().position(butce_kaydi_mi);
+        let ayarla_basliyor = ilk_butce.is_some_and(|i| {
+            matches!(
+                ogeler.clone().into_iter().nth(i),
+                Some(KayitOgesi::ButceAyarlandi { .. })
+            )
+        });
+        if !ayarla_basliyor {
+            let onek = ogeler
+                .clone()
+                .into_iter()
+                .take(ilk_butce.unwrap_or(usize::MAX));
+            durum.devral(eski_kayit_devri(onek));
         }
         for oge in ogeler {
             if butce_kaydi_mi(oge) {
@@ -539,6 +550,28 @@ mod testler {
             }
         );
         assert_eq!(d.siradaki(), Some(ButceIslemId(3)));
+    }
+
+    #[test]
+    fn devralinan_5b_oncesi_kayit_yeni_isteklerden_sonra_da_acilir() {
+        // 5b öncesi iki istek bellekte devralınır; kurtarılan oturumun ilk yeni
+        // isteği 3 kimliğini yazar. Sonraki açılış da aynı devri yapmalıdır.
+        let kayit = vec![
+            istek_satiri(None),
+            KayitOgesi::Kullanim {
+                istem: 10,
+                tamamlama: 5,
+                dusunce: 0,
+            },
+            istek_satiri(None),
+            basla(3),
+            istek_satiri(Some(ButceIslemId(3))),
+            bitis(3, tok(20, 10)),
+        ];
+        let d = ButceDurumu::kayittan(&kayit).unwrap();
+        assert_eq!(d.gorunum().baslatilan, 3);
+        assert_eq!(d.gorunum().bilinen_token, 45);
+        assert_eq!(d.siradaki(), Some(ButceIslemId(4)));
     }
 
     #[test]

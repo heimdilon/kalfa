@@ -47,6 +47,7 @@ use crate::tur_ozeti::TurOzeti;
 pub enum KayitKomutu {
     Guncel(Komut),
     EskiSartKabulIstegi(EskiSartKabulKomutu),
+    EskiButceKarari(EskiButceKarariKomutu),
 }
 
 /// Kayıtlarda tutulmuş eski şart kabul isteği; yeni `Komut` API'sinin parçası
@@ -56,6 +57,15 @@ pub enum KayitKomutu {
 pub enum EskiSartKabulKomutu {
     #[serde(rename = "SartlariKabulEt", skip_serializing)]
     SartKabulIstegi { surum: u32 },
+}
+
+/// 5b'nin bütçe kartı kararı. Bütçe sınırları kalktığından yalnızca eski
+/// kayıtları açabilmek için okunur ve yok sayılır; yeni kod yazmaz.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "tip")]
+pub enum EskiButceKarariKomutu {
+    #[serde(rename = "ButceKarari", skip_serializing)]
+    ButceKarari { karar: serde_json::Value },
 }
 
 impl From<Komut> for KayitKomutu {
