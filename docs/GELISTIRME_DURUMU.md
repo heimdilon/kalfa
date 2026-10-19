@@ -575,11 +575,31 @@ sınırı nedeniyle kurulu makinede Claude tarafından koşturulacaktır. WSL
 doğrulaması ayrı kopya/hedef dizini gerektirdiğinden Claude incelemesine
 bırakıldı.
 
-**Sıradaki tek iş:** Claude PR [#32](https://github.com/heimdilon/kalfa/pull/32)'yi
-(`docs/compact-butcesiz`) Windows ve WSL'de inceler ve doğrular.
-**Engel:** Yok (inceleme ve iki platform doğrulaması bekleniyor).
-**Devam koşulu:** Claude inceleme ve doğrulamayı tamamlar; ardından
-kullanıcının açık onayıyla PR #32 squash birleştirilir.
+Claude incelemesi ve doğrulaması (19 Ekim, `926b136`): kapsam, sarmal,
+kurtarmada ortak `compact::uygula` ve sistem isteminin `oturum_ozeti`
+kuralı plana uygun. İnceleme düzeltmeleri: bağlam yüzdesi %100 ile sınırlı
+(testli), sınıf gövdesindeki fazla `;` kalktı, etkin pencere sabitleri
+`kalfa-uygulama`'da çekirdekten okunur. Windows: workspace **1 458 / 0 / 19**,
+e2e özellikli **282 / 0 / 0**, fmt, üç clippy, `kalfa-mcp` check temiz;
+arayüz **489 / 489**, check 0/0, build temiz; WebDriver e2e **41/43**.
+WSL Ubuntu 24.04 (`kalfatest`): workspace **1 410 / 0 / 19**, e2e özellikli
+**284 / 0 / 0**, fmt, üç clippy, `kalfa-mcp` check ve köprü temiz; arayüz
+**489 / 489**; WebDriver e2e **40/42**.
+
+Düşen e2e'ler bu PR'dan değil, ikisi de tabanda aynı biçimde düşüyor:
+Windows'ta `05-kabuk` iptal ve `09-ag-cikisi` S13, AppContainer'da `node`
+başlatılamıyor (`Erişim engellendi (os error 5)`); aynı iki test
+`main` kodunda da aynı hatayla düştü. WSL'de `04-kabul` gecikme p95'i
+50 ms eşiğinin kıyısında dalgalanıyor: aynı makinede art arda taban
+(`47f3abc`) ve PR başı üçer koşuda üçer düşüş verdi (p95 50–58,6 ms).
+İkisi ayrı iş olarak ele alınmalı.
+
+**Sıradaki tek iş:** Kullanıcının açık onayıyla PR
+[#32](https://github.com/heimdilon/kalfa/pull/32) squash birleştirilir.
+**Engel:** Merge onayı.
+**Devam koşulu:** Kullanıcı "birleştir" der; ardından worktree
+(`C:/Users/kor_a/kalfa-compact`) ve WSL kopyası
+(`/home/kalfatest/kalfa-compact*`) silinir.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
