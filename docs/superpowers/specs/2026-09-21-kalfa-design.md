@@ -448,7 +448,10 @@ Eşik token tasarrufuna göre konur (varsayılan 64 bin istem tokenı); modelin
 bağlam penceresi tavandır. Katalog pencereyi vermediği için 12 Ekim 2026'da
 canlı ölçüldü: `qwen3.8-flash-next` 262 144, `glm-5.3` 524 288,
 `deepseek-v4-flash` 1 048 576 token. Ayrıntı:
-[5a tasarımı](2026-10-12-kalfa-5a-baglam-yonetimi-design.md).
+[5a tasarımı](2026-10-12-kalfa-5a-baglam-yonetimi-design.md). 19 Ekim 2026'da
+çıktı başına özetlemenin yerini bütün geçmişi özetleyen otomatik ve `/compact`
+ile elle compact aldı (`E = 0,9 × min(pencere(model), etkin_pencere)`):
+[bütçesiz oturum ve compact tasarımı](2026-10-19-kalfa-compact-butcesiz-design.md).
 
 ### 6.6 Oturum kaydı ve kurtarma
 
@@ -576,7 +579,10 @@ Ayrıntılar [aşama 3 tasarımında](2026-09-28-kalfa-3-gorunurluk-design.md)
 ve [planında](../plans/2026-10-12-kalfa-5b-oturum-butcesi.md) yer alır.
 Kullanım bildirilmeyen istekte yeni denemeden önce kullanıcıya sorulur.
 İstek limiti başlatmadan önce; bilinen token eşiği yanıt geldikten sonra
-uygulanır. Token eşiği kesin harcama tavanı olarak sunulmaz.
+uygulanır. Token eşiği kesin harcama tavanı olarak sunulmaz. 19 Ekim 2026'da
+oturum istek/token sınırları ve bütçe kararları kaldırıldı, deneme defteri ve
+sayaçlar korundu:
+[bütçesiz oturum ve compact tasarımı](2026-10-19-kalfa-compact-butcesiz-design.md).
 
 ---
 

@@ -545,13 +545,41 @@ uyumluluk **16/16** (köprü derlendi, `köprü bulunamadı` yok),
 `yalitim-testleri` özellikli clippy temiz. Uçtan uca takım bu değişiklikte
 koşmadı.
 
-**Sıradaki tek iş:** MCP 1.1b'nin (uzak Streamable HTTP ve OAuth, 1.1a
-tasarımı §2) tasarım belgesini Claude yazar:
-`docs/superpowers/specs/`'te yeni belge ve onu açan PR.
-**Engel:** Yeni aşama kullanıcının açık başlatma onayını ister; genel
-"devam" bu onay sayılmaz.
-**Devam koşulu:** Kullanıcı 1.1b'yi başlatmayı onaylar; ya da başka bir
-işi seçerse bu satır onunla değiştirilir.
+**Bütçesiz oturum ve compact (19 Ekim, KALFA-27, PR [#32](https://github.com/heimdilon/kalfa/pull/32)):**
+[Tasarım](superpowers/specs/2026-10-19-kalfa-compact-butcesiz-design.md),
+[plan](superpowers/plans/2026-10-19-kalfa-compact-butcesiz.md). Oturum
+bütçesinin istek/token sınırları, bilinmeyen kullanımda durdurma ve bütçe
+karar kartı kaldırıldı; deneme defteri (`ButceTalepci`, `ButceDenemesi`,
+gönderim günlüğü satırları ve sayaçlar) korundu. 5a'nın çıktı başına
+özetlemesinin yerini bütün geçmişi özetleyen otomatik (`T > 0,9 × min(pencere(model), etkin_pencere)`),
+zorunlu (`BaglamAsimi`) ve `/compact [talimat]` ile elle compact aldı. Özet
+oturumun kendi modeliyle üretilir, `<oturum_ozeti sinir="…">` sarmalında
+kullanıcı rolünde veri olarak sarılır ve `OturumOzetlendi` kaydıyla
+kurtarmada bayt bayt aynı bağlamı verir. Eski `ButceAyarlandi`,
+`ButceDevamKarari`, `BaglamOzeti` kayıtları ve `oturum_butcesi` ayar alanı
+uyumluluk için okunur. Arayüzde bütçe kartı ve ayarı kalktı; durum çubuğuna
+sınırsız `İstek · Token` ve `Bağlam %N`, konuşmaya açılır özet bölücüsü,
+composer'a `/compact` önerisi ve Ayarlar'a etkin bağlam penceresi (varsayılan
+200 000, alt sınır 32 000) eklendi.
+
+Windows doğrulaması (Antigravity): workspace **1 453 / 0 / 19**, e2e
+özellikli Rust **282 / 0 / 0**, `kalfa-mcp --lib --bins` check, üç clippy
+(workspace, `e2e` özellikli, `wasm32-wasip2` eklentiler) ve `cargo fmt`
+temiz; arayüz `npm run check` 0 hata/0 uyarı, Vitest **488 / 488** (32
+dosya), `npm run build` ve paket denetimi temiz. WebDriver e2e'de yeni
+`12-butce.test.mjs` (`/compact` senaryosu) **1/1**, güncellenen
+`02-konusma.test.mjs` **4/4** ve `04-kabul.test.mjs` **8/8** dahil **37/41**
+geçti; kalan 4 alt test (`05-kabuk`, `09-ag-cikisi`) Antigravity'nin
+etkileşimsiz işçi masaüstünde iç içe AppContainer `node.exe` (`0xC0000142`)
+sınırı nedeniyle kurulu makinede Claude tarafından koşturulacaktır. WSL
+doğrulaması ayrı kopya/hedef dizini gerektirdiğinden Claude incelemesine
+bırakıldı.
+
+**Sıradaki tek iş:** Claude PR [#32](https://github.com/heimdilon/kalfa/pull/32)'yi
+(`docs/compact-butcesiz`) Windows ve WSL'de inceler ve doğrular.
+**Engel:** Yok (inceleme ve iki platform doğrulaması bekleniyor).
+**Devam koşulu:** Claude inceleme ve doğrulamayı tamamlar; ardından
+kullanıcının açık onayıyla PR #32 squash birleştirilir.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları
