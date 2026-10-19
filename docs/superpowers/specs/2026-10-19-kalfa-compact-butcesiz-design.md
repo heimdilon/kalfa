@@ -150,7 +150,10 @@ Bağlam üç parçaya ayrılır:
 
 ### 5.3 Özetin bağlamdaki şekli
 
-Özetlenen aralığın yerine tek bir **kullanıcı rolünde** mesaj geçer:
+Özetlenen aralığın yerine tek bir **kullanıcı rolünde** mesaj geçer. Özet,
+özetlenen son mesajın yerine konur; kalan mesajların sırası değişmez. Uzun bir
+ajan turunda sonuç `[son kullanıcı mesajı, özet, açık çağrı ve sonuçları]`
+olur, tur başında ise `[özet, son kullanıcı mesajı]`:
 
 ```text
 [Kalfa] Bu oturumun önceki kısmı bağlam sınırı yüzünden özetlendi. Özet
