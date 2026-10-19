@@ -1107,11 +1107,6 @@ impl Oturum {
         loop {
             // İptal gelmişse bekleyen eklenti istekleri bırakılır; araç
             // `GonderimYaniti::Iptal` alıp çıkar.
-            if iptal_nedeni.is_some() {
-                // Finalizasyon sürerken bütçe yanıtı bekleyen başka bir araç
-                // tur sonunu bekleyerek actor'ı kilitleyemez.
-                self.butce_kuyrugunu_bosalt();
-            }
             if iptal_nedeni.is_some() && !eklenti_bekleyen.is_empty() {
                 eklenti_bekleyen.clear();
                 self.bekleyen_govdeleri_temizle();

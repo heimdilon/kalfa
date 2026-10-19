@@ -1,22 +1,22 @@
-//! Özetleyicinin oturum bütçesi (5b tasarımı §4.1, §6, §7): her özetleme denemesi
-//! kendi izni ve tek bitişini alır. Kullanımı bilinmeyen bir bitiş sonraki adayı
-//! kartta bekletir; izin yoksa çıktı olduğu gibi kalır (yer tutucu konmaz).
+//! Özetleyicinin oturum bütçesi: her özetleme denemesi kendi izni ve tek
+//! bitişini alır. Kullanımı bilinmeyen bir bitiş sonraki adayı durdurmaz;
+//! izin yoksa çıktı olduğu gibi kalır (yer tutucu konmaz).
 
 use std::path::Path;
 use std::sync::Arc;
 
 use kalfa_core::arac::Arac;
-use kalfa_core::butce::{ButceEngeli, ButceIslemId, ButceSinirlari};
+use kalfa_core::butce::ButceIslemId;
 use kalfa_core::kayit::{KayitOgesi, OturumKaydi, OzetYontemi};
-use kalfa_core::oturum::OturumAyarlari;
-use kalfa_core::protokol::{BitisNedeni, ButceKarari, Komut, Olay, Zarf};
+use kalfa_core::oturum::{OturumAyarlari, baslat_kayitla};
+use kalfa_core::protokol::{BitisNedeni, Komut, Olay, Zarf};
 use kalfa_core::test_destek::*;
 use serde_json::{Value, json};
 
 /// Eşik ve hedef 1 token, son çıktı korunur: her model turunda eski çıktılar özetlenir.
-fn ayarlar(kayit_yolu: &Path) -> OturumAyarlari {
+fn ayarlar(kayit_yolu: Option<&Path>) -> OturumAyarlari {
     let mut a = OturumAyarlari::yeni("glm-5.3", Path::new("calisma"));
-    a.kayit_yolu = Some(kayit_yolu.to_path_buf());
+    a.kayit_yolu = kayit_yolu.map(Path::to_path_buf);
     a.sinirlar.baglam_esigi = 1;
     a.sinirlar.baglam_hedefi = 1;
     a.sinirlar.korunan_arac_ciktisi = 1;
@@ -35,12 +35,6 @@ fn mesaj() -> Komut {
 
 fn yol(y: &str) -> Value {
     json!({ "yol": y })
-}
-
-fn durdur() -> Komut {
-    Komut::ButceKarari {
-        karar: ButceKarari::Durdur,
-    }
 }
 
 fn ozetlendi(d: &Surucu) -> Option<(u32, u32)> {
@@ -96,49 +90,19 @@ fn ozet_bitisleri(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<(ButceIslemId, bool)> {
         .collect()
 }
 
-/// Dört özetleme başlar, biri kullanım vermeden biter: beşinci aday kartta bekler
-/// ve gönderilmez. `DevamEt` sonrası kalan aday aynı turda bir kez özetlenir.
+/// Beş özetlemenin ilki kullanım vermeden biter; kalan dört aday kartsız
+/// sürer ve her biri tek bitiş kaydı alır.
 #[tokio::test]
-async fn dort_ozet_basladi_kullanimsiz_bitince_besinci_kartta_bekler() {
+async fn kullanimsiz_ozet_bitisi_sonraki_adaylari_durdurmaz() {
     let dizin = tempfile::tempdir().unwrap();
     let kayit_yolu = dizin.path().join("oturum.jsonl");
     let s = besli_senaryo();
     besli_ozetler(&s);
     let mut d = test_oturumu(
         test_baglami(s.clone(), vec![oku()], sanal_siniflandirici()),
-        ayarlar(&kayit_yolu),
+        ayarlar(Some(&kayit_yolu)),
     );
     d.gonder(mesaj()).await;
-    let kart = match d
-        .bekle(|o| matches!(o, Olay::ButceKarariGerekli { .. }))
-        .await
-        .yuk
-    {
-        Olay::ButceKarariGerekli { durum } => durum,
-        diger => unreachable!("{diger:?}"),
-    };
-    assert_eq!(
-        s.sohbet_istekleri().len(),
-        4,
-        "beşinci özetleme karttan önce gönderilmemeli"
-    );
-    assert_eq!(
-        (kart.bilinmeyen, kart.engel),
-        (1, Some(ButceEngeli::Bilinmeyen))
-    );
-
-    let yeni = ButceSinirlari {
-        istek: 50,
-        token: 5_000_000,
-    };
-    d.gonder(Komut::ButceKarari {
-        karar: ButceKarari::DevamEt {
-            sinirlar: yeni,
-            gozlenen_baslatilan: kart.baslatilan,
-            gozlenen_bilinmeyen: kart.bilinmeyen,
-        },
-    })
-    .await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
     assert_eq!(
         s.sohbet_istekleri().len(),
@@ -164,45 +128,31 @@ async fn dort_ozet_basladi_kullanimsiz_bitince_besinci_kartta_bekler() {
                 ..
             }
         )),
-        "bütçe beklemesi yer tutucu üretmemeli"
+        "bilinmeyen tüketim yer tutucu üretmemeli"
     );
 }
 
-/// İzin yokken (kart `Durdur` ile kapanır) beşinci özetleme ağa çıkmaz; kalan
-/// çıktılar olduğu gibi kalır, hiçbirine yer tutucu konmaz.
+/// Kayıt hatası yüzünden özetleme izni verilemezse özetleme ağa çıkmaz ve
+/// yer tutucu konmaz.
 #[tokio::test]
 async fn ozet_izni_yokken_cikti_aynen_kalir_yer_tutucu_konmaz() {
-    let dizin = tempfile::tempdir().unwrap();
-    let kayit_yolu = dizin.path().join("oturum.jsonl");
     let s = besli_senaryo();
     besli_ozetler(&s);
-    let mut d = test_oturumu(
+    // İki ana isteğin başlangıç ve bitişi (4 kalıcı yazım) geçer; özetlemenin
+    // ilk başlangıç yazımı düşer ve izin verilmez.
+    let kayit = BozulanHedef::kalicidan_sonra_bozuk(4);
+    let (tutamac, olaylar) = baslat_kayitla(
+        ayarlar(None),
         test_baglami(s.clone(), vec![oku()], sanal_siniflandirici()),
-        ayarlar(&kayit_yolu),
-    );
+        kayit,
+    )
+    .unwrap();
+    let mut d = Surucu::yeni(tutamac, olaylar);
     d.gonder(mesaj()).await;
-    d.bekle(|o| matches!(o, Olay::ButceKarariGerekli { .. }))
-        .await;
-    assert_eq!(s.sohbet_istekleri().len(), 4);
-    d.gonder(durdur()).await;
-    assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);
-    assert_eq!(
-        s.sohbet_istekleri().len(),
-        4,
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);
+    assert!(
+        s.sohbet_istekleri().is_empty(),
         "izin yokken özetleme ağa çıkmamalı"
     );
-    assert_eq!(ozetlendi(&d), None, "tur iptal edildi; özet olayı yok");
-    d.kapat().await;
-
-    let kayitlar = OturumKaydi::oku(&kayit_yolu).unwrap();
-    assert!(
-        !kayitlar.iter().any(|z| matches!(
-            z.yuk,
-            KayitOgesi::BaglamOzeti {
-                yontem: OzetYontemi::YerTutucu,
-                ..
-            }
-        )),
-        "izin yoklukta yer tutucu konmamalı"
-    );
+    assert_eq!(ozetlendi(&d), None);
 }

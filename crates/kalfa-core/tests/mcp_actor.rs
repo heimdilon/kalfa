@@ -8,7 +8,6 @@ use kalfa_core::arac::{
     McpAracTanimOzeti, McpBaslatmaSayaci, McpErisim, McpKartEtiketi, McpKorumaOzeti,
     McpPolitikaOzeti, McpTanimOzeti, McpTarifi, McpYalitimProfiliOzeti,
 };
-use kalfa_core::butce::ButceSinirlari;
 use kalfa_core::izin::Kip;
 use kalfa_core::oturum::OturumAyarlari;
 use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OnayOgesi};
@@ -201,14 +200,15 @@ impl Arac for ButceBekleyen {
         &self,
         _argumanlar: &Value,
         _hazirlik: &Hazirlik,
-        _iptal: CancellationToken,
+        iptal: CancellationToken,
         ortam: AracOrtami,
     ) -> Result<AracCiktisi, AracHatasi> {
         self.basladi.notify_one();
         let izin = ortam.butce_izni("MCP actor testi").await;
+        assert!(izin.is_ok(), "bütçe izni verilmeli");
         self.bitti.notify_one();
-        izin.map(|_| AracCiktisi::default())
-            .map_err(|()| AracHatasi::Iptal)
+        iptal.cancelled().await;
+        Err(AracHatasi::Iptal)
     }
 }
 
@@ -357,14 +357,9 @@ async fn yavas_mcp_finalizasyonunda_butce_istegi_ve_iptal_islenir() {
     ])]);
     let arac: Arc<dyn Arac> = Arc::new(arac);
     let butce_araci: Arc<dyn Arac> = butce.clone();
-    let mut ayar = ayarlar(Kip::Serbest);
-    ayar.butce = ButceSinirlari {
-        istek: 1,
-        token: 1_000_000,
-    };
     let mut driver = test_oturumu(
         test_baglami(saglayici, vec![arac, butce_araci], sanal_siniflandirici()),
-        ayar,
+        ayarlar(Kip::Serbest),
     );
 
     driver.gonder(mesaj()).await;
@@ -382,19 +377,15 @@ async fn yavas_mcp_finalizasyonunda_butce_istegi_ve_iptal_islenir() {
     tokio::time::timeout(Duration::from_secs(2), butce.basladi.notified())
         .await
         .expect("bütçe aracı başlamalı");
-    driver
-        .bekle(|olay| matches!(olay, Olay::ButceKarariGerekli { .. }))
-        .await;
-
-    driver.gonder(Komut::Iptal { tur }).await;
     tokio::time::timeout(Duration::from_secs(2), butce.bitti.notified())
         .await
-        .expect("iptal bekleyen bütçe iznini çözmeli");
+        .expect("finalizasyon sürerken bütçe izni verilmeli");
     assert!(
         !durum.finalizasyon_bitti.load(Ordering::SeqCst),
         "actor diğer işleri işlerken MCP finalizasyonu sürmeli"
     );
 
+    driver.gonder(Komut::Iptal { tur }).await;
     finalizasyon_izni.notify_one();
     assert_eq!(driver.tur_sonu().await, BitisNedeni::Iptal);
     assert!(durum.finalizasyon_bitti.load(Ordering::SeqCst));
