@@ -1,5 +1,11 @@
 # Kalfa 5a — Bağlam yönetimi: Tasarım
 
+> **Not (2026-10-19):** Bu belgedeki çıktı başına özetleme, 64 bin istem tokenı
+> eşiği ve ayrı özetleyici modeli kararlarının yerini
+> [2026-10-19 bütçesiz oturum ve bütün geçmişi özetleyen compact tasarımı](2026-10-19-kalfa-compact-butcesiz-design.md)
+> aldı (`pencere()` tablosu, token/bayt oranı, `BaglamAsimi` eşlemesi ve
+> `kaynak_kacisla` sarmalı korunur). Tarihsel içerik aşağıda korunmuştur.
+
 **Tarih:** 2026-10-12
 **Durum:** Amaç, ölçüm, yaklaşım ve önizleme kararı (§2.1) kullanıcıyla
 konuşulup onaylandı. Belgenin kendi verdiği kararlar §2.2'dedir; kullanıcı

@@ -24,13 +24,12 @@
     aracBasligi,
     aracHedefi,
     aracKartDurumu,
-    baglamNotu,
     ciktiOnizlemesi,
     dusunceKuyrugu,
     kabukOzeti,
+    sayi,
     sonucGovdesi,
   } from './bicim';
-  import ButceKarti from './ButceKarti.svelte';
   import { geriAlmaSonucMetni } from './geriAlma';
   import AracDiffi from './AracDiffi.svelte';
   import OnayKarti from './OnayKarti.svelte';
@@ -39,6 +38,8 @@
   import TurOzeti from './TurOzeti.svelte';
 
   let { oge, durum, oturum }: { oge: EkranOgesi; durum: AnaDurum; oturum: OturumId } = $props();
+
+  let ozetAcik = $state(false);
 
   const ARAC_IKONU: Record<string, IkonAdi> = {
     dosya_oku: 'file-text',
@@ -136,8 +137,6 @@
   </ToolCallCard>
 {:else if oge.tip === 'OnayIstegi'}
   <OnayKarti {oge} />
-{:else if oge.tip === 'ButceKarari'}
-  <ButceKarti {oge} onkarar={(karar) => durum.butceKarari(oturum, karar)} />
 {:else if oge.tip === 'GonderimOnizlemesi'}
   <OnizlemeKarti
     {oge}
@@ -194,9 +193,24 @@
   <div class="bilgi-satiri">
     <span>{m('geri_alma.not', { metin: oge.metin })}</span>
   </div>
-{:else if oge.tip === 'BaglamOzetlendi'}
-  <div class="bilgi-satiri">
-    <span>{baglamNotu(oge)}</span>
+{:else if oge.tip === 'OturumOzeti'}
+  <div class="ozet-bolucu">
+    <div class="ozet-satir">
+      <button
+        type="button"
+        class="ozet-dugme"
+        aria-expanded={ozetAcik}
+        onclick={() => (ozetAcik = !ozetAcik)}
+      >
+        {m('ozet.bolucu', { once: sayi(oge.once), sonra: sayi(oge.sonra) })}
+      </button>
+      {#if oge.talimat}
+        <span class="ozet-talimat">{m('ozet.talimat', { talimat: oge.talimat })}</span>
+      {/if}
+    </div>
+    {#if ozetAcik}
+      <pre class="ozet-metin">{oge.ozet}</pre>
+    {/if}
   </div>
 {:else if oge.tip === 'AktarimDurdu'}
   <Card tone="danger" icon="triangle-alert" title={m('aktarim.baslik')}>
@@ -253,5 +267,52 @@
     gap: 12px;
     font: var(--type-meta);
     color: var(--text-muted);
+  }
+  .ozet-bolucu {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ozet-satir {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font: var(--type-meta);
+    color: var(--text-muted);
+  }
+  .ozet-satir::before,
+  .ozet-satir::after {
+    content: '';
+    flex: 1;
+    height: var(--border-width);
+    background: var(--border-subtle);
+  }
+  .ozet-dugme {
+    padding: 2px 8px;
+    border: var(--border-width) solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-card);
+    color: var(--text-secondary);
+    font: var(--type-meta);
+    cursor: pointer;
+  }
+  .ozet-dugme:hover {
+    color: var(--text-body);
+    background: var(--surface-raised);
+  }
+  .ozet-talimat {
+    color: var(--text-muted);
+  }
+  .ozet-metin {
+    margin: 0;
+    padding: 10px 12px;
+    max-height: 240px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font: var(--type-meta);
+    color: var(--text-body);
+    background: var(--surface-sunken);
+    border-radius: var(--radius-md);
   }
 </style>

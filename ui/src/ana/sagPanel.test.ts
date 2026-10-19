@@ -96,8 +96,10 @@ describe('sağ panel (masaüstü arayüzü tasarımı §6)', () => {
 
     expect(within(ortam).getByText('3 eski araç çıktısı özetlendi.')).toBeTruthy();
 
-    arka.olaylar('o1', [{ tip: 'TokenKullanimi', istem: 32000, tamamlama: 10, dusunce: 0 }]);
-    expect(await within(ortam).findByText(/32\.000 \/ 64\.000 token \(%50\)/)).toBeTruthy();
+    // Gösterge oturumun yaydığı tahmin ve compact eşiğini kullanır.
+    arka.olaylar('o1', [{ tip: 'BaglamDurumu', tahmin: 90_000, esik: 180_000 }]);
+    expect(await within(ortam).findByText(/90\.000 \/ 180\.000 token \(%50\)/)).toBeTruthy();
+    expect(within(ortam).queryByText(/64\.000/)).toBeNull();
   });
 
   it('Ortam toplamları kayıttan gelir; yeni tur özetiyle yenilenir', async () => {

@@ -7,13 +7,11 @@
 use std::sync::Arc;
 
 use kalfa_core::aktarim::KanalMesaji;
-use kalfa_core::butce::ButceSinirlari;
 use kalfa_core::denetci::DenetimKipi;
 use kalfa_core::gecmis::GecmisSayfasi;
 use kalfa_core::izin::Kip;
 use kalfa_core::kimlik::{CagriId, IslemId, OturumId, TurId};
 use kalfa_core::muhur::OnayMuhru;
-use kalfa_core::protokol::ButceKarari;
 use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::dosya_gorunumu::{CalismaAlaniOzeti, DizinIcerigi, DosyaIcerigi};
@@ -52,6 +50,7 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         paketi_isledim,
         gecmis_sayfasi,
         mesaj_gonder,
+        oturum_ozetle,
         turu_iptal_et,
         arac_onayi,
         model_degistir,
@@ -91,9 +90,8 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         gonderim_ogesi,
         onizleme_ayarla,
         gonderim_karari,
-        oturum_butcesi,
-        oturum_butcesini_ayarla,
-        butce_karari,
+        etkin_pencere,
+        etkin_pencereyi_ayarla,
         eklentileri_listele,
         eklenti_klasorden_kur,
         eklenti_kaldir,
@@ -210,6 +208,15 @@ pub async fn mesaj_gonder(
     metin: String,
 ) -> Sonuc<()> {
     u.mesaj_gonder(oturum, metin).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn oturum_ozetle(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    talimat: Option<String>,
+) -> Sonuc<()> {
+    u.oturum_ozetle(oturum, talimat).await
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -424,32 +431,18 @@ pub async fn gonderim_karari(
         .await
 }
 
-// --- Oturum bütçesi (5b tasarımı §7, §9) ---
+// --- Etkin bağlam penceresi ---
 
-/// Yeni oturumların bütçe varsayılanı (Ayarlar).
+/// Yeni ve açılan oturumların etkin bağlam penceresi (Ayarlar).
 #[tauri::command(rename_all = "snake_case")]
-pub async fn oturum_butcesi(u: State<'_, Arc<Uygulama>>) -> Sonuc<ButceSinirlari> {
-    Ok(u.oturum_butcesi())
+pub async fn etkin_pencere(u: State<'_, Arc<Uygulama>>) -> Sonuc<u64> {
+    Ok(u.etkin_pencere())
 }
 
-/// Yeni oturumların bütçe varsayılanını değiştirir; açık oturumları etkilemez.
+/// Etkin bağlam penceresini değiştirir.
 #[tauri::command(rename_all = "snake_case")]
-pub async fn oturum_butcesini_ayarla(
-    u: State<'_, Arc<Uygulama>>,
-    istek: u64,
-    token: u64,
-) -> Sonuc<ButceSinirlari> {
-    u.oturum_butcesini_ayarla(istek, token)
-}
-
-/// Bütçe kartındaki kullanıcı kararı (5b tasarımı §7).
-#[tauri::command(rename_all = "snake_case")]
-pub async fn butce_karari(
-    u: State<'_, Arc<Uygulama>>,
-    oturum: OturumId,
-    karar: ButceKarari,
-) -> Sonuc<()> {
-    u.butce_karari(oturum, karar).await
+pub async fn etkin_pencereyi_ayarla(u: State<'_, Arc<Uygulama>>, deger: u64) -> Sonuc<u64> {
+    u.etkin_pencereyi_ayarla(deger)
 }
 
 // --- Eklentiler (aşama 4 tasarımı §13, §14) ---

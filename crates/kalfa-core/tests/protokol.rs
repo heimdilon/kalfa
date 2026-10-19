@@ -57,6 +57,10 @@ fn butun_komutlar_gidip_gelir() {
             cagri: CagriId::yeni(),
             muhur: OnayMuhru("m".into()),
         },
+        Komut::Ozetle { talimat: None },
+        Komut::Ozetle {
+            talimat: Some("odak: testler".into()),
+        },
     ] {
         gidip_gelir(&k);
     }

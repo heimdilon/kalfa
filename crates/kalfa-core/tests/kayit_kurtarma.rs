@@ -97,6 +97,36 @@ fn eski_sart_komutu_kayit_turunde_kabul_edilir_canli_komutta_edilmez() {
 }
 
 #[test]
+fn eski_butce_karari_komutlu_kayit_acilir() {
+    let d = tempfile::tempdir().unwrap();
+    let yol = d.path().join("oturum.jsonl");
+    let o = OturumId::yeni();
+    let mut k = OturumKaydi::olustur(&yol).unwrap();
+    k.yaz(&z(o, 1, acilis(Kip::Siki))).unwrap();
+    drop(k);
+
+    let mut dosya = std::fs::OpenOptions::new().append(true).open(&yol).unwrap();
+    for (sira, karar) in [
+        (
+            2,
+            r#"{"tip":"DevamEt","sinirlar":{"istek":400,"token":10000000},"gozlenen_baslatilan":200,"gozlenen_bilinmeyen":0}"#,
+        ),
+        (3, r#"{"tip":"Durdur"}"#),
+    ] {
+        writeln!(
+            dosya,
+            r#"{{"sema":{SEMA_SURUMU},"oturum":"{o}","tur":null,"sira":{sira},"yuk":{{"tip":"Komut","komut":{{"tip":"ButceKarari","karar":{karar}}}}}}}"#
+        )
+        .unwrap();
+    }
+    drop(dosya);
+
+    let kayitlar = OturumKaydi::oku(&yol).unwrap();
+    assert_eq!(kayitlar.len(), 3);
+    assert_eq!(kurtar(&kayitlar).unwrap().son_sira, 3);
+}
+
+#[test]
 fn ortadaki_eski_sart_komutu_ve_sonraki_kayitlar_okunur() {
     let d = tempfile::tempdir().unwrap();
     let yol = d.path().join("oturum.jsonl");

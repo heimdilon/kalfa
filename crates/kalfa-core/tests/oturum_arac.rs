@@ -101,12 +101,12 @@ async fn baslangic_kaydi_yazilamazsa_yan_etkili_arac_calismaz() {
         SahteYanit::arac("yaz", yol("b.txt")),
         SahteYanit::metin("olmamalı"),
     ]);
-    // Kalıcı yazımlar: bütçe ayarı, istek başlangıcı, istek bitişi geçer; araç
-    // "başladı" kaydı düşer.
+    // Kalıcı yazımlar: istek başlangıcı ve istek bitişi geçer; araç "başladı"
+    // kaydı düşer.
     let (t, o) = baslat_kayitla(
         ayarlar(Kip::Proje),
         test_baglami(s.clone(), vec![a(&yaz)], sanal_siniflandirici()),
-        BozulanHedef::kalicidan_sonra_bozuk(3),
+        BozulanHedef::kalicidan_sonra_bozuk(2),
     )
     .unwrap();
     let mut d = Surucu::yeni(t, o);
@@ -135,12 +135,12 @@ async fn grubun_ikinci_kaydi_bozulursa_ilk_arac_da_baslamaz() {
         ("yaz", yol("a.txt")),
         ("yaz", yol("b.txt")),
     ])]);
-    // Kalıcı yazımlar: bütçe ayarı, istek başlangıcı, istek bitişi ve birinci
-    // araç kaydı geçer; ikinci araç kaydı düşer.
+    // Kalıcı yazımlar: istek başlangıcı, istek bitişi ve birinci araç kaydı
+    // geçer; ikinci araç kaydı düşer.
     let (t, o) = baslat_kayitla(
         ayarlar(Kip::Proje),
         test_baglami(s.clone(), vec![a(&yaz)], sanal_siniflandirici()),
-        BozulanHedef::kalicidan_sonra_bozuk(4),
+        BozulanHedef::kalicidan_sonra_bozuk(3),
     )
     .unwrap();
     let mut d = Surucu::yeni(t, o);

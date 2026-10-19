@@ -561,13 +561,67 @@ uyumluluk **16/16** (köprü derlendi, `köprü bulunamadı` yok),
 `yalitim-testleri` özellikli clippy temiz. Uçtan uca takım bu değişiklikte
 koşmadı.
 
-**Sıradaki tek iş:** MCP 1.1b'nin (uzak Streamable HTTP ve OAuth, 1.1a
-tasarımı §2) tasarım belgesini Claude yazar:
-`docs/superpowers/specs/`'te yeni belge ve onu açan PR.
-**Engel:** Yeni aşama kullanıcının açık başlatma onayını ister; genel
-"devam" bu onay sayılmaz.
-**Devam koşulu:** Kullanıcı 1.1b'yi başlatmayı onaylar; ya da başka bir
-işi seçerse bu satır onunla değiştirilir.
+**Bütçesiz oturum ve compact (19 Ekim, KALFA-27, PR [#32](https://github.com/heimdilon/kalfa/pull/32)):**
+[Tasarım](superpowers/specs/2026-10-19-kalfa-compact-butcesiz-design.md),
+[plan](superpowers/plans/2026-10-19-kalfa-compact-butcesiz.md). Oturum
+bütçesinin istek/token sınırları, bilinmeyen kullanımda durdurma ve bütçe
+karar kartı kaldırıldı; deneme defteri (`ButceTalepci`, `ButceDenemesi`,
+gönderim günlüğü satırları ve sayaçlar) korundu. 5a'nın çıktı başına
+özetlemesinin yerini bütün geçmişi özetleyen otomatik (`T > 0,9 × min(pencere(model), etkin_pencere)`),
+zorunlu (`BaglamAsimi`) ve `/compact [talimat]` ile elle compact aldı. Özet
+oturumun kendi modeliyle üretilir, `<oturum_ozeti sinir="…">` sarmalında
+kullanıcı rolünde veri olarak sarılır ve `OturumOzetlendi` kaydıyla
+kurtarmada bayt bayt aynı bağlamı verir. Eski `ButceAyarlandi`,
+`ButceDevamKarari`, `BaglamOzeti` kayıtları ve `oturum_butcesi` ayar alanı
+uyumluluk için okunur. Arayüzde bütçe kartı ve ayarı kalktı; durum çubuğuna
+sınırsız `İstek · Token` ve `Bağlam %N`, konuşmaya açılır özet bölücüsü,
+composer'a `/compact` önerisi ve Ayarlar'a etkin bağlam penceresi (varsayılan
+200 000, alt sınır 32 000) eklendi.
+
+Windows doğrulaması (Antigravity): workspace **1 453 / 0 / 19**, e2e
+özellikli Rust **282 / 0 / 0**, `kalfa-mcp --lib --bins` check, üç clippy
+(workspace, `e2e` özellikli, `wasm32-wasip2` eklentiler) ve `cargo fmt`
+temiz; arayüz `npm run check` 0 hata/0 uyarı, Vitest **488 / 488** (32
+dosya), `npm run build` ve paket denetimi temiz. WebDriver e2e'de yeni
+`12-butce.test.mjs` (`/compact` senaryosu) **1/1**, güncellenen
+`02-konusma.test.mjs` **4/4** ve `04-kabul.test.mjs` **8/8** dahil **37/41**
+geçti; kalan 4 alt test (`05-kabuk`, `09-ag-cikisi`) Antigravity'nin
+etkileşimsiz işçi masaüstünde iç içe AppContainer `node.exe` (`0xC0000142`)
+sınırı nedeniyle kurulu makinede Claude tarafından koşturulacaktır. WSL
+doğrulaması ayrı kopya/hedef dizini gerektirdiğinden Claude incelemesine
+bırakıldı.
+
+Claude incelemesi ve doğrulaması (19 Ekim, `926b136`): kapsam, sarmal,
+kurtarmada ortak `compact::uygula` ve sistem isteminin `oturum_ozeti`
+kuralı plana uygun. İnceleme düzeltmeleri: bağlam yüzdesi %100 ile sınırlı
+(testli), sınıf gövdesindeki fazla `;` kalktı, etkin pencere sabitleri
+`kalfa-uygulama`'da çekirdekten okunur. Windows: workspace **1 458 / 0 / 19**,
+e2e özellikli **282 / 0 / 0**, fmt, üç clippy, `kalfa-mcp` check temiz;
+arayüz **489 / 489**, check 0/0, build temiz; WebDriver e2e **41/43**.
+WSL Ubuntu 24.04 (`kalfatest`): workspace **1 410 / 0 / 19**, e2e özellikli
+**284 / 0 / 0**, fmt, üç clippy, `kalfa-mcp` check ve köprü temiz; arayüz
+**489 / 489**; WebDriver e2e **40/42**.
+
+Düşen e2e'ler bu PR'dan değil, ikisi de tabanda aynı biçimde düşüyor:
+Windows'ta `05-kabuk` iptal ve `09-ag-cikisi` S13, AppContainer'da `node`
+başlatılamıyor (`Erişim engellendi (os error 5)`); aynı iki test
+`main` kodunda da aynı hatayla düştü. WSL'de `04-kabul` gecikme p95'i
+50 ms eşiğinin kıyısında dalgalanıyor: aynı makinede art arda taban
+(`47f3abc`) ve PR başı üçer koşuda üçer düşüş verdi (p95 50–58,6 ms).
+Kök nedenler ([e2e ortam bulguları](superpowers/bulgular/2026-10-19-kalfa-e2e-ortam.md)):
+Windows'ta 0.1.1 yükseltmesi `C:\Program Files\nodejs` ve `C:\Python314`
+araç zinciri izinlerini tasarım gereği geri aldı; "Onar" ya da
+`kalfa-yalitim izin-ver` ile açılır (kullanıcı, yönetici). Linux'ta gerileme
+yok: Windows'ta yük yokken 14 Ekim `main`'i, taban ve PR başı p95
+35–46 ms ile geçiyor; düşüşler eşzamanlı yükten. Makinedeki yedi artık
+`Kalfa.Alan.*` profili (17 Ekim) kullanıcı onayıyla silinecek.
+
+**Sıradaki tek iş:** Kullanıcının açık onayıyla PR
+[#32](https://github.com/heimdilon/kalfa/pull/32) squash birleştirilir.
+**Engel:** Merge onayı.
+**Devam koşulu:** Kullanıcı "birleştir" der; ardından worktree
+(`C:/Users/kor_a/kalfa-compact`) ve WSL kopyası
+(`/home/kalfatest/kalfa-compact*`) silinir.
 
 **Açık depo ve CI (12 Ekim):** Depo `heimdilon/kalfa` adıyla herkese açık
 oldu; varsayılan dal `main`. Geçmiş taşındı; PR #1–#53 ve eski CI kayıtları

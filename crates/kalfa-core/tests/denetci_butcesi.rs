@@ -1,31 +1,26 @@
-//! Denetçinin oturum bütçesi (5b tasarımı §4.1, §6, §7): her ağ denemesi kendi
-//! izni ve tek bitişini alır; izin beklemesi 30 saniyelik ağ süresini tüketmez.
-//! Sayılan tek şey sahte sağlayıcının `sohbet` çağrısıdır: ağa çıkılan deneme.
+//! Denetçinin oturum bütçesi: her ağ denemesi kendi izni ve tek bitişini alır;
+//! izin beklemesi 30 saniyelik ağ süresini tüketmez. Sayılan tek şey sahte
+//! sağlayıcının `sohbet` çağrısıdır: ağa çıkılan deneme.
 
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use kalfa_core::arac::Arac;
-use kalfa_core::butce::{ButceEngeli, ButceIslemId, ButceSinirlari};
+use kalfa_core::butce::ButceIslemId;
 use kalfa_core::denetci::{
     DenetimGirdisi, DenetimKipi, DenetimSonucu, GuvenlikDenetcisi, YapilandirilmisSiniflandirici,
 };
 use kalfa_core::gonderim::{GunlukToken, IstekSonucu, gunluk_uret};
 use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
 use kalfa_core::oturum::OturumAyarlari;
-use kalfa_core::protokol::{BitisNedeni, ButceKarari, Komut, Olay};
+use kalfa_core::protokol::{BitisNedeni, Komut, Olay};
 use kalfa_core::test_destek::*;
 use kalfa_evren::EvrenError;
 use serde_json::{Value, json};
 
-/// Oturum ayarı: istek sınırı verilen, bilinen token sınırı geniş; denetçi açık.
-fn ayarlar(istek: u64) -> OturumAyarlari {
+fn ayarlar() -> OturumAyarlari {
     let mut ayar = OturumAyarlari::yeni("glm-5.3", Path::new("calisma"));
-    ayar.butce = ButceSinirlari {
-        istek,
-        token: 5_000_000,
-    };
     ayar.denetci_kipi = DenetimKipi::Uyar;
     ayar
 }
@@ -55,40 +50,7 @@ fn guvenli() -> SahteSohbet {
     SahteSohbet::Json(json!({"guvenli": true, "kategori": "yok", "gerekce": "temiz"}))
 }
 
-fn devam(sinirlar: ButceSinirlari, baslatilan: u64, bilinmeyen: u64) -> Komut {
-    Komut::ButceKarari {
-        karar: ButceKarari::DevamEt {
-            sinirlar,
-            gozlenen_baslatilan: baslatilan,
-            gozlenen_bilinmeyen: bilinmeyen,
-        },
-    }
-}
-
-fn denetim_sonucu_guvenli(d: &Surucu) -> bool {
-    d.olaylar().iter().any(|o| {
-        matches!(
-            o,
-            Olay::DenetimSonucu {
-                sonuc: DenetimSonucu::Guvenli,
-                ..
-            }
-        )
-    })
-}
-
-/// Sınır bir istek kalınca: ana istek bir hakkı alır, denetçinin ilk denemesi
-/// kalan son hakkı alır; 429 sonrası ikinci deneme kartta bekler.
-fn sinir_bir_istek_kalir_senaryosu(s: &Arc<SahteSaglayici>, ayar: OturumAyarlari) -> Surucu {
-    s.sohbet_ekle(hiz_siniri());
-    s.sohbet_ekle(guvenli());
-    test_oturumu(
-        test_baglami(s.clone(), vec![oku()], sanal_siniflandirici()),
-        ayar,
-    )
-}
-
-fn sinir_bir_istek_kalir_saglayici() -> Arc<SahteSaglayici> {
+fn saglayici() -> Arc<SahteSaglayici> {
     SahteSaglayici::yeni(vec![
         SahteYanit::arac("oku", yol("a")),
         SahteYanit::metin("son"),
@@ -101,10 +63,10 @@ fn sinir_bir_istek_kalir_saglayici() -> Arc<SahteSaglayici> {
 async fn denetci_429_sonrasi_tekrar_yeni_izin_alir_ve_her_deneme_bir_satir() {
     let dizin = tempfile::tempdir().unwrap();
     let kayit_yolu = dizin.path().join("oturum.jsonl");
-    let s = sinir_bir_istek_kalir_saglayici();
+    let s = saglayici();
     s.sohbet_ekle(hiz_siniri());
     s.sohbet_ekle(guvenli());
-    let mut ayar = ayarlar(10);
+    let mut ayar = ayarlar();
     ayar.kayit_yolu = Some(kayit_yolu.clone());
     let mut d = test_oturumu(
         test_baglami(s.clone(), vec![oku()], sanal_siniflandirici()),
@@ -151,84 +113,27 @@ async fn denetci_429_sonrasi_tekrar_yeni_izin_alir_ve_her_deneme_bir_satir() {
     assert_eq!(denetci[1].sonuc, IstekSonucu::Basarili);
 }
 
-/// Bir istek kalmışken denetçinin ikinci izni kart bekler; kart gelmeden ağa
-/// çıkılmaz. `DevamEt` sınırı yükseltir ve deneme sürer.
-#[tokio::test]
-async fn sinir_bir_istek_kalinca_denetcinin_ikinci_izni_kartta_bekler_ve_devam_surer() {
-    let s = sinir_bir_istek_kalir_saglayici();
-    let mut d = sinir_bir_istek_kalir_senaryosu(&s, ayarlar(2));
-    d.gonder(mesaj()).await;
-    let kart = match d
-        .bekle(|o| matches!(o, Olay::ButceKarariGerekli { .. }))
-        .await
-        .yuk
-    {
-        Olay::ButceKarariGerekli { durum } => durum,
-        diger => unreachable!("{diger:?}"),
-    };
-    assert_eq!(
-        (kart.baslatilan, kart.aktif, kart.engel),
-        (2, 0, Some(ButceEngeli::Istek))
-    );
-    assert_eq!(
-        s.sohbet_istekleri().len(),
-        1,
-        "kart kararından önce ikinci deneme ağa çıkmamalı"
-    );
-    let yeni = ButceSinirlari {
-        istek: 5,
-        token: 5_000_000,
-    };
-    d.gonder(devam(yeni, kart.baslatilan, kart.bilinmeyen))
-        .await;
-    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
-    assert_eq!(s.sohbet_istekleri().len(), 2);
-    assert!(denetim_sonucu_guvenli(&d), "deneme sürmeliydi");
-}
-
-/// Kart `Durdur` ile kapanırsa denetçinin ikinci denemesi ağa çıkmaz.
-#[tokio::test]
-async fn durdur_kartta_bekleyen_denetim_ek_cagri_yapmaz() {
-    let s = sinir_bir_istek_kalir_saglayici();
-    let mut d = sinir_bir_istek_kalir_senaryosu(&s, ayarlar(2));
-    d.gonder(mesaj()).await;
-    d.bekle(|o| matches!(o, Olay::ButceKarariGerekli { .. }))
-        .await;
-    d.gonder(Komut::ButceKarari {
-        karar: ButceKarari::Durdur,
-    })
-    .await;
-    assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);
-    assert_eq!(s.sohbet_istekleri().len(), 1, "izinsiz ağa çıkılmamalı");
-    assert_eq!(s.istekler().len(), 1, "ana istek de sürmemeli");
-}
-
-/// Kart 60 saniye açık beklese de denetim zaman aşımına uğramaz: 30 saniyelik
+/// İzin 60 saniye gecikse de denetim zaman aşımına uğramaz: 30 saniyelik
 /// süre yalnız ağ ve yeniden deneme beklemesini sayar.
 #[tokio::test(start_paused = true)]
 async fn butce_beklemesi_denetim_zaman_asimini_tuketmez() {
-    let s = sinir_bir_istek_kalir_saglayici();
-    let mut d = sinir_bir_istek_kalir_senaryosu(&s, ayarlar(2));
-    d.gonder(mesaj()).await;
-    let kart = match d
-        .bekle(|o| matches!(o, Olay::ButceKarariGerekli { .. }))
-        .await
-        .yuk
-    {
-        Olay::ButceKarariGerekli { durum } => durum,
-        diger => unreachable!("{diger:?}"),
+    let s = SahteSaglayici::yeni(vec![]);
+    s.sohbet_ekle(guvenli());
+    let d = YapilandirilmisSiniflandirici::yeni(s);
+    let girdi = DenetimGirdisi {
+        kaynak: "dosya_oku: a".into(),
+        icerik: "test".into(),
     };
+    let (talepci, mut alici) = butce_kanali();
+    let is = tokio::spawn(async move { d.denetle(&girdi, &talepci).await });
+    let talep = alici.recv().await.expect("talep gelmeli");
     tokio::time::sleep(Duration::from_secs(60)).await;
-    let yeni = ButceSinirlari {
-        istek: 5,
-        token: 5_000_000,
-    };
-    d.gonder(devam(yeni, kart.baslatilan, kart.bilinmeyen))
-        .await;
-    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
-    assert!(
-        denetim_sonucu_guvenli(&d),
-        "bütçe beklemesi zaman aşımı saymamalı"
+    talep.yanit.send(Some(ButceIslemId(1))).unwrap();
+    let yanit = is.await.unwrap();
+    assert_eq!(
+        yanit.sonuc,
+        DenetimSonucu::Guvenli,
+        "izin beklemesi zaman aşımı saymamalı"
     );
 }
 
@@ -274,11 +179,11 @@ async fn zaman_asimli_deneme_kullanimsiz_kaydedilir() {
 /// denetçi isteği, her biri 10/5, toplam 30/15 (denetçi iki kez sayılmaz).
 #[tokio::test]
 async fn tur_ozeti_denetci_kullanimini_bir_kez_sayar() {
-    let s = sinir_bir_istek_kalir_saglayici();
+    let s = saglayici();
     s.sohbet_ekle(guvenli());
     let mut d = test_oturumu(
         test_baglami(s.clone(), vec![oku()], sanal_siniflandirici()),
-        ayarlar(10),
+        ayarlar(),
     );
     d.gonder(mesaj()).await;
     let zarf = d.bekle(|o| matches!(o, Olay::TurOzeti { .. })).await;
@@ -301,9 +206,9 @@ async fn tur_ozeti_denetci_kullanimini_bir_kez_sayar() {
 async fn iptalden_once_kuyruktaki_denetci_bitisi_bilinen_kapanir() {
     let dizin = tempfile::tempdir().unwrap();
     let kayit_yolu = dizin.path().join("oturum.jsonl");
-    let s = sinir_bir_istek_kalir_saglayici();
+    let s = saglayici();
     s.sohbet_ekle(hiz_siniri());
-    let mut ayar = ayarlar(10);
+    let mut ayar = ayarlar();
     ayar.kayit_yolu = Some(kayit_yolu.clone());
     let mut d = test_oturumu(
         test_baglami(s.clone(), vec![oku()], sanal_siniflandirici()),

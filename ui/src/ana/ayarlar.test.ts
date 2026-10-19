@@ -361,3 +361,28 @@ describe('Ayarlar: hazırlanmış çalışma alanları (aşama 2 tasarımı §9.
     expect(within(liste).getByText('C:\\projeler\\bir')).toBeTruthy();
   });
 });
+
+describe('Ayarlar: etkin bağlam penceresi', () => {
+  it("etkin pencere alanı 31 999'u reddeder ve geçerli değeri kaydeder", async () => {
+    const { arka, durum } = await ciz();
+    const ayarlar = await ayarlariAc();
+    const girdi = (await within(ayarlar).findByLabelText(
+      'Etkin bağlam penceresi',
+    )) as HTMLInputElement;
+    await waitFor(() => expect(girdi.value).toBe('200000'));
+
+    await fireEvent.input(girdi, { target: { value: '31999' } });
+    await fireEvent.click(within(ayarlar).getByRole('button', { name: 'Kaydet' }));
+    expect(girdi.getAttribute('aria-invalid')).toBe('true');
+    expect(within(ayarlar).getByRole('alert')).toBeTruthy();
+    expect(arka.komutlar('etkin_pencereyi_ayarla')).toEqual([]);
+
+    await fireEvent.input(girdi, { target: { value: '64000' } });
+    await fireEvent.click(within(ayarlar).getByRole('button', { name: 'Kaydet' }));
+    await waitFor(() =>
+      expect(arka.komutlar('etkin_pencereyi_ayarla')).toEqual([{ deger: 64000 }]),
+    );
+    expect(durum.etkinPencere).toBe(64000);
+  });
+});
+

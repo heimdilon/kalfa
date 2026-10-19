@@ -4,8 +4,6 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import type {
   AgHostu,
   AlanHedefi,
-  ButceKarari,
-  ButceSinirlari,
   EklentiSatiri,
   GunlukSinirDurumu,
   KurulumSonucu,
@@ -69,6 +67,9 @@ export const gecmisSayfasi = (oturum: OturumId, once_sira: number) =>
 
 export const mesajGonder = (oturum: OturumId, metin: string) =>
   invoke<void>('mesaj_gonder', { oturum, metin });
+
+export const oturumOzetle = (oturum: OturumId, talimat: string | null) =>
+  invoke<void>('oturum_ozetle', { oturum, talimat });
 
 export const turuIptalEt = (oturum: OturumId) => invoke<void>('turu_iptal_et', { oturum });
 
@@ -216,18 +217,14 @@ export const gonderimKarari = (
     hep_gonderilecekler,
   });
 
-// ── Oturum bütçesi (5b tasarımı §7, §9) ─────────────────────────────────────
+// ── Etkin bağlam penceresi ──────────────────────────────────────────────────
 
-/** Yeni oturumların bütçe varsayılanı (Ayarlar). */
-export const oturumButcesi = () => invoke<ButceSinirlari>('oturum_butcesi');
+/** Yeni oturumların etkin bağlam penceresi (Ayarlar). */
+export const etkinPencere = () => invoke<number>('etkin_pencere');
 
-/** Yeni oturumların bütçe varsayılanını değiştirir; Rust da doğrular. Açık oturumları etkilemez. */
-export const oturumButcesiniAyarla = (istek: number, token: number) =>
-  invoke<ButceSinirlari>('oturum_butcesini_ayarla', { istek, token });
-
-/** Bütçe kartındaki kullanıcı kararı; sonuç `ButceDurumu` olayıyla gelir. */
-export const butceKarari = (oturum: OturumId, karar: ButceKarari) =>
-  invoke<void>('butce_karari', { oturum, karar });
+/** Yeni oturumların etkin bağlam penceresini değiştirir; Rust da doğrular. */
+export const etkinPencereyiAyarla = (deger: number) =>
+  invoke<number>('etkin_pencereyi_ayarla', { deger });
 
 // ── Eklentiler (aşama 4 tasarımı §13, §14) ──────────────────────────────────
 

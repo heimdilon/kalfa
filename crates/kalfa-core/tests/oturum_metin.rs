@@ -73,6 +73,7 @@ async fn alternatif_saglayicinin_buyuk_yaniti_araclari_calistiramaz() {
             SahteYanit::Akis(olaylar),
             SahteYanit::metin("sonraki"),
         ]);
+        s.sohbet_ekle(SahteSohbet::Metin("özet".into()));
         let mut ayar = ayarlar();
         ayar.kip = Kip::Proje;
         // Bu test önceki olay kuyruğu sınırını değil sağlayıcı birikimini sınar.
@@ -87,9 +88,7 @@ async fn alternatif_saglayicinin_buyuk_yaniti_araclari_calistiramaz() {
                 .iter()
                 .any(|z| matches!(&z.yuk, Olay::Hata { mesaj } if mesaj.contains("yanıtı boyut")))
         );
-        // Bütçe aşımında kullanım bilinmez: sonraki istekten önce karar.
         d.gonder(mesaj("yeniden")).await;
-        d.butce_devam_et(None).await;
         assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
         assert!(
             s.istekler()[1]
@@ -209,9 +208,7 @@ async fn akis_ortasinda_hata_yarim_metni_korur() {
     d.gonder(mesaj("selam")).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Hata);
     assert!(d.hatalar()[0].contains("yarıda kaldı"));
-    // Akış kopması kullanımı bilinmez bırakır: sonraki istekten önce karar.
     d.gonder(mesaj("devam")).await;
-    d.butce_devam_et(None).await;
     d.tur_sonu().await;
     let m = &s.istekler()[1].messages;
     assert_eq!(m[2].role, Role::Assistant);

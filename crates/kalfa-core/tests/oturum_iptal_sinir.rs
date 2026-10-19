@@ -73,9 +73,7 @@ async fn akis_sirasinda_iptal_yarim_metni_korur() {
     d.bekle(|o| matches!(o, Olay::TokenParcasi { .. })).await;
     d.gonder(Komut::Iptal { tur }).await;
     assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);
-    // Gönderim sonrası iptal sonucu bilinmeyen: yeni istekten önce karar.
     d.gonder(mesaj("kısa anlat")).await;
-    d.butce_devam_et(None).await;
     d.tur_sonu().await;
     assert_eq!(
         s.istekler()[1].messages[2].content.as_deref(),
@@ -120,9 +118,8 @@ async fn iptal_et_komut_kuyrugundan_bagimsiz_iptal_eder() {
     assert_eq!(d.tutamac.iptal_et(), Some(tur));
     assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);
 
-    // Onay beklerken. Akış iptali sonucu bilinmeyen bıraktı: karar gerekir.
+    // Onay beklerken.
     d.gonder(mesaj("yaz")).await;
-    d.butce_devam_et(None).await;
     onay_bekle(&mut d).await;
     assert!(d.tutamac.iptal_et().is_some());
     assert_eq!(d.tur_sonu().await, BitisNedeni::Iptal);

@@ -30,14 +30,14 @@ use kalfa_evren::tipler::{ChatMessage, DusunceEforu, ToolDef};
 use serde::{Deserialize, Serialize};
 
 use crate::arac::DosyaDegisiklikleri;
-use crate::butce::{ButceDevri, ButceIslemId, ButceSinirlari};
+use crate::butce::{ButceDevri, ButceIslemId};
 use crate::denetci::DenetimSonucu;
 use crate::geri_alma::{DosyaYedegi, GeriAlmaSonucu};
 use crate::gonderim::{EklentiIstekOzeti, GonderilenOge, GunlukToken, IstekSonucu};
 use crate::izin::Kip;
 use crate::kimlik::{CagriId, TurId};
 use crate::muhur::OnayMuhru;
-use crate::protokol::{AracDurumu, BitisNedeni, Komut, Zarf};
+use crate::protokol::{AracDurumu, BitisNedeni, Komut, OzetTetigi, Zarf};
 use crate::tur_ozeti::TurOzeti;
 
 /// Komut kaydının wire türü. Geçmişteki şart kabul komutu yalnızca kayıt
@@ -47,6 +47,7 @@ use crate::tur_ozeti::TurOzeti;
 pub enum KayitKomutu {
     Guncel(Komut),
     EskiSartKabulIstegi(EskiSartKabulKomutu),
+    EskiButceKarari(EskiButceKarariKomutu),
 }
 
 /// Kayıtlarda tutulmuş eski şart kabul isteği; yeni `Komut` API'sinin parçası
@@ -56,6 +57,15 @@ pub enum KayitKomutu {
 pub enum EskiSartKabulKomutu {
     #[serde(rename = "SartlariKabulEt", skip_serializing)]
     SartKabulIstegi { surum: u32 },
+}
+
+/// 5b'nin bütçe kartı kararı. Bütçe sınırları kalktığından yalnızca eski
+/// kayıtları açabilmek için okunur ve yok sayılır; yeni kod yazmaz.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "tip")]
+pub enum EskiButceKarariKomutu {
+    #[serde(rename = "ButceKarari", skip_serializing)]
+    ButceKarari { karar: serde_json::Value },
 }
 
 impl From<Komut> for KayitKomutu {
@@ -241,12 +251,9 @@ pub enum KayitOgesi {
         icerik: String,
         yontem: OzetYontemi,
     },
-    /// Oturumun bütçe ayarı: yeni ya da kayıttan açılan oturumun istek ve
-    /// token sınırları (5b tasarımı §8). 5b öncesi kayıtta bilinen en az
-    /// tüketim `devir`'de aynı kayıtla yazılır; ayar ile devir arasında
-    /// çökme olamaz.
+    /// Eski kayıtlarda oturum bütçesinin başlangıç sınırı ve devri. Yeni kod yazmaz.
     ButceAyarlandi {
-        sinirlar: ButceSinirlari,
+        sinirlar: EskiButceSinirlari,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         devir: Option<ButceDevri>,
     },
@@ -262,12 +269,29 @@ pub enum KayitOgesi {
         islem: ButceIslemId,
         kullanim: Option<GunlukToken>,
     },
-    /// Kullanıcının bilinmeyen tüketimi kabul edip sınırları değiştirdiği
-    /// kalıcı karar (5b tasarımı §7).
+    /// Eski kayıtlarda kullanıcının bütçe devam kararı. Yeni kod yazmaz.
     ButceDevamKarari {
-        sinirlar: ButceSinirlari,
+        sinirlar: EskiButceSinirlari,
         onaylanan_bilinmeyen: u64,
     },
+    /// Oturum geçmişinin compact özeti.
+    OturumOzetlendi {
+        kapsanan: Vec<u32>,
+        icerik: String,
+        tetik: OzetTetigi,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        talimat: Option<String>,
+        once: u64,
+        sonra: u64,
+    },
+}
+
+/// Eski kayıtlardaki `ButceAyarlandi` ve `ButceDevamKarari` satırlarını
+/// seriden çıkarmak için tutulan sınır yapısı. Yeni kod bu satırları yazmaz.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EskiButceSinirlari {
+    pub istek: u64,
+    pub token: u64,
 }
 
 /// Kaydın yazıldığı yer. Dosya dışındaki hedefler, testlerde yazma hatası

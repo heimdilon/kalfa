@@ -90,8 +90,6 @@ describe('konuşma', () => {
       .map((y) => y.neden.tip);
     assert.deepEqual(bitenler, ['Normal', 'Normal', 'Iptal']);
 
-    // İptal edilen akışın kullanımı bilinmez: yeni istekten önce bütçe kararı (5b).
-    await k.butceyleDevam();
     // Kayıttan açılan oturum yazılabilir: kayıt kilidi yeniden alındı.
     await k.gonder('devam');
     await k.metniBekle('Yanıt: devam');

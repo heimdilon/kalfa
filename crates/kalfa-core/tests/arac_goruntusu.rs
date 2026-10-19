@@ -11,13 +11,12 @@ use kalfa_core::arac::{
     Arac, AracCiktisi, AracDenetimIsi, AracDenetimSahibi, AracHatasi, AracKayitDefteri,
     AracKaynagi, Hazirlik, KaynakAraci,
 };
-use kalfa_core::butce::ButceSinirlari;
 use kalfa_core::gonderim::GunlukToken;
 use kalfa_core::izin::Kip;
 use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
 use kalfa_core::kimlik::OturumId;
 use kalfa_core::oturum::OturumAyarlari;
-use kalfa_core::protokol::{BitisNedeni, ButceKarari, Komut, Olay};
+use kalfa_core::protokol::{BitisNedeni, Komut};
 use kalfa_core::test_destek::*;
 use kalfa_evren::EvrenError;
 use kalfa_evren::tipler::{ChatRequest, Role, ToolDef};
@@ -376,13 +375,6 @@ impl Arac for Bekle {
     }
 }
 
-fn tek_istek() -> ButceSinirlari {
-    ButceSinirlari {
-        istek: 1,
-        token: 1_000_000,
-    }
-}
-
 #[tokio::test]
 async fn denetim_butcesi_tur_icinde_islenir_ve_arac_sonraki_model_turunda_gorunur() {
     let (v1, a) = surum("v1", "x");
@@ -394,8 +386,7 @@ async fn denetim_butcesi_tur_icinde_islenir_ve_arac_sonraki_model_turunda_gorunu
         SahteYanit::arac(MCP, json!({"x": "a"})),
         SahteYanit::metin("tamam"),
     ]);
-    let mut ayar = ayarlar(Kip::Serbest, None);
-    ayar.butce = tek_istek();
+    let ayar = ayarlar(Kip::Serbest, None);
     let mut surucu = oturum(
         saglayici.clone(),
         vec![Arc::new(Bekle(bitti))],
@@ -403,13 +394,6 @@ async fn denetim_butcesi_tur_icinde_islenir_ve_arac_sonraki_model_turunda_gorunu
         ayar,
     );
     surucu.gonder(mesaj()).await;
-    // Ana istek tek izni alır; denetimin talebi oturumu kilitlemeden karta düşer.
-    surucu
-        .butce_devam_et(Some(ButceSinirlari {
-            istek: 10,
-            token: 1_000_000,
-        }))
-        .await;
     assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
 
     let istekler = saglayici.istekler();
@@ -420,65 +404,4 @@ async fn denetim_butcesi_tur_icinde_islenir_ve_arac_sonraki_model_turunda_gorunu
     assert_eq!(aciklamalar(&istekler[1]), vec!["v1"]);
     assert_eq!(a.load(Ordering::SeqCst), 1);
     assert_eq!(kaynak.sahipler(), vec![surucu.tutamac.oturum_id()]);
-}
-
-#[tokio::test]
-async fn butce_durdurulursa_denetim_yayimlanmaz_ve_sonraki_turda_yeniden_sahiplenilir() {
-    let (v1, _) = surum("v1", "x");
-    let kaynak = Arc::new(TestKaynagi::default());
-    let bitti = Arc::new(Notify::new());
-    *kaynak.is.lock().unwrap() = Some(butceli_is(&kaynak, vec![v1], bitti.clone()));
-    let saglayici = SahteSaglayici::yeni(vec![
-        SahteYanit::arac("bekle", json!({})),
-        SahteYanit::metin("tamam"),
-    ]);
-    let mut ayar = ayarlar(Kip::Serbest, None);
-    ayar.butce = tek_istek();
-    // `bekle` denetimin bitişini beklemez; tur yalnız kullanıcının kararıyla biter.
-    let mut surucu = oturum(
-        saglayici.clone(),
-        vec![Arc::new(Bekle(Arc::new(Notify::new())))],
-        kaynak.clone(),
-        ayar,
-    );
-    surucu.gonder(mesaj()).await;
-    // Ana istek bitince denetimin talebi araç beklerken karta düşer.
-    let kart = match surucu
-        .bekle(|o| matches!(o, Olay::ButceKarariGerekli { .. }))
-        .await
-        .yuk
-    {
-        Olay::ButceKarariGerekli { durum } => durum,
-        diger => unreachable!("{diger:?}"),
-    };
-    surucu
-        .gonder(Komut::ButceKarari {
-            karar: ButceKarari::Durdur,
-        })
-        .await;
-    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Iptal);
-    tokio::time::timeout(Duration::from_secs(5), bitti.notified())
-        .await
-        .unwrap();
-    assert!(kaynak.son.lock().unwrap().is_empty());
-    assert!(kaynak.surumler.lock().unwrap().is_empty(), "yayım yok");
-
-    // Sonraki turda aynı oturum yeniden sahiplenir. Kart açık kalır; aynı
-    // kartın kararıyla sürer (5b).
-    surucu.gonder(mesaj()).await;
-    surucu
-        .gonder(Komut::ButceKarari {
-            karar: ButceKarari::DevamEt {
-                sinirlar: ButceSinirlari {
-                    istek: 10,
-                    token: 1_000_000,
-                },
-                gozlenen_baslatilan: kart.baslatilan,
-                gozlenen_bilinmeyen: kart.bilinmeyen,
-            },
-        })
-        .await;
-    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
-    let oturum = surucu.tutamac.oturum_id();
-    assert_eq!(kaynak.sahipler(), vec![oturum, oturum]);
 }
