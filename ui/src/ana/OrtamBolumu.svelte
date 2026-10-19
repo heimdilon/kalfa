@@ -29,7 +29,7 @@
   /** Toplamları değiştiren canlı öğelerin sayısı; değişince özet yeniden okunur. */
   const degisimler = $derived(
     ekran?.ogeler.filter(
-      (o) => o.tip === 'TurOzeti' || o.tip === 'GeriAlma' || o.tip === 'BaglamOzetlendi',
+      (o) => o.tip === 'TurOzeti' || o.tip === 'GeriAlma' || o.tip === 'OturumOzeti',
     ).length ?? 0,
   );
 

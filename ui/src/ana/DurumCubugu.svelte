@@ -87,12 +87,10 @@
         {m('durum.token', { sayi: sayi(ozet.istem + ozet.tamamlama) })}
       </StatusItem>
       {#if butce}
-        <StatusItem icon="coins" title={m('durum.butce_ipucu')}>
-          {m('durum.butce', {
+        <StatusItem icon="coins">
+          {m('durum.istek_token', {
             istek: sayi(butce.baslatilan),
-            istek_siniri: sayi(butce.sinirlar.istek),
             token: sayi(butce.bilinen_token),
-            token_siniri: sayi(butce.sinirlar.token),
           })}
         </StatusItem>
         {#if butce.bilinmeyen > 0}
@@ -100,6 +98,19 @@
             {m('durum.butce_bilinmeyen', { sayi: sayi(butce.bilinmeyen) })}
           </StatusItem>
         {/if}
+      {/if}
+      {#if ekran?.baglam}
+        {@const baglam = ekran.baglam}
+        {@const yuzde = baglam.esik > 0 ? Math.round((baglam.tahmin / baglam.esik) * 100) : 0}
+        <StatusItem
+          tone={yuzde > 80 ? 'warn' : undefined}
+          title={m('durum.baglam_ipucu', {
+            tahmin: sayi(baglam.tahmin),
+            esik: sayi(baglam.esik),
+          })}
+        >
+          {m('durum.baglam', { yuzde })}
+        </StatusItem>
       {/if}
       {#if ozet.yonlendirilen_model}
         <StatusItem icon="cpu" title={m('durum.model_ipucu')}>{ozet.yonlendirilen_model}</StatusItem>

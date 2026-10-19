@@ -203,6 +203,44 @@ describe('ana pencere (1c tasarımı §8.1)', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Yeniden aç' }));
     await waitFor(() => expect(arka.komutlar('oturum_ac')).toHaveLength(2));
   });
+
+  it('durum çubuğunda İstek · Token ve Bağlam %90 görünür; %80 üstünde uyarı sınıfı vardır; / 200 geçmez', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      {
+        tip: 'ButceDurumu',
+        durum: { baslatilan: 9, bilinen_token: 43_107, bilinmeyen: 0, aktif: 0 },
+      },
+      { tip: 'BaglamDurumu', tahmin: 90, esik: 100 },
+    ]);
+    const cubuk = screen.getByRole('contentinfo', { name: 'Durum çubuğu' });
+    expect(await within(cubuk).findByText('İstek 9 · Token 43.107')).toBeTruthy();
+    const baglamOgesi = within(cubuk).getByText('Bağlam %90', { selector: '.durum-ogesi' });
+    expect(baglamOgesi.classList.contains('t-warn')).toBe(true);
+    expect(cubuk.textContent).not.toContain('/ 200');
+  });
+
+  it('oturum özeti bölücüsü görünür ve tıklanınca özet açılır', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [
+      {
+        tip: 'OturumOzetlendi',
+        tetik: 'Elle',
+        once: 70_000,
+        sonra: 3_000,
+        talimat: 'odak: testler',
+        ozet: 'Özetin tam gövdesi burada.',
+      },
+    ]);
+    const bolucu = await screen.findByRole('button', {
+      name: 'Konuşma özetlendi (≈70.000 → ≈3.000 token)',
+    });
+    expect(bolucu).toBeTruthy();
+    expect(screen.getByText('Talimat: odak: testler')).toBeTruthy();
+    expect(screen.queryByText('Özetin tam gövdesi burada.')).toBeNull();
+    await fireEvent.click(bolucu);
+    expect(await screen.findByText('Özetin tam gövdesi burada.')).toBeTruthy();
+  });
 });
 
 describe('onay isteği ve onay sayfası (1c tasarımı §8.2, §9.5)', () => {

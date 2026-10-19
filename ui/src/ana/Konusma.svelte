@@ -359,6 +359,12 @@
         />
         {/key}
       {/if}
+      {#if metin.startsWith('/')}
+        <div class="komut-onerisi" role="status">
+          <Icon name="square-terminal" size={14} />
+          <span>{m('komut.compact')}</span>
+        </div>
+      {/if}
       <Composer
         bind:value={metin}
         models={modeller}
@@ -621,6 +627,19 @@
     margin: 0 auto;
     box-sizing: border-box;
     padding: 0 24px 16px;
+  }
+  .komut-onerisi {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    padding: 6px 10px;
+    border-radius: var(--radius-md);
+    background: var(--surface-card);
+    border: var(--border-width) solid var(--border-subtle);
+    font: var(--type-meta);
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
   }
   .karsilama {
     position: relative;
