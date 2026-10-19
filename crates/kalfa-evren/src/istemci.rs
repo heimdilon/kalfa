@@ -15,6 +15,7 @@ use crate::akis::{AkisBirlestirici, AkisOlayi, VeriSonucu};
 use crate::butce::{JSON_BAYT_SINIRI, YANIT_CAGRI_SINIRI, YanitButcesi};
 use crate::eklenti::{EkUc, HamYanit};
 use crate::hata::{EvrenError, hata_esle};
+use crate::karar::{KararIstegi, KararYaniti};
 use crate::kredi::{YanitMeta, basliklardan};
 use crate::sse::{SseCozucu, VARSAYILAN_AZAMI_OLAY};
 use crate::tipler::{
@@ -171,6 +172,15 @@ impl EvrenIstemcisi {
         let govde = String::from_utf8(govde)
             .map_err(|_| EvrenError::GecersizYanit("yanıt UTF-8 değil".into()))?;
         Ok(HamYanit { govde, model, meta })
+    }
+
+    /// `/v1/systemone` karar isteği (otomatik kip tasarımı §4).
+    pub async fn karar(&self, istek: &KararIstegi) -> Result<(KararYaniti, YanitMeta), EvrenError> {
+        let (yanit, meta) = self
+            .gonder(self.http.post(self.url("systemone")).json(istek))
+            .await?;
+        let cevap: KararYaniti = json_coz(yanit).await?;
+        Ok((cevap, meta))
     }
 
     /// Akışlı sohbet. HTTP hatası akış başlamadan `Err` döner; akış sırasındaki
