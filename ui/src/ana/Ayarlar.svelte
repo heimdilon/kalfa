@@ -14,12 +14,13 @@
   import Checkbox from '../bilesenler/Checkbox.svelte';
   import Icon from '../bilesenler/Icon.svelte';
   import IconButton from '../bilesenler/IconButton.svelte';
+  import Input from '../bilesenler/Input.svelte';
   import { YALITIM_NEDENI, YALITIM_SADE, m } from '../dil/tr';
   import { komutHatasi } from '../ipc/hata';
   import * as ipc from '../ipc/ana';
   import type { YalitimCalismaAlani } from '../ipc/tipler';
   import type { AnaDurum } from './anaDurum.svelte';
-  import ButceAyari from './ButceAyari.svelte';
+  import { etkinPencereDogrula } from './butce';
   import GuvenlikAyarlari from './GuvenlikAyarlari.svelte';
   import McpSunuculari from './McpSunuculari.svelte';
   import { boyutMetni } from './geriAlma';
@@ -29,6 +30,33 @@
   const yalitim = $derived(durum.uygulama?.yalitim ?? null);
   const linux = $derived(durum.uygulama?.platform === 'linux');
   const windows = $derived(durum.uygulama?.platform === 'windows');
+
+  let etkinPencereMetni = $state('');
+  let etkinPencereKaydediliyor = $state(false);
+  let etkinPencereKaydedildi = $state(false);
+
+  $effect(() => {
+    if (durum.etkinPencere !== null) {
+      etkinPencereMetni = String(durum.etkinPencere);
+    }
+  });
+
+  const etkinPencereDegeri = $derived(etkinPencereDogrula(etkinPencereMetni));
+  const etkinPencereGecersiz = $derived(
+    etkinPencereMetni.trim() !== '' && etkinPencereDegeri === null,
+  );
+
+  async function etkinPencereKaydet(): Promise<void> {
+    if (etkinPencereDegeri === null || etkinPencereKaydediliyor) return;
+    etkinPencereKaydediliyor = true;
+    etkinPencereKaydedildi = false;
+    try {
+      const tamam = await durum.etkinPencereyiAyarla(etkinPencereDegeri);
+      if (tamam) etkinPencereKaydedildi = true;
+    } finally {
+      etkinPencereKaydediliyor = false;
+    }
+  }
 
   let hazirAlanlar = $state<YalitimCalismaAlani[]>([]);
   let alanlarYukleniyor = $state(false);
@@ -232,7 +260,29 @@
 
     <GuvenlikAyarlari {durum} />
 
-    <ButceAyari {durum} />
+    <Card title={m('ayar.etkin_pencere')} icon="cpu">
+      <p class="aciklama">{m('ayar.etkin_pencere_aciklama')}</p>
+      <div class="pencere-satiri">
+        <label class="pencere-alani">
+          <span class="pencere-etiket">{m('ayar.etkin_pencere')}</span>
+          <Input bind:value={etkinPencereMetni} mono invalid={etkinPencereGecersiz} />
+        </label>
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={etkinPencereKaydediliyor}
+          loading={etkinPencereKaydediliyor}
+          onclick={() => void etkinPencereKaydet()}
+        >
+          {m('anahtar.kaydet')}
+        </Button>
+      </div>
+      {#if etkinPencereGecersiz}
+        <p class="aciklama alt uyari-metni" role="alert">{m('ayar.etkin_pencere_hata')}</p>
+      {:else if etkinPencereKaydedildi}
+        <p class="aciklama alt" role="status">{m('ayar.etkin_pencere_kaydedildi')}</p>
+      {/if}
+    </Card>
 
     <Card title={m('ayarlar.geri_alma')} icon="rotate-ccw">
       <p class="aciklama">{m('ayarlar.geri_alma.aciklama')}</p>
@@ -348,6 +398,22 @@
     display: flex;
     gap: 8px;
     margin-top: 12px;
+  }
+  .pencere-satiri {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .pencere-alani {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .pencere-etiket {
+    font: var(--type-meta);
+    color: var(--text-secondary);
   }
   .alt-bolum {
     margin-top: 16px;

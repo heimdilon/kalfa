@@ -67,8 +67,8 @@ pub struct KurtarilmisDurum {
     /// Özetlenmiş ama henüz bir ana istekle gönderilmemiş mesajların
     /// indeksleri (5a tasarımı §9); sonraki ana istekte günlüğe girer.
     pub bekleyen_ozetler: BTreeSet<usize>,
-    /// Kayıttan hesaplanan son bütçe görünümü; 5b öncesi kayıtta yok (5b §8).
-    pub butce: Option<ButceGorunumu>,
+    /// Kayıttan hesaplanan son bütçe görünümü.
+    pub butce: ButceGorunumu,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -136,6 +136,33 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
                 mesaj_bilgileri[i] = (Some(zarf.sira), Some(kaynak.clone()));
                 bekleyen_ozetler.insert(i);
             }
+            KayitOgesi::OturumOzetlendi {
+                kapsanan, icerik, ..
+            } => {
+                if kapsanan.is_empty() {
+                    return Err(KurtarmaHatasi::BozukOzet { sira: zarf.sira });
+                }
+                let mut indeksler = Vec::with_capacity(kapsanan.len());
+                for &k in kapsanan {
+                    let i = usize::try_from(k)
+                        .ok()
+                        .filter(|&i| i < mesajlar.len())
+                        .ok_or(KurtarmaHatasi::BozukOzet { sira: zarf.sira })?;
+                    indeksler.push(i);
+                }
+                let mut dizi = crate::oturum::compact::BaglamDizisi {
+                    mesajlar: &mut mesajlar,
+                    bilgiler: &mut mesaj_bilgileri,
+                    gonderilen: &mut gonderilen,
+                    bekleyen: &mut bekleyen_ozetler,
+                };
+                crate::oturum::compact::uygula(
+                    &mut dizi,
+                    &indeksler,
+                    icerik.clone(),
+                    Some(zarf.sira),
+                );
+            }
             KayitOgesi::SistemIstemi { metin } => {
                 bekleyen_sistem_istemi = Some((Some(zarf.sira), metin.clone()));
             }
@@ -174,7 +201,10 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
                         let yeni_mesaj_sayisi = yeni
                             .iter()
                             .filter(|o| o.kaynak != "kalfa:sistem" && o.kaynak != "kalfa:araçlar")
-                            .filter(|o| !o.kaynak.starts_with(OZET_ONEKI))
+                            .filter(|o| {
+                                !o.kaynak.starts_with(OZET_ONEKI)
+                                    && o.kaynak != crate::oturum::compact::OZET_KAYNAGI
+                            })
                             .count();
                         gonderilen = *onceki as usize + yeni_mesaj_sayisi;
                     } else {
@@ -230,16 +260,12 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
     }
 
     // Sonuçsuz başlangıç açılışta bilinmeyen olarak kapanır; görünüm o hâli
-    // gösterir (5b tasarımı §8). 5b öncesi kayıtta görünüm yoktur.
-    let butce = match ButceDurumu::kayittan(kayitlar.iter().map(|z| &z.yuk))? {
-        Some(mut durum) => {
-            for islem in durum.sonuclanmamis() {
-                durum.bitir(islem, None)?;
-            }
-            Some(durum.gorunum())
-        }
-        None => None,
-    };
+    // gösterir (5b tasarımı §8).
+    let mut durum = ButceDurumu::kayittan(kayitlar.iter().map(|z| &z.yuk))?;
+    for islem in durum.sonuclanmamis() {
+        durum.bitir(islem, None)?;
+    }
+    let butce = durum.gorunum();
 
     // Her araç çağrısının bir yanıtı olmalı; yoksa bağlam geçersizdir.
     let yanitlanan: HashSet<&str> = mesajlar

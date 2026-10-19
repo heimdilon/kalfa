@@ -305,47 +305,33 @@ export type Olay =
   | { tip: 'DenetimSonucu'; cagri: CagriId; sonuc: DenetimSonucu }
   | { tip: 'DenetimAtlandi'; cagri: CagriId }
   | { tip: 'Kisayollar'; liste: Kisayol[] }
-  /** Eski araç çıktıları özetlendi (5a tasarımı §12); geçmişte gösterilmez. */
-  | { tip: 'BaglamOzetlendi'; adet: number; yer_tutucu: number; once: number; sonra: number }
-  /** Bütçe sayaçlarının güncel görünümü (5b tasarımı §9). */
-  | { tip: 'ButceDurumu'; durum: ButceGorunumu }
-  /** Bütçe engeli: yeni istek kullanıcının kararını bekliyor (5b tasarımı §7). */
-  | { tip: 'ButceKarariGerekli'; durum: ButceGorunumu };
+  /** Bütün konuşma geçmişi özetlendi (compact). */
+  | {
+      tip: 'OturumOzetlendi';
+      tetik: OzetTetigi;
+      once: number;
+      sonra: number;
+      talimat?: string | null;
+      ozet: string;
+    }
+  /** İstek öncesi tahmini bağlam ve otomatik özetleme eşiği. */
+  | { tip: 'BaglamDurumu'; tahmin: number; esik: number }
+  /** Bütçe sayaçlarının güncel görünümü. */
+  | { tip: 'ButceDurumu'; durum: ButceGorunumu };
 
-/** Bütçe sınırlarının nedeni (Rust `ButceEngeli`). */
-export type ButceEngeli = 'bilinmeyen' | 'token' | 'istek';
+export type OzetTetigi = 'Otomatik' | 'Zorunlu' | 'Elle';
 
-/** İstek ve bilinen token sınırları; ikisi de 1 ile 2^53-1 arasında tam sayı. */
-export interface ButceSinirlari {
-  istek: number;
-  token: number;
-}
-
-/** Oturum bütçesinin görünümü (5b tasarımı §5, §9). */
+/** Oturum bütçesinin görünümü: yalnız sayaçlar, sınır ve engel yoktur. */
 export interface ButceGorunumu {
-  sinirlar: ButceSinirlari;
-  /** Başlatma izni verilen denemeler. */
+  /** Başlatılan denemeler. */
   baslatilan: number;
   /** Kullanımı bilinen denemelerin token toplamı. */
   bilinen_token: number;
   /** Kullanımı bilinmeyen tamamlanmış denemeler. */
   bilinmeyen: number;
-  /** Kullanıcının kabul ettiği bilinmeyen sayısı. */
-  onaylanan_bilinmeyen: number;
   /** Sonuçlanmamış (aktif) deneme sayısı. */
   aktif: number;
-  engel: ButceEngeli | null;
 }
-
-/** Bütçe kartındaki kullanıcı kararı (5b tasarımı §7). `gozlenen_*` kartın sayaçlarıdır. */
-export type ButceKarari =
-  | {
-      tip: 'DevamEt';
-      sinirlar: ButceSinirlari;
-      gozlenen_baslatilan: number;
-      gozlenen_bilinmeyen: number;
-    }
-  | { tip: 'Durdur' };
 
 export type OnizlemeNedeni = 'Onizleme' | 'Denetim' | 'Eklenti';
 
@@ -433,7 +419,17 @@ export type GorunumOgesi =
     }
   /** Geri almanın modele bildirimi; kullanıcı balonu değildir. */
   | { tip: 'KalfaNotu'; sira: number; tur: TurId | null; metin: string }
-  | { tip: 'TurOzeti'; sira: number; tur: TurId | null; ozet: TurOzeti };
+  | { tip: 'TurOzeti'; sira: number; tur: TurId | null; ozet: TurOzeti }
+  | {
+      tip: 'OturumOzeti';
+      sira: number;
+      tur: TurId | null;
+      yontem: OzetTetigi;
+      once: number;
+      sonra: number;
+      talimat?: string | null;
+      ozet: string;
+    };
 
 export interface GecmisSayfasi {
   ogeler: GorunumOgesi[];

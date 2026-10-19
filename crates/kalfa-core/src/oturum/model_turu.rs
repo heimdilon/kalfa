@@ -13,7 +13,7 @@ use crate::arac::AracAnlikGoruntusu;
 use crate::butce::{ButceIslemId, hata_kullanimi};
 use crate::gonderim::{GonderilenOge, GunlukToken, IstekAsamasi, IstekSonucu};
 use crate::kayit::KayitOgesi;
-use crate::protokol::{BitisNedeni, Olay};
+use crate::protokol::{BitisNedeni, Olay, OzetTetigi};
 use crate::saglayici::SaglayiciAkisi;
 use crate::sart_kapisi::SartKarari;
 
@@ -40,7 +40,17 @@ impl Oturum {
         // denemeleri ve araç planı hep bu görüntüyü kullanır (Görev 8).
         self.tanim_denetimlerini_baslat();
         let goruntu = self.baglam.araclar.anlik_goruntu(self.ayarlar.kip);
-        self.baglami_yonet(false, &goruntu).await?;
+        let tahmin = self.oran.tahmin(self.baglam_bayti(&goruntu));
+        let esik = super::compact::esik(&self.ayarlar.model, self.ayarlar.sinirlar.etkin_pencere);
+        let ozetlendi = tahmin > esik
+            && self
+                .baglami_ozetle(OzetTetigi::Otomatik, None, &goruntu)
+                .await?;
+        // Gösterge her ana istekten önce güncellenir; yanıtın kullanım
+        // bildirmesine bağlı kalmaz. Özetleme başarılıysa kendisi yaydı.
+        if !ozetlendi {
+            self.yay(Olay::BaglamDurumu { tahmin, esik }).await;
+        }
         let istek = self.istek_olustur(&goruntu);
         let (
             SaglayiciAkisi {
@@ -115,6 +125,7 @@ impl Oturum {
                             dusunce,
                         })
                         .await;
+                        self.baglam_durumunu_yay(&goruntu).await;
                     }
                     Some(Ok(AkisOlayi::Bitti { .. })) | None => break Ok(()),
                     Some(Err(e)) => {
@@ -257,8 +268,11 @@ impl Oturum {
                             self.iptal_edilebilir(tokio::time::sleep(sure)).await?;
                         }
                         hata @ kalfa_evren::EvrenError::BaglamAsimi { .. } => {
-                            // 5a tasarımı §11: bir kez sıkı özetleme, sonra yeniden.
-                            if asim_denendi || !self.baglami_yonet(true, goruntu).await? {
+                            if asim_denendi
+                                || !self
+                                    .baglami_ozetle(OzetTetigi::Zorunlu, None, goruntu)
+                                    .await?
+                            {
                                 self.hata(hata.to_string()).await;
                                 return Err(BitisNedeni::Hata);
                             }
@@ -458,7 +472,7 @@ impl Oturum {
     /// Şart kapısı (1c tasarımı §7.3, üst belge §11.8). Oturum kabul isteğini
     /// kendisi göndermez: uygulama genelindeki kapıya kaydolur, metni yayar ve
     /// kullanıcının şart penceresindeki kararını bekler.
-    async fn sart_akisi(&mut self, istek_nesli: u64) -> Result<(), BitisNedeni> {
+    pub(super) async fn sart_akisi(&mut self, istek_nesli: u64) -> Result<(), BitisNedeni> {
         let kapi = self.baglam.sart_kapisi.clone();
         let gerekli = match self
             .iptal_edilebilir(async move { kapi.gerekli(istek_nesli).await })

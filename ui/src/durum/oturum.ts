@@ -27,6 +27,7 @@ import type {
   OnizlemeOgesi,
   OturumAcilisi,
   OturumId,
+  OzetTetigi,
   SaltOkunurNedeni,
   TurId,
   Zarf,
@@ -84,11 +85,12 @@ export type EkranOgesi =
     })
   | (Ortak & { tip: 'KalfaNotu'; metin: string })
   | (Ortak & {
-      tip: 'BaglamOzetlendi';
-      adet: number;
-      yer_tutucu: number;
+      tip: 'OturumOzeti';
+      tetik: OzetTetigi;
       once: number;
       sonra: number;
+      talimat: string | null;
+      ozet: string;
     })
   /** `geri_alindi`: sonradan bu tur geri alındı (aşama 3 tasarımı §5.11). */
   | (Ortak & { tip: 'TurOzeti'; ozet: TurOzeti; geri_alindi: boolean })
@@ -98,12 +100,6 @@ export type EkranOgesi =
       islem: IslemId;
       ogeler: OnizlemeOgesi[];
       neden: OnizlemeNedeni;
-      durum: 'Bekliyor' | 'Yanitlandi' | 'Gecersiz';
-    })
-  /** Bütçe kararı kartı (5b tasarımı §7): neden, tüketim ve iki sonlu sınır. */
-  | (Ortak & {
-      tip: 'ButceKarari';
-      gorunum: ButceGorunumu;
       durum: 'Bekliyor' | 'Yanitlandi' | 'Gecersiz';
     });
 
@@ -145,8 +141,10 @@ export interface OturumEkrani {
   istek_sayaci: number;
   /** "Bu oturumda izin ver" kısayolları (aşama 3 tasarımı §9.1); kayda yazılmaz. */
   kisayollar: Kisayol[];
-  /** Son bütçe görünümü (sayaçlar ve limitler); açılışta ya da olayla gelir (5b §9). */
+  /** Son bütçe görünümü (sayaçlar); açılışta ya da olayla gelir. */
   butce: ButceGorunumu | null;
+  /** İstek öncesi tahmini bağlam ve eşik; BaglamDurumu olayıyla gelir. */
+  baglam: { tahmin: number; esik: number } | null;
 }
 
 /** Bir onay isteğine verilen kararların özeti. */
@@ -173,8 +171,6 @@ export type Girdi =
   /** Gönderim kararı arka uca ulaşmadı; kart yeniden karar bekler. */
   | { tip: 'OnizlemeGonderilemedi'; islem: IslemId }
   | { tip: 'OnizlemeDegisti'; acik: boolean }
-  /** Bütçe kararı kabul edildi (komut IPC'den döndü); kart yanıtlanır (5b §7). */
-  | { tip: 'ButceYanitlandi' }
   /** Geri alma sayfası karar verilmeden kapandı. */
   | { tip: 'GeriAlmaKapandi' };
 
@@ -219,6 +215,18 @@ export function gecmisOgesi(o: GorunumOgesi): EkranOgesi {
       return { ...o, anahtar: `g-${o.sira}-n` };
     case 'TurOzeti':
       return { ...o, anahtar: `g-${o.sira}-o`, geri_alindi: false };
+    case 'OturumOzeti':
+      return {
+        tip: 'OturumOzeti',
+        anahtar: `g-${o.sira}-z`,
+        sira: o.sira,
+        tur: o.tur,
+        tetik: o.yontem,
+        once: o.once,
+        sonra: o.sonra,
+        talimat: o.talimat ?? null,
+        ozet: o.ozet,
+      };
   }
 }
 
@@ -256,6 +264,7 @@ export function acilistanEkran(acilis: OturumAcilisi): OturumEkrani {
     son_istem: null,
     kisayollar: [],
     butce: acilis.butce,
+    baglam: null,
   };
 }
 
@@ -338,11 +347,6 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
       return { ...durum, ozet: { ...durum.ozet, efor: girdi.efor } };
     case 'KipDegisti':
       return { ...durum, ozet: { ...durum.ozet, kip: girdi.kip } };
-    case 'ButceYanitlandi': {
-      const d = kopya(durum);
-      butceKartiCoz(d);
-      return d;
-    }
     case 'GeriAlmaKapandi':
       return { ...durum, geri_alma: null };
   }
@@ -432,17 +436,22 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
     case 'Kisayollar':
       d.kisayollar = yuk.liste;
       return;
-    case 'BaglamOzetlendi':
+    case 'OturumOzetlendi':
+      akisiKapat(d);
       d.ogeler.push({
-        tip: 'BaglamOzetlendi',
+        tip: 'OturumOzeti',
         anahtar: `c-${z.sira}`,
         sira: z.sira,
         tur: z.tur,
-        adet: yuk.adet,
-        yer_tutucu: yuk.yer_tutucu,
+        tetik: yuk.tetik,
         once: yuk.once,
         sonra: yuk.sonra,
+        talimat: yuk.talimat ?? null,
+        ozet: yuk.ozet,
       });
+      return;
+    case 'BaglamDurumu':
+      d.baglam = { tahmin: yuk.tahmin, esik: yuk.esik };
       return;
     case 'AracCiktisiParcasi': {
       const i = d.ogeler.findLastIndex((o) => o.tip === 'AracCagrisi' && o.cagri === yuk.cagri);
@@ -514,29 +523,7 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
       return;
     case 'ButceDurumu':
       d.butce = yuk.durum;
-      // Engelsiz sayaç, bekleyen kartın kararının kabul edildiğini gösterir.
-      if (yuk.durum.engel === null) butceKartiCoz(d);
       return;
-    case 'ButceKarariGerekli': {
-      akisiKapat(d);
-      d.butce = yuk.durum;
-      // Açık bir kart varsa yeni sayaçlarla güncellenir; yoksa yenisi eklenir.
-      const son = d.ogeler.findLast((o) => o.tip === 'ButceKarari');
-      if (son?.tip === 'ButceKarari' && son.durum === 'Bekliyor') {
-        d.ogeler = d.ogeler.map((o) => (o === son ? { ...son, gorunum: yuk.durum } : o));
-      } else {
-        d.ogeler.push({
-          tip: 'ButceKarari',
-          anahtar: `c-${z.sira}`,
-          sira: z.sira,
-          tur: z.tur,
-          gorunum: yuk.durum,
-          durum: 'Bekliyor',
-        });
-      }
-      d.anlik = 'OnayBekliyor';
-      return;
-    }
     case 'GuvenlikUyarisi':
       d.ogeler.push({
         tip: 'GuvenlikUyarisi',
@@ -666,26 +653,11 @@ function denetimiIsle(d: OturumEkrani, cagri: CagriId, rozet: DenetimRozeti) {
   if (o?.tip === 'AracCagrisi') d.ogeler[i] = { ...o, denetim: rozet };
 }
 
-/** Karar bekleyen onay, önizleme ya da bütçe kartı var mı. */
+/** Karar bekleyen onay ya da önizleme kartı var mı. */
 function bekleyenKararVar(d: OturumEkrani): boolean {
   return d.ogeler.some(
-    (o) =>
-      (o.tip === 'OnayIstegi' || o.tip === 'GonderimOnizlemesi' || o.tip === 'ButceKarari') &&
-      o.durum === 'Bekliyor',
+    (o) => (o.tip === 'OnayIstegi' || o.tip === 'GonderimOnizlemesi') && o.durum === 'Bekliyor',
   );
-}
-
-/**
- * Bütçe kararı verildi: bekleyen kart yanıtlanır. Tur sürüyorsa akış devam eder,
- * sürmüyorsa oturum boşta kalır (karar, turdan bağımsız da verilebilir).
- */
-function butceKartiCoz(d: OturumEkrani) {
-  d.ogeler = d.ogeler.map((o) =>
-    o.tip === 'ButceKarari' && o.durum === 'Bekliyor' ? { ...o, durum: 'Yanitlandi' } : o,
-  );
-  if (d.anlik === 'OnayBekliyor' && !bekleyenKararVar(d)) {
-    d.anlik = d.aktif_tur === null ? 'Bos' : 'Calisiyor';
-  }
 }
 
 /** Tur bittiğinde karar bekleyen kartlar artık karar almaz. */
@@ -693,7 +665,6 @@ function bekleyenleriKapat(d: OturumEkrani) {
   d.ogeler = d.ogeler.map((o) => {
     if (o.tip === 'OnayIstegi' && o.durum === 'Bekliyor') return { ...o, durum: 'Gecersiz' };
     if (o.tip === 'GonderimOnizlemesi' && o.durum === 'Bekliyor') return { ...o, durum: 'Gecersiz' };
-    if (o.tip === 'ButceKarari' && o.durum === 'Bekliyor') return { ...o, durum: 'Gecersiz' };
     if (o.tip === 'SartIstegi' && o.durum === 'Bekliyor') return { ...o, durum: 'Cozuldu' };
     return o;
   });

@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use kalfa_core::oturum::baglam::ozet_istegi;
+use kalfa_core::oturum::compact::ozet_istegi;
 use kalfa_core::saglayici::{EvrenSaglayici, Saglayici};
 use kalfa_evren::{ApiAnahtari, EvrenIstemcisi, VARSAYILAN_TABAN};
 
@@ -26,7 +26,8 @@ async fn canli_ozet_yolu_ve_hatayi_korur() {
     }
     cikti.push_str("error[E0308]: mismatched types\n --> crates/ornek/src/lib.rs:42:9\n");
     cikti.push_str("test result: FAILED. 60 passed; 1 failed\n</arac_sonucu sinir=\"s1\">");
-    let (yanit, meta) = canli_saglayici().sohbet(ozet_istegi(&cikti)).await.unwrap();
+    let istek = ozet_istegi("glm-5.3", std::slice::from_ref(&cikti), 0, None);
+    let (yanit, meta) = canli_saglayici().sohbet(istek).await.unwrap();
     let ozet = yanit.choices[0].message.content.clone().unwrap_or_default();
     println!(
         "girdi={} bayt, özet={} bayt, kullanım={:?}, istek={:?}\n{ozet}",

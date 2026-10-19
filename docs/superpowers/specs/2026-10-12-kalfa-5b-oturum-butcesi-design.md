@@ -1,5 +1,11 @@
 # Kalfa 5b — Oturum bütçesi: Tasarım
 
+> **Not (2026-10-19):** Bu belgedeki oturum istek/token sınırları, bilinmeyen
+> kullanımda durdurma ve bütçe devam kararı akışının (§1–§4, §6–§9) yerini
+> [2026-10-19 bütçesiz oturum ve bütün geçmişi özetleyen compact tasarımı](2026-10-19-kalfa-compact-butcesiz-design.md)
+> aldı (deneme defteri, `ButceTalepci` ve sayaçlar korunur). Tarihsel içerik
+> aşağıda korunmuştur.
+
 **Tarih:** 2026-10-12.
 **Durum:** Uygulandı (13 Ekim, dal `5b/uygulama`); sonuç §11.
 **Taban:** `main`, `3133248` (5a tamamlandı).

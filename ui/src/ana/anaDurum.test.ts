@@ -95,6 +95,31 @@ describe('komutlar', () => {
     expect(arka.komutlar('mesaj_gonder')).toEqual([{ oturum: 'o1', metin: 'selam' }]);
   });
 
+  it("gonder('/compact x') oturumOzetle çağırır, mesajGonder çağırmaz", async () => {
+    const { arka, durum } = await acilmis();
+    await durum.gonder('/compact x');
+    expect(arka.komutlar('oturum_ozetle')).toEqual([{ oturum: 'o1', talimat: 'x' }]);
+    expect(arka.komutlar('mesaj_gonder')).toEqual([]);
+    expect(durum.aktif?.ogeler).toEqual([]);
+  });
+
+  it("gonder('/foo') hiçbir ipc çağırmaz ve duyuru Bilinmeyen komut: foo olur", async () => {
+    const { arka, durum } = await acilmis();
+    const oncekiCagriSayisi = arka.cagrilar.length;
+    await durum.gonder('/foo');
+    expect(arka.cagrilar).toHaveLength(oncekiCagriSayisi);
+    expect(durum.duyuru).toBe('Bilinmeyen komut: foo');
+  });
+
+  it("tur sürerken gonder('/compact') reddedilir", async () => {
+    const { arka, durum } = await acilmis();
+    arka.olaylar('o1', [{ tip: 'TurBasladi' }]);
+    expect(durum.aktif?.anlik).toBe('Calisiyor');
+    await durum.gonder('/compact');
+    expect(arka.komutlar('oturum_ozetle')).toEqual([]);
+    expect(durum.hata).toBe('Tur sürerken /compact kullanılamaz.');
+  });
+
   it('onay kararları gönderilir, kart yanıtlandı olur, sayfa kapanır', async () => {
     const { arka, durum } = await acilmis();
     arka.olaylar('o1', [

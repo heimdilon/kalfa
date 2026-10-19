@@ -44,8 +44,6 @@ function sagBolumOku(): SagBolum | null {
   return SAG_BOLUMLER.find((x) => x === b) ?? null;
 }
 import type {
-  ButceKarari,
-  ButceSinirlari,
   DenetciDurumu,
   DusunceEforu,
   CagriId,
@@ -64,6 +62,7 @@ import type {
   UygulamaDurumu,
   YalitimDurumu,
 } from '../ipc/tipler';
+import { egikKomutAyristir } from './egikKomut';
 
 export class AnaDurum {
   uygulama = $state<UygulamaDurumu | null>(null);
@@ -114,8 +113,8 @@ export class AnaDurum {
 
   /** Denetçi kipi ve ayar dosyasının durumu (3c Görev 8); Ayarlar'da değişir (3e). */
   denetci = $state<DenetciDurumu | null>(null);
-  /** Yeni oturumların bütçe varsayılanı; Ayarlar açılınca okunur (5b tasarımı §9). */
-  butceVarsayilani = $state<ButceSinirlari | null>(null);
+  /** Yeni oturumların etkin bağlam penceresi; Ayarlar açılınca okunur. */
+  etkinPencere = $state<number | null>(null);
   /** MCP sunucularının son görüntüsü; kanal eski revizyonu atar (1.1a-2). */
   mcp = $state<McpDurumu | null>(null);
   aktif = $derived(this.secili ? (this.ekranlar.get(this.secili) ?? null) : null);
@@ -218,6 +217,22 @@ export class AnaDurum {
   async gonder(metin: string): Promise<void> {
     const oturum = this.secili;
     if (!oturum) return;
+    const egik = egikKomutAyristir(metin);
+    if (egik) {
+      if (egik.komut !== 'compact') {
+        this.hata = m('komut.bilinmeyen', { komut: egik.komut });
+        this.duyuru = this.hata;
+        return;
+      }
+      const ekran = this.ekranlar.get(oturum);
+      if (ekran && ekran.anlik !== 'Bos') {
+        this.hata = m('komut.tur_suruyor');
+        this.duyuru = this.hata;
+        return;
+      }
+      await this.#dene(() => ipc.oturumOzetle(oturum, egik.arguman || null));
+      return;
+    }
     this.#uygula(oturum, { tip: 'MesajGonderildi', metin });
     await this.#dene(() => ipc.mesajGonder(oturum, metin));
   }
@@ -363,21 +378,11 @@ export class AnaDurum {
     this.#uygula(oturum, { tip: 'GeriAlmaKapandi' });
   }
 
-  /**
-   * Bütçe kararını gönderir (5b tasarımı §7). Kart, komut kabul edilince
-   * yanıtlanır; Rust kararı reddederse kartı yeniden yayar.
-   */
-  async butceKarari(oturum: OturumId, karar: ButceKarari): Promise<void> {
-    const gitti = await this.#dene(() => ipc.butceKarari(oturum, karar));
-    if (gitti === undefined) return;
-    this.#uygula(oturum, { tip: 'ButceYanitlandi' });
-  }
-
-  /** Yeni oturumların bütçe varsayılanını kaydeder; Rust da doğrular (5b §9). */
-  async butceVarsayilaniniAyarla(istek: number, token: number): Promise<boolean> {
-    const yeni = await this.#dene(() => ipc.oturumButcesiniAyarla(istek, token));
+  /** Yeni oturumların etkin bağlam penceresini kaydeder; Rust da doğrular. */
+  async etkinPencereyiAyarla(deger: number): Promise<boolean> {
+    const yeni = await this.#dene(() => ipc.etkinPencereyiAyarla(deger));
     if (yeni === undefined) return false;
-    this.butceVarsayilani = yeni;
+    this.etkinPencere = yeni;
     return true;
   }
 
@@ -457,8 +462,8 @@ export class AnaDurum {
     this.onarim = null;
     const boyut = await this.#dene(() => ipc.geriAlmaVerisiBoyutu());
     if (boyut !== undefined) this.geriAlmaBoyutu = boyut;
-    const butce = await this.#dene(() => ipc.oturumButcesi());
-    if (butce !== undefined) this.butceVarsayilani = butce;
+    const pencere = await this.#dene(() => ipc.etkinPencere());
+    if (pencere !== undefined) this.etkinPencere = pencere;
     const platform = this.uygulama?.platform;
     if (platform !== 'linux' && platform !== 'windows') return;
     const dizinler = await this.#dene(() => ipc.aracZinciriDizinleri());
@@ -604,7 +609,6 @@ export class AnaDurum {
     for (const o of yeni.ogeler.slice(onceki.ogeler.length)) {
       if (o.tip === 'OnayIstegi') this.duyuru = m('duyuru.onay', { sayi: o.ogeler.length });
       else if (o.tip === 'SartIstegi') this.duyuru = m('duyuru.sart');
-      else if (o.tip === 'ButceKarari') this.duyuru = m('duyuru.butce');
       else if (o.tip === 'TurSonu') this.duyuru = m('duyuru.tur_sonu');
     }
   }

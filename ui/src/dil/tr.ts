@@ -601,9 +601,9 @@ export const tr = {
   'durum.bakiye_ipucu': 'Son gözlenen bakiye ve gözlem zamanı',
   'durum.token': '{sayi} token',
   'durum.token_ipucu': 'İstem {istem} · Tamamlama {tamamlama} · Düşünce {dusunce}',
-  'durum.butce': 'İstek {istek} / {istek_siniri} · Token {token} / {token_siniri}',
-  'durum.butce_ipucu':
-    'Oturumun bütçesi: başlatılan istekler ve bilinen token kullanımı, sınırlarıyla birlikte. Bilinen token, yanıt geldikçe eklenir.',
+  'durum.istek_token': 'İstek {istek} · Token {token}',
+  'durum.baglam': 'Bağlam %{yuzde}',
+  'durum.baglam_ipucu': 'Tahmini {tahmin} token; {esik} tokenda konuşma özetlenir.',
   'durum.butce_bilinmeyen': 'Kullanımı bilinmeyen {sayi} istek',
   'durum.model_ipucu': 'Yönlendirilen model',
   'durum.yalitimli': 'Yalıtımlı',
@@ -689,7 +689,6 @@ export const tr = {
   'duyuru.onay': 'Onay isteği: {sayi} değişiklik kararınızı bekliyor.',
   'duyuru.sart': 'EVREN şartlarının onayı bekleniyor.',
   'duyuru.tur_sonu': 'Tur bitti.',
-  'duyuru.butce': 'Bütçe kararı bekleniyor.',
 
   'anahtar.baslik': 'EVREN API anahtarı',
   'anahtar.aciklama.Yok':
@@ -754,34 +753,17 @@ export const tr = {
   'ayarlar.denetci.aciklama':
     'Dış kaynaklı araç sonuçlarını modele gitmeden önce talimat içeriyor mu diye denetler. Düşürmeyi Kalfa ayrı bir pencerede sorar.',
   'ayarlar.denetci.kip': 'Denetçi kipi',
-  'ayarlar.butce': 'Yeni oturumların bütçesi',
-  'ayarlar.butce.aciklama':
-    'Yeni oturumlar bu istek ve token sınırlarıyla başlar. Açık ve kayıttan açılan oturumların sınırları bu ayardan etkilenmez.',
-  'ayarlar.butce.istek': 'İstek sınırı',
-  'ayarlar.butce.token': 'Token sınırı',
-  'ayarlar.butce.kaydet': 'Kaydet',
-  'ayarlar.butce.kaydedildi': 'Kaydedildi. Yeni oturumlar bu sınırlarla başlar.',
-  'ayarlar.butce.hata':
-    'Sınırlar 1 ile 9007199254740991 arasında tam sayı olmalı. Girdiğiniz değeri kontrol edin.',
-  'butce.kart.baslik': 'Bütçe kararı',
-  'butce.kart.yanitlandi': 'Yanıtlandı',
-  'butce.kart.gecersiz': 'Tur durduruldu ya da bitti',
-  'butce.kart.istek': 'İstek: {baslatilan} / {sinir}',
-  'butce.kart.token': 'Bilinen token: {bilinen} / {sinir}',
-  'butce.kart.bilinmeyen': 'Kullanımı bilinmeyen: {sayi} istek',
-  'butce.neden.bilinmeyen':
-    'Kullanımı bilinmeyen {sayi} istek var. Yeni istek, bu kararı vermeden başlamaz.',
-  'butce.neden.token': 'Bilinen token sınırına ulaşıldı. Yeni istek için sınırı yükseltin ya da turu durdurun.',
-  'butce.neden.istek': 'İstek sınırına ulaşıldı. Yeni istek için sınırı yükseltin ya da turu durdurun.',
-  'butce.girdi.istek': 'İstek sınırı',
-  'butce.girdi.token': 'Token sınırı',
-  'butce.girdi.ipucu': 'Tam sayı girin. Her sınır, şimdiki tüketimin üstünde olmalı.',
-  'butce.hata.bicim': 'Sınırları yalnızca rakamla, 1 ile 9007199254740991 arasında girin.',
-  'butce.hata.istek': 'İstek sınırı {baslatilan} istekten büyük olmalı.',
-  'butce.hata.token': 'Token sınırı {bilinen} tokenden büyük olmalı.',
-  'butce.devam': 'Bütçeyle devam et',
-  'butce.devam.bilinmeyen': 'Kullanımı bilinmeyen {sayi} isteği kabul edersiniz; sayaçlar sıfırlanmaz.',
-  'butce.durdur': 'Turu durdur',
+  'ozet.bolucu': 'Konuşma özetlendi (≈{once} → ≈{sonra} token)',
+  'ozet.talimat': 'Talimat: {talimat}',
+  'komut.compact': '/compact [talimat] — Konuşmayı özetle',
+  'komut.bilinmeyen': 'Bilinmeyen komut: {komut}',
+  'komut.tur_suruyor': 'Tur sürerken /compact kullanılamaz.',
+  'ayar.etkin_pencere': 'Etkin bağlam penceresi',
+  'ayar.etkin_pencere_aciklama':
+    "Bağlam bu değerin %90'ına gelince konuşma özetlenir. Büyük değer daha uzun bağlam, ama daha hızlı biten günlük kota demektir.",
+  'ayar.etkin_pencere_kaydedildi': 'Kaydedildi. Yeni oturumlar bu pencereyle başlar.',
+  'ayar.etkin_pencere_hata':
+    'Etkin bağlam penceresi en az 32000 olan bir tam sayı olmalı.',
 } as const;
 
 export type MetinAnahtari = keyof typeof tr;

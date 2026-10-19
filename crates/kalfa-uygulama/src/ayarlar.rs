@@ -6,11 +6,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
-use kalfa_core::butce::ButceSinirlari;
 use kalfa_core::denetci::DenetimKipi;
 use kalfa_core::izin::{
     AZAMI_KALIP, GizliAyarlari, KalipHatasi, VARSAYILAN_GIZLI_KALIPLAR, kalip_dogrula,
 };
+use kalfa_core::oturum::compact::{ASGARI_ETKIN_PENCERE, VARSAYILAN_ETKIN_PENCERE};
 use kalfa_sandbox::vekil::{HostKaynagi, HostKurali, ag_hostu_coz};
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -20,7 +20,9 @@ use crate::uygulama::Uygulama;
 
 const DOSYA_ADI: &str = "ayarlar.json";
 
-const BUTCE_GECERSIZ: &str = "Oturum bütçesi geçersiz. İstek ve token sınırları 1 ile 9007199254740991 arasında bir tam sayı olmalı.";
+const AZAMI_ETKIN_PENCERE: u64 = 9_007_199_254_740_991;
+
+const ETKIN_PENCERE_GECERSIZ: &str = "Etkin bağlam penceresi geçersiz. Değer 32000 ile 9007199254740991 arasında bir tam sayı olmalı.";
 
 const DUSURME_ONAYI: &str = "Denetçi kipini düşürmek, dış kaynaklı araç sonuçlarının \
 (dosya içeriği, komut çıktısı, arama sonuçları) modele daha az denetimle gitmesi demektir. \
@@ -36,7 +38,7 @@ EVREN'e gidebilir ve yalıtımda okunabilir.";
 
 const OZEL_AG: &str = "Bu host özel ağ adreslerine (yerel ağ, şirket ağı) de bağlanabilecek.";
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Dosya {
     #[serde(default)]
     denetci_kipi: DenetimKipi,
@@ -49,9 +51,12 @@ struct Dosya {
     /// Ağlı komutların kullanıcı listesi (3d, §8.3).
     #[serde(default)]
     ag_izin_listesi: Vec<AgHostu>,
-    /// Yeni oturumların bütçe varsayılanı (5b tasarımı §9).
-    #[serde(default, deserialize_with = "butce_oku")]
-    oturum_butcesi: ButceSinirlari,
+    /// Yeni ve açılan oturumların etkin bağlam penceresi.
+    #[serde(
+        default = "varsayilan_etkin_pencere",
+        deserialize_with = "etkin_pencere_oku"
+    )]
+    etkin_pencere: u64,
     /// MCP sunucu tanımları ve yetim sır temizlik kuyruğu (1.1a-2 Görev 3).
     #[serde(default)]
     mcp: crate::mcp::ayarlar::McpAyarlar,
@@ -60,14 +65,37 @@ struct Dosya {
     mcp_revizyonu: u64,
 }
 
-/// Bozuk ya da geçersiz bütçe (tür hatası, sıfır, sınır üstü) yalnızca kendisini
-/// düşürür: varsayılan kullanılır, dosyanın diğer ayarları okunmaya devam eder.
-fn butce_oku<'de, D: Deserializer<'de>>(d: D) -> Result<ButceSinirlari, D::Error> {
+impl Default for Dosya {
+    fn default() -> Self {
+        Self {
+            denetci_kipi: DenetimKipi::default(),
+            ek_gizli_kaliplar: Vec::new(),
+            gizli_sayilmayanlar: Vec::new(),
+            ag_izin_listesi: Vec::new(),
+            etkin_pencere: VARSAYILAN_ETKIN_PENCERE,
+            mcp: crate::mcp::ayarlar::McpAyarlar::default(),
+            mcp_revizyonu: 0,
+        }
+    }
+}
+
+fn varsayilan_etkin_pencere() -> u64 {
+    VARSAYILAN_ETKIN_PENCERE
+}
+
+fn etkin_pencere_gecerli(deger: u64) -> bool {
+    (ASGARI_ETKIN_PENCERE..=AZAMI_ETKIN_PENCERE).contains(&deger)
+}
+
+/// Bozuk ya da geçersiz etkin pencere (tür hatası, alt sınır altı, sınır üstü)
+/// yalnızca kendisini düşürür: varsayılan kullanılır, dosyanın diğer ayarları
+/// okunmaya devam eder.
+fn etkin_pencere_oku<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
     let ham = serde_json::Value::deserialize(d)?;
-    Ok(serde_json::from_value::<ButceSinirlari>(ham)
-        .ok()
-        .filter(ButceSinirlari::gecerli)
-        .unwrap_or_default())
+    Ok(ham
+        .as_u64()
+        .filter(|&v| etkin_pencere_gecerli(v))
+        .unwrap_or(VARSAYILAN_ETKIN_PENCERE))
 }
 
 pub struct Ayarlar {
@@ -209,8 +237,8 @@ impl Ayarlar {
         self.kilit().ag_izin_listesi.clone()
     }
 
-    pub fn oturum_butcesi(&self) -> ButceSinirlari {
-        self.kilit().oturum_butcesi
+    pub fn etkin_pencere(&self) -> u64 {
+        self.kilit().etkin_pencere
     }
 
     fn kilit(&self) -> std::sync::MutexGuard<'_, Dosya> {
@@ -326,23 +354,19 @@ impl Uygulama {
         Ok(self.ayarlar.denetci_durumu())
     }
 
-    /// Yeni oturumların bütçe varsayılanı (5b tasarımı §9). Açık ve kurtarılan
-    /// oturumların kayıtlı limitleri bu değerden etkilenmez.
-    pub fn oturum_butcesi(&self) -> ButceSinirlari {
-        self.ayarlar.oturum_butcesi()
+    /// Yeni ve açılan oturumların etkin bağlam penceresi.
+    pub fn etkin_pencere(&self) -> u64 {
+        self.ayarlar.etkin_pencere()
     }
 
-    /// Yeni oturumların bütçe varsayılanını değiştirir; sınırlar burada doğrulanır
-    /// ve dosyaya yazılır. Geçersiz değerde dosya ve bellek değişmez.
-    pub fn oturum_butcesini_ayarla(
-        &self,
-        istek: u64,
-        token: u64,
-    ) -> Result<ButceSinirlari, KomutHatasi> {
-        let sinirlar = ButceSinirlari::yeni(istek, token)
-            .ok_or_else(|| KomutHatasi::gecersiz(BUTCE_GECERSIZ))?;
-        self.ayarlar.degistir(|d| d.oturum_butcesi = sinirlar)?;
-        Ok(sinirlar)
+    /// Etkin bağlam penceresini değiştirir; sınırlar burada doğrulanır ve
+    /// dosyaya yazılır. Geçersiz değerde dosya ve bellek değişmez.
+    pub fn etkin_pencereyi_ayarla(&self, deger: u64) -> Result<u64, KomutHatasi> {
+        if !etkin_pencere_gecerli(deger) {
+            return Err(KomutHatasi::gecersiz(ETKIN_PENCERE_GECERSIZ));
+        }
+        self.ayarlar.degistir(|d| d.etkin_pencere = deger)?;
+        Ok(deger)
     }
 
     pub fn gizli_ayarlari(&self) -> GizliAyarGorunumu {

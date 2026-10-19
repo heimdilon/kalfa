@@ -86,7 +86,6 @@ pub fn kritik_mi(olay: &Olay) -> bool {
             | Olay::DosyaDegisiklikleri { .. }
             | Olay::AracSonucu { .. }
             | Olay::SartOnayiGerekiyor { .. }
-            | Olay::ButceKarariGerekli { .. }
             | Olay::AktarimDurdu { .. }
             | Olay::GeriAlmaPlani { .. }
             | Olay::TurGeriAlindi { .. }
@@ -95,6 +94,7 @@ pub fn kritik_mi(olay: &Olay) -> bool {
             | Olay::GonderimOnizlemesi { .. }
             | Olay::DenetimBasladi { .. }
             | Olay::DenetimSonucu { .. }
+            | Olay::OturumOzetlendi { .. }
     )
 }
 

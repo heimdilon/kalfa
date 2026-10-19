@@ -20,9 +20,7 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::arac::{Arac, AracCiktisi, AracHatasi, AracKayitDefteri, Hazirlik, YazmaHedefi};
-use crate::butce::{
-    ButceGorunumu, ButceIslemId, ButceMesaji, ButceSinirlari, ButceTalebi, ButceTalepci,
-};
+use crate::butce::{ButceIslemId, ButceMesaji, ButceTalebi, ButceTalepci};
 use crate::geri_alma::{DosyaDurumu, GeriYukleyici};
 use crate::izin::Siniflandirici;
 use crate::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
@@ -30,7 +28,7 @@ use crate::kayit::{KayitHedefi, OturumKaydi};
 use crate::kilit::KaynakKilitleri;
 use crate::muhur::ozet_hex;
 use crate::oturum::{OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci, baslat};
-use crate::protokol::{BitisNedeni, ButceKarari, Komut, Olay, Zarf};
+use crate::protokol::{BitisNedeni, Komut, Olay, Zarf};
 use crate::saglayici::{Saglayici, SaglayiciAkisi};
 use crate::sart_kapisi::SartKapisi;
 use crate::yol::CalismaYolu;
@@ -1076,28 +1074,6 @@ impl Surucu {
         tokio::time::timeout(Duration::from_secs(5), tutamac.kapanmasini_bekle())
             .await
             .expect("oturum kapanmalı");
-    }
-
-    /// Bütçe kartını bekler ve kartın sayaçlarını kabul eder (5b tasarımı §7).
-    /// `sinirlar` verilmezse kartın sınırları korunur; verilirse onlar kullanılır.
-    pub async fn butce_devam_et(&mut self, sinirlar: Option<ButceSinirlari>) -> ButceGorunumu {
-        let durum = match self
-            .bekle(|o| matches!(o, Olay::ButceKarariGerekli { .. }))
-            .await
-            .yuk
-        {
-            Olay::ButceKarariGerekli { durum } => durum,
-            diger => unreachable!("{diger:?}"),
-        };
-        self.gonder(Komut::ButceKarari {
-            karar: ButceKarari::DevamEt {
-                sinirlar: sinirlar.unwrap_or(durum.sinirlar),
-                gozlenen_baslatilan: durum.baslatilan,
-                gozlenen_bilinmeyen: durum.bilinmeyen,
-            },
-        })
-        .await;
-        durum
     }
 
     pub async fn sonraki(&mut self) -> Zarf<Olay> {
