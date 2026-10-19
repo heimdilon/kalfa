@@ -508,6 +508,17 @@ impl Uygulama {
         Ok(())
     }
 
+    pub async fn oturum_ozetle(
+        &self,
+        oturum: OturumId,
+        talimat: Option<String>,
+    ) -> Result<(), KomutHatasi> {
+        let tutamac = self.tutamac(oturum)?;
+        self.ic().son_oturum = Some(oturum);
+        tutamac.gonder(Komut::Ozetle { talimat }).await?;
+        Ok(())
+    }
+
     pub fn turu_iptal_et(&self, oturum: OturumId) -> Result<(), KomutHatasi> {
         self.tutamac(oturum)?.iptal_et();
         Ok(())

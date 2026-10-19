@@ -89,6 +89,11 @@ pub enum Komut {
         #[serde(default)]
         hep_gonderilecekler: Vec<CagriId>,
     },
+    /// Oturumu elle özetler (`/compact`). Tur sürerken reddedilir.
+    Ozetle {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        talimat: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -50,6 +50,7 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         paketi_isledim,
         gecmis_sayfasi,
         mesaj_gonder,
+        oturum_ozetle,
         turu_iptal_et,
         arac_onayi,
         model_degistir,
@@ -207,6 +208,15 @@ pub async fn mesaj_gonder(
     metin: String,
 ) -> Sonuc<()> {
     u.mesaj_gonder(oturum, metin).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn oturum_ozetle(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    talimat: Option<String>,
+) -> Sonuc<()> {
+    u.oturum_ozetle(oturum, talimat).await
 }
 
 #[tauri::command(rename_all = "snake_case")]

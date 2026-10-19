@@ -234,3 +234,34 @@ async fn eski_kayit_acilista_sayaclari_devralir_ve_karar_istemez() {
         })
     ));
 }
+
+#[tokio::test]
+async fn oturum_ozetle_komutu_oturuma_iletir() {
+    let o = ortam(vec![SahteYanit::metin("ilk yanıt")]).await;
+    o.t.saglayici
+        .sohbet_ekle(kalfa_core::test_destek::SahteSohbet::Metin(
+            "kısa özet".into(),
+        ));
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .mesaj_gonder(oturum, "selam".into())
+        .await
+        .unwrap();
+    olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+
+    o.t.uygulama
+        .oturum_ozetle(oturum, Some("odak: test".into()))
+        .await
+        .unwrap();
+    let olaylar = olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+    assert!(olaylar.iter().any(|o| matches!(
+        o,
+        Olay::OturumOzetlendi {
+            tetik: kalfa_core::protokol::OzetTetigi::Elle,
+            talimat: Some(t),
+            ozet,
+            ..
+        } if t == "odak: test" && ozet == "kısa özet"
+    )));
+}

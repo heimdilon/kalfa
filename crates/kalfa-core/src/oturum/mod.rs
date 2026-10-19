@@ -39,7 +39,8 @@ use crate::kimlik::{OturumId, TurId};
 use crate::kisayol::Kisayol;
 use crate::kurtarma::{BILINMEYEN_SONUC, KurtarilmisDurum, KurtarmaHatasi, kurtar};
 use crate::protokol::{
-    AktarimDurmaNedeni, AracDurumu, BitisNedeni, Komut, Olay, OnayOgesi, SEMA_SURUMU, Zarf,
+    AktarimDurmaNedeni, AracDurumu, BitisNedeni, Komut, Olay, OnayOgesi, OzetTetigi, SEMA_SURUMU,
+    Zarf,
 };
 use crate::saglayici::Saglayici;
 use crate::sart_kapisi::SartKapisi;
@@ -1157,6 +1158,11 @@ enum Etki {
     Iptal,
 }
 
+enum TurIsi {
+    Mesaj(String),
+    Ozet { talimat: Option<String> },
+}
+
 struct BaglamGirdisi {
     mesajlar: Vec<ChatMessage>,
     sira: u64,
@@ -1259,7 +1265,17 @@ impl Oturum {
                         );
                         self.hata(mesaj).await;
                     } else {
-                        self.tur_calistir(metin).await;
+                        self.tur_calistir(TurIsi::Mesaj(metin)).await;
+                    }
+                }
+                Komut::Ozetle { talimat } => {
+                    if let Some(neden) = self.kayit_hatasi.clone() {
+                        let mesaj = format!(
+                            "Oturum kaydı yazılamadığı için bu oturum durduruldu ({neden}). Yeni bir oturum açın."
+                        );
+                        self.hata(mesaj).await;
+                    } else {
+                        self.tur_calistir(TurIsi::Ozet { talimat }).await;
                     }
                 }
                 diger => {
@@ -1361,7 +1377,7 @@ impl Oturum {
                 self.ayarlar.efor = Some(efor);
                 self.kaydet(KayitOgesi::EforDegisti { efor }).await;
             }
-            Komut::KullaniciMesaji { .. } => {
+            Komut::KullaniciMesaji { .. } | Komut::Ozetle { .. } => {
                 self.hata(geri_alma::TUR_SURUYOR).await;
             }
             Komut::AracOnayi { .. } | Komut::YerelOnay { .. } => {
@@ -1386,7 +1402,7 @@ impl Oturum {
         Etki::Devam
     }
 
-    async fn tur_calistir(&mut self, metin: String) {
+    async fn tur_calistir(&mut self, is: TurIsi) {
         let tur = TurId::yeni();
         self.tur = Some(tur);
         self.tur_denetci_kipi = self
@@ -1398,14 +1414,40 @@ impl Oturum {
         self.iptal = CancellationToken::new();
         *self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()) = Some((tur, self.iptal.clone()));
         self.yay(Olay::TurBasladi).await;
-        self.geri_alma.tur_basladi(tur, &metin);
         self.tur_ozeti = TurBiriktirici::default();
-        self.mesaj_ekle(
-            ChatMessage::user(metin),
-            Some("mesaj:kullanıcı".to_string()),
-        )
-        .await;
-        let mut neden = self.tur_dongusu().await;
+        let mut neden = match is {
+            TurIsi::Mesaj(metin) => {
+                self.geri_alma.tur_basladi(tur, &metin);
+                self.mesaj_ekle(
+                    ChatMessage::user(metin),
+                    Some("mesaj:kullanıcı".to_string()),
+                )
+                .await;
+                self.tur_dongusu().await
+            }
+            TurIsi::Ozet { talimat } => {
+                if compact::kapsam(
+                    &self.mesajlar,
+                    &self.mesaj_bilgileri,
+                    self.gonderilen,
+                    OzetTetigi::Elle,
+                )
+                .is_empty()
+                {
+                    self.hata("Özetlenecek bir şey yok.").await;
+                    BitisNedeni::Normal
+                } else {
+                    let goruntu = self.baglam.araclar.anlik_goruntu(self.ayarlar.kip);
+                    match self
+                        .baglami_ozetle(OzetTetigi::Elle, talimat, &goruntu)
+                        .await
+                    {
+                        Ok(_) => BitisNedeni::Normal,
+                        Err(neden) => neden,
+                    }
+                }
+            }
+        };
         *self.aktif_tur.lock().unwrap_or_else(|z| z.into_inner()) = None;
         self.iptal.cancel();
         // Tur bitti: sonuçlanmamış denemeler bilinmeyen sayılır (5b tasarımı §4.1).

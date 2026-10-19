@@ -503,3 +503,138 @@ fn eski_5a_özetli_kayıt_açılır() {
     );
     assert!(durum.bekleyen_ozetler.contains(&2));
 }
+
+#[tokio::test]
+async fn elle_compact_talimatı_özetleyiciye_iletir() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (ayar, _) = ayarlar(dizin.path());
+    let s = SahteSaglayici::yeni(vec![SahteYanit::metin("ilk yanıt")]);
+    s.sohbet_ekle(SahteSohbet::Metin("odaklı özet".into()));
+    let mut d = surucu(&s, oku("küçük"), ayar);
+
+    d.gonder(Komut::KullaniciMesaji {
+        metin: "merhaba".into(),
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+
+    d.gonder(Komut::Ozetle {
+        talimat: Some("odak: testler".into()),
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+
+    let ozet_istekleri = s.sohbet_istekleri();
+    assert_eq!(ozet_istekleri.len(), 1);
+    let kullanici_girdisi = icerik(&ozet_istekleri[0].messages[1]);
+    assert!(
+        kullanici_girdisi.ends_with("Kullanıcının özet talimatı: odak: testler"),
+        "{kullanici_girdisi}"
+    );
+    assert!(d.olaylar().iter().any(|o| matches!(
+        o,
+        Olay::OturumOzetlendi {
+            tetik: OzetTetigi::Elle,
+            talimat: Some(t),
+            ozet,
+            ..
+        } if t == "odak: testler" && ozet == "odaklı özet"
+    )));
+}
+
+#[tokio::test]
+async fn elle_compact_boş_oturumda_istek_atmaz() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (ayar, _) = ayarlar(dizin.path());
+    let s = SahteSaglayici::yeni(vec![]);
+    let mut d = surucu(&s, oku("küçük"), ayar);
+
+    d.gonder(Komut::Ozetle { talimat: None }).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+
+    assert!(s.istekler().is_empty());
+    assert!(s.sohbet_istekleri().is_empty());
+    assert_eq!(d.hatalar(), vec!["Özetlenecek bir şey yok.".to_string()]);
+}
+
+#[tokio::test]
+async fn elle_compact_tur_sürerken_reddedilir() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (ayar, _) = ayarlar(dizin.path());
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac("yaz", json!({ "yol": "a.txt" })),
+        SahteYanit::metin("tamam"),
+    ]);
+    let yaz: Arc<dyn Arac> = Arc::new(SahteArac::yazan("yaz"));
+    let mut d = test_oturumu(
+        test_baglami(s.clone(), vec![yaz], sanal_siniflandirici()),
+        ayar,
+    );
+
+    d.gonder(Komut::KullaniciMesaji {
+        metin: "a.txt yaz".into(),
+    })
+    .await;
+    let (cagri, muhur) = match d
+        .bekle(|o| matches!(o, Olay::OnayGerekiyor { .. }))
+        .await
+        .yuk
+    {
+        Olay::OnayGerekiyor { ogeler, .. } => (ogeler[0].cagri, ogeler[0].muhur.clone()),
+        diger => unreachable!("{diger:?}"),
+    };
+
+    // Tur onay beklerken elle compact reddedilir:
+    d.gonder(Komut::Ozetle { talimat: None }).await;
+    d.bekle(|o| matches!(o, Olay::Hata { mesaj } if mesaj.contains("Önceki tur sürüyor")))
+        .await;
+
+    d.gonder(Komut::AracOnayi {
+        cagri,
+        karar: kalfa_core::protokol::OnayKarari::Onayla,
+        muhur,
+        kisayol: false,
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(s.istekler().len(), 2);
+    assert!(s.sohbet_istekleri().is_empty());
+}
+
+#[tokio::test]
+async fn elle_compact_sonrası_bağlam_yalnız_özet() {
+    let dizin = tempfile::tempdir().unwrap();
+    let (ayar, _) = ayarlar(dizin.path());
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::metin("ilk yanıt"),
+        SahteYanit::metin("ikinci yanıt"),
+    ]);
+    s.sohbet_ekle(SahteSohbet::Metin("birinci turun özeti".into()));
+    let mut d = surucu(&s, oku("küçük"), ayar);
+
+    d.gonder(Komut::KullaniciMesaji {
+        metin: "ilk soru".into(),
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+
+    d.gonder(Komut::Ozetle { talimat: None }).await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+
+    d.gonder(Komut::KullaniciMesaji {
+        metin: "yeni kullanıcı mesajı".into(),
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+
+    let istekler = s.istekler();
+    assert_eq!(istekler.len(), 2);
+    let m = &istekler[1].messages;
+    assert_eq!(m.len(), 3);
+    assert_eq!(m[0].role, Role::System);
+    assert_eq!(m[1].role, Role::User);
+    assert!(icerik(&m[1]).contains("<oturum_ozeti"));
+    assert!(icerik(&m[1]).contains("birinci turun özeti"));
+    assert_eq!(m[2].role, Role::User);
+    assert_eq!(icerik(&m[2]), "yeni kullanıcı mesajı");
+}
