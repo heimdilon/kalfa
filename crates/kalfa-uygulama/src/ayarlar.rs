@@ -10,6 +10,7 @@ use kalfa_core::denetci::DenetimKipi;
 use kalfa_core::izin::{
     AZAMI_KALIP, GizliAyarlari, KalipHatasi, VARSAYILAN_GIZLI_KALIPLAR, kalip_dogrula,
 };
+use kalfa_core::oturum::compact::{ASGARI_ETKIN_PENCERE, VARSAYILAN_ETKIN_PENCERE};
 use kalfa_sandbox::vekil::{HostKaynagi, HostKurali, ag_hostu_coz};
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -19,8 +20,6 @@ use crate::uygulama::Uygulama;
 
 const DOSYA_ADI: &str = "ayarlar.json";
 
-const VARSAYILAN_ETKIN_PENCERE: u64 = 200_000;
-const ASGARI_ETKIN_PENCERE: u64 = 32_000;
 const AZAMI_ETKIN_PENCERE: u64 = 9_007_199_254_740_991;
 
 const ETKIN_PENCERE_GECERSIZ: &str = "Etkin bağlam penceresi geçersiz. Değer 32000 ile 9007199254740991 arasında bir tam sayı olmalı.";
