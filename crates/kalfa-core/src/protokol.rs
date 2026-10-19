@@ -367,13 +367,18 @@ pub enum Olay {
         cagri: CagriId,
         sonuc: DenetimSonucu,
     },
-    /// Eski araç çıktıları özetlendi (5a tasarımı §12). `once`/`sonra`
-    /// tahmini istem tokenıdır.
-    BaglamOzetlendi {
-        adet: u32,
-        yer_tutucu: u32,
+    /// Oturumun önceki kısmı özetlendi. `once`/`sonra` tahmini istem tokenıdır.
+    OturumOzetlendi {
+        tetik: OzetTetigi,
         once: u64,
         sonra: u64,
+        talimat: Option<String>,
+        ozet: String,
+    },
+    /// Bağlamın tahmini tokenı ve özetleme eşiği. Kayda yazılmaz.
+    BaglamDurumu {
+        tahmin: u64,
+        esik: u64,
     },
 }
 

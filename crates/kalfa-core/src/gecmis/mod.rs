@@ -19,7 +19,7 @@ use crate::geri_alma::GeriAlmaSonucu;
 use crate::izin::Kip;
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, TurId};
-use crate::protokol::{AracDurumu, BitisNedeni, Zarf};
+use crate::protokol::{AracDurumu, BitisNedeni, OzetTetigi, Zarf};
 use crate::tur_ozeti::{DosyaDegisikligi, TurOzeti, veri_silindi_isle};
 
 /// Ekranda gösterilen bir geçmiş öğesi.
@@ -88,6 +88,16 @@ pub enum GorunumOgesi {
         tur: Option<TurId>,
         ozet: TurOzeti,
     },
+    /// Konuşmanın özetlenmesi.
+    OturumOzeti {
+        sira: u64,
+        tur: Option<TurId>,
+        tetik: OzetTetigi,
+        once: u64,
+        sonra: u64,
+        talimat: Option<String>,
+        ozet: String,
+    },
 }
 
 impl GorunumOgesi {
@@ -100,7 +110,8 @@ impl GorunumOgesi {
             | Self::GuvenlikUyarisi { sira, .. }
             | Self::GeriAlma { sira, .. }
             | Self::KalfaNotu { sira, .. }
-            | Self::TurOzeti { sira, .. } => *sira,
+            | Self::TurOzeti { sira, .. }
+            | Self::OturumOzeti { sira, .. } => *sira,
         }
     }
 
@@ -113,7 +124,8 @@ impl GorunumOgesi {
             | Self::GuvenlikUyarisi { tur, .. }
             | Self::GeriAlma { tur, .. }
             | Self::KalfaNotu { tur, .. }
-            | Self::TurOzeti { tur, .. } => *tur,
+            | Self::TurOzeti { tur, .. }
+            | Self::OturumOzeti { tur, .. } => *tur,
         }
     }
 }
@@ -279,6 +291,22 @@ pub fn gorunum_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GorunumOgesi> {
                     *denetim = Some(sonuc.clone());
                 }
             }
+            KayitOgesi::OturumOzetlendi {
+                tetik,
+                talimat,
+                icerik,
+                once,
+                sonra,
+                ..
+            } => ogeler.push(GorunumOgesi::OturumOzeti {
+                sira: z.sira,
+                tur: z.tur,
+                tetik: *tetik,
+                once: *once,
+                sonra: *sonra,
+                talimat: talimat.clone(),
+                ozet: crate::oturum::compact::ozet_ayikla(icerik),
+            }),
             _ => {}
         }
     }

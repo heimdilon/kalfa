@@ -43,6 +43,13 @@ pub fn kapsam(
     tetik: OzetTetigi,
 ) -> Vec<usize> {
     let mut sinir = gonderilen.min(mesajlar.len());
+    if sinir > 0
+        && mesajlar.get(sinir).is_some_and(|m| {
+            m.role == Role::Assistant && m.tool_calls.as_ref().is_none_or(Vec::is_empty)
+        })
+    {
+        sinir += 1;
+    }
     if let Some(asistan_indeksi) = mesajlar[..sinir].iter().rposition(|m| {
         m.role == Role::Assistant && m.tool_calls.as_ref().is_some_and(|c| !c.is_empty())
     }) {
@@ -212,7 +219,9 @@ pub fn uygula(d: &mut BaglamDizisi<'_>, kapsanan: &[usize], icerik: String, sira
         .chain(std::iter::once(son_kapsanan - silinenler.len()))
         .collect();
     *d.bekleyen = yeni_bekleyen;
-    *d.gonderilen = d.gonderilen.saturating_sub(silinenler.len());
+    *d.gonderilen = (*d.gonderilen)
+        .max(son_kapsanan + 1)
+        .saturating_sub(silinenler.len());
 }
 
 #[cfg(test)]

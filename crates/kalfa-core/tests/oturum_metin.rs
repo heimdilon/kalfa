@@ -73,6 +73,7 @@ async fn alternatif_saglayicinin_buyuk_yaniti_araclari_calistiramaz() {
             SahteYanit::Akis(olaylar),
             SahteYanit::metin("sonraki"),
         ]);
+        s.sohbet_ekle(SahteSohbet::Metin("özet".into()));
         let mut ayar = ayarlar();
         ayar.kip = Kip::Proje;
         // Bu test önceki olay kuyruğu sınırını değil sağlayıcı birikimini sınar.
