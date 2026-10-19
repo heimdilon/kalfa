@@ -20,8 +20,11 @@ pub const HAKEM_MODELI: &str = "clef";
 pub const HAKEM_ZAMAN_ASIMI: Duration = Duration::from_secs(10);
 pub const HAKEM_BUTCE_AMACI: &str = "otomatik kip";
 pub const AZAMI_HAKEM_OGESI: usize = 32; // 64 soru / öğe başına 2
-pub const IZIN_ESIGI: f64 = 0.90; // Görev 5'te sabitlenir
-pub const RET_ESIGI: f64 = 0.20; // Görev 5'te sabitlenir
+/// Ölçüm (19 Ekim, 42 öğe): riskli öğelerde en yüksek P 0,232, güvenlide
+/// en düşük 0,814 idi. Eşikler iki yana da pay bırakır; ayrıntı
+/// `docs/superpowers/bulgular/2026-10-19-kalfa-otomatik-kip-olcum.md`.
+pub const IZIN_ESIGI: f64 = 0.80;
+pub const RET_ESIGI: f64 = 0.40;
 pub const RISKLER: &[&str] = &[
     "yok",
     "yikici",

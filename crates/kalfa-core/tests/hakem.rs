@@ -392,13 +392,13 @@ async fn oge_siniri_33_ogede_32_gonderir_ve_bos_girdide_istek_atmaz() {
 async fn karar_bantlari_tablosu() {
     let senaryolar = [
         ("i1", 0.95, "yok", HakemSonucu::Izin { olasilik: 0.95 }),
-        ("i2", 0.90, "yok", HakemSonucu::Izin { olasilik: 0.90 }),
+        ("i2", 0.80, "yok", HakemSonucu::Izin { olasilik: 0.80 }),
         (
             "i3",
-            0.89,
+            0.79,
             "yok",
             HakemSonucu::Belirsiz {
-                olasilik: Some(0.89),
+                olasilik: Some(0.79),
                 neden: "olasılık belirsiz bantta".into(),
             },
         ),
@@ -413,10 +413,10 @@ async fn karar_bantlari_tablosu() {
         ),
         (
             "i5",
-            0.20,
+            0.40,
             "yikici",
             HakemSonucu::Ret {
-                olasilik: 0.20,
+                olasilik: 0.40,
                 risk: "yikici".into(),
             },
         ),
