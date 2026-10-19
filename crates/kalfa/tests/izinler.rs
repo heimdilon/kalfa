@@ -120,13 +120,13 @@ fn geri_alma_komutlari_yalnizca_ana_pencerede() {
     }
 }
 
-/// Bütçe komutları yalnızca ana pencereye açıktır (5b tasarımı §7, §9).
+/// Etkin bağlam penceresi komutları yalnızca ana pencereye açıktır.
 #[test]
-fn butce_komutlari_yalnizca_ana_pencerede() {
+fn etkin_pencere_komutlari_yalnizca_ana_pencerede() {
     let app = uygulama();
     let ana = pencere(&app, "ana");
     let sartlar = pencere(&app, "sartlar");
-    for komut in ["oturum_butcesi", "oturum_butcesini_ayarla", "butce_karari"] {
+    for komut in ["etkin_pencere", "etkin_pencereyi_ayarla"] {
         assert!(ANA_PENCERE_KOMUTLARI.contains(&komut), "{komut}");
         assert!(izinli(&ana, komut), "ana pencere {komut} çağıramadı");
         assert!(

@@ -71,6 +71,8 @@ pub struct Sinirlar {
     pub baglam_hedefi: u64,
     /// Son bu kadar araç çıktısı özetlenmez.
     pub korunan_arac_ciktisi: usize,
+    /// Bağlam özetleme eşiğini hesaplamak için kullanılan etkin bağlam penceresi.
+    pub etkin_pencere: u64,
 }
 
 impl Default for Sinirlar {
@@ -86,6 +88,7 @@ impl Default for Sinirlar {
             baglam_esigi: 64_000,
             baglam_hedefi: 32_000,
             korunan_arac_ciktisi: 4,
+            etkin_pencere: 200_000,
         }
     }
 }
@@ -810,11 +813,16 @@ pub struct OturumTutamaci {
     bekleyen_onaylar: BekleyenOnaylar,
     bekleyen_govdeler: BekleyenGovdeler,
     butce_talepci: ButceTalepci,
+    sinirlar: Sinirlar,
 }
 
 impl OturumTutamaci {
     pub fn oturum_id(&self) -> OturumId {
         self.oturum
+    }
+
+    pub fn sinirlar(&self) -> &Sinirlar {
+        &self.sinirlar
     }
 
     /// Bu oturumun bütçe talep göndericisi. MCP araç tanımı denetçisi gibi
@@ -1186,6 +1194,7 @@ impl Oturum {
         let bekleyen_onaylar = BekleyenOnaylar::default();
         let bekleyen_govdeler = BekleyenGovdeler::default();
         let tur_denetci_kipi = ayarlar.denetci_kipi;
+        let sinirlar = ayarlar.sinirlar.clone();
         let (butce_talepci, butce_talep_alici) = ButceTalepci::kanal();
         let oturum = Self {
             kimlik,
@@ -1237,6 +1246,7 @@ impl Oturum {
                 bekleyen_onaylar,
                 bekleyen_govdeler,
                 butce_talepci,
+                sinirlar,
             },
             olay_rx,
             kapanis_tx,

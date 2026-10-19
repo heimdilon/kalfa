@@ -143,8 +143,7 @@ pub struct OturumAcilisi {
     pub gecmis: GecmisSayfasi,
     pub ozet: DurumOzeti,
     pub salt_okunur: Option<SaltOkunurNedeni>,
-    /// Bütçe sayaçları ve son limitler (5b tasarımı §9). Kayıttan açılan oturumda
-    /// kayıttan, yeni oturumda varsayılandan gelir; salt okunur oturumda yoktur.
+    /// Oturumun istek ve token sayaçları.
     pub butce: Option<ButceGorunumu>,
 }
 

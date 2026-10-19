@@ -19,7 +19,7 @@ use kalfa_core::kimlik::{CagriId, IslemId, OturumId, TurId};
 use kalfa_core::kurtarma::kurtar;
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::oturum::{self, OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci};
-use kalfa_core::protokol::{ButceKarari, Komut, OnayKarari, OnayOgesi};
+use kalfa_core::protokol::{Komut, OnayKarari, OnayOgesi};
 use kalfa_core::saglayici::Saglayici;
 use kalfa_evren::tipler::DusunceEforu;
 use kalfa_tools::{CalismaAlani as AracAlani, KabukAraci, varsayilan_araclar};
@@ -191,9 +191,8 @@ impl Uygulama {
             &self.geri_alma_dizini,
             oturum,
         ));
-        // Yeni oturum, ayardaki varsayılan bütçeyle başlar (5b tasarımı §9).
-        ayarlar.butce = self.ayarlar.oturum_butcesi();
-        let butce = ButceDurumu::yeni(ayarlar.butce).map_err(ic_hata)?.gorunum();
+        ayarlar.sinirlar.etkin_pencere = self.ayarlar.etkin_pencere();
+        let butce = ButceDurumu::yeni().gorunum();
         let (tutamac, alici) = oturum::baslat_kimlikle(oturum, ayarlar, baglam)?;
         let acik = AcikOturum {
             tutamac,
@@ -246,8 +245,7 @@ impl Uygulama {
             .map_err(ic_hata)?
             .map_err(KomutHatasi::kayit)?;
         let durum = kurtar(&kayitlar).map_err(ic_hata)?;
-        // Kayıttan açılan oturum kendi kayıtlı limitleriyle sürer (5b tasarımı §9).
-        let butce = durum.butce;
+        let butce = Some(durum.butce);
         if durum.oturum != oturum {
             return Err(KomutHatasi::gecersiz(
                 "Kayıt dosyasının adı içindeki oturum kimliğiyle uyuşmuyor.",
@@ -276,8 +274,7 @@ impl Uygulama {
             )
         };
         ayarlar.efor = Some(baslangic_efor);
-        // Yalnızca bütçe kaydı olmayan (5b öncesi) oturum bu varsayılanı devralır.
-        ayarlar.butce = self.ayarlar.oturum_butcesi();
+        ayarlar.sinirlar.etkin_pencere = self.ayarlar.etkin_pencere();
         ayarlar.geri_alma_dizini = Some(dizin::oturum_geri_alma_dizini(
             &self.geri_alma_dizini,
             oturum,
@@ -447,18 +444,12 @@ impl Uygulama {
         Ok(())
     }
 
-    /// Bütçe kartındaki kullanıcı kararını ana pencereden oturuma iletir (5b
-    /// tasarımı §7). Oturum kimliği yoksa ya da oturum kapanmışsa reddedilir; karar
-    /// geçerliliğini çekirdek (gözlenen sayaçlar, aktif istek) denetler.
-    pub async fn butce_karari(
-        &self,
-        oturum: OturumId,
-        karar: ButceKarari,
-    ) -> Result<(), KomutHatasi> {
-        self.tutamac(oturum)?
-            .gonder(Komut::ButceKarari { karar })
-            .await?;
-        Ok(())
+    /// Açık oturumun çalışma sınırları.
+    pub fn oturum_sinirlari(&self, oturum: OturumId) -> Option<oturum::Sinirlar> {
+        self.ic()
+            .oturumlar
+            .get(&oturum)
+            .map(|a| a.tutamac.sinirlar().clone())
     }
 
     /// Oturumun olaylarını paketleyip `yazici`ya yazan köprüyü başlatır.
