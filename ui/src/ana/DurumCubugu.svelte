@@ -101,7 +101,7 @@
       {/if}
       {#if ekran?.baglam}
         {@const baglam = ekran.baglam}
-        {@const yuzde = baglam.esik > 0 ? Math.round((baglam.tahmin / baglam.esik) * 100) : 0}
+        {@const yuzde = baglam.esik > 0 ? Math.min(100, Math.round((baglam.tahmin / baglam.esik) * 100)) : 0}
         <StatusItem
           tone={yuzde > 80 ? 'warn' : undefined}
           title={m('durum.baglam_ipucu', {

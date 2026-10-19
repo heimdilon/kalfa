@@ -447,11 +447,11 @@ export class AnaDurum {
 
   anahtariDegistir(): void {
     void this.#dene(() => ipc.anahtarPenceresiniAc());
-  };
+  }
 
   sartPenceresiniGoster(): void {
     void this.#dene(() => ipc.sartPenceresiniAc());
-  };
+  }
 
   /** Ayarlar'ı açar; Linux ve Windows'ta araç zinciri dizinlerini okur. */
   async ayarlariAc(): Promise<void> {

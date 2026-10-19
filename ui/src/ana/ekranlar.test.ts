@@ -220,6 +220,13 @@ describe('ana pencere (1c tasarımı §8.1)', () => {
     expect(cubuk.textContent).not.toContain('/ 200');
   });
 
+  it('bağlam yüzdesi eşiği aşınca %100 ile sınırlıdır', async () => {
+    const { arka } = await ciz();
+    arka.olaylar('o1', [{ tip: 'BaglamDurumu', tahmin: 250, esik: 100 }]);
+    const cubuk = screen.getByRole('contentinfo', { name: 'Durum çubuğu' });
+    expect(await within(cubuk).findByText('Bağlam %100')).toBeTruthy();
+  });
+
   it('oturum özeti bölücüsü görünür ve tıklanınca özet açılır', async () => {
     const { arka } = await ciz();
     arka.olaylar('o1', [
