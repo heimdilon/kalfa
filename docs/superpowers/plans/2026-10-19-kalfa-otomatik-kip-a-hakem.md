@@ -1,7 +1,17 @@
 # Kalfa otomatik kip, PR A: Hakem ve ölçüm (uygulama planı)
 
-**Durum:** Hazır. Uygulanmadı.
-**Taban:** `main`, `6f55c5b`.
+**Durum:** Uygulandı (19 Ekim). Dal `otomatik-kip/a-hakem`.
+
+- **Görev 1–4:** Antigravity uyguladı. Claude inceledi ve iki platformda
+  doğruladı.
+- **Görev 5:** Ölçüm kapısı geçti. Eşikler 0,80 ve 0,40'a sabitlendi.
+  Sapma: plandaki "en gevşek eşik" kuralı uygulanmadı (gerekçe
+  [ölçüm raporunda](../bulgular/2026-10-19-kalfa-otomatik-kip-olcum.md)).
+- **Görev 3:** Ortak yeniden deneme `butce.rs`'e taşındı. Denetçi testleri
+  değişmeden geçti.
+**Uygulayıcılar:** Görev 1–4'ü Antigravity uygular. Görev 5'teki canlı
+ölçümü, Görev 6'yı ve bitirme doğrulamasını (Windows ile WSL) Claude yapar.
+**Taban:** `main`, `741efe4`.
 **Tasarım:** [Otomatik kip](../specs/2026-10-19-kalfa-otomatik-kip-design.md),
 özellikle §4, §8 ve §10.
 **Yoklama:** [clef / systemone](../bulgular/2026-10-19-kalfa-otomatik-kip-yoklama.md).

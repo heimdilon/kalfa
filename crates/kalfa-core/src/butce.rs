@@ -7,12 +7,13 @@ use std::fmt;
 use std::future::Future;
 use std::time::Duration;
 
+use kalfa_evren::karar::KararKullanimi;
 use kalfa_evren::tipler::Usage;
 use kalfa_evren::{EvrenError, YanitMeta};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::gonderim::{GunlukToken, IstekSonucu};
+use crate::gonderim::{GunlukToken, IstekAsamasi, IstekSonucu};
 use crate::kayit::KayitOgesi;
 
 /// Oturum içinde 1'den artan bütçe denemesi kimliği.
@@ -379,6 +380,17 @@ pub fn yanit_kullanimi(usage: Option<&Usage>) -> Option<GunlukToken> {
     })
 }
 
+/// `/v1/systemone` karar yanıtının bütçe kullanımı (otomatik kip tasarımı §4.3).
+/// `input_tokens > 0` ise bilinen kullanımdır; değilse bilinmeyendir (`None`).
+pub fn karar_kullanimi(k: Option<&KararKullanimi>) -> Option<GunlukToken> {
+    let k = k.filter(|k| k.input_tokens > 0)?;
+    Some(GunlukToken {
+        istem: k.input_tokens,
+        tamamlama: k.output_tokens,
+        dusunce: 0,
+    })
+}
+
 /// Ağ süresinden (`kalan`) harcayarak bekler: geçen süre düşülür, süre dolarsa
 /// `None`. İzin beklemesi bu süreye girmez; çağıran izni bu çağrıdan önce alır
 /// (5b tasarımı §7).
@@ -387,6 +399,106 @@ pub(crate) async fn sureli<F: Future>(kalan: &mut Duration, gelecek: F) -> Optio
     let sonuc = tokio::time::timeout(*kalan, gelecek).await.ok();
     *kalan = kalan.saturating_sub(basla.elapsed());
     sonuc
+}
+
+/// Bütçeli ağ çağrısının başarısızlığı.
+#[derive(Debug)]
+pub enum ButceCagriHatasi<E> {
+    /// Oturum bütçesi izin vermedi; ağa çıkılmadı.
+    Butce,
+    /// Çağrının kendi hatası (ör. `EvrenError`).
+    Cagri(E),
+    /// Toplam ağ süresi doldu.
+    Zaman,
+}
+
+impl<E: fmt::Display> ButceCagriHatasi<E> {
+    pub fn neden(&self, toplam_sure: Duration) -> String {
+        match self {
+            Self::Butce => "oturum bütçesi izin vermedi".into(),
+            Self::Cagri(e) => format!("EVREN hatası: {e}"),
+            Self::Zaman => format!("zaman aşımı ({} sn)", toplam_sure.as_secs()),
+        }
+    }
+}
+
+/// Hız sınırı ya da HTTP 429 hatasında yeniden deneme öncesi beklenecek süre.
+pub fn tekrar_bekleme_suresi(hata: &EvrenError) -> Option<Duration> {
+    match hata {
+        EvrenError::HizSiniri { tekrar_dene } => {
+            Some(tekrar_dene.unwrap_or(Duration::from_millis(500)))
+        }
+        EvrenError::Sunucu { durum: 429, .. } => Some(Duration::from_millis(500)),
+        _ => None,
+    }
+}
+
+/// Bütçe izniyle ağ çağrısı ve tekrar edilebilir hatada tek yeniden deneme
+/// (5b tasarımı §4.1, §6, §7). Her deneme önce `butce`'den yeni izin alır; izin
+/// beklemesi `toplam_sure`'den düşmez. Çağrı ve yeniden deneme beklemesi
+/// `toplam_sure` içinden harcar.
+pub async fn butceli_yeniden_dene<T, Hata, F, Fut, Kullanim, Tekrar>(
+    butce: &ButceTalepci,
+    amac: &str,
+    toplam_sure: Duration,
+    denemeler: &mut Vec<ButceDenemesi>,
+    mut deneme: F,
+    kullanim: Kullanim,
+    tekrar_suresi: Tekrar,
+) -> Result<(T, YanitMeta), ButceCagriHatasi<Hata>>
+where
+    Hata: fmt::Display,
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<(T, YanitMeta), Hata>>,
+    Kullanim: Fn(Result<&T, &Hata>) -> Option<GunlukToken>,
+    Tekrar: Fn(&Hata) -> Option<Duration>,
+{
+    let mut kalan = toplam_sure;
+    let mut tekrar_hakki = true;
+    loop {
+        let islem = butce.izin(amac).await.ok_or(ButceCagriHatasi::Butce)?;
+        let sonuc = match sureli(&mut kalan, deneme()).await {
+            Some(Ok(yanit)) => Ok(yanit),
+            Some(Err(e)) => Err(ButceCagriHatasi::Cagri(e)),
+            None => Err(ButceCagriHatasi::Zaman),
+        };
+        let (token_kullanimi, meta, kayit) = match &sonuc {
+            Ok((yanit, meta)) => (
+                kullanim(Ok(yanit)),
+                Some(meta.clone()),
+                IstekSonucu::Basarili,
+            ),
+            Err(hata) => (
+                match hata {
+                    ButceCagriHatasi::Cagri(e) => kullanim(Err(e)),
+                    ButceCagriHatasi::Butce | ButceCagriHatasi::Zaman => None,
+                },
+                None,
+                IstekSonucu::Hata {
+                    asama: IstekAsamasi::Yanit,
+                    mesaj: hata.neden(toplam_sure),
+                },
+            ),
+        };
+        butce.bitir(islem, token_kullanimi).await;
+        denemeler.push(ButceDenemesi {
+            islem,
+            kullanim: token_kullanimi,
+            meta,
+            sonuc: kayit,
+        });
+        if let Err(ButceCagriHatasi::Cagri(hata)) = &sonuc
+            && tekrar_hakki
+            && let Some(bekle) = tekrar_suresi(hata)
+        {
+            tekrar_hakki = false;
+            sureli(&mut kalan, tokio::time::sleep(bekle))
+                .await
+                .ok_or(ButceCagriHatasi::Zaman)?;
+            continue;
+        }
+        return sonuc;
+    }
 }
 
 #[cfg(test)]
@@ -853,5 +965,118 @@ mod testler {
             None
         );
         assert_eq!(kalan, Duration::ZERO);
+    }
+
+    #[test]
+    fn karar_kullanimi_yok_sifir_ve_pozitif_tablosu() {
+        use kalfa_evren::karar::KararKullanimi;
+
+        let tablo = [
+            (None, None),
+            (
+                Some(KararKullanimi {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                }),
+                None,
+            ),
+            (
+                Some(KararKullanimi {
+                    input_tokens: 0,
+                    output_tokens: 10,
+                }),
+                None,
+            ),
+            (
+                Some(KararKullanimi {
+                    input_tokens: 632,
+                    output_tokens: 0,
+                }),
+                Some(GunlukToken {
+                    istem: 632,
+                    tamamlama: 0,
+                    dusunce: 0,
+                }),
+            ),
+            (
+                Some(KararKullanimi {
+                    input_tokens: 120,
+                    output_tokens: 3,
+                }),
+                Some(GunlukToken {
+                    istem: 120,
+                    tamamlama: 3,
+                    dusunce: 0,
+                }),
+            ),
+        ];
+
+        for (girdi, beklenen) in tablo {
+            assert_eq!(karar_kullanimi(girdi.as_ref()), beklenen, "{girdi:?}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn butceli_yeniden_dene_hiz_sinirinda_yeni_izinle_bir_kez_tekrarlar() {
+        let (butce, mut alici) = ButceTalepci::kanal();
+        tokio::spawn(async move {
+            let mut sira = 0;
+            while let Some(mesaj) = alici.recv().await {
+                if let ButceMesaji::Talep(talep) = mesaj {
+                    sira += 1;
+                    let _ = talep.yanit.send(Some(ButceIslemId(sira)));
+                }
+            }
+        });
+        let mut denemeler = Vec::new();
+        let mut sayac = 0usize;
+
+        let sonuc = butceli_yeniden_dene(
+            &butce,
+            "otomatik kip",
+            Duration::from_secs(10),
+            &mut denemeler,
+            || {
+                sayac += 1;
+                async move {
+                    if sayac == 1 {
+                        Err(EvrenError::HizSiniri {
+                            tekrar_dene: Some(Duration::from_millis(50)),
+                        })
+                    } else {
+                        Ok((
+                            KararKullanimi {
+                                input_tokens: 250,
+                                output_tokens: 0,
+                            },
+                            YanitMeta {
+                                istek_id: Some("k-2".into()),
+                                ..Default::default()
+                            },
+                        ))
+                    }
+                }
+            },
+            |s| match s {
+                Ok(k) => karar_kullanimi(Some(k)),
+                Err(e) => hata_kullanimi(e),
+            },
+            tekrar_bekleme_suresi,
+        )
+        .await;
+
+        assert!(sonuc.is_ok());
+        assert_eq!(denemeler.len(), 2);
+        assert_eq!(denemeler[0].islem, ButceIslemId(1));
+        assert_eq!(denemeler[0].kullanim, Some(GunlukToken::default()));
+        assert_eq!(denemeler[1].islem, ButceIslemId(2));
+        assert_eq!(
+            denemeler[1].kullanim,
+            Some(GunlukToken {
+                istem: 250,
+                tamamlama: 0,
+                dusunce: 0,
+            })
+        );
     }
 }

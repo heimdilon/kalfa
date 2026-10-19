@@ -12,6 +12,7 @@ pub mod geri_alma;
 pub mod git_koruma;
 pub mod gonderim;
 pub mod gorunum;
+pub mod hakem;
 pub mod izin;
 pub mod kabuk;
 pub mod kayit;

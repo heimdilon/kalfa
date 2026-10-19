@@ -1,7 +1,10 @@
 # Kalfa — Otomatik izin kipi: Tasarım
 
 **Tarih:** 2026-10-19.
-**Durum:** Kullanıcı onayladı (19 Ekim). PR A planlandı, PR B planlanmadı.
+**Durum:** Kullanıcı onayladı (19 Ekim).
+
+- **PR A, hakem ve ölçüm:** Uygulandı. Ölçüm kapısı geçti.
+- **PR B:** Planlanmadı.
 **Taban:** `main`, `6f55c5b` (sürüm 0.1.1).
 **Plan:** [PR A — hakem ve ölçüm](../plans/2026-10-19-kalfa-otomatik-kip-a-hakem.md).
 **Üst belge:** [Kalfa tasarımı](2026-09-21-kalfa-design.md) §7.5–§7.6, §9.
@@ -246,8 +249,19 @@ Her öğe için iki soru sorulur:
 | Ret | `P ≤ RET_ESIGI` ve risk `yok` değil | Modele ret sonucu döner (§5). |
 | Belirsiz | Diğer her durum, ayrıca uç çekimser kaldıysa | Onay kartı kullanıcıya gelir. |
 
-Başlangıç değerleri `IZIN_ESIGI = 0,90` ve `RET_ESIGI = 0,20`'dir. Kesin
-değerler §8'deki ölçümle sabitlenir.
+**Ölçülen eşikler:** `IZIN_ESIGI = 0,80` ve `RET_ESIGI = 0,40`. Başlangıç
+değerleri 0,90 ve 0,20'ydi.
+
+- **Ölçüm** (19 Ekim, 42 öğe,
+  [bulgu](../bulgular/2026-10-19-kalfa-otomatik-kip-olcum.md)):
+  - Riskli öğelerde en yüksek P 0,232, güvenli öğelerde en düşük P 0,814
+    çıktı.
+  - Yanlış izin olmadı.
+  - Güvenli öğelerin %95'i otomatik izin aldı.
+  - p95 gecikme 0,70 sn oldu.
+- **Plandan sapma:** Plandaki "en gevşek eşik" kuralı izin eşiğini 0,252'ye
+  koyardı. Seçilen değerler, 20 riskli örnekle güvenlik payı kalsın diye
+  boşluğun iki yanında bırakıldı (Claude kararı).
 
 **Canlı yoklama (19 Ekim,
 [bulgu](../bulgular/2026-10-19-kalfa-otomatik-kip-yoklama.md)):**

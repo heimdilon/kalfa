@@ -2,6 +2,7 @@
 //! testler sahte bir sağlayıcıyla koşar (spec §4.2).
 
 use async_trait::async_trait;
+use kalfa_evren::karar::{KararIstegi, KararYaniti};
 use kalfa_evren::tipler::{ChatRequest, ChatResponse, ModelInfo, TermsStatus, TermsText};
 use kalfa_evren::{AkisKanali, EkUc, EvrenError, EvrenIstemcisi, HamYanit, YanitMeta};
 
@@ -28,6 +29,12 @@ pub trait Saglayici: Send + Sync {
     async fn ek_uc(&self, _uc: EkUc, _govde: &serde_json::Value) -> Result<HamYanit, EvrenError> {
         Err(EvrenError::GecersizYanit(
             "bu sağlayıcı eklenti uçlarını desteklemiyor".into(),
+        ))
+    }
+    /// Otomatik kipin hakem karar isteği (`/v1/systemone`).
+    async fn karar(&self, _istek: KararIstegi) -> Result<(KararYaniti, YanitMeta), EvrenError> {
+        Err(EvrenError::GecersizYanit(
+            "bu sağlayıcı karar ucunu desteklemiyor".into(),
         ))
     }
 }
@@ -72,5 +79,9 @@ impl Saglayici for EvrenSaglayici {
 
     async fn ek_uc(&self, uc: EkUc, govde: &serde_json::Value) -> Result<HamYanit, EvrenError> {
         self.istemci.ek_uc(uc, govde).await
+    }
+
+    async fn karar(&self, istek: KararIstegi) -> Result<(KararYaniti, YanitMeta), EvrenError> {
+        self.istemci.karar(&istek).await
     }
 }

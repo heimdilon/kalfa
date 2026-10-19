@@ -169,3 +169,110 @@ async fn sahte_sohbet_kuyrugu_sirayla_yanitlar() {
 
     assert_eq!(s.sohbet_istekleri().len(), 3);
 }
+
+#[tokio::test(start_paused = true)]
+async fn sahte_karar_kuyrugu_gecikme_ve_istek_kaydi() {
+    use kalfa_evren::karar::{
+        KararCevabi, KararIstegi, KararKullanimi, KararSorusu, KararTuru, KararYaniti,
+    };
+    use std::collections::BTreeMap;
+
+    let s = SahteSaglayici::yeni(vec![]);
+    let mut answers = BTreeMap::new();
+    answers.insert("i1_guvenli".into(), KararCevabi::Noul { noul: 0.95 });
+    s.karar_ekle(Ok(KararYaniti {
+        id: Some("k-1".into()),
+        model: "clef".into(),
+        answers,
+        usage: Some(KararKullanimi {
+            input_tokens: 120,
+            output_tokens: 0,
+        }),
+    }));
+    s.karar_ekle(Err(EvrenError::ag_baglanti("bağlantı hatası")));
+    s.karar_gecikme(Some(Duration::from_secs(2)));
+
+    let mut questions = BTreeMap::new();
+    questions.insert(
+        "i1_guvenli".into(),
+        KararSorusu {
+            tur: KararTuru::Noul,
+            instructions: "güvenli mi?".into(),
+            options: Vec::new(),
+        },
+    );
+    let karar_istegi = KararIstegi {
+        model: "clef".into(),
+        state: json!({"calisma_alani": "proje"}),
+        questions,
+        max_len: None,
+    };
+
+    let basla = tokio::time::Instant::now();
+    let (y1, m1) = s.karar(karar_istegi.clone()).await.unwrap();
+    assert!(basla.elapsed() >= Duration::from_secs(2));
+    assert_eq!(y1.model, "clef");
+    assert_eq!(m1.istek_id.as_deref(), Some("sahte-karar-1"));
+
+    let h2 = s.karar(karar_istegi.clone()).await;
+    assert!(matches!(h2, Err(EvrenError::Ag { .. })));
+    assert_eq!(
+        s.karar_istekleri(),
+        vec![karar_istegi.clone(), karar_istegi]
+    );
+}
+
+#[tokio::test]
+#[should_panic(expected = "sahte karar senaryosunda yanıt kalmadı")]
+async fn sahte_karar_kuyrugu_bosken_panik_eder() {
+    use kalfa_evren::karar::KararIstegi;
+    use std::collections::BTreeMap;
+
+    let s = SahteSaglayici::yeni(vec![]);
+    let _ = s
+        .karar(KararIstegi {
+            model: "clef".into(),
+            state: json!({}),
+            questions: BTreeMap::new(),
+            max_len: None,
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn evren_saglayici_karar_istegini_iletir() {
+    use kalfa_evren::karar::{KararCevabi, KararIstegi};
+    use std::collections::BTreeMap;
+
+    let sunucu = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "model": "clef",
+                    "answers": {"i1_guvenli": {"type": "noul", "noul": 0.91}}
+                }))
+                .insert_header("x-request-id", "k-evren-1"),
+        )
+        .mount(&sunucu)
+        .await;
+
+    let istemci =
+        EvrenIstemcisi::yeni(format!("{}/v1", sunucu.uri()), ApiAnahtari::yeni("k")).unwrap();
+    let s = EvrenSaglayici::yeni(istemci);
+    let (yanit, meta) = s
+        .karar(KararIstegi {
+            model: "clef".into(),
+            state: json!({}),
+            questions: BTreeMap::new(),
+            max_len: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        yanit.answers["i1_guvenli"],
+        KararCevabi::Noul { noul: 0.91 }
+    );
+    assert_eq!(meta.istek_id.as_deref(), Some("k-evren-1"));
+}

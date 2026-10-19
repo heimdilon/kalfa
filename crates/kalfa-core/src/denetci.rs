@@ -6,13 +6,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use kalfa_evren::tipler::{ChatMessage, ChatRequest, ChatResponse, Usage};
-use kalfa_evren::{EvrenError, YanitMeta};
+use kalfa_evren::YanitMeta;
+use kalfa_evren::tipler::{ChatMessage, ChatRequest, Usage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
 
-use crate::butce::{ButceDenemesi, ButceTalepci, hata_kullanimi, sureli, yanit_kullanimi};
-use crate::gonderim::{IstekAsamasi, IstekSonucu};
+use crate::butce::{
+    ButceDenemesi, ButceTalepci, butceli_yeniden_dene, hata_kullanimi, tekrar_bekleme_suresi,
+    yanit_kullanimi,
+};
 use crate::saglayici::Saglayici;
 
 pub const DENETCI_MODELI: &str = "qwen3.8-flash-next";
@@ -93,27 +95,6 @@ impl GuvenlikDenetcisi for Yok {
     }
 }
 
-/// Denetçi çağrısının başarısızlığı. Nedeni `Bilinmiyor` sonucuna ve deneme
-/// kaydına girer.
-enum DenetimHatasi {
-    /// Oturum bütçesi izin vermedi; ağa çıkılmadı.
-    Butce,
-    /// EVREN hatası.
-    Evren(EvrenError),
-    /// 30 saniyelik ağ süresi doldu.
-    Zaman,
-}
-
-impl DenetimHatasi {
-    fn neden(&self) -> String {
-        match self {
-            Self::Butce => "oturum bütçesi izin vermedi".into(),
-            Self::Evren(e) => format!("EVREN hatası: {e}"),
-            Self::Zaman => "zaman aşımı (30 sn)".into(),
-        }
-    }
-}
-
 /// EVREN üzerinde `qwen3.8-flash-next` ve JSON şema ile çalışan denetçi.
 pub struct YapilandirilmisSiniflandirici {
     saglayici: Arc<dyn Saglayici>,
@@ -127,87 +108,6 @@ impl YapilandirilmisSiniflandirici {
             semafor: Arc::new(Semaphore::new(AZAMI_ESZAMANLI_DENETIM)),
         }
     }
-
-    /// Tek ağ denemesi (5b tasarımı §4.1, §6): izin, kalan süreyle sınırlı
-    /// `sohbet`, denemenin tek bitişi ve kaydı. İzin yoksa ağa çıkılmaz.
-    async fn dene(
-        &self,
-        istek: &ChatRequest,
-        butce: &ButceTalepci,
-        kalan: &mut Duration,
-        denemeler: &mut Vec<ButceDenemesi>,
-    ) -> Result<(ChatResponse, YanitMeta), DenetimHatasi> {
-        let islem = butce.izin(BUTCE_AMACI).await.ok_or(DenetimHatasi::Butce)?;
-        let sonuc = match sureli(kalan, self.saglayici.sohbet(istek.clone())).await {
-            Some(Ok(yanit)) => Ok(yanit),
-            Some(Err(e)) => Err(DenetimHatasi::Evren(e)),
-            None => Err(DenetimHatasi::Zaman),
-        };
-        let (kullanim, meta, kayit) = match &sonuc {
-            Ok((yanit, meta)) => (
-                yanit_kullanimi(yanit.usage.as_ref()),
-                Some(meta.clone()),
-                IstekSonucu::Basarili,
-            ),
-            Err(hata) => (
-                match hata {
-                    DenetimHatasi::Evren(e) => hata_kullanimi(e),
-                    DenetimHatasi::Butce | DenetimHatasi::Zaman => None,
-                },
-                None,
-                IstekSonucu::Hata {
-                    asama: IstekAsamasi::Yanit,
-                    mesaj: hata.neden(),
-                },
-            ),
-        };
-        butce.bitir(islem, kullanim).await;
-        denemeler.push(ButceDenemesi {
-            islem,
-            kullanim,
-            meta,
-            sonuc: kayit,
-        });
-        sonuc
-    }
-
-    /// `sohbet` ve bir kez yeniden deneme: hız sınırı ya da 429 yanıtında bekleyip
-    /// yeni bir izinle tekrar çağırır. Bekleme ve çağrı süresi 30 saniyelik toplam
-    /// ağ süresinden düşer; izin beklemesi düşmez (5b tasarımı §7).
-    async fn sohbet_ve_yeniden_dene(
-        &self,
-        istek: &ChatRequest,
-        butce: &ButceTalepci,
-        denemeler: &mut Vec<ButceDenemesi>,
-    ) -> Result<(ChatResponse, YanitMeta), DenetimHatasi> {
-        let mut kalan = DENETIM_ZAMAN_ASIMI;
-        let mut tekrar_hakki = true;
-        loop {
-            match self.dene(istek, butce, &mut kalan, denemeler).await {
-                Err(DenetimHatasi::Evren(EvrenError::HizSiniri { tekrar_dene }))
-                    if tekrar_hakki =>
-                {
-                    tekrar_hakki = false;
-                    let bekle = tekrar_dene.unwrap_or(Duration::from_millis(500));
-                    bekle_sureli(bekle, &mut kalan).await?;
-                }
-                Err(DenetimHatasi::Evren(EvrenError::Sunucu { durum: 429, .. }))
-                    if tekrar_hakki =>
-                {
-                    tekrar_hakki = false;
-                    bekle_sureli(Duration::from_millis(500), &mut kalan).await?;
-                }
-                sonuc => return sonuc,
-            }
-        }
-    }
-}
-
-/// Yeniden denemeden önceki bekleme; kalan ağ süresini aşarsa zaman aşımıdır.
-async fn bekle_sureli(sure: Duration, kalan: &mut Duration) -> Result<(), DenetimHatasi> {
-    sureli(kalan, tokio::time::sleep(sure))
-        .await
-        .ok_or(DenetimHatasi::Zaman)
 }
 
 #[async_trait]
@@ -234,9 +134,19 @@ impl GuvenlikDenetcisi for YapilandirilmisSiniflandirici {
         istek.response_format = Some(denetci_response_format());
 
         let mut denemeler = Vec::new();
-        match self
-            .sohbet_ve_yeniden_dene(&istek, butce, &mut denemeler)
-            .await
+        match butceli_yeniden_dene(
+            butce,
+            BUTCE_AMACI,
+            DENETIM_ZAMAN_ASIMI,
+            &mut denemeler,
+            || self.saglayici.sohbet(istek.clone()),
+            |sonuc| match sonuc {
+                Ok(yanit) => yanit_kullanimi(yanit.usage.as_ref()),
+                Err(hata) => hata_kullanimi(hata),
+            },
+            tekrar_bekleme_suresi,
+        )
+        .await
         {
             Ok((yanit, meta)) => {
                 let content = yanit
@@ -253,7 +163,7 @@ impl GuvenlikDenetcisi for YapilandirilmisSiniflandirici {
             }
             Err(hata) => DenetimYaniti {
                 sonuc: DenetimSonucu::Bilinmiyor {
-                    neden: hata.neden(),
+                    neden: hata.neden(DENETIM_ZAMAN_ASIMI),
                 },
                 meta: None,
                 kullanim: None,
