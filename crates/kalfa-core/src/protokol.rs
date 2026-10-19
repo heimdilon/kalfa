@@ -234,6 +234,13 @@ pub enum AktarimDurmaNedeni {
     Diger,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OzetTetigi {
+    Otomatik,
+    Zorunlu,
+    Elle,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "tip")]
 pub enum Olay {

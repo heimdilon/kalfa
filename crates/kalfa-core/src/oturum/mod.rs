@@ -6,6 +6,7 @@
 
 mod arac_asamasi;
 pub mod baglam;
+pub mod compact;
 mod geri_alma;
 mod model_turu;
 
@@ -88,7 +89,7 @@ impl Default for Sinirlar {
             baglam_esigi: 64_000,
             baglam_hedefi: 32_000,
             korunan_arac_ciktisi: 4,
-            etkin_pencere: 200_000,
+            etkin_pencere: compact::VARSAYILAN_ETKIN_PENCERE,
         }
     }
 }

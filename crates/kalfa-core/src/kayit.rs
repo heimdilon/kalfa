@@ -37,7 +37,7 @@ use crate::gonderim::{EklentiIstekOzeti, GonderilenOge, GunlukToken, IstekSonucu
 use crate::izin::Kip;
 use crate::kimlik::{CagriId, TurId};
 use crate::muhur::OnayMuhru;
-use crate::protokol::{AracDurumu, BitisNedeni, Komut, Zarf};
+use crate::protokol::{AracDurumu, BitisNedeni, Komut, OzetTetigi, Zarf};
 use crate::tur_ozeti::TurOzeti;
 
 /// Komut kaydının wire türü. Geçmişteki şart kabul komutu yalnızca kayıt
@@ -263,6 +263,16 @@ pub enum KayitOgesi {
     ButceDevamKarari {
         sinirlar: EskiButceSinirlari,
         onaylanan_bilinmeyen: u64,
+    },
+    /// Oturum geçmişinin compact özeti.
+    OturumOzetlendi {
+        kapsanan: Vec<u32>,
+        icerik: String,
+        tetik: OzetTetigi,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        talimat: Option<String>,
+        once: u64,
+        sonra: u64,
     },
 }
 
