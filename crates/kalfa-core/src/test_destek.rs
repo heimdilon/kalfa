@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, stream};
+use kalfa_evren::karar::{KararIstegi, KararYaniti};
 use kalfa_evren::tipler::{
     ChatMessage, ChatRequest, ChatResponse, Choice, FunctionCall, ModelInfo, TermsStatus,
     TermsText, ToolCall, Usage,
@@ -179,6 +180,9 @@ pub struct SahteSaglayici {
     ek_hatalari: Mutex<BTreeMap<usize, EvrenError>>,
     modeller: Mutex<Result<Vec<ModelInfo>, EvrenError>>,
     sohbet_kancasi: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    karar_senaryo: Mutex<VecDeque<Result<KararYaniti, EvrenError>>>,
+    karar_istekleri: Mutex<Vec<KararIstegi>>,
+    karar_gecikme: Mutex<Option<Duration>>,
 }
 
 impl SahteSaglayici {
@@ -200,6 +204,9 @@ impl SahteSaglayici {
             ek_hatalari: Mutex::new(BTreeMap::new()),
             modeller: Mutex::new(Ok(sahte_modeller())),
             sohbet_kancasi: Mutex::new(None),
+            karar_senaryo: Mutex::new(VecDeque::new()),
+            karar_istekleri: Mutex::new(Vec::new()),
+            karar_gecikme: Mutex::new(None),
         })
     }
 
@@ -228,6 +235,18 @@ impl SahteSaglayici {
     /// Her eklenti isteği yanıttan önce bu kadar bekler.
     pub fn ek_gecikme(&self, sure: Option<Duration>) {
         *self.ek_gecikme.lock().unwrap() = sure;
+    }
+
+    pub fn karar_ekle(&self, yanit: Result<KararYaniti, EvrenError>) {
+        self.karar_senaryo.lock().unwrap().push_back(yanit);
+    }
+
+    pub fn karar_istekleri(&self) -> Vec<KararIstegi> {
+        self.karar_istekleri.lock().unwrap().clone()
+    }
+
+    pub fn karar_gecikme(&self, sure: Option<Duration>) {
+        *self.karar_gecikme.lock().unwrap() = sure;
     }
 
     pub fn modeller_ayarla(&self, modeller: Result<Vec<ModelInfo>, EvrenError>) {
@@ -418,6 +437,31 @@ impl Saglayici for SahteSaglayici {
                 ..Default::default()
             },
         })
+    }
+
+    async fn karar(&self, istek: KararIstegi) -> Result<(KararYaniti, YanitMeta), EvrenError> {
+        let model = istek.model.clone();
+        let sira = {
+            let mut istekler = self.karar_istekleri.lock().unwrap();
+            istekler.push(istek);
+            istekler.len()
+        };
+        let gecikme = *self.karar_gecikme.lock().unwrap();
+        if let Some(sure) = gecikme {
+            tokio::time::sleep(sure).await;
+        }
+        let yanit = self
+            .karar_senaryo
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("sahte karar senaryosunda yanıt kalmadı")?;
+        let meta = YanitMeta {
+            istek_id: Some(format!("sahte-karar-{sira}")),
+            yonlendirilen_model: Some(model),
+            ..Default::default()
+        };
+        Ok((yanit, meta))
     }
 }
 
