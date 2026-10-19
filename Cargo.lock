@@ -2785,7 +2785,7 @@ dependencies = [
 
 [[package]]
 name = "kalfa"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "kalfa-core",
@@ -2803,7 +2803,7 @@ dependencies = [
 
 [[package]]
 name = "kalfa-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -2827,7 +2827,7 @@ dependencies = [
 
 [[package]]
 name = "kalfa-evren"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "futures-util",
@@ -2844,7 +2844,7 @@ dependencies = [
 
 [[package]]
 name = "kalfa-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "kalfa-core",
@@ -2860,7 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "kalfa-plugin"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "globset",
@@ -2885,7 +2885,7 @@ dependencies = [
 
 [[package]]
 name = "kalfa-plugin-sdk"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -2895,7 +2895,7 @@ dependencies = [
 
 [[package]]
 name = "kalfa-rag"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "kalfa-core",
@@ -2913,7 +2913,7 @@ dependencies = [
 
 [[package]]
 name = "kalfa-sandbox"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hex",
  "ignore",
@@ -2931,28 +2931,28 @@ dependencies = [
 
 [[package]]
 name = "kalfa-test-eklentisi"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "kalfa-plugin-sdk",
 ]
 
 [[package]]
 name = "kalfa-test-soket"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "kalfa-plugin-sdk",
 ]
 
 [[package]]
 name = "kalfa-test-yanlis-dunya"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "wit-bindgen 0.62.0",
 ]
 
 [[package]]
 name = "kalfa-tools"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "cap-fs-ext",
@@ -2974,7 +2974,7 @@ dependencies = [
 
 [[package]]
 name = "kalfa-uygulama"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -2997,7 +2997,7 @@ dependencies = [
 
 [[package]]
 name = "kalfa-yalitim"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "kalfa-sandbox",
 ]
