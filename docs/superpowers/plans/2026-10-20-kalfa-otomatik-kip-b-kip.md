@@ -1,6 +1,8 @@
 # Kalfa otomatik kip, PR B: Kip, hakem kapısı ve arayüz (uygulama planı)
 
-**Durum:** Hazır. Uygulanmadı.
+**Durum:** Uygulanıyor. Dal `otomatik-kip/b-kip`, PR #35.
+**Uygulayıcılar:** Görev 1–8'i Antigravity uygular. İnceleme, Windows ile
+WSL'deki bitirme doğrulaması ve isteğe bağlı canlı deneme Claude'dadır.
 **Taban:** `main`, `4041a39` (PR A, #34 birleşti).
 **Tasarım:** [Otomatik kip](../specs/2026-10-19-kalfa-otomatik-kip-design.md):
 §3 kurallar, §4 hakem, §5 ret ve geri düşme, §6 kayıt, §7 yaşam döngüsü,
