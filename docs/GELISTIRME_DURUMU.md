@@ -10,21 +10,25 @@ ve EVREN'in `/v1/systemone` ucunda çalışır. Kullanıcı tasarımı onayladı
 iki PR'a bölündü:
 
 - **PR A, hakem ve ölçüm** ([#34](https://github.com/heimdilon/kalfa/pull/34)):
-  Uygulandı.
+  Birleşti (`4041a39`).
   - **Bileşenler:** `kalfa-evren` karar istemcisi, `Saglayici::karar`,
     ortak bütçeli yeniden deneme ve `kalfa-core/src/hakem.rs`.
   - **Ölçüm** (42 öğe): yanlış izin 0, güvenli öğelerde otomatik izin %95,
     p95 gecikme 0,70 sn.
   - **Eşikler:** izin 0,80, ret 0,40.
-- **PR B, kip ve arayüz:** Planlanacak. Kapsamı izin motoru, araç
+- **PR B, kip ve arayüz:** Planlandı, uygulanmadı. Kapsamı izin motoru, araç
   aşamasının hakem kapısı, kayıt, kurtarma ve arayüzdür.
 
-**Sıradaki iş:** PR A'nın birleşmesi (kullanıcı onayı) ve PR B planı.
+**Sıradaki iş:** PR B planını uygulamak.
+
+- **Dal:** `otomatik-kip/b-kip`.
+- **Uygulayıcı:** Kullanıcı belirler.
 
 - [Tasarım](superpowers/specs/2026-10-19-kalfa-otomatik-kip-design.md)
 - [PR A planı](superpowers/plans/2026-10-19-kalfa-otomatik-kip-a-hakem.md)
 - [Yoklama](superpowers/bulgular/2026-10-19-kalfa-otomatik-kip-yoklama.md)
 - [Ölçüm](superpowers/bulgular/2026-10-19-kalfa-otomatik-kip-olcum.md)
+- [PR B planı](superpowers/plans/2026-10-20-kalfa-otomatik-kip-b-kip.md)
 
 **PR #8 — Codex ek düzeltmeleri (14 Ekim):** JSON boyutuna göre diff bütçesi,
 gerçek `--`/`++` içerik satırlarının korunması ve yeni oturumun katalog
