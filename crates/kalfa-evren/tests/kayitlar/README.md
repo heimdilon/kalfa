@@ -15,3 +15,4 @@ Yoklamanın ayrıntısı:
 | `error_chat_context_length_glm.json` | 12 Ekim 2026: `glm-5.3`'e `max_tokens: 10000000` → `400`, `code: "context_length_exceeded"`, pencere 524 288 ([5a tasarımı §4](../../../../docs/superpowers/specs/2026-10-12-kalfa-5a-baglam-yonetimi-design.md)) |
 | `error_chat_context_length_deepseek.json` | Aynı yoklama, `deepseek-v4-flash`, pencere 1 048 576 |
 | `error_chat_context_length_qwen.json` | Aynı yoklama, `qwen3.8-flash-next`, pencere 262 144 |
+| `systemone_clef.json` | 19 Ekim 2026: `POST /v1/systemone`, `clef`; `noul` olasılığı, `choice` olasılıkları, `usage.input_tokens` ([yoklama](../../../../docs/superpowers/bulgular/2026-10-19-kalfa-otomatik-kip-yoklama.md)) |

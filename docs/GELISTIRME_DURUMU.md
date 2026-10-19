@@ -3,6 +3,22 @@
 Güncelleme: 2026-10-14; Windows sürüm akışı ve PR #8 arayüzü birleşti, depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
+**Otomatik izin kipi (19 Ekim, planlandı):** Kalfa'ya Claude Code'unkine
+benzer beşinci bir kip, Otomatik, eklenecek. Bu kipte onay isteyen yalıtımlı
+komutları ve MCP çağrılarını bir hakem model değerlendirir. Hakem `clef`'tir
+ve EVREN'in `/v1/systemone` ucunda çalışır. Kullanıcı tasarımı onayladı. İş
+iki PR'a bölündü:
+
+- **PR A, hakem ve ölçüm:** Planı yazıldı, uygulanmadı.
+- **PR B, kip ve arayüz:** PR A'nın ölçümü geçerse planlanacak.
+
+Canlı yoklama `noul` olasılığını ve 0,56 sn'lik gecikmeyi doğruladı.
+**Sıradaki iş:** PR A'yı uygulamak.
+
+- [Tasarım](superpowers/specs/2026-10-19-kalfa-otomatik-kip-design.md)
+- [PR A planı](superpowers/plans/2026-10-19-kalfa-otomatik-kip-a-hakem.md)
+- [Yoklama](superpowers/bulgular/2026-10-19-kalfa-otomatik-kip-yoklama.md)
+
 **PR #8 — Codex ek düzeltmeleri (14 Ekim):** JSON boyutuna göre diff bütçesi,
 gerçek `--`/`++` içerik satırlarının korunması ve yeni oturumun katalog
 ağ isteğini beklememesi düzeltildi. Üç regresyon önce düştü, sonra geçti;
