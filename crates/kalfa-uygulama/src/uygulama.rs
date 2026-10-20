@@ -116,6 +116,15 @@ pub(crate) struct IcDurum {
 
 impl Uygulama {
     pub fn yeni(b: Bilesenler) -> Arc<Self> {
+        let mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa> =
+            Arc::new(crate::mcp::kasa::SistemGizliKasasi::yeni());
+        Self::yeni_ozel_mcp_kasali(b, mcp_kasa)
+    }
+
+    pub(crate) fn yeni_ozel_mcp_kasali(
+        b: Bilesenler,
+        mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa>,
+    ) -> Arc<Self> {
         let evren = Arc::new(DegisirSaglayici::default());
         let kapi = Arc::new(SartKapisi::yeni(evren.clone()));
         let yalitim_ayarlari = Arc::new(YalitimAyarlari::oku(&b.veri_dizini));
@@ -142,8 +151,6 @@ impl Uygulama {
             yalitim_dinleyici.clone(),
             mcp_dinleyici.clone(),
         );
-        let mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa> =
-            Arc::new(crate::mcp::kasa::SistemGizliKasasi::yeni());
         let mcp = crate::mcp::yonetici::McpYoneticisi::yeni(
             crate::mcp::yonetici::McpYoneticiBilesenleri {
                 veri_dizini: b.veri_dizini.clone(),
