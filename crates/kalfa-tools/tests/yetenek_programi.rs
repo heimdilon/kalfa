@@ -583,3 +583,47 @@ async fn r2_k02_tipi_yanlis_kod_derleyicisiz_basari_sayilmamali() {
         sonuc.neden
     );
 }
+
+#[tokio::test]
+async fn r3_k03_css_gizli_dugme_ui_kabulunu_gecememeli() {
+    let gorevler = yirmi_dort_gorevi_yukle().expect("görevler yüklenmeli");
+    let temel = gorevler.iter().find(|g| g.kimlik == "K03").unwrap();
+    let ortam = CalistirmaOrtami::g0_cevrimdisi_taban();
+    if ui_node_modules_dizini_bul().is_none() {
+        assert_eq!(
+            gorevi_kostur(temel, &ortam).await.sonuc,
+            SenaryoSonucu::Calistirilmadi
+        );
+        return;
+    }
+    let ilk = &temel
+        .baslangic_dosyalari
+        .iter()
+        .find(|d| d.yol == "src/SayacPaneli.svelte")
+        .unwrap()
+        .icerik;
+    let duzeltilmis = ilk.replace(
+        "  function sifirla() {\n    sayac = 1;\n  }",
+        "  function sifirla() {\n    sayac = 0;\n    seciliEtiket = null;\n  }",
+    );
+    for (gorunum, beklenen) in [
+        ("none", SenaryoSonucu::Kaldi),
+        ("block", SenaryoSonucu::Gecti),
+    ] {
+        let mut gorev = temel.clone();
+        let stilli = format!("{duzeltilmis}\n<style>button {{ display: {gorunum}; }}</style>\n");
+        for adim in &mut gorev.sahte_model_adimlari {
+            if let SahteAdimTanimi::Arac(c) = adim
+                && c.ad == "dosya_duzenle"
+            {
+                c.argumanlar["eski_metin"] = serde_json::Value::String(ilk.clone());
+                c.argumanlar["yeni_metin"] = serde_json::Value::String(stilli.clone());
+            }
+        }
+        let sonuc = gorevi_kostur(&gorev, &ortam).await;
+        assert_eq!(
+            sonuc.sonuc, beklenen,
+            "Svelte CSS görünürlüğü ({gorunum}) gerçek DOM'da ölçülmeli: {sonuc:?}"
+        );
+    }
+}
