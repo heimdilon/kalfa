@@ -6,7 +6,9 @@ use kalfa_core::izin::Kip;
 use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
 use kalfa_core::kimlik::{CagriId, OturumId, TurId};
 use kalfa_core::oturum::OturumAyarlari;
-use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, SEMA_SURUMU, Zarf};
+use kalfa_core::protokol::{
+    AracDurumu, BitisNedeni, Komut, Olay, OnayKarari, OtomatikSonuc, SEMA_SURUMU, Zarf,
+};
 use kalfa_core::test_destek::*;
 use kalfa_evren::KrediGozlemi;
 use kalfa_evren::tipler::{ChatMessage, FunctionCall, ToolCall};
@@ -409,4 +411,35 @@ async fn guvenlik_uyarisi_olay_ve_kayit_olur() {
         o,
         GorunumOgesi::GuvenlikUyarisi { mesaj, .. } if mesaj == "`.git` kenara alındı"
     )));
+}
+
+#[test]
+fn otomatik_karar_gecmiste_gorunur() {
+    let mut k = Kayitci::yeni();
+    let tur = TurId::yeni();
+    let cagri = CagriId::yeni();
+    let s1 = k.ekle(
+        Some(tur),
+        KayitOgesi::OtomatikKarar {
+            cagri,
+            arac: "kabuk".into(),
+            aciklama: "npm test".into(),
+            sonuc: OtomatikSonuc::Ret,
+            risk: Some("yikici".into()),
+            olasilik: Some(0.12),
+        },
+    );
+    assert_eq!(
+        gorunum_uret(&k.kayitlar),
+        vec![GorunumOgesi::OtomatikKarar {
+            sira: s1,
+            tur: Some(tur),
+            cagri,
+            arac: "kabuk".into(),
+            aciklama: "npm test".into(),
+            sonuc: OtomatikSonuc::Ret,
+            risk: Some("yikici".into()),
+            olasilik: Some(0.12),
+        }]
+    );
 }

@@ -37,7 +37,7 @@ use crate::gonderim::{EklentiIstekOzeti, GonderilenOge, GunlukToken, IstekSonucu
 use crate::izin::Kip;
 use crate::kimlik::{CagriId, TurId};
 use crate::muhur::OnayMuhru;
-use crate::protokol::{AracDurumu, BitisNedeni, Komut, OzetTetigi, Zarf};
+use crate::protokol::{AracDurumu, BitisNedeni, Komut, OtomatikSonuc, OzetTetigi, Zarf};
 use crate::tur_ozeti::TurOzeti;
 
 /// Komut kaydının wire türü. Geçmişteki şart kabul komutu yalnızca kayıt
@@ -283,6 +283,17 @@ pub enum KayitOgesi {
         talimat: Option<String>,
         once: u64,
         sonra: u64,
+    },
+    /// Otomatik kip hakeminin kararı (tasarım §6).
+    OtomatikKarar {
+        cagri: CagriId,
+        arac: String,
+        aciklama: String,
+        sonuc: OtomatikSonuc,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        risk: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        olasilik: Option<f64>,
     },
 }
 
