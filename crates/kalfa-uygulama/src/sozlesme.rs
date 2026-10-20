@@ -7,8 +7,14 @@ use kalfa_core::gecmis::{DurumOzeti, GecmisSayfasi, OturumDurumu, OturumOzeti};
 pub use kalfa_core::gonderim::{GunlukSatiri, GunlukSayfasi, GunlukToken};
 use kalfa_core::kimlik::{CagriId, OturumId};
 use kalfa_core::muhur::OnayMuhru;
+pub use kalfa_core::plan::{OturumPlani, PlanAdimDurumu, PlanAdimi};
+pub use kalfa_core::proje_talimatlari::{
+    ProjeTalimatAnlikGoruntusu, ProjeTalimatDegisimi, ProjeTalimatKapsami, ProjeTalimatKaynagi,
+    ProjeTalimatUyariTuru, ProjeTalimatUyarisi,
+};
 use kalfa_core::protokol::OnayKarari;
 use kalfa_core::sart_kapisi::SartMetni;
+pub use kalfa_core::soru::{KullaniciSorusu, KullaniciSorusuYaniti, SoruSecenegi, SoruSonucu};
 pub use kalfa_evren::tipler::DusunceEforu;
 use kalfa_sandbox::YalitimDurumu;
 use serde::{Deserialize, Serialize};

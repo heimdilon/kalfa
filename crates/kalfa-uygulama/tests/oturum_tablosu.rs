@@ -927,3 +927,88 @@ async fn efor_degistir_kaydedilir_ve_kurtarilir() {
         Some("low")
     );
 }
+
+#[tokio::test]
+async fn uygulamada_proje_talimatlari_plan_ve_kullanici_sorusu_calisir() {
+    use kalfa_core::soru::KullaniciSorusuYaniti;
+
+    let o = ortam(vec![
+        SahteYanit::arac(
+            "plan_guncelle",
+            serde_json::json!({
+                "adimlar": [
+                    {"kimlik": "a1", "baslik": "Yaklaşımı netleştir", "durum": "Suruyor"},
+                    {"kimlik": "a2", "baslik": "Uygula", "durum": "Bekliyor"}
+                ]
+            }),
+        ),
+        SahteYanit::arac(
+            "kullaniciya_sor",
+            serde_json::json!({
+                "baslik": "Hangi seçeneği uygulayalım?",
+                "secenekler": [
+                    {"kimlik": "s1", "etiket": "Seçenek 1"},
+                    {"kimlik": "s2", "etiket": "Seçenek 2"}
+                ],
+                "serbest_yanit_izni": true
+            }),
+        ),
+        SahteYanit::metin("Seçenek 1 ile tamamlandı."),
+    ])
+    .await;
+
+    std::fs::write(
+        o.alan.path().join("AGENTS.md"),
+        "# Proje Kuralları\nTestlerde Türkçe adlar kullanın.\n",
+    )
+    .unwrap();
+
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .mesaj_gonder(oturum, "başla".into())
+        .await
+        .unwrap();
+
+    // KullaniciSorusuGerekiyor olayını bekle:
+    let mut bekleyen_soru = None;
+    while bekleyen_soru.is_none() {
+        let msg = rx.recv().await.unwrap();
+        if let KanalMesaji::Olaylar { no, zarflar } = msg {
+            o.t.uygulama.paketi_isledim(oturum, no).unwrap();
+            for z in zarflar {
+                if let Olay::KullaniciSorusuGerekiyor { soru } = z.yuk {
+                    bekleyen_soru = Some(soru);
+                }
+            }
+        }
+    }
+    let soru = bekleyen_soru.unwrap();
+    assert_eq!(soru.baslik, "Hangi seçeneği uygulayalım?");
+
+    o.t.uygulama
+        .kullanici_sorusu_yaniti(
+            oturum,
+            soru.tur,
+            soru.soru_kimligi.clone(),
+            KullaniciSorusuYaniti::Secenek {
+                secenek_kimligi: "s1".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+    olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+
+    o.t.uygulama.oturumu_kapat(oturum).await.unwrap();
+    let acilan = o.t.uygulama.oturum_ac(oturum).await.unwrap();
+    assert_eq!(acilan.ozet.plan.as_ref().map(|p| p.adimlar.len()), Some(2));
+    assert_eq!(
+        acilan
+            .ozet
+            .proje_talimatlari
+            .as_ref()
+            .map(|t| t.kaynaklar.len()),
+        Some(1)
+    );
+}

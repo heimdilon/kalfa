@@ -1205,6 +1205,7 @@ pub fn test_baglami(
         siniflandirici,
         kilitler: Arc::new(KaynakKilitleri::yeni()),
         geri_yukleyici: None,
+        talimat_okuyucu: None,
     }
 }
 
