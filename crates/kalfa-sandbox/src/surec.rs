@@ -339,6 +339,38 @@ impl TerminalDenetimi {
         let _ = kilit.take();
     }
 
+    /// Sözde terminalin kanonik satır disiplini üzerinden tek seferlik `EOF`
+    /// işaretini (`VEOF` / `Ctrl+Z`) destekleyip desteklemediğini döndürür.
+    /// Unix'te `ICANON` kapalıysa (ham/raw kip) veya `VEOF` devre dışıysa `false` döner.
+    pub fn kanonik_eof_destekleniyor_mu(&self) -> bool {
+        let kilit = self.ic.lock().unwrap_or_else(|z| z.into_inner());
+        let Some(tutamac) = kilit.as_ref() else {
+            return false;
+        };
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            // SAFETY: `termios` yalnız sayısal alanlardan oluşur; sıfırlanması geçerlidir.
+            let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+            // SAFETY: `tutamac.0` açık PTY master tanımlayıcısıdır.
+            if unsafe { libc::tcgetattr(tutamac.0.as_raw_fd(), &mut termios) } != 0 {
+                return false;
+            }
+            let veof = termios.c_cc[libc::VEOF];
+            (termios.c_lflag & libc::ICANON) != 0 && veof != 0 && veof != libc::_POSIX_VDISABLE
+        }
+        #[cfg(windows)]
+        {
+            let _ = tutamac;
+            true
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = tutamac;
+            false
+        }
+    }
+
     fn eof_baytlari(&self, satir_basi: bool) -> Vec<u8> {
         let kilit = self.ic.lock().unwrap_or_else(|z| z.into_inner());
         let Some(tutamac) = kilit.as_ref() else {
@@ -350,13 +382,13 @@ impl TerminalDenetimi {
             // SAFETY: `termios` yalnız sayısal alanlardan oluşur; sıfırlanması geçerlidir.
             let mut termios: libc::termios = unsafe { std::mem::zeroed() };
             // SAFETY: `tutamac.0` açık PTY master tanımlayıcısıdır.
-            let veof = if unsafe { libc::tcgetattr(tutamac.0.as_raw_fd(), &mut termios) } == 0
-                && termios.c_cc[libc::VEOF] != 0
-            {
-                termios.c_cc[libc::VEOF]
-            } else {
-                0x04
-            };
+            if unsafe { libc::tcgetattr(tutamac.0.as_raw_fd(), &mut termios) } != 0 {
+                return Vec::new();
+            }
+            let veof = termios.c_cc[libc::VEOF];
+            if (termios.c_lflag & libc::ICANON) == 0 || veof == 0 || veof == libc::_POSIX_VDISABLE {
+                return Vec::new();
+            }
             if satir_basi {
                 vec![veof]
             } else {
@@ -414,22 +446,6 @@ async fn girdi_aktar(
         }
         #[cfg(windows)]
         std::future::pending::<()>().await;
-        #[cfg(unix)]
-        {
-            let tek = term.eof_baytlari(true);
-            if !tek.is_empty() {
-                loop {
-                    tokio::time::sleep(Duration::from_millis(25)).await;
-                    if tokio::io::AsyncWriteExt::write_all(&mut boru, &tek)
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                    let _ = tokio::io::AsyncWriteExt::flush(&mut boru).await;
-                }
-            }
-        }
     } else {
         let _ = tokio::io::AsyncWriteExt::shutdown(&mut boru).await;
     }
@@ -1686,6 +1702,130 @@ mod tests {
         assert_eq!(
             cikis.expect("PTY girdi kapatılınca program EOF alıp çıkmalı"),
             Some(0)
+        );
+    }
+
+    /// ST-02 (r2): `tty.setraw` kullanan ham terminal sürecinde girdi yazıcısı
+    /// kapatılınca (`eof=true` / `drop`) sahte `VEOF` (`0x04`) verisi enjekte
+    /// edilmemeli; boyutlandırma ve kapanış sözleşmesi korunmalıdır.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn raw_terminal_eof_istegi_tekrarlanan_veri_uretemez() {
+        use crate::Yalitici;
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let dizin = tempfile::tempdir().unwrap();
+        let betik = "import os, tty\ntty.setraw(0)\nprint('HAZIR', flush=True)\nb=b''\nwhile len(b)<3:\n b += os.read(0, 3-len(b))\nprint('ALINAN:'+b.hex(), flush=True)\n";
+        let istek = crate::CalistirmaIstegi {
+            komut: crate::KomutBicimi::Program {
+                program: "python3".into(),
+                argumanlar: vec!["-c".into(), betik.into()],
+            },
+            dizin: dizin.path().to_path_buf(),
+            ortam: crate::ortam::uret(std::env::vars()),
+            ag: false,
+            ag_listesi: None,
+            alan: None,
+        };
+        let mut surec = crate::Yalitimsiz
+            .baslat_kabuk_etkilesimli(&istek, Some(crate::TerminalBoyutu::default()))
+            .unwrap();
+        let denetim = surec.terminal_denetimi().unwrap();
+        let mut cikti = BufReader::new(surec.cikti_al().unwrap());
+        let mut satir = String::new();
+        tokio::time::timeout(Duration::from_secs(2), cikti.read_line(&mut satir))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(satir.contains("HAZIR"), "{satir:?}");
+        surec
+            .boyut_degistir(crate::TerminalBoyutu::yeni(100, 32).unwrap())
+            .unwrap();
+        // Üst katmanın eof=true işlemiyle aynı girdi kapatması.
+        drop(surec.girdi_al());
+        satir.clear();
+        let sonuc =
+            tokio::time::timeout(Duration::from_millis(400), cikti.read_line(&mut satir)).await;
+        let ham_kip_desteksiz = !denetim.kanonik_eof_destekleniyor_mu();
+        let kapanis = surec.kapat().await.unwrap();
+        assert!(
+            denetim
+                .boyut_degistir(crate::TerminalBoyutu::default())
+                .is_err()
+        );
+        assert!(
+            !satir.contains("ALINAN:040404") && !satir.contains("ALINAN:"),
+            "EOF isteği raw terminale gerçek veri enjekte etti: {satir:?}; sonuc={sonuc:?}"
+        );
+        assert!(
+            ham_kip_desteksiz,
+            "tty.setraw sonrası ICANON kapalı olduğundan kanonik EOF desteklenmemeli"
+        );
+        assert!(!kapanis.kendiliginden);
+    }
+
+    /// ST-02 (r2): Kanonik kipte satır sonu olmadan bekleyen veri (`satir_basi == false`)
+    /// arkasından girdi kapatıldığında hem bekleyen veri okunmalı hem de süreç EOF ile
+    /// doğal olarak çıkmalıdır.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn pty_kanonik_bekleyen_satirda_eof_veriyi_korur_ve_bitirir() {
+        use crate::Yalitici;
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let dizin = tempfile::tempdir().unwrap();
+        let betik = "import sys\nveri = sys.stdin.read()\nprint('OKUNAN:' + veri, flush=True)\n";
+        let istek = crate::CalistirmaIstegi {
+            komut: crate::KomutBicimi::Program {
+                program: "python3".into(),
+                argumanlar: vec!["-c".into(), betik.into()],
+            },
+            dizin: dizin.path().to_path_buf(),
+            ortam: crate::ortam::uret(std::env::vars()),
+            ag: false,
+            ag_listesi: None,
+            alan: None,
+        };
+        let mut surec = crate::Yalitimsiz
+            .baslat_kabuk_etkilesimli(&istek, Some(crate::TerminalBoyutu::default()))
+            .unwrap();
+        let denetim = surec.terminal_denetimi().unwrap();
+        assert!(denetim.kanonik_eof_destekleniyor_mu());
+        let mut girdi = surec.girdi_al().unwrap();
+        let mut cikti = BufReader::new(surec.cikti_al().unwrap());
+
+        // Satır sonu (\n) olmadan veri yazıp girdiyi kapatıyoruz.
+        girdi.write_all(b"merhaba-kanonik").await.unwrap();
+        girdi.flush().await.unwrap();
+        drop(girdi);
+
+        let mut biriken = String::new();
+        let son = Instant::now() + Duration::from_secs(3);
+        while !biriken.contains("OKUNAN:merhaba-kanonik") && Instant::now() < son {
+            let mut satir = String::new();
+            if let Ok(Ok(n)) =
+                tokio::time::timeout(Duration::from_millis(200), cikti.read_line(&mut satir)).await
+            {
+                if n == 0 {
+                    break;
+                }
+                biriken.push_str(&satir);
+            }
+        }
+        assert!(
+            biriken.contains("OKUNAN:merhaba-kanonik"),
+            "bekleyen satır verisi kayboldu: {biriken:?}"
+        );
+        let cikis = tokio::time::timeout(Duration::from_secs(2), surec.bitisi_bekle())
+            .await
+            .expect("kanonik bekleyen satırdan sonra EOF süreci bitirmeli");
+        assert_eq!(cikis, Some(0));
+        let kapanis = surec.kapat().await.unwrap();
+        assert!(kapanis.kendiliginden);
+        assert!(
+            denetim
+                .boyut_degistir(crate::TerminalBoyutu::default())
+                .is_err()
         );
     }
 }
