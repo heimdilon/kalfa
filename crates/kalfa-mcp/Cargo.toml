@@ -21,6 +21,10 @@ serde_json.workspace = true
 tracing.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 url.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
