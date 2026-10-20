@@ -1011,6 +1011,15 @@ impl IsYoneticisi {
             let Some(yazici) = kilit.as_mut() else {
                 return Err(IsHatasi::GirdiKapali);
             };
+            if eof
+                && let Some(term) = &kayit.terminal
+                && !term.kanonik_eof_destekleniyor_mu()
+            {
+                return Err(IsHatasi::GirdiHatasi(
+                    "Terminal ham (kanonik olmayan) kipte olduğundan EOF gönderilemiyor; süreci sonlandırmak için durdurun veya uygulamaya uygun çıkış dizisi gönderin."
+                        .to_string(),
+                ));
+            }
             if !veri.is_empty() {
                 yazici
                     .write_all(veri)
@@ -2950,5 +2959,178 @@ mod tests {
             "PTY eof=true sonrası iş doğal bitmeli: {:?}",
             okuma.durum
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn terminal_kipinde_ham_eof_reddedilir_bekleyen_satir_boyut_ve_kapanis_dogrulanir() {
+        let d = tempfile::tempdir().unwrap();
+        let kilit_y = KilitYoneticisi::yeni();
+        let kilitler = kilit_y.al(d.path()).unwrap();
+        let yonetici = Arc::new(IsYoneticisi::yeni());
+        let oturum = OturumId::yeni();
+
+        // 1) Kanonik kipte satırda bekleyen veri (\n olmadan) + eof=true:
+        let kilit1 = kilitler.sahipli_al(&[], &[], true).await;
+        let is1 = yonetici
+            .yaliticidan_baslat(
+                &Yalitimsiz,
+                &CalistirmaIstegi {
+                    komut: KomutBicimi::Program {
+                        program: "python3".into(),
+                        argumanlar: vec![
+                            "-c".into(),
+                            "import sys\nv = sys.stdin.read()\nprint('BEKLEYEN:' + v, flush=True)"
+                                .into(),
+                        ],
+                    },
+                    dizin: d.path().to_path_buf(),
+                    ortam: kalfa_sandbox::ortam::uret(std::env::vars()),
+                    ag: false,
+                    ag_listesi: None,
+                    alan: None,
+                },
+                IsBaslatma::yeni(
+                    oturum,
+                    "pty-kanonik-bekleyen",
+                    IsKipi::Terminal {
+                        boyut: TerminalBoyutu::default(),
+                    },
+                    kilit1,
+                    Arc::new(BosSonDenetim),
+                ),
+            )
+            .await
+            .unwrap();
+
+        yonetici
+            .girdi(oturum, is1.as_str(), b"yarim-satir", false)
+            .await
+            .unwrap();
+        yonetici
+            .girdi(oturum, is1.as_str(), b"", true)
+            .await
+            .unwrap();
+
+        let son = Instant::now() + Duration::from_secs(3);
+        while yonetici
+            .oku(oturum, is1.as_str(), 0)
+            .unwrap()
+            .durum
+            .etkin_mi()
+            && Instant::now() < son
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let okuma1 = yonetici.oku(oturum, is1.as_str(), 0).unwrap();
+        assert!(
+            okuma1.cikti.contains("BEKLEYEN:yarim-satir"),
+            "bekleyen satır verisi: {:?}",
+            okuma1.cikti
+        );
+        assert!(matches!(
+            okuma1.durum,
+            IsDurumu::Bitti {
+                cikis_kodu: Some(0),
+                zaman_asimi: false,
+                ..
+            }
+        ));
+
+        // 2) Ham (tty.setraw) kipte eof=true açık hata ile reddedilir, 040404 üretmez,
+        // kilit korunur, boyutlandırma ve durdurma düzgün çalışır:
+        let kilit2 = kilitler.sahipli_al(&[], &[], true).await;
+        let denetim_sayaci = Arc::new(AtomicUsize::new(0));
+        let ham_betik = "import os, tty\ntty.setraw(0)\nprint('HAZIR', flush=True)\nb=b''\nwhile len(b)<3:\n b += os.read(0, 3-len(b))\nprint('ALINAN:'+b.hex(), flush=True)\n";
+        let is2 = yonetici
+            .yaliticidan_baslat(
+                &Yalitimsiz,
+                &CalistirmaIstegi {
+                    komut: KomutBicimi::Program {
+                        program: "python3".into(),
+                        argumanlar: vec!["-c".into(), ham_betik.into()],
+                    },
+                    dizin: d.path().to_path_buf(),
+                    ortam: kalfa_sandbox::ortam::uret(std::env::vars()),
+                    ag: false,
+                    ag_listesi: None,
+                    alan: None,
+                },
+                IsBaslatma::yeni(
+                    oturum,
+                    "pty-ham-eof",
+                    IsKipi::Terminal {
+                        boyut: TerminalBoyutu::default(),
+                    },
+                    kilit2,
+                    Arc::new(SayacliDenetim {
+                        sayac: denetim_sayaci.clone(),
+                        basarili: true,
+                    }),
+                ),
+            )
+            .await
+            .unwrap();
+
+        let son = Instant::now() + Duration::from_secs(3);
+        while !yonetici
+            .oku(oturum, is2.as_str(), 0)
+            .unwrap()
+            .cikti
+            .contains("HAZIR")
+            && Instant::now() < son
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let hata = yonetici
+            .girdi(oturum, is2.as_str(), b"", true)
+            .await
+            .expect_err("ham terminalde eof=true açık hata vermeli");
+        assert!(
+            matches!(hata, IsHatasi::GirdiHatasi(ref m) if m.contains("ham")),
+            "beklenmeyen hata: {hata:?}"
+        );
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let ara_okuma = yonetici.oku(oturum, is2.as_str(), 0).unwrap();
+        assert!(
+            !ara_okuma.cikti.contains("ALINAN:040404") && !ara_okuma.cikti.contains("ALINAN:"),
+            "ham terminale sahte VEOF verisi enjekte edildi: {:?}",
+            ara_okuma.cikti
+        );
+        assert!(matches!(ara_okuma.durum, IsDurumu::Calisiyor));
+
+        // Çalışma alanı kilidi hâlâ tutuluyor olmalı.
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(40),
+                kilitler.sahipli_al(&[], &[], true),
+            )
+            .await
+            .is_err(),
+            "ham terminal çalışırken çalışma alanı kilidi korunmalı"
+        );
+
+        // Boyutlandırma çalışırken başarılı olur.
+        yonetici
+            .boyutlandir(oturum, is2.as_str(), TerminalBoyutu::yeni(100, 30).unwrap())
+            .unwrap();
+
+        // Durdurma ağacı sonlandırır, son denetimi çalıştırır ve kilidi bırakır.
+        let bitis = yonetici.durdur(oturum, is2.as_str()).await.unwrap();
+        assert!(matches!(bitis.durum, IsDurumu::Bitti { .. }));
+        assert_eq!(denetim_sayaci.load(Ordering::SeqCst), 1);
+        assert!(
+            yonetici
+                .boyutlandir(oturum, is2.as_str(), TerminalBoyutu::default())
+                .is_err()
+        );
+        let _serbest = tokio::time::timeout(
+            Duration::from_millis(100),
+            kilitler.sahipli_al(&[], &[], true),
+        )
+        .await
+        .expect("durdur ve son denetim sonrasında çalışma alanı kilidi bırakılmalı");
     }
 }
