@@ -1,5 +1,7 @@
 # Kalfa geliştirme durumu
 
+**21 Ekim Codex düzeltmesi — Hat 04:** EOF sözleşme aktarımı uygulandı. [Davranış ve doğrulama](superpowers/bulgular/2026-10-21-codex-yetenek-04-duzeltme.md); G5/CI ve merge ayrı kapılardır.
+
 Güncelleme: 2026-10-14; Windows sürüm akışı ve PR #8 arayüzü birleşti, depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
