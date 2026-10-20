@@ -23,13 +23,13 @@ pub enum IcerikBicimi {
     Xml,
 }
 
-/// Ayrıştırılmış devam imleci (`web1:<ozet>:<satir>`).
+/// Ayrıştırılmış devam imleci (`web1:<ozet>:<bayt_ofseti>`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImlecDurumu {
     /// Sayfanın beklenen 16 haneli SHA-256 içerik özeti.
     pub beklenen_ozet: String,
-    /// Okumaya başlanacak 0-tabanlı satır indeksi.
-    pub baslangic_satiri: usize,
+    /// Okumaya başlanacak 0-tabanlı UTF-8 bayt ofseti.
+    pub baslangic_bayti: usize,
 }
 
 /// İşlenmiş web yanıtı: kaynak özeti, düz metin gövdesi ve çıkarılan bağlantılar.
@@ -257,12 +257,12 @@ pub fn icerik_ozeti_hesapla(metin: &str) -> String {
     tam.chars().take(16).collect()
 }
 
-/// İçerik özeti ve satır indeksinden devam imleci (`web1:<ozet>:<satir>`) üretir.
-pub fn imlec_olustur(icerik_ozeti: &str, baslangic_satiri: usize) -> String {
-    format!("web1:{icerik_ozeti}:{baslangic_satiri}")
+/// İçerik özeti ve UTF-8 bayt ofsetinden devam imleci (`web1:<ozet>:<bayt_ofseti>`) üretir.
+pub fn imlec_olustur(icerik_ozeti: &str, baslangic_bayti: usize) -> String {
+    format!("web1:{icerik_ozeti}:{baslangic_bayti}")
 }
 
-/// Devam imlecini (`web1:<ozet>:<satir>`) ayrıştırır.
+/// Devam imlecini (`web1:<ozet>:<bayt_ofseti>`) ayrıştırır.
 pub fn imlec_coz(imlec: &str) -> Result<ImlecDurumu, WebGetirHatasi> {
     let parcalar: Vec<&str> = imlec.trim().split(':').collect();
     if parcalar.len() != 3 || parcalar[0] != "web1" {
@@ -272,14 +272,14 @@ pub fn imlec_coz(imlec: &str) -> Result<ImlecDurumu, WebGetirHatasi> {
     if beklenen_ozet.len() != 16 || !beklenen_ozet.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(WebGetirHatasi::GecersizImlec(imlec.to_string()));
     }
-    let baslangic_satiri = parcalar[2]
+    let baslangic_bayti = parcalar[2]
         .trim()
         .parse::<usize>()
         .map_err(|_| WebGetirHatasi::GecersizImlec(imlec.to_string()))?;
 
     Ok(ImlecDurumu {
         beklenen_ozet: beklenen_ozet.to_ascii_lowercase(),
-        baslangic_satiri,
+        baslangic_bayti,
     })
 }
 
@@ -344,7 +344,7 @@ pub fn yaniti_metne_donustur(
     };
 
     let icerik_ozeti = icerik_ozeti_hesapla(&secilen_metin);
-    let baslangic_satiri = match imlec.map(str::trim).filter(|s| !s.is_empty()) {
+    let baslangic_bayti = match imlec.map(str::trim).filter(|s| !s.is_empty()) {
         Some(imlec_dizgesi) => {
             let durum = imlec_coz(imlec_dizgesi)?;
             if durum.beklenen_ozet != icerik_ozeti {
@@ -353,7 +353,7 @@ pub fn yaniti_metne_donustur(
                     yeni_ozet: icerik_ozeti,
                 });
             }
-            durum.baslangic_satiri
+            durum.baslangic_bayti
         }
         None => 0,
     };
@@ -363,7 +363,7 @@ pub fn yaniti_metne_donustur(
         .clamp(EN_AZ_CIKTI_BAYT, AZAMI_CIKTI_BAYT);
 
     let (govde, kirpildi, devam_imleci) =
-        satir_araligi_kes(&secilen_metin, baslangic_satiri, azami_bayt, &icerik_ozeti)?;
+        metin_araligi_kes(&secilen_metin, baslangic_bayti, azami_bayt, &icerik_ozeti)?;
 
     let ozet = WebSayfaOzeti {
         istenen_url: yanit.istenen_url.clone(),
@@ -413,67 +413,49 @@ fn bolum_filtrele_duz_metin(metin: &str, bolum: Option<&str>) -> Result<String, 
     Ok(satirlar[bas..bitis].join("\n"))
 }
 
-fn satir_araligi_kes(
+fn metin_araligi_kes(
     tam_metin: &str,
-    baslangic_satiri: usize,
+    baslangic_bayti: usize,
     azami_bayt: usize,
     icerik_ozeti: &str,
 ) -> Result<(String, bool, Option<String>), WebGetirHatasi> {
     if tam_metin.is_empty() {
-        if baslangic_satiri > 0 {
+        if baslangic_bayti > 0 {
             return Err(WebGetirHatasi::GecersizImlec(format!(
-                "satır indeksi ({baslangic_satiri}) boş içerik sınırını aşıyor"
+                "bayt ofseti ({baslangic_bayti}) boş içerik sınırını aşıyor"
             )));
         }
         return Ok((String::new(), false, None));
     }
 
-    let satirlar: Vec<&str> = tam_metin.lines().collect();
-    if baslangic_satiri >= satirlar.len() {
+    if baslangic_bayti >= tam_metin.len() || !tam_metin.is_char_boundary(baslangic_bayti) {
         return Err(WebGetirHatasi::GecersizImlec(format!(
-            "satır indeksi ({baslangic_satiri}) toplam satır sayısını ({}) aşıyor",
-            satirlar.len()
+            "bayt ofseti ({baslangic_bayti}) geçerli bir UTF-8 sınırı değil veya toplam uzunluğu ({}) aşıyor",
+            tam_metin.len()
         )));
     }
 
-    let mut cikti = String::new();
-    let mut son_dahil_edilen_satir = baslangic_satiri;
-
-    for (indeks, &satir) in satirlar.iter().enumerate().skip(baslangic_satiri) {
-        let eklenecek_uz = if cikti.is_empty() {
-            satir.len()
-        } else {
-            satir.len() + 1
-        };
-
-        if !cikti.is_empty() && cikti.len() + eklenecek_uz > azami_bayt {
-            let imlec = imlec_olustur(icerik_ozeti, indeks);
-            return Ok((cikti, true, Some(imlec)));
-        }
-
-        if cikti.is_empty() && satir.len() > azami_bayt {
-            // Tek bir satır bile azami_bayt sınırından uzunsa UTF-8 karakter
-            // sınırında kesiyoruz ve imleci bir sonraki satıra (veya kalan varsa)
-            // bağlıyoruz.
-            let kesilmis = utf8_sinirinda_kes(satir, azami_bayt);
-            let sonraki = (indeks + 1).min(satirlar.len());
-            let devam = if sonraki < satirlar.len() {
-                Some(imlec_olustur(icerik_ozeti, sonraki))
-            } else {
-                None
-            };
-            return Ok((kesilmis.to_string(), true, devam));
-        }
-
-        if !cikti.is_empty() {
-            cikti.push('\n');
-        }
-        cikti.push_str(satir);
-        son_dahil_edilen_satir = indeks;
+    let kalan = &tam_metin[baslangic_bayti..];
+    if kalan.len() <= azami_bayt {
+        return Ok((kalan.to_string(), false, None));
     }
 
-    let _ = son_dahil_edilen_satir;
-    Ok((cikti, false, None))
+    let utf8_dilim = utf8_sinirinda_kes(kalan, azami_bayt);
+    if utf8_dilim.is_empty() {
+        return Err(WebGetirHatasi::GecersizImlec(
+            "azami_bayt sınırı tek bir UTF-8 karakterini almaya yetmiyor".into(),
+        ));
+    }
+
+    let kesme_uzunlugu = match utf8_dilim.rfind('\n') {
+        Some(son_nl) => son_nl + 1,
+        None => utf8_dilim.len(),
+    };
+
+    let parca = &kalan[..kesme_uzunlugu];
+    let sonraki_bayt = baslangic_bayti + kesme_uzunlugu;
+    let imlec = imlec_olustur(icerik_ozeti, sonraki_bayt);
+    Ok((parca.to_string(), true, Some(imlec)))
 }
 
 fn utf8_sinirinda_kes(metin: &str, azami_bayt: usize) -> &str {

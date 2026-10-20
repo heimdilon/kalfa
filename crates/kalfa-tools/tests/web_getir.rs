@@ -958,3 +958,89 @@ fn gorev5_arama_hata_durumlari_iptal_hiz_siniri_bakiye_bos_sonuc_ve_gecersiz_url
     let _ = web_karari;
     let _ = Karar::Serbest;
 }
+
+#[test]
+fn gorev2_sp07_uzun_satir_ortada_ve_sonda_cok_baytli_utf8_ve_ardisik_imlec_kayipsiz_birlestirilir()
+{
+    use kalfa_tools::web::WebHamYanit;
+
+    let sahte_yanit_kur = |metin: &str| -> WebHamYanit {
+        let url = url::Url::parse("https://ornek.test/belge").expect("geçerli url");
+        WebHamYanit {
+            istenen_url: url.to_string(),
+            son_url: url.to_string(),
+            son_url_nesnesi: url,
+            durum_kodu: 200,
+            icerik_turu_basligi: Some("text/plain; charset=utf-8".into()),
+            govde: metin.as_bytes().to_vec(),
+            baglanan_adres: "93.184.216.34:443".parse().expect("geçerli soket"),
+            yonlendirmeler: vec![],
+        }
+    };
+
+    let tumunu_imlecle_oku = |yanit: &WebHamYanit, sinir: usize| -> (Vec<String>, Vec<String>) {
+        let mut parcalar = Vec::new();
+        let mut imlecler = Vec::new();
+        let mut imlec: Option<String> = None;
+
+        for adim in 0..32 {
+            let sonuc = yaniti_metne_donustur(yanit, None, imlec.as_deref(), Some(sinir))
+                .expect("parça okunabilmeli");
+            assert!(
+                sonuc.govde.len() <= sinir,
+                "adım {adim}: parça boyutu ({}) sınırı ({sinir}) aştı",
+                sonuc.govde.len()
+            );
+            assert!(
+                !sonuc.govde.is_empty(),
+                "adım {adim}: boş parça üretilmemeli"
+            );
+            parcalar.push(sonuc.govde);
+            match sonuc.ozet.devam_imleci {
+                Some(sonraki) => {
+                    assert!(sonuc.ozet.kirpildi, "imleç varsa kirpildi=true olmalı");
+                    imlecler.push(sonraki.clone());
+                    imlec = Some(sonraki);
+                }
+                None => {
+                    assert!(!sonuc.ozet.kirpildi, "son parçada kirpildi=false olmalı");
+                    return (parcalar, imlecler);
+                }
+            }
+        }
+        panic!("imleç döngüsü 32 adımda sonlanmadı");
+    };
+
+    // 1. İnceleme raporu SP-07 kanıtı: 517 baytlık tek uzun satır, 256 bayt sınırıyla
+    //    3 parçada (256 + 256 + 5) eksiksiz ve yinelenmeden birleşmelidir.
+    let tek_uzun_satir = format!("{}BITIS", "a".repeat(512));
+    let yanit_tek = sahte_yanit_kur(&tek_uzun_satir);
+    let (parcalar_tek, imlecler_tek) = tumunu_imlecle_oku(&yanit_tek, 256);
+    assert_eq!(parcalar_tek.len(), 3);
+    assert_eq!(parcalar_tek[0].len(), 256);
+    assert_eq!(parcalar_tek[1].len(), 256);
+    assert_eq!(parcalar_tek[2], "BITIS");
+    assert_eq!(parcalar_tek.concat(), tek_uzun_satir);
+
+    // İçerik değiştiğinde satır içi imleç de `KaynakDegisti` ile reddedilmelidir.
+    let degismis_yanit = sahte_yanit_kur(&format!("{}FARKLI", "a".repeat(512)));
+    let degisim_hatasi =
+        yaniti_metne_donustur(&degismis_yanit, None, Some(&imlecler_tek[0]), Some(256))
+            .expect_err("içerik değiştiğinde imleç reddedilmeli");
+    assert!(matches!(
+        degisim_hatasi,
+        WebGetirHatasi::KaynakDegisti { .. }
+    ));
+
+    // 2. Ortadaki uzun satır + çok baytlı UTF-8 (2 baytlık Türkçe harfler, 3 baytlık '€', 4 baytlık '🦀')
+    //    ve son satırdaki uzun metin: parçalar birleşince tam metin birebir elde edilmeli.
+    let ortada_ve_sonda_uzun = format!(
+        "Başlangıç satırı 1\nKısa satır 2\nORTA-BAS-{}€🦀-ORTA-SON\nAra satır 4\nSON-BAS-{}-SON-BITIS",
+        "ğüşiöçĞÜŞİÖÇ€🦀".repeat(35),
+        "z".repeat(530)
+    );
+    let yanit_karma = sahte_yanit_kur(&ortada_ve_sonda_uzun);
+    let (parcalar_karma, _) = tumunu_imlecle_oku(&yanit_karma, 256);
+    assert!(parcalar_karma.len() >= 6);
+    assert_eq!(parcalar_karma.concat(), ortada_ve_sonda_uzun);
+}
