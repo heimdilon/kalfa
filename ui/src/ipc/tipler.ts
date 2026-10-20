@@ -11,10 +11,12 @@ export type IslemId = string;
 
 // ── kalfa-core ────────────────────────────────────────────────────────────
 
-export type Kip = 'Inceleme' | 'Siki' | 'Proje' | 'Serbest';
+export type Kip = 'Inceleme' | 'Siki' | 'Proje' | 'Serbest' | 'Otomatik';
 
 /** Kiplerin sırası: sağa her geçiş yükseltmedir (1c tasarımı §6). */
-export const KIPLER: readonly Kip[] = ['Inceleme', 'Siki', 'Proje', 'Serbest'];
+export const KIPLER: readonly Kip[] = ['Inceleme', 'Siki', 'Proje', 'Serbest', 'Otomatik'];
+
+export type OtomatikSonuc = 'Izin' | 'Ret' | 'Kullaniciya';
 
 export type AracDurumu =
   | 'Basarili'
@@ -321,7 +323,17 @@ export type Olay =
   /** İstek öncesi tahmini bağlam ve otomatik özetleme eşiği. */
   | { tip: 'BaglamDurumu'; tahmin: number; esik: number }
   /** Bütçe sayaçlarının güncel görünümü. */
-  | { tip: 'ButceDurumu'; durum: ButceGorunumu };
+  | { tip: 'ButceDurumu'; durum: ButceGorunumu }
+  /** Otomatik kip hakeminin kararı. */
+  | {
+      tip: 'OtomatikKarar';
+      cagri: CagriId;
+      arac: string;
+      aciklama: string;
+      sonuc: OtomatikSonuc;
+      risk?: string | null;
+      olasilik?: number | null;
+    };
 
 export type OzetTetigi = 'Otomatik' | 'Zorunlu' | 'Elle';
 
@@ -433,6 +445,17 @@ export type GorunumOgesi =
       sonra: number;
       talimat?: string | null;
       ozet: string;
+    }
+  | {
+      tip: 'OtomatikKarar';
+      sira: number;
+      tur: TurId | null;
+      cagri: CagriId;
+      arac: string;
+      aciklama: string;
+      sonuc: OtomatikSonuc;
+      risk?: string | null;
+      olasilik?: number | null;
     };
 
 export interface GecmisSayfasi {

@@ -14,6 +14,7 @@
     MCP_ROZETI,
     denetimKategorisi,
     m,
+    otomatikRiskAciklamasi,
   } from '../dil/tr';
   import type { EkranOgesi } from '../durum/oturum';
   import * as ipc from '../ipc/ana';
@@ -53,6 +54,17 @@
   function turSonu(neden: BitisNedeni): string {
     if (neden.tip === 'Sinir') return m('tur.bitti.Sinir', { aciklama: neden.aciklama });
     return m(`tur.bitti.${neden.tip}`);
+  }
+
+  function otomatikKararMetni(oge: Extract<EkranOgesi, { tip: 'OtomatikKarar' }>): string {
+    if (oge.sonuc === 'Izin') return m('otomatik.onayladi', { aciklama: oge.aciklama });
+    if (oge.sonuc === 'Ret') {
+      return m('otomatik.reddetti', {
+        aciklama: oge.aciklama,
+        risk: otomatikRiskAciklamasi(oge.risk),
+      });
+    }
+    return m('otomatik.kullaniciya', { aciklama: oge.aciklama });
   }
 </script>
 
@@ -172,6 +184,16 @@
   <Card tone="danger" icon="shield-alert" title={m('guvenlik.kart.baslik')}>
     <p class="aciklama">{oge.mesaj}</p>
   </Card>
+{:else if oge.tip === 'OtomatikKarar'}
+  <div class="bilgi-satiri">
+    <span
+      title={oge.olasilik != null
+        ? m('otomatik.olasilik', { yuzde: Math.round(oge.olasilik * 100) })
+        : undefined}
+    >
+      {otomatikKararMetni(oge)}
+    </span>
+  </div>
 {:else if oge.tip === 'TurSonu'}
   <div class={['tur-sonu', `n-${oge.neden.tip}`]}>
     <span>{turSonu(oge.neden)}</span>

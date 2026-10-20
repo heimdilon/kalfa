@@ -1127,13 +1127,17 @@ fn uzak_mcp_her_kipte_onay_ister_ve_yerel_yalitim_iddia_etmez() {
         mcp_karari(Kip::Inceleme, uzak.erisim, uzak.ilk_cagri, &uzak.ag),
         Karar::Yasak { .. }
     ));
-    for kip in [Kip::Siki, Kip::Proje, Kip::Serbest] {
+    for kip in [Kip::Siki, Kip::Proje, Kip::Serbest, Kip::Otomatik] {
         assert_eq!(
             mcp_karari(kip, uzak.erisim, uzak.ilk_cagri, &uzak.ag),
             onayli(&[MCP_UZAK_VERI_CIKISI_UYARISI]),
             "{kip:?}: uzak MCP çağrısı ilk çağrı olmasa bile veri çıkışı onayı ister"
         );
     }
+    assert!(
+        !hakeme_uygun(&[MCP_UZAK_VERI_CIKISI_UYARISI.to_string()], false),
+        "uzak MCP veri çıkışı uyarısı Otomatik kip hakem izin listesine kendiliğinden girmemelidir"
+    );
 
     let kart = McpOnayKarti::yeni(&uzak);
     assert_eq!(kart.erisim, McpErisim::UzakStreamableHttp);
@@ -1166,5 +1170,129 @@ fn uzak_mcp_her_kipte_onay_ister_ve_yerel_yalitim_iddia_etmez() {
         muhur_hesapla(cagri, "mcp__uzak-ornek__sorgula", &arg, &hazirlik1),
         muhur_hesapla(cagri, "mcp__uzak-ornek__sorgula", &arg, &hazirlik2),
         "uzak origin değiştiğinde mühür değişmelidir"
+    );
+}
+
+#[test]
+fn otomatik_kip_taban_kurallarda_serbest_ile_ayni_karari_verir() {
+    use kalfa_core::arac::{McpAgKarti, McpErisim};
+
+    for islem in [Islem::Okuma, Islem::Yazma] {
+        for sinif in [
+            YolSinifi::Normal,
+            YolSinifi::Gizli,
+            YolSinifi::Korumali,
+            YolSinifi::Yapilandirma,
+        ] {
+            for coklu_baglanti in [false, true] {
+                assert_eq!(
+                    karar_ver(Kip::Otomatik, islem, sinif, coklu_baglanti),
+                    karar_ver(Kip::Serbest, islem, sinif, coklu_baglanti),
+                    "karar_ver: {islem:?} {sinif:?} coklu={coklu_baglanti}"
+                );
+            }
+        }
+    }
+
+    for yalitimli in [false, true] {
+        for ag in [false, true] {
+            for ilk_cagri in [false, true] {
+                for alan_hazirligi in [false, true] {
+                    let mut tarif = kabuk(yalitimli, ag, ilk_cagri);
+                    tarif.alan_hazirligi = alan_hazirligi;
+                    assert_eq!(
+                        kabuk_karari(Kip::Otomatik, &tarif),
+                        kabuk_karari(Kip::Serbest, &tarif),
+                        "kabuk_karari: yalitimli={yalitimli} ag={ag} ilk={ilk_cagri} hazirlik={alan_hazirligi}"
+                    );
+                }
+            }
+        }
+    }
+
+    for erisim in [
+        McpErisim::Yalitimli,
+        McpErisim::TamErisim,
+        McpErisim::UzakStreamableHttp,
+    ] {
+        for ilk_cagri in [false, true] {
+            for ag in [
+                McpAgKarti::Kapali,
+                McpAgKarti::Sinirli {
+                    hostlar: Vec::new(),
+                },
+                McpAgKarti::Sinirsiz,
+            ] {
+                assert_eq!(
+                    mcp_karari(Kip::Otomatik, erisim, ilk_cagri, &ag),
+                    mcp_karari(Kip::Serbest, erisim, ilk_cagri, &ag),
+                    "mcp_karari: {erisim:?} ilk={ilk_cagri} ag={ag:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn hakeme_uygun_izin_listesi_ve_yerel_onay() {
+    use kalfa_core::gorunum::GORUNMEZ_UYARISI;
+
+    assert!(hakeme_uygun(&[], false), "boş uyarı listesi uygun olmalı");
+
+    let uygunlar = [
+        ILK_KABUK_UYARISI,
+        AGLI_KABUK_UYARISI,
+        AYNI_ADIM_UYARISI,
+        MCP_ILK_CAGRI_UYARISI,
+        MCP_AG_UYARISI,
+        MCP_TAZE_ONAY_UYARISI,
+    ];
+    for u in uygunlar {
+        assert!(
+            hakeme_uygun(&[u.to_string()], false),
+            "uygun uyarı true dönmeli: {u}"
+        );
+    }
+
+    let uygun_olmayanlar = [
+        GIZLI_UYARISI,
+        GERI_ALINAMAZ_UYARISI,
+        KORUMALI_UYARISI,
+        BAGLANTI_UYARISI,
+        YALITIMSIZ_UYARISI,
+        ALAN_HAZIRLIGI_UYARISI,
+        MCP_TAM_ERISIM_UYARISI,
+        MCP_UZAK_VERI_CIKISI_UYARISI,
+        YAPILANDIRMA_UYARISI,
+        GORUNMEZ_UYARISI,
+        "bilinmeyen bir uyarı dizgesi",
+    ];
+    for u in uygun_olmayanlar {
+        assert!(
+            !hakeme_uygun(&[u.to_string()], false),
+            "uygun olmayan uyarı false dönmeli: {u}"
+        );
+        assert!(
+            !hakeme_uygun(&[ILK_KABUK_UYARISI.to_string(), u.to_string()], false),
+            "uygun ve uygun olmayan karışımı false dönmeli: {u}"
+        );
+    }
+
+    assert!(
+        !hakeme_uygun(&[], true),
+        "yerel onaylı öğe boş uyarıyla bile hakeme gitmemeli"
+    );
+    assert!(
+        !hakeme_uygun(&[ILK_KABUK_UYARISI.to_string()], true),
+        "yerel onaylı öğe uygun uyarıyla bile hakeme gitmemeli"
+    );
+
+    assert_eq!(
+        OTOMATIK_EMIN_DEGIL_UYARISI,
+        "Otomatik kip bu işlemden emin olamadı; karar sizin."
+    );
+    assert_eq!(
+        otomatik_riskli_uyarisi("veri sızdırma riski"),
+        "Otomatik kip bu işlemi riskli buldu: veri sızdırma riski. Karar sizin."
     );
 }

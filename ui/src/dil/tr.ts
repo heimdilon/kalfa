@@ -47,6 +47,18 @@ export const tr = {
   'kip.Siki': 'Sıkı',
   'kip.Proje': 'Proje',
   'kip.Serbest': 'Serbest',
+  'kip.Otomatik': 'Otomatik',
+
+  'otomatik.onayladi': 'Otomatik kip onayladı: {aciklama}',
+  'otomatik.reddetti': 'Otomatik kip reddetti: {aciklama} ({risk})',
+  'otomatik.kullaniciya': 'Otomatik kip size bıraktı: {aciklama}',
+  'otomatik.olasilik': '%{yuzde}',
+  'otomatik.risk.yikici': 'yıkıcı bir işlem',
+  'otomatik.risk.veri_sizdirma': 'veri sızdırma riski',
+  'otomatik.risk.kapsam_disi': 'isteğin kapsamı dışında',
+  'otomatik.risk.guvenlik_zayiflatma': 'güvenliği zayıflatıyor',
+  'otomatik.risk.supheli_kaynak': 'doğrulanmamış kaynaktan kod çalıştırıyor',
+  'otomatik.risk.belirsiz': 'belirsiz risk',
 
   'model.Hizli': 'Hızlı',
   'model.Dengeli': 'Dengeli',
@@ -896,7 +908,22 @@ export const KIP_ADI: Record<Kip, MetinAnahtari> = {
   Siki: 'kip.Siki',
   Proje: 'kip.Proje',
   Serbest: 'kip.Serbest',
+  Otomatik: 'kip.Otomatik',
 };
+
+const OTOMATIK_RISK: Record<string, MetinAnahtari> = {
+  yikici: 'otomatik.risk.yikici',
+  veri_sizdirma: 'otomatik.risk.veri_sizdirma',
+  kapsam_disi: 'otomatik.risk.kapsam_disi',
+  guvenlik_zayiflatma: 'otomatik.risk.guvenlik_zayiflatma',
+  supheli_kaynak: 'otomatik.risk.supheli_kaynak',
+};
+
+/** Otomatik kip hakeminin risk adının okunur açıklaması. */
+export function otomatikRiskAciklamasi(risk?: string | null): string {
+  const anahtar = risk ? OTOMATIK_RISK[risk] : undefined;
+  return m(anahtar ?? 'otomatik.risk.belirsiz');
+}
 
 export const MODEL_PROFILI_ADI: Record<ModelProfili, MetinAnahtari> = {
   Hizli: 'model.Hizli',

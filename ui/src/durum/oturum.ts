@@ -25,6 +25,7 @@ import type {
   OnayOgesi,
   OnizlemeNedeni,
   OnizlemeOgesi,
+  OtomatikSonuc,
   OturumAcilisi,
   OturumId,
   OzetTetigi,
@@ -75,6 +76,15 @@ export type EkranOgesi =
   | (Ortak & { tip: 'SartIstegi'; surum: number; durum: 'Bekliyor' | 'Cozuldu' })
   | (Ortak & { tip: 'Hata'; mesaj: string })
   | (Ortak & { tip: 'GuvenlikUyarisi'; mesaj: string })
+  | (Ortak & {
+      tip: 'OtomatikKarar';
+      cagri: CagriId;
+      arac: string;
+      aciklama: string;
+      sonuc: OtomatikSonuc;
+      risk?: string | null;
+      olasilik?: number | null;
+    })
   | (Ortak & { tip: 'TurSonu'; neden: BitisNedeni })
   | (Ortak & { tip: 'AktarimDurdu'; neden: AktarimDurmaNedeni })
   | (Ortak & {
@@ -209,6 +219,8 @@ export function gecmisOgesi(o: GorunumOgesi): EkranOgesi {
       return { ...o, anahtar: `g-${o.sira}-s` };
     case 'GuvenlikUyarisi':
       return { ...o, anahtar: `g-${o.sira}-g` };
+    case 'OtomatikKarar':
+      return { ...o, anahtar: `g-${o.sira}-ok` };
     case 'GeriAlma':
       return { ...o, anahtar: `g-${o.sira}-r` };
     case 'KalfaNotu':
@@ -531,6 +543,20 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
         sira: z.sira,
         tur: z.tur,
         mesaj: yuk.mesaj,
+      });
+      return;
+    case 'OtomatikKarar':
+      d.ogeler.push({
+        tip: 'OtomatikKarar',
+        anahtar: `c-${z.sira}`,
+        sira: z.sira,
+        tur: z.tur,
+        cagri: yuk.cagri,
+        arac: yuk.arac,
+        aciklama: yuk.aciklama,
+        sonuc: yuk.sonuc,
+        risk: yuk.risk,
+        olasilik: yuk.olasilik,
       });
       return;
     case 'Hata':

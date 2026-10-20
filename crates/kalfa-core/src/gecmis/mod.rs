@@ -19,7 +19,7 @@ use crate::geri_alma::GeriAlmaSonucu;
 use crate::izin::Kip;
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, TurId};
-use crate::protokol::{AracDurumu, BitisNedeni, OzetTetigi, Zarf};
+use crate::protokol::{AracDurumu, BitisNedeni, OtomatikSonuc, OzetTetigi, Zarf};
 use crate::tur_ozeti::{DosyaDegisikligi, TurOzeti, veri_silindi_isle};
 
 /// Ekranda gösterilen bir geçmiş öğesi.
@@ -65,6 +65,19 @@ pub enum GorunumOgesi {
         tur: Option<TurId>,
         mesaj: String,
     },
+    /// Otomatik kip hakeminin kararı (tasarım §6).
+    OtomatikKarar {
+        sira: u64,
+        tur: Option<TurId>,
+        cagri: CagriId,
+        arac: String,
+        aciklama: String,
+        sonuc: OtomatikSonuc,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        risk: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        olasilik: Option<f64>,
+    },
     /// Bir turun geri alınması (aşama 3 tasarımı §5.6). `tur` kaydın kendi
     /// turudur (geri alma tur dışında yapılır); geri alınan tur
     /// `geri_alinan_tur`'dadır. `yarim`: `GeriAlmaBasladi` var, `GeriAlindi`
@@ -108,6 +121,7 @@ impl GorunumOgesi {
             | Self::AracCagrisi { sira, .. }
             | Self::TurSonu { sira, .. }
             | Self::GuvenlikUyarisi { sira, .. }
+            | Self::OtomatikKarar { sira, .. }
             | Self::GeriAlma { sira, .. }
             | Self::KalfaNotu { sira, .. }
             | Self::TurOzeti { sira, .. }
@@ -122,6 +136,7 @@ impl GorunumOgesi {
             | Self::AracCagrisi { tur, .. }
             | Self::TurSonu { tur, .. }
             | Self::GuvenlikUyarisi { tur, .. }
+            | Self::OtomatikKarar { tur, .. }
             | Self::GeriAlma { tur, .. }
             | Self::KalfaNotu { tur, .. }
             | Self::TurOzeti { tur, .. }
@@ -306,6 +321,23 @@ pub fn gorunum_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GorunumOgesi> {
                 sonra: *sonra,
                 talimat: talimat.clone(),
                 ozet: crate::oturum::compact::ozet_ayikla(icerik),
+            }),
+            KayitOgesi::OtomatikKarar {
+                cagri,
+                arac,
+                aciklama,
+                sonuc,
+                risk,
+                olasilik,
+            } => ogeler.push(GorunumOgesi::OtomatikKarar {
+                sira: z.sira,
+                tur: z.tur,
+                cagri: *cagri,
+                arac: arac.clone(),
+                aciklama: aciklama.clone(),
+                sonuc: *sonuc,
+                risk: risk.clone(),
+                olasilik: *olasilik,
             }),
             _ => {}
         }
