@@ -36,8 +36,8 @@ Taban `4041a39` üzerinde varsayılan çevrimdışı birim testi ortamında (`Ca
 | Kimlik | Aile | Başlık | SHA-256 (İlk 16) | `G0` Çevrimdışı Sonuç | Canlı Model Başarısı | Bağımlı Hat / Durum Gerekçesi |
 |---|---|---|---|---|---|---|
 | `K01` | Yerel kodlama | Rust'ta sınır hatası | `33275b9a95fe3a82` | **Geçti** | Hayır (`sahte_saglayici`) | Davranışsal denetleyici (`rustc --test tests/sinir_testi.rs`) ve yorumsuz kod kontrolü geçti; komşu dosyalar değişmedi. |
-| `K02` | Yerel kodlama | TypeScript veri dönüşümü hatası | `5322626ea1f8e936` | **Geçti** | Hayır (`sahte_saglayici`) | Davranışsal denetleyici (`node tests/donustur_testi.mjs` tip + çalışma zamanı testi) ve yorumsuz kod kontrolü geçti. |
-| `K03` | Yerel kodlama | Svelte etkileşim hatası | `f3e88070ec531abc` | **Geçti** | Hayır (`sahte_saglayici`) | Davranışsal denetleyici (`node tests/ui_etkilesim_testi.mjs` tıklama/sıfırlama testi), CSP ve yorumsuz kod kontrolü geçti. |
+| `K02` | Yerel kodlama | TypeScript veri dönüşümü hatası | `e6fba49c24973011` | **Geçti** | Hayır (`sahte_saglayici`) | Gerçek TypeScript derleyicisi (`ts.createProgram`) + `node tests/donustur_testi.mjs` çalışma zamanı testi ve yorumsuz kod kontrolü geçti (derleyici yoksa `Çalıştırılmadı`). |
+| `K03` | Yerel kodlama | Svelte etkileşim hatası | `f69038d6f9f89ad8` | **Geçti** | Hayır (`sahte_saglayici`) | Gerçek `svelte/compiler` derlemesi + `JSDOM` `mount` + DOM tıklama/sıfırlama testi (`node tests/ui_etkilesim_testi.mjs`), CSP ve yorumsuz kod kontrolü geçti. |
 | `K04` | Yerel kodlama | Çok dosyalı yeniden adlandırma | `56f36b67eefe872a` | **Geçti** | Hayır (`sahte_saglayici`) | 3 dosyada `oturum_baslat` güncellendi, `rustc --test tests/siparis_testi.rs` geçti, `src/ilgisiz.rs` korundu. |
 | `K05` | Yerel kodlama | Kök neden bulma | `7ff8c04c56808b2d` | **Geçti** | Hayır (`sahte_saglayici`) | Bağımsız denetleyici geçti: `src/hesap.rs` temiz yedeğe döndürüldü, `src/sabitler.rs` korundu. |
 | `K06` | Yerel kodlama | `KALFA.md` kuralına uyum | `25403481639760ac` | **Desteklenmiyor** | Hayır (`sahte_saglayici`) | Eksik yetenek: `proje_talimatlari_kapsami` — Hat 02 (`PR #38`). |
@@ -67,7 +67,9 @@ Taban `4041a39` üzerinde varsayılan çevrimdışı birim testi ortamında (`Ca
 | Bulgu | Regresyon Testi (`crates/kalfa-tools/tests/yetenek_programi.rs`) | Düzeltme Öncesi (RED) | Düzeltme Sonrası (GREEN) |
 |---|---|---|---|
 | `SP-01`: `M01` iki bayrak + `dosya_oku` ile sahte geçiyordu | `sp01_m01_dosya_oku_taklidi_kabul_edilmez` | **FAILED** (`M01` `dosya_oku` taklidiyle `Gecti` döndü) | **ok** (`dosya_oku` taklidi, `BozukBaglanti` ve `YalitimsizKacak` -> `Kaldi`; gerçek `kalfa-mcp-test-sunucusu` + `Yalitici` hazır olduğunda `Gecti`, ortam hazır değilse `Calistirilmadi`/`Desteklenmiyor`) |
-| `SP-02`: `K01`–`K03` alt dizge kontrolü yorum satırıyla aşılabiliyordu | `sp02_yorum_icinde_alt_dizge_ile_yanlis_kod_k01_k02_k03_kabulunu_gecemez` | **FAILED** (`K01` yanlış kodda `// saturating_sub(n)` yorumuyla `Gecti` döndü) | **ok** (`K01`, `K02`, `K03` yorum içine beklenen alt dizge eklendiğinde hem yorumsuz kod kontrolünde hem de gerçek test/tip/UI yürütmesinde `Kaldi` döner) |
+| `SP-02` (Tur 1): `K01`–`K03` alt dizge kontrolü yorum satırıyla aşılabiliyordu | `sp02_yorum_icinde_alt_dizge_ile_yanlis_kod_k01_k02_k03_kabulunu_gecemez` | **FAILED** (`K01` yanlış kodda `// saturating_sub(n)` yorumuyla `Gecti` döndü) | **ok** (`K01`, `K02`, `K03` yorum içine beklenen alt dizge eklendiğinde hem yorumsuz kod kontrolünde hem de gerçek test/tip/UI yürütmesinde `Kaldi` döner) |
+| `SP-02` (Tur 2 — `K02` derleyici zorunluluğu): `K02` derleyici yokken tip hatasını (`const yanlisTip: number = 'metin'`) geçiriyordu | `r2_k02_tipi_yanlis_kod_derleyicisiz_basari_sayilmamali` | **FAILED** (`Gecti` döndü) | **ok** (`ts.createProgram` + `ts.getPreEmitDiagnostics` zorunlu; tip hatasında `Kaldi`, derleyici kapalı/eksikse `Calistirilmadi`) |
+| `SP-02` (Tur 2 — `K03` gerçek Svelte render/DOM): `K03` `{#if false}` ile gizlenmiş veya `disabled`/kopuk düğmeli bileşeni geçiriyordu | `r2_k03_gorunmeyen_bilesen_ui_kabulunu_gecememeli` | **FAILED** (`Gecti` döndü) | **ok** (`svelte/compiler` + `JSDOM` `mount` + DOM görünürlük/etkinlik/`click()` zorunlu; `{#if false}`, `disabled` ve kopuk `onclick` durumlarında `Kaldi`, çalışma zamanı kapalı/eksikse `Calistirilmadi`) |
 
 ---
 
@@ -81,9 +83,15 @@ Taban `4041a39` üzerinde varsayılan çevrimdışı birim testi ortamında (`Ca
 
 ## 5. `G5` Bütünleşik Kabul ve Canlı Model Karşılaştırması Durumu
 
-### 5.1 Çevrimdışı `G5` Bütünleşik Kabul (`Durum: Bağımlı Hatlar Bekleniyor`)
+### 5.1 Çevrimdışı `G5` Bütünleşik Kabul (`Durum: Hat 03 ve Hat 05 Son Düzeltmeleri Bekleniyor`)
 
-İnceleme raporu (`INCELEME.md`) ve ortak koordinasyon (`PR #36`) uyarınca `G5` bütünleşik kabulünün tamamlanması için Hat 02 (`PR #38`) -> Hat 03 (`PR #39`) -> Hat 04 (`PR #40`) -> Hat 05 (`PR #41`) hatlarının ortak sözleşme (`ST-01`..`ST-03`) ve hat bulgularını (`SP-03`..`SP-08`) kapatıp doğrulanmış entegrasyon commit'lerini üretmesi gerekmektedir. Bu bağımlılıklar tamamlanana kadar `K06`, `S01`–`S06`, `M02`–`M06` ve `W01`–`W06` görevleri `Desteklenmiyor` olarak açık tutulmaktadır; diğer hatların ürün kodu Hat 01 tarafından üstlenilmemiştir.
+İkinci inceleme raporu (`r2/INCELEME.md`) itibarıyla bağımlı PR başları ve durumları:
+- **Hat 02 (`PR #38`):** `5e603902a2c148932bb5e666cf76cd59b3ac9edb` — `ST-03` ve `SP-03` kapalı (`proje_akisi` 16/16 + limit karşı örneği 1/1 geçti).
+- **Hat 03 (`PR #39`):** `99d4b56b64f326b7bc94da9d534135778a4aa26b` — `ST-01` ve `SP-07` kapalı; **`ST-02` kısmi açık** (ham terminalde EOF sonrası tekrarlayan VEOF bayt üretimi, `ALINAN:040404`).
+- **Hat 04 (`PR #40`):** `3cd9ac843573160b18a8fe6ef14a32c8c9ebaae2` — `SP-04` ve `SP-06` (OAuth TLS) kapalı (`uzak_http` 4/4, `uzak_kesif` 4/4, `uzak_oauth` 2/2 geçti); Hat 03'ün son `ST-02` düzeltmesini devralacak.
+- **Hat 05 (`PR #41`):** `c11f7026d5ee292c53331bde2fa4d0be6c849f81` — `SP-05`, `SP-06` ve `SP-08` kapalı; **`R2-SP-01` açık** (`?token=gizli-99` hassas web URL parametresinin ham araç çağrısı / `WebTarifi` üzerinden JSONL oturum kaydına maskelenmeden yazılması) ve Hat 03'ün son `ST-02` düzeltmesini devralacak.
+
+Çevrimdışı `G5` bütünleşik kabulü için PR'ların önceden merge edilmesi veya canlı arama sağlayıcısı seçilmesi şart değildir; Hat 03 (`ST-02`) ve Hat 05 (`R2-SP-01`) son düzeltmeleri tamamlanıp doğrulanmış bütünleşik `#41` başı hazır olduğunda çevrimdışı `G5` koşusu tamamlanacaktır. Bu aşamada `K06`, `S01`–`S06`, `M02`–`M06` ve `W01`–`W06` görevleri `Desteklenmiyor` olarak açık tutulmaktadır.
 
 ### 5.2 Canlı Model Karşılaştırması (`Durum: Çalıştırılmadı`)
 

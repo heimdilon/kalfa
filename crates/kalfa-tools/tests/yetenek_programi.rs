@@ -8,7 +8,8 @@ use serde_json::Value;
 use yetenek_senaryolari::{
     CalistirmaOrtami, GorevAilesi, McpSinamaKipi, SahteAdimTanimi, SahteCagriTanimi, SenaryoSonucu,
     YIRMI_DORT_KIMLIK, dogrula_gorev_kumesi, dogrula_olcum_raporu_kaydi, gorev_tanimi_cozumle,
-    gorevi_kostur, guvenli_goreli_yol_mu, tum_gorevleri_kostur, yirmi_dort_gorevi_yukle,
+    gorevi_kostur, guvenli_goreli_yol_mu, tum_gorevleri_kostur, typescript_kutuphanesi_bul,
+    ui_node_modules_dizini_bul, yirmi_dort_gorevi_yukle,
 };
 
 #[test]
@@ -143,11 +144,20 @@ async fn g0_cevrimdisi_kosucu_iki_kosuda_ayni_sonucu_ve_dort_durumu_uretir() {
     // İki ardışık koşu birebir aynı sonucu ve deterministik çalışma izi özetini üretmeli
     assert_eq!(ilk_ozet, ikinci_ozet, "iki çevrimdışı koşu özdeş olmalı");
 
-    // 4 durum dağılımı: K01-K05 (5 Geçti), M01 (1 Çalıştırılmadı), diğer 18 görev (Desteklenmiyor), 0 Kaldı
-    assert_eq!(ilk_ozet.sayim(SenaryoSonucu::Gecti), 5);
+    // 4 durum dağılımı:
+    // TS derleyicisi ve Svelte/DOM çalışma zamanı hazırsa: K01-K05 (5 Geçti), M01 (1 Çalıştırılmadı), 18 Desteklenmiyor, 0 Kaldı.
+    // Çıplak CI ortamında (`ui/node_modules` yoksa): K02 ve K03 sahte başarı üretmez (`Çalıştırılmadı` olur).
+    let beklenen_gecti = 3
+        + usize::from(typescript_kutuphanesi_bul().is_some())
+        + usize::from(ui_node_modules_dizini_bul().is_some());
+    let beklenen_calistirilmadi = 1 + (5 - beklenen_gecti);
+    assert_eq!(ilk_ozet.sayim(SenaryoSonucu::Gecti), beklenen_gecti);
     assert_eq!(ilk_ozet.sayim(SenaryoSonucu::Kaldi), 0);
     assert_eq!(ilk_ozet.sayim(SenaryoSonucu::Desteklenmiyor), 18);
-    assert_eq!(ilk_ozet.sayim(SenaryoSonucu::Calistirilmadi), 1);
+    assert_eq!(
+        ilk_ozet.sayim(SenaryoSonucu::Calistirilmadi),
+        beklenen_calistirilmadi
+    );
     assert_eq!(
         ilk_ozet.sayim(SenaryoSonucu::Gecti)
             + ilk_ozet.sayim(SenaryoSonucu::Kaldi)
@@ -174,9 +184,12 @@ async fn g0_cevrimdisi_kosucu_iki_kosuda_ayni_sonucu_ve_dort_durumu_uretir() {
     // JSON ve Markdown çıktı biçimleri sözleşme alanlarını içermeli
     let json_cikti = ilk_ozet.json_degeri();
     assert_eq!(json_cikti["toplam_gorev"], 24);
-    assert_eq!(json_cikti["ozet_sayilar"]["gecti"], 5);
+    assert_eq!(json_cikti["ozet_sayilar"]["gecti"], beklenen_gecti);
     assert_eq!(json_cikti["ozet_sayilar"]["desteklenmiyor"], 18);
-    assert_eq!(json_cikti["ozet_sayilar"]["calistirilmadi"], 1);
+    assert_eq!(
+        json_cikti["ozet_sayilar"]["calistirilmadi"],
+        beklenen_calistirilmadi
+    );
 
     let md_tablo = ilk_ozet.markdown_ozet_tablosu();
     assert!(md_tablo.contains("| `K01` |"));
@@ -244,9 +257,13 @@ async fn sp02_yorum_icinde_alt_dizge_ile_yanlis_kod_k01_k02_k03_kabulunu_gecemez
         SahteAdimTanimi::Metin("Sözde düzeltildi.".to_string()),
     ];
     let k02_sonuc = gorevi_kostur(&sahte_k02, &ortam).await;
+    let beklenen_k02 = if typescript_kutuphanesi_bul().is_some() {
+        SenaryoSonucu::Kaldi
+    } else {
+        SenaryoSonucu::Calistirilmadi
+    };
     assert_eq!(
-        k02_sonuc.sonuc,
-        SenaryoSonucu::Kaldi,
+        k02_sonuc.sonuc, beklenen_k02,
         "SP-02 regresyonu: K02 yorum içine eklenen alt dizgeyle ve bozuk sıfır filtresiyle geçmemeli: {:?}",
         k02_sonuc
     );
@@ -269,9 +286,13 @@ async fn sp02_yorum_icinde_alt_dizge_ile_yanlis_kod_k01_k02_k03_kabulunu_gecemez
         SahteAdimTanimi::Metin("Sözde düzeltildi.".to_string()),
     ];
     let k03_sonuc = gorevi_kostur(&sahte_k03, &ortam).await;
+    let beklenen_k03 = if ui_node_modules_dizini_bul().is_some() {
+        SenaryoSonucu::Kaldi
+    } else {
+        SenaryoSonucu::Calistirilmadi
+    };
     assert_eq!(
-        k03_sonuc.sonuc,
-        SenaryoSonucu::Kaldi,
+        k03_sonuc.sonuc, beklenen_k03,
         "SP-02 regresyonu: K03 yorum içine eklenen alt dizgeyle ve eksik durum sıfırlamasıyla geçmemeli: {:?}",
         k03_sonuc
     );
@@ -419,4 +440,146 @@ fn olcum_belgeleri_yirmi_dort_gorev_sha256_ozetleriyle_uyusur() {
             kisa_sha
         );
     }
+}
+
+#[tokio::test]
+async fn r2_k03_gorunmeyen_bilesen_ui_kabulunu_gecememeli() {
+    let gorevler = yirmi_dort_gorevi_yukle().expect("görevler yüklenmeli");
+    let k03_temel = gorevler.iter().find(|g| g.kimlik == "K03").unwrap().clone();
+    let ilk = k03_temel
+        .baslangic_dosyalari
+        .iter()
+        .find(|d| d.yol == "src/SayacPaneli.svelte")
+        .unwrap()
+        .icerik
+        .clone();
+    let duzeltilmis = ilk.replace(
+        "  function sifirla() {\n    sayac = 1;\n  }",
+        "  function sifirla() {\n    sayac = 0;\n    seciliEtiket = null;\n  }",
+    );
+
+    // 1. Svelte/DOM çalışma zamanı kapalıyken açık biçimde Çalıştırılmadı dönmeli (Geçti sayılamaz)
+    let mut kapali_ui_ortam = CalistirmaOrtami::g0_cevrimdisi_taban();
+    kapali_ui_ortam.svelte_ui_acik = false;
+    let kapali_sonuc = gorevi_kostur(&k03_temel, &kapali_ui_ortam).await;
+    assert_eq!(kapali_sonuc.sonuc, SenaryoSonucu::Calistirilmadi);
+
+    if ui_node_modules_dizini_bul().is_none() {
+        let ortam_sonucu =
+            gorevi_kostur(&k03_temel, &CalistirmaOrtami::g0_cevrimdisi_taban()).await;
+        assert_eq!(ortam_sonucu.sonuc, SenaryoSonucu::Calistirilmadi);
+        return;
+    }
+
+    // 2. r2 karşı örneği: bütün markup `{#if false}` içine alındığında DOM'da düğme çıkmaz -> Kaldı
+    let mut gorev = k03_temel.clone();
+    let gizlenmis = duzeltilmis.replacen("<div", "{#if false}\n<div", 1) + "\n{/if}\n";
+    for adim in &mut gorev.sahte_model_adimlari {
+        if let SahteAdimTanimi::Arac(c) = adim
+            && c.ad == "dosya_duzenle"
+        {
+            c.argumanlar["eski_metin"] = serde_json::Value::String(ilk.clone());
+            c.argumanlar["yeni_metin"] = serde_json::Value::String(gizlenmis.clone());
+        }
+    }
+    let sonuc = gorevi_kostur(&gorev, &CalistirmaOrtami::g0_cevrimdisi_taban()).await;
+    assert_eq!(
+        sonuc.sonuc,
+        SenaryoSonucu::Kaldi,
+        "DOM'da hiç düğme bulunmayan K03 gerçek UI kabulünü geçememeli: {:?}",
+        sonuc
+    );
+
+    // 3. Düğme devre dışı (`disabled`) veya bağlantısız (`onclick={() => {}}`) olduğunda -> Kaldı
+    let mut devre_disi_gorev = k03_temel.clone();
+    let devre_disi = duzeltilmis.replace(
+        "data-testid=\"sifirla-dugmesi\" onclick={sifirla}",
+        "data-testid=\"sifirla-dugmesi\" disabled onclick={sifirla}",
+    );
+    for adim in &mut devre_disi_gorev.sahte_model_adimlari {
+        if let SahteAdimTanimi::Arac(c) = adim
+            && c.ad == "dosya_duzenle"
+        {
+            c.argumanlar["eski_metin"] = serde_json::Value::String(ilk.clone());
+            c.argumanlar["yeni_metin"] = serde_json::Value::String(devre_disi.clone());
+        }
+    }
+    let devre_disi_sonuc =
+        gorevi_kostur(&devre_disi_gorev, &CalistirmaOrtami::g0_cevrimdisi_taban()).await;
+    assert_eq!(
+        devre_disi_sonuc.sonuc,
+        SenaryoSonucu::Kaldi,
+        "disabled düğmeli K03 gerçek UI kabulünü geçememeli: {:?}",
+        devre_disi_sonuc
+    );
+
+    let mut baglantisiz_gorev = k03_temel.clone();
+    let baglantisiz = duzeltilmis.replace(
+        "data-testid=\"sifirla-dugmesi\" onclick={sifirla}",
+        "data-testid=\"sifirla-dugmesi\" onclick={() => {}}",
+    );
+    for adim in &mut baglantisiz_gorev.sahte_model_adimlari {
+        if let SahteAdimTanimi::Arac(c) = adim
+            && c.ad == "dosya_duzenle"
+        {
+            c.argumanlar["eski_metin"] = serde_json::Value::String(ilk.clone());
+            c.argumanlar["yeni_metin"] = serde_json::Value::String(baglantisiz.clone());
+        }
+    }
+    let baglantisiz_sonuc =
+        gorevi_kostur(&baglantisiz_gorev, &CalistirmaOrtami::g0_cevrimdisi_taban()).await;
+    assert_eq!(
+        baglantisiz_sonuc.sonuc,
+        SenaryoSonucu::Kaldi,
+        "onclick bağlantısı kopuk düğmeli K03 gerçek UI kabulünü geçememeli: {:?}",
+        baglantisiz_sonuc
+    );
+}
+
+#[tokio::test]
+async fn r2_k02_tipi_yanlis_kod_derleyicisiz_basari_sayilmamali() {
+    let gorevler = yirmi_dort_gorevi_yukle().expect("görevler yüklenmeli");
+    let mut gorev = gorevler.iter().find(|g| g.kimlik == "K02").unwrap().clone();
+    for adim in &mut gorev.sahte_model_adimlari {
+        if let SahteAdimTanimi::Arac(c) = adim
+            && c.ad == "dosya_duzenle"
+        {
+            let dogru = c.argumanlar["yeni_metin"].as_str().unwrap().to_string();
+            // Node tipleri silerek bu satırı çalıştırır; gerçek TS derleyici reddeder.
+            c.argumanlar["yeni_metin"] = serde_json::Value::String(format!(
+                "{dogru}\n  const yanlisTip: number = 'metin';\n"
+            ));
+        }
+    }
+
+    // 1. TS derleyici kapalıyken / yokken K02 asla Geçti sayılamaz; açık Çalıştırılmadı döner
+    let mut derleyicisiz_ortam = CalistirmaOrtami::g0_cevrimdisi_taban();
+    derleyicisiz_ortam.ts_derleyici_acik = false;
+    let derleyicisiz_sonuc = gorevi_kostur(&gorev, &derleyicisiz_ortam).await;
+    assert_eq!(
+        derleyicisiz_sonuc.sonuc,
+        SenaryoSonucu::Calistirilmadi,
+        "TS derleyici yokken K02 açık Çalıştırılmadı dönmeli (Geçti sayılamaz): {:?}",
+        derleyicisiz_sonuc
+    );
+
+    if typescript_kutuphanesi_bul().is_none() {
+        let ortam_sonucu = gorevi_kostur(&gorev, &CalistirmaOrtami::g0_cevrimdisi_taban()).await;
+        assert_eq!(ortam_sonucu.sonuc, SenaryoSonucu::Calistirilmadi);
+        return;
+    }
+
+    // 2. TS derleyici hazırken tip hatası olan K02 gerçek derleyici tanısıyla Kaldı dönmeli
+    let sonuc = gorevi_kostur(&gorev, &CalistirmaOrtami::g0_cevrimdisi_taban()).await;
+    assert_eq!(
+        sonuc.sonuc,
+        SenaryoSonucu::Kaldi,
+        "TS derleyici varken tip hatası olan K02 Kaldı dönmeli: {:?}",
+        sonuc
+    );
+    assert!(
+        sonuc.neden.contains("TypeScript derleyici tanı hatası"),
+        "hata mesajı gerçek TypeScript derleyici tanısını içermeli: {}",
+        sonuc.neden
+    );
 }

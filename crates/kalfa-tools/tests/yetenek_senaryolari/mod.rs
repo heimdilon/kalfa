@@ -276,6 +276,8 @@ pub struct CalistirmaOrtami {
     pub gercek_yalitim_acik: bool,
     pub yerel_surec_acik: bool,
     pub yerel_http_sunucu_acik: bool,
+    pub ts_derleyici_acik: bool,
+    pub svelte_ui_acik: bool,
     pub mcp_sinama_kipi: McpSinamaKipi,
 }
 
@@ -292,6 +294,8 @@ impl CalistirmaOrtami {
             gercek_yalitim_acik: false,
             yerel_surec_acik: false,
             yerel_http_sunucu_acik: false,
+            ts_derleyici_acik: true,
+            svelte_ui_acik: true,
             mcp_sinama_kipi: McpSinamaKipi::GercekYalitim,
         }
     }
@@ -1014,17 +1018,78 @@ fn node_ikilisi_bul() -> PathBuf {
     PathBuf::from(ad)
 }
 
-fn typescript_kutuphanesi_bul() -> Option<PathBuf> {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let depo_koku = manifest.parent()?.parent()?;
-    let yerel = depo_koku
-        .join("ui")
-        .join("node_modules")
-        .join("typescript")
+fn ui_node_modules_gecerli_mi(aday: &Path) -> bool {
+    aday.join("typescript")
         .join("lib")
-        .join("typescript.js");
-    if yerel.is_file() {
-        return Some(yerel);
+        .join("typescript.js")
+        .is_file()
+        && aday
+            .join("svelte")
+            .join("src")
+            .join("compiler")
+            .join("index.js")
+            .is_file()
+        && aday.join("jsdom").is_dir()
+}
+
+pub fn ui_node_modules_dizini_bul() -> Option<PathBuf> {
+    if let Ok(deger) = std::env::var("KALFA_UI_NODE_MODULES") {
+        if deger == "KAPALI" || deger.trim().is_empty() {
+            return None;
+        }
+        let yol = PathBuf::from(deger);
+        if ui_node_modules_gecerli_mi(&yol) {
+            return Some(yol);
+        }
+    }
+
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for ust in manifest.ancestors() {
+        let aday = ust.join("ui").join("node_modules");
+        if ui_node_modules_gecerli_mi(&aday) {
+            return Some(aday);
+        }
+        let git_dosyasi = ust.join(".git");
+        if git_dosyasi.is_file()
+            && let Ok(icerik) = std::fs::read_to_string(&git_dosyasi)
+            && let Some(gitdir_satiri) = icerik.lines().find_map(|s| s.strip_prefix("gitdir:"))
+        {
+            let gitdir_yolu = PathBuf::from(gitdir_satiri.trim());
+            for git_ust in gitdir_yolu.ancestors() {
+                let ortak_aday = git_ust.join("ui").join("node_modules");
+                if ui_node_modules_gecerli_mi(&ortak_aday) {
+                    return Some(ortak_aday);
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let wsl_aday =
+            PathBuf::from("/mnt/c/Users/kor_a/OneDrive/Masaüstü/harness/ui/node_modules");
+        if ui_node_modules_gecerli_mi(&wsl_aday) {
+            return Some(wsl_aday);
+        }
+    }
+
+    None
+}
+
+pub fn typescript_kutuphanesi_bul() -> Option<PathBuf> {
+    if let Ok(deger) = std::env::var("KALFA_TS_LIB_PATH") {
+        if deger == "KAPALI" || deger.trim().is_empty() {
+            return None;
+        }
+        let yol = PathBuf::from(deger);
+        if yol.is_file() {
+            return Some(yol);
+        }
+    }
+    let nm = ui_node_modules_dizini_bul()?;
+    let ts_lib = nm.join("typescript").join("lib").join("typescript.js");
+    if ts_lib.is_file() {
+        return Some(ts_lib);
     }
     None
 }
@@ -1123,6 +1188,9 @@ fn davranis_kontrollerini_calistir(
                 komut.arg(&giris).current_dir(calisma_alani);
                 if let Some(ts_lib) = typescript_kutuphanesi_bul() {
                     komut.env("KALFA_TS_LIB_PATH", ts_lib);
+                }
+                if let Some(ui_nm) = ui_node_modules_dizini_bul() {
+                    komut.env("KALFA_UI_NODE_MODULES", ui_nm);
                 }
                 let kosum = match komut.output() {
                     Ok(c) => c,
@@ -1688,6 +1756,22 @@ pub async fn gorevi_kostur(gorev: &GorevTanimi, ortam: &CalistirmaOrtami) -> Gor
     }
     if gorev.platform_onkosulu.yerel_http_sunucu && !ortam.yerel_http_sunucu_acik {
         eksik_onkosullar.push("yerel_http_sunucu");
+    }
+    let ts_gerekli = gorev
+        .bagimsiz_denetleyici
+        .davranis_kontrolleri
+        .iter()
+        .any(|dk| dk.tur == DavranisKontrolTuru::TsTipVeCalisma);
+    if ts_gerekli && (!ortam.ts_derleyici_acik || typescript_kutuphanesi_bul().is_none()) {
+        eksik_onkosullar.push("typescript_derleyici");
+    }
+    let svelte_gerekli = gorev
+        .bagimsiz_denetleyici
+        .davranis_kontrolleri
+        .iter()
+        .any(|dk| dk.tur == DavranisKontrolTuru::SvelteEtkilesim);
+    if svelte_gerekli && (!ortam.svelte_ui_acik || ui_node_modules_dizini_bul().is_none()) {
+        eksik_onkosullar.push("svelte_dom_calisma_zamani");
     }
     if !eksik_onkosullar.is_empty() {
         let neden = format!(
