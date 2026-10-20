@@ -142,8 +142,12 @@ impl Uygulama {
             yalitim_dinleyici.clone(),
             mcp_dinleyici.clone(),
         );
+        #[cfg(not(any(test, feature = "test-destek")))]
         let mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa> =
             Arc::new(crate::mcp::kasa::SistemGizliKasasi::yeni());
+        #[cfg(any(test, feature = "test-destek"))]
+        let mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa> =
+            Arc::new(crate::mcp::kasa::test_destek::SahteGizliKasa::yeni());
         let mcp = crate::mcp::yonetici::McpYoneticisi::yeni(
             crate::mcp::yonetici::McpYoneticiBilesenleri {
                 veri_dizini: b.veri_dizini.clone(),
