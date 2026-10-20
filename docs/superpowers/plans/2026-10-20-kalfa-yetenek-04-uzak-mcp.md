@@ -1,8 +1,8 @@
 # uzak MCP, OAuth ve araç keşfi planı
 
 **Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity (`Antigravity-Hat-04`).
-**Durum:** Görev 1–6 (G3a, G3b, OAuth, araç keşfi ve ayarlar/UI bileşenleri) tamamlandı ve Windows + WSL `Ubuntu-24.04` üzerinde doğrulandı. Ortak çekirdek/IPC entegrasyonu koordinasyon sırasına göre #38 ve #39 sonrası bağlanacaktır.
-**Plan tabanı:** main `4041a39995e3bea3d56515e53ffc8af47f68e1ae`. **Çalışma dalı:** `codex/plan-yetenek-uzak-mcp`.
+**Durum:** Görev 1–6 (G3a, G3b, OAuth, araç keşfi ve ayarlar/UI bileşenleri) ile inceleme düzeltme turu bulguları (**SP-06** üretim TLS güven kökleri ve yerel HTTPS/TLS fixture'ları, **SP-04** uzak MCP erişim sözleşmesi/mühür/onay kartı ayrımı, **SP-08** `UzakMcpYoneticisi` + `BirlesikMcpAracKaynagi` + `AracAraAraci` + Tauri IPC + Ayarlar UI bağlantısı ve `02 -> 03 -> 04` ortak çekirdek/IPC birleştirmesi) tamamlandı ve Windows + WSL `Ubuntu-24.04` üzerinde doğrulandı.
+**Plan tabanı:** main `3ec4e9fc9efdfef58145189fc842f8311cfdbdc7` (#35 sonrası). **Çalışma dalı:** `codex/plan-yetenek-uzak-mcp`.
 **İlk başlanacak iş:** Önce mevcut rmcp sürümüyle HTTP ve protokol uyumluluk deneyini yapın; yerel stdio yolunu değiştirmeyin.
 **Koordinasyon:** [iş sırası ve ortak dosyalar](https://github.com/heimdilon/kalfa/blob/codex/plan-yetenek-koordinasyon/docs/superpowers/specs/2026-10-20-kalfa-yetenek-programi.md).
 
@@ -87,10 +87,14 @@ Yerel `surec.rs/koruma.rs` başlatma/kapatma sözleşmesi korunur. Ortak MCP tan
 
 ## Sözleşme notu — Ortak çekirdek/IPC ve Hat 05 (#41) entegrasyon sınırları
 
-- **G3b (Hat 05 / #41 için ortak HTTP taşıması):** `bc40673683f71337d548e979bde74bb611b1a5b3` commit'iyle `kalfa_mcp::uzak` altında `SinirliHttpTasima`, `UzakHttpSecenekleri`, `UzakDnsCozucu` (`SistemDnsCozucu`, `SabitDnsCozucu`), `dogrulanmis_istemci_ve_url_hazirla` ve `McpIstemcisi::yeni_uzak` kullanıma hazırdır.
+- **G3b (Hat 05 / #41 için ortak HTTP/TLS taşıması):** İlk taşıma `bc40673683f71337d548e979bde74bb611b1a5b3` commit'inde, üretim TLS güven kökleri (`rustls-platform-verifier` + özel DER kök sertifikaları) düzeltmesi ise `85fe910a932c20a3d10d7f04dbcf7cf8715808fd` (**SP-06**) commit'inde tamamlanmıştır. **Hat 05 (#41) için ortak çekirdek/IPC (`02 -> 03 -> 04`) dahil doğrulanmış sözleşme commit'i:** `8a2dcd96b8585307b78549cf54becd7c349ceb5b` (birleştirme commit'i `887a5177c2586c51f5ef03d145c36932de9cf15d`).
+- **Uzak MCP erişim ve onay sözleşmesi (SP-04 — `d1cd78cfbe4e73df38a02cb1ec2736d3cbbf07aa`):**
+  - `kalfa_core::arac::McpErisim::UzakStreamableHttp` ve `McpAgKarti::UzakHedef { host, origin, kimlik_kapsami }` eklendi; `UzakMcpArac::hazirla` artık `McpErisim::Yalitimli` üretmez ve yerel AppContainer/bwrap koruması varmış gibi göstermez.
+  - `VeriCikisi::UzakMcpCagrisi` ve `MCP_UZAK_VERI_CIKISI_UYARISI` eklendi; `MCP_UZAK_VERI_CIKISI_UYARISI` bilerek `HAKEME_UYGUN_UYARILAR` dışında bırakıldı ve `mcp_karari(Kip::Otomatik, McpErisim::UzakStreamableHttp, ..)` her zaman `Karar::Onayli` döner (`hakeme_uygun == false`). Uzak MCP çağrıları Otomatik izin listesine kendiliğinden girmez.
+  - `muhur_hesapla` ve `McpOnayKarti` (`uzak_origin`, `kimlik_kapsami`) uzak origin'e ve kimlik kapsamına bağlandı; `BekleyenOnay.svelte` ve `OnaySayfasi.svelte` uzak origin'i, kimlik kapsamını ve uzak veri çıkışı uyarısını gösterir.
 - **Araç keşfi sözleşmesi (Görev 5):** Tek yerleşik araç adı `arac_ara` (`kalfa_mcp::uzak::ARAC_ARA_ADI`) olarak sabitlenmiştir; aynı çağrıda `sorgu` ile en çok 8 aday döner ve isteğe bağlı `yukle: ["mcp__<sunucu>__<arac>"]` listesiyle seçilen araçları oturum başına en çok 16 etkin araç ve toplam 64 KiB şema bütçesi içinde `UzakAracKaynagi` üzerinden **sonraki model turunun** `AracKayitDefteri::anlik_goruntu` görüntüsüne yayımlar.
-- **Mühür ve tarif özeti:** `kalfa_mcp::tarif::{uzak_sunucu_tanim_ozeti, uzak_arac_tanim_ozeti, uzak_calisma_tarifi}` uzak çağrının `McpTarifi` ve `McpAracTanimOzeti` mühürlerini (`kanonik_uc_url`, `origin`, `yetki_turu`, `tanim_revizyonu`, `kimlik_revizyonu`, `arac_revizyonu`, `protokol_surumu`, `baglanti_sayaci` ve `outputSchema`) mevcut `kalfa-core` `McpHazirlik` yapısını kırmadan üretir. Bunlardan biri değiştiğinde eski hazırlık `AracHatasi::OnayEskidi` ile reddedilir.
-- **Ortak çekirdek/IPC sıralaması:** Koordinasyon planı uyarınca paylaşılan `crates/kalfa-core/`, `crates/kalfa/src/komutlar.rs` ve `ui/src/ipc/komutlar.ts` dosyalarına dokunulmamıştır; `UzakMcpYoneticisi` ve DTO/Svelte bileşenleri #38 ve #39'un ortak çekirdek/IPC sözleşmeleri birleştikten sonra doğrudan bağlanmaya hazırdır.
+- **Mühür ve tarif özeti:** `kalfa_mcp::tarif::{uzak_sunucu_tanim_ozeti, uzak_arac_tanim_ozeti, uzak_calisma_tarifi}` uzak çağrının `McpTarifi` ve `McpAracTanimOzeti` mühürlerini (`kanonik_uc_url`, `origin`, `yetki_turu`, `tanim_revizyonu`, `kimlik_revizyonu`, `arac_revizyonu`, `protokol_surumu`, `baglanti_sayaci` ve `outputSchema`) üretir. Bunlardan biri değiştiğinde eski hazırlık `AracHatasi::OnayEskidi` ile reddedilir.
+- **Uygulama ve ortak çekirdek/IPC bağlantısı (SP-08 — `c024ea5ef707be02d4bb9fbca2da76a4b908843f` + `887a5177c2586c51f5ef03d145c36932de9cf15d`):** `UzakMcpYoneticisi`, `BirlesikMcpAracKaynagi` (yerel + uzak MCP araç yayımı), `AracAraAraci`, Tauri IPC komutları (`uzak_mcp_sunuculari_listele`, `uzak_mcp_sunucu_ayrintisi`, `uzak_mcp_sunucu_ekle`, `uzak_mcp_sunucu_baglan`, `uzak_mcp_sunucu_durdur`, `uzak_mcp_sunucu_sil`, `uzak_mcp_oauth_bagla`, `uzak_mcp_kimlik_kaldir`) ve `ui/src/ana/Ayarlar.svelte` içindeki `UzakMcpSunuculari` bölümü uçtan uca bağlandı; `02 -> 03 -> 04` birleştirmesiyle `ANA_PENCERE_KOMUTLARI` (`98` komut) ve `capabilities/ana.json` eşitlendi.
 
 ## Kaynaklar ve doğrulama
 
