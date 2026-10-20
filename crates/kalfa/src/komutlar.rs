@@ -16,6 +16,7 @@ use kalfa_uygulama::Uygulama;
 use kalfa_uygulama::arayuz::YalitimDurumu;
 use kalfa_uygulama::dosya_gorunumu::{CalismaAlaniOzeti, DizinIcerigi, DosyaIcerigi};
 use kalfa_uygulama::hata::KomutHatasi;
+use kalfa_uygulama::isler::{IsOkumaSonucu, IsOzeti};
 use kalfa_uygulama::mcp::komutlar::{
     McpDurumuDto, McpSunucuAyrintisiDto, McpSunucuFormu, McpTaslakDto,
 };
@@ -125,6 +126,11 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         calisma_alani_ozeti,
         calisma_alani_dizini,
         calisma_alani_dosyasi,
+        oturum_isleri,
+        is_oku,
+        is_girdi,
+        is_durdur,
+        is_boyutlandir,
         sart_penceresi_durumu,
         anahtari_kaydet,
         sartlari_kabul_et,
@@ -802,4 +808,52 @@ pub async fn calisma_alani_dosyasi(
     kimlik: u64,
 ) -> Sonuc<DosyaIcerigi> {
     u.calisma_alani_dosyasi(oturum, kimlik).await
+}
+
+// Arka plan süreçleri ve terminaller (Hat 03):
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn oturum_isleri(u: State<'_, Arc<Uygulama>>, oturum: OturumId) -> Sonuc<Vec<IsOzeti>> {
+    u.oturum_isleri(oturum)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn is_oku(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    is_id: String,
+    imlec: usize,
+) -> Sonuc<IsOkumaSonucu> {
+    u.is_oku(oturum, is_id, imlec)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn is_girdi(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    is_id: String,
+    veri: String,
+    eof: bool,
+) -> Sonuc<IsOzeti> {
+    u.is_girdi(oturum, is_id, veri, eof).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn is_durdur(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    is_id: String,
+) -> Sonuc<IsOzeti> {
+    u.is_durdur(oturum, is_id).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn is_boyutlandir(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    is_id: String,
+    satir: u16,
+    sutun: u16,
+) -> Sonuc<IsOzeti> {
+    u.is_boyutlandir(oturum, is_id, satir, sutun)
 }

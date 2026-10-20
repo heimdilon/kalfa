@@ -26,6 +26,8 @@ import type {
   GecmisSayfasi,
   GunlukSayfasi,
   IslemId,
+  IsOkumaSonucu,
+  IsOzeti,
   KanalMesaji,
   Kip,
   KullaniciSorusuYaniti,
@@ -355,3 +357,19 @@ export const calismaAlaniDizini = (oturum: OturumId, dizin: number | null) =>
   invoke<DizinIcerigi>('calisma_alani_dizini', { oturum, dizin });
 export const calismaAlaniDosyasi = (oturum: OturumId, kimlik: number) =>
   invoke<DosyaIcerigi>('calisma_alani_dosyasi', { oturum, kimlik });
+
+// Arka plan süreçleri ve terminaller (Hat 03):
+export const oturumIsleri = (oturum: OturumId) =>
+  invoke<IsOzeti[]>('oturum_isleri', { oturum });
+
+export const isOku = (oturum: OturumId, is_id: string, imlec: number) =>
+  invoke<IsOkumaSonucu>('is_oku', { oturum, is_id, imlec });
+
+export const isGirdi = (oturum: OturumId, is_id: string, veri: string, eof: boolean) =>
+  invoke<IsOzeti>('is_girdi', { oturum, is_id, veri, eof });
+
+export const isDurdur = (oturum: OturumId, is_id: string) =>
+  invoke<IsOzeti>('is_durdur', { oturum, is_id });
+
+export const isBoyutlandir = (oturum: OturumId, is_id: string, satir: number, sutun: number) =>
+  invoke<IsOzeti>('is_boyutlandir', { oturum, is_id, satir, sutun });

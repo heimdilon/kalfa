@@ -1,7 +1,7 @@
 # arka plan süreçleri ve terminal planı
 
 **Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity (`Antigravity-Hat-03`).
-**Durum:** G2a iki platform deneyi, G2b arka plan borulu iş sahibi/araçları ve G2c PTY/ConPTY + `IsKarti` bileşeni uygulandı ve iki platformda doğrulandı. Ortak çekirdek/IPC bağlaması koordinasyon sırasına göre PR #38 birleştikten sonra bağlanacak şekilde modüler sözleşmeyle hazırlandı.
+**Durum:** G2a iki platform deneyi, G2b arka plan borulu iş sahibi/araçları, G2c PTY/ConPTY + `IsKarti` bileşeni, inceleme düzeltmeleri (`ST-01` ayrılmış torun süreç sahipliği, `ST-02` terminal EOF kapanışı) ve `SP-08` gerçek uygulama/IPC/UI entegrasyonu (Hat 01 + Hat 02 sözleşmeleriyle birlikte) uygulandı ve iki platformda doğrulandı.
 **Plan tabanı:** main `4041a39995e3bea3d56515e53ffc8af47f68e1ae`. **Çalışma dalı:** `codex/plan-yetenek-surec-terminal`.
 **İlk başlanacak iş:** Önce kilit/süreç sahipliği ve iki platform PTY deney raporunu üretin. Bu rapor yokken kabuğa arka plan bayrağı eklemeyin.
 **Koordinasyon:** [iş sırası ve ortak dosyalar](https://github.com/heimdilon/kalfa/blob/codex/plan-yetenek-koordinasyon/docs/superpowers/specs/2026-10-20-kalfa-yetenek-programi.md).

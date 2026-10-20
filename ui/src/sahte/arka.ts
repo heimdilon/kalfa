@@ -22,6 +22,8 @@ import type {
   GunlukSayfasi,
   GunlukSinirDurumu,
   IslemId,
+  IsOkumaSonucu,
+  IsOzeti,
   KanalMesaji,
   Kip,
   KomutHatasi,
@@ -243,6 +245,9 @@ export class SahteArka {
     ciktilar: [],
     ozetlenen: 0,
   };
+  /** Arka plan işleri ve çıktıları (Hat 03). */
+  isler: IsOzeti[] = [];
+  isCiktilari = new Map<string, string>();
   /** Gönderim günlüğü sayfaları; yoksa boş döner. */
   gonderimGunlukleri = new Map<OturumId, GunlukSayfasi>();
   /** `gonderim_ogesi` metinleri; anahtar: `${oturum}:${sira}`. */
@@ -800,6 +805,57 @@ export class SahteArka {
         if (!icerik) throw { kod: 'GecersizGirdi', mesaj: 'Bu dosya bu oturumda bilinmiyor.' };
         const gecikme = this.dosyaGecikmeleri.get(a.kimlik as number);
         return gecikme ? gecikme.then(() => icerik) : icerik;
+      }
+      case 'oturum_isleri':
+        return structuredClone(this.isler.filter((i) => i.oturum === oturum));
+      case 'is_oku': {
+        const isId = a.is_id as string;
+        const imlec = (a.imlec as number) ?? 0;
+        const is = this.isler.find((i) => i.oturum === oturum && i.is_id === isId);
+        if (!is) throw { kod: 'GecersizGirdi', mesaj: 'İş bulunamadı.' };
+        const tam = this.isCiktilari.get(isId) ?? '';
+        const parca = tam.slice(imlec);
+        const sonuc: IsOkumaSonucu = {
+          is_id: is.is_id,
+          gosterim: is.gosterim,
+          kip: is.kip,
+          durum: is.durum,
+          cikti: parca,
+          yeni_imlec: tam.length,
+          toplam_bayt: is.toplam_bayt,
+          tasti: is.tasti,
+          uyarilar: is.uyarilar,
+        };
+        return structuredClone(sonuc);
+      }
+      case 'is_girdi': {
+        const isId = a.is_id as string;
+        const veri = (a.veri as string) ?? '';
+        const is = this.isler.find((i) => i.oturum === oturum && i.is_id === isId);
+        if (!is) throw { kod: 'GecersizGirdi', mesaj: 'İş bulunamadı.' };
+        if (veri) {
+          const mevcut = this.isCiktilari.get(isId) ?? '';
+          const yeni = `${mevcut}${veri}`;
+          this.isCiktilari.set(isId, yeni);
+          is.toplam_bayt = yeni.length;
+        }
+        return structuredClone(is);
+      }
+      case 'is_durdur': {
+        const isId = a.is_id as string;
+        const is = this.isler.find((i) => i.oturum === oturum && i.is_id === isId);
+        if (!is) throw { kod: 'GecersizGirdi', mesaj: 'İş bulunamadı.' };
+        is.durum = { durum: 'bitti', cikis_kodu: null, sure_ms: 120, zaman_asimi: false };
+        return structuredClone(is);
+      }
+      case 'is_boyutlandir': {
+        const isId = a.is_id as string;
+        const satir = a.satir as number;
+        const sutun = a.sutun as number;
+        const is = this.isler.find((i) => i.oturum === oturum && i.is_id === isId);
+        if (!is) throw { kod: 'GecersizGirdi', mesaj: 'İş bulunamadı.' };
+        is.kip = { tur: 'terminal', boyut: { satir, sutun } };
+        return structuredClone(is);
       }
       case 'pencere_buyut_degistir':
         this.pencereBuyuk = !this.pencereBuyuk;

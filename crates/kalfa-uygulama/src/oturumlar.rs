@@ -184,9 +184,9 @@ impl Uygulama {
             .ok_or_else(|| {
                 KomutHatasi::gecersiz("Çalışma alanı seçilmemiş. Klasörü yeniden seçin.")
             })?;
-        let (baglam, gorunum) = self.baglam(&kok).await?;
         std::fs::create_dir_all(&self.oturum_dizini)?;
         let oturum = OturumId::yeni();
+        let (baglam, gorunum) = self.baglam(oturum, &kok).await?;
         let yol = dizin::kayit_yolu(&self.oturum_dizini, oturum);
         let mut ayarlar = OturumAyarlari::yeni(model.clone(), &kok);
         ayarlar.efor = Some(efor);
@@ -212,7 +212,7 @@ impl Uygulama {
             gorunum,
         };
         if let Err(acik) = self.tabloya_ekle(oturum, acik) {
-            Self::eklenemeyen_oturumu_kapat(acik).await;
+            self.eklenemeyen_oturumu_kapat(oturum, acik).await;
             return Err(KomutHatasi::gecersiz(ALAN_KALDIRILIYOR));
         }
         Ok(OturumAcilisi {
@@ -267,7 +267,7 @@ impl Uygulama {
                 .acilis(oturum, yol, Some(kok), Some(neden), butce)
                 .await;
         }
-        let (baglam, gorunum) = self.baglam(&kok).await?;
+        let (baglam, gorunum) = self.baglam(oturum, &kok).await?;
         let mut ayarlar = OturumAyarlari::yeni(durum.model.clone(), &kok);
         let baslangic_efor = {
             let ic = self.ic();
@@ -308,7 +308,7 @@ impl Uygulama {
             gorunum,
         };
         if let Err(acik) = self.tabloya_ekle(oturum, acik) {
-            Self::eklenemeyen_oturumu_kapat(acik).await;
+            self.eklenemeyen_oturumu_kapat(oturum, acik).await;
             return Err(KomutHatasi::gecersiz(ALAN_KALDIRILIYOR));
         }
         self.acilis(oturum, yol, Some(kok), None, butce).await
@@ -330,6 +330,7 @@ impl Uygulama {
         salt_okunur: Option<SaltOkunurNedeni>,
         butce: Option<ButceGorunumu>,
     ) -> Result<OturumAcilisi, KomutHatasi> {
+        self.isler.oturumu_kurtar(oturum);
         let (ilk_sayfa, mut ozet) = tokio::task::spawn_blocking(move || -> io::Result<_> {
             let kayitlar = OturumKaydi::oku(&yol)?;
             let ogeler = gecmis::gorunum_uret(&kayitlar);
@@ -749,6 +750,7 @@ impl Uygulama {
         .await
         .map_err(ic_hata)?
         .map_err(KomutHatasi::kayit)?;
+        self.isler.oturum_kaydini_sil(oturum);
         let mut ic = self.ic();
         if ic.son_oturum == Some(oturum) {
             ic.son_oturum = None;
@@ -806,7 +808,7 @@ impl Uygulama {
         !self.ic().kapaniyor.is_empty()
     }
 
-    /// Kapanmakta olan bütün oturumların görevlerini ve açık MCP süreçlerini bekler.
+    /// Kapanmakta olan bütün oturumların görevlerini, açık arka plan işlerini ve açık MCP süreçlerini bekler.
     pub async fn kapananlari_bekle(&self) {
         let kapananlar: Vec<(OturumId, OturumTutamaci)> = self
             .ic()
@@ -815,6 +817,7 @@ impl Uygulama {
             .map(|(oturum, kapanan)| (*oturum, kapanan.tutamac.clone()))
             .collect();
         self.kapanislari_bekle(kapananlar).await;
+        self.isler.tumunu_kapat_ve_bekle().await;
         self.mcp.tumunu_kapat_ve_bekle().await;
     }
 
@@ -847,6 +850,7 @@ impl Uygulama {
     }
 
     async fn kapanisi_bekle(&self, oturum: OturumId, tutamac: OturumTutamaci) {
+        self.isler.oturumu_kapat(oturum).await;
         if tokio::time::timeout(KAPANIS_SURESI, tutamac.kapanmasini_bekle())
             .await
             .is_ok()
@@ -890,7 +894,8 @@ impl Uygulama {
         Ok(())
     }
 
-    async fn eklenemeyen_oturumu_kapat(acik: Box<AcikOturum>) {
+    async fn eklenemeyen_oturumu_kapat(&self, oturum: OturumId, acik: Box<AcikOturum>) {
+        self.isler.oturumu_kapat(oturum).await;
         let tutamac = acik.tutamac.clone();
         tutamac.iptal_et();
         // Olay alıcısını bırakmak, çekirdeğin kapanış belirtecini tamamlar ve
@@ -908,6 +913,7 @@ impl Uygulama {
     /// alanı tutamacını kullanır (masaüstü arayüzü tasarımı §6.3).
     pub(crate) async fn baglam(
         &self,
+        oturum: OturumId,
         kok: &Path,
     ) -> Result<(OturumBaglami, Arc<DosyaGorunumu>), KomutHatasi> {
         let siniflandirici = Arc::new(
@@ -941,6 +947,8 @@ impl Uygulama {
             .eklentiler
             .araclar(&alan, &kilitler, &alan_kimligi)
             .await;
+        self.isler.oturumu_etkinlestir(oturum);
+        let is_baglantisi = crate::isler::OturumIsBaglantisi::yeni(self.isler.clone(), oturum);
         araclar.push(Arc::new(
             KabukAraci::yeni(
                 alan,
@@ -948,7 +956,14 @@ impl Uygulama {
                 guven,
                 self.yalitim_ayarlari.clone(),
             )
-            .kullanici_ag_listesi(self.ayarlar.ag_listesi()),
+            .kullanici_ag_listesi(self.ayarlar.ag_listesi())
+            .arka_plan_baglantisi(is_baglantisi.clone()),
+        ));
+        araclar.extend(kalfa_tools::kabuk::isler::arka_plan_araclari(
+            is_baglantisi,
+            self.yalitici.clone(),
+            self.yalitim_ayarlari.clone(),
+            self.ayarlar.ag_listesi(),
         ));
         // Eklenti araçlarının adı `<önek>__<araç>`'tır, yerleşiklerinkinde `__`
         // yoktur (§6.5); yine de çift ad oturumu düşürmesin.
@@ -990,6 +1005,71 @@ impl Uygulama {
             },
             gorunum,
         ))
+    }
+
+    /// Oturuma ait arka plan işlerinin ve terminallerin özet listesini döner.
+    pub fn oturum_isleri(
+        &self,
+        oturum: OturumId,
+    ) -> Result<Vec<crate::isler::IsOzeti>, KomutHatasi> {
+        self.isler.oturumu_kurtar(oturum);
+        Ok(self.isler.oturum_isleri(oturum))
+    }
+
+    /// Oturuma ait bir arka plan işinin çıktısını imleçten itibaren okur.
+    pub fn is_oku(
+        &self,
+        oturum: OturumId,
+        is_id: String,
+        imlec: usize,
+    ) -> Result<crate::isler::IsOkumaSonucu, KomutHatasi> {
+        self.isler.oturumu_kurtar(oturum);
+        self.isler
+            .oku(oturum, &is_id, imlec)
+            .map_err(|e| KomutHatasi::gecersiz(e.to_string()))
+    }
+
+    /// Oturuma ait bir arka plan işine kullanıcı girdisi ve/veya EOF gönderir.
+    pub async fn is_girdi(
+        &self,
+        oturum: OturumId,
+        is_id: String,
+        veri: String,
+        eof: bool,
+    ) -> Result<crate::isler::IsOzeti, KomutHatasi> {
+        self.isler
+            .girdi(oturum, &is_id, veri.as_bytes(), eof)
+            .await
+            .map_err(|e| KomutHatasi::gecersiz(e.to_string()))
+    }
+
+    /// Oturuma ait bir arka plan işini durdurur ve kapanışını bekler.
+    pub async fn is_durdur(
+        &self,
+        oturum: OturumId,
+        is_id: String,
+    ) -> Result<crate::isler::IsOzeti, KomutHatasi> {
+        self.isler
+            .durdur(oturum, &is_id)
+            .await
+            .map_err(|e| KomutHatasi::gecersiz(e.to_string()))
+    }
+
+    /// Oturuma ait bir terminal işinin pencere boyutunu günceller.
+    pub fn is_boyutlandir(
+        &self,
+        oturum: OturumId,
+        is_id: String,
+        satir: u16,
+        sutun: u16,
+    ) -> Result<crate::isler::IsOzeti, KomutHatasi> {
+        self.isler
+            .boyutlandir(
+                oturum,
+                &is_id,
+                kalfa_sandbox::TerminalBoyutu { satir, sutun },
+            )
+            .map_err(|e| KomutHatasi::gecersiz(e.to_string()))
     }
 
     /// Bağlantıyı sistem tarayıcısında açar: yalnızca http/https ve yalnızca
