@@ -25,7 +25,7 @@ pub(super) struct ModelCevabi {
 
 impl Oturum {
     fn istek_olustur(&self, goruntu: &AracAnlikGoruntusu) -> ChatRequest {
-        let mut mesajlar = vec![ChatMessage::system(self.ayarlar.sistem_mesaji.clone())];
+        let mut mesajlar = vec![ChatMessage::system(self.etkin_sistem_mesaji())];
         mesajlar.extend(self.mesajlar.iter().cloned());
         let mut istek = ChatRequest::new(self.ayarlar.model.clone(), mesajlar);
         istek.tools = goruntu.tanimlar().to_vec();
@@ -366,9 +366,9 @@ impl Oturum {
 
         // 1. Sistem istemi
         if self.son_sistem_istemi.as_ref().map(|(_, m)| m.as_str())
-            != Some(&self.ayarlar.sistem_mesaji)
+            != Some(&self.etkin_sistem_mesaji())
         {
-            let metin = self.ayarlar.sistem_mesaji.clone();
+            let metin = self.etkin_sistem_mesaji();
             let bayt = metin.len() as u64;
             self.kaydet(KayitOgesi::SistemIstemi {
                 metin: metin.clone(),

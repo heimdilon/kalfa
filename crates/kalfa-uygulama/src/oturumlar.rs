@@ -19,8 +19,11 @@ use kalfa_core::kimlik::{CagriId, IslemId, OturumId, TurId};
 use kalfa_core::kurtarma::kurtar;
 use kalfa_core::muhur::OnayMuhru;
 use kalfa_core::oturum::{self, OlayAlici, OturumAyarlari, OturumBaglami, OturumTutamaci};
+use kalfa_core::plan::PlanGuncelleAraci;
+use kalfa_core::proje_talimatlari::ProjeTalimatOkuyucu;
 use kalfa_core::protokol::{Komut, OnayKarari, OnayOgesi};
 use kalfa_core::saglayici::Saglayici;
+use kalfa_core::soru::{KullaniciSorusuYaniti, KullaniciyaSorAraci};
 use kalfa_evren::tipler::DusunceEforu;
 use kalfa_tools::{CalismaAlani as AracAlani, KabukAraci, varsayilan_araclar};
 use tokio::sync::Mutex as AsyncMutex;
@@ -30,6 +33,7 @@ use crate::arayuz::KanalYazici;
 use crate::calisma_alanlari::{AlanGuveni, CalismaAlaniKaydi};
 use crate::dosya_gorunumu::DosyaGorunumu;
 use crate::hata::KomutHatasi;
+use crate::proje_talimatlari::CalismaAlaniTalimatOkuyucu;
 use crate::sozlesme::{
     CalismaAlani, ModelSecenegi, OnayGirdisi, OturumAcilisi, OturumSatiri, SaltOkunurNedeni,
     UygulamaDurumu,
@@ -577,6 +581,25 @@ impl Uygulama {
         Ok(())
     }
 
+    pub async fn kullanici_sorusu_yaniti(
+        &self,
+        oturum: OturumId,
+        tur: TurId,
+        soru_kimligi: String,
+        yanit: KullaniciSorusuYaniti,
+    ) -> Result<(), KomutHatasi> {
+        let tutamac = self.tutamac(oturum)?;
+        self.ic().son_oturum = Some(oturum);
+        tutamac
+            .gonder(Komut::KullaniciSorusuYaniti {
+                tur,
+                soru_kimligi,
+                yanit,
+            })
+            .await?;
+        Ok(())
+    }
+
     pub async fn model_degistir(&self, oturum: OturumId, model: String) -> Result<(), KomutHatasi> {
         let (tutamac, yeni_efor) = {
             let mut kilit = self.ic();
@@ -908,6 +931,10 @@ impl Uygulama {
         });
         let kilitler = self.kilitler.al(kok)?;
         let mut araclar = varsayilan_araclar(alan.clone());
+        araclar.push(Arc::new(PlanGuncelleAraci::yeni()));
+        araclar.push(Arc::new(KullaniciyaSorAraci::yeni()));
+        let talimat_okuyucu: Arc<dyn ProjeTalimatOkuyucu> =
+            Arc::new(CalismaAlaniTalimatOkuyucu::yeni(alan.clone()));
         let geri_yukleyici: Arc<dyn GeriYukleyici> = alan.clone();
         let gorunum = Arc::new(DosyaGorunumu::yeni(alan.clone()));
         let eklenti_araclari = self
@@ -959,6 +986,7 @@ impl Uygulama {
                 geri_yukleyici: Some(geri_yukleyici),
                 denetci: self.denetci.clone(),
                 denetci_kipi: Some(self.ayarlar.denetci_kipi_kaynagi()),
+                talimat_okuyucu: Some(talimat_okuyucu),
             },
             gorunum,
         ))

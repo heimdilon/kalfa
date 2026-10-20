@@ -107,6 +107,9 @@ async fn ortamli_butce(
                     kayitlar.push((ozet, sonuc));
                     bitisler.push((butce_islem, kullanim));
                 }
+                Some(OrtamIstegi::PlanGuncelle { .. } | OrtamIstegi::KullaniciSorusu { .. }) => {
+                    unreachable!("eklenti evren testinde beklenmeyen ortam isteği")
+                }
                 None => break,
             },
             Some(talep) = butce_rx.recv() => {

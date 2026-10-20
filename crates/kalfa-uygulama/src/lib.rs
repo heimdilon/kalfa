@@ -14,7 +14,9 @@ pub mod eklentiler;
 pub mod evren;
 pub mod guvenlik;
 pub mod hata;
+pub mod isler;
 pub mod modeller;
+pub mod proje_talimatlari;
 pub mod sozlesme;
 pub mod yalitim;
 pub mod yukseltici;
@@ -32,5 +34,4 @@ pub mod test_destek;
 
 pub use uygulama::{Bilesenler, Uygulama};
 
-pub mod isler;
 pub mod mcp;

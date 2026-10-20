@@ -69,6 +69,13 @@ pub struct KurtarilmisDurum {
     pub bekleyen_ozetler: BTreeSet<usize>,
     /// Kayıttan hesaplanan son bütçe görünümü.
     pub butce: ButceGorunumu,
+    /// Oturumun kayıttaki son çalışma planı (`plan_guncelle`).
+    pub plan: Option<crate::plan::OturumPlani>,
+    /// Oturumun kayıttaki son proje talimatı (`AGENTS.md`) anlık görüntüsü.
+    pub proje_talimatlari: Option<crate::proje_talimatlari::ProjeTalimatAnlikGoruntusu>,
+    /// Oturum kapanırken yanıt beklemekte olan kullanıcı sorusu.
+    /// Kurtarmada eski araç yeniden çalıştırılmaz; durum arayüze bildirilir.
+    pub kesintiye_ugramis_soru: Option<crate::soru::KullaniciSorusu>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -108,6 +115,9 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
     let mut denetimler = HashMap::new();
     let mut eklenti_kullanimi: HashMap<String, EklentiKullanimi> = HashMap::new();
     let mut bekleyen_ozetler = BTreeSet::new();
+    let mut plan: Option<crate::plan::OturumPlani> = None;
+    let mut proje_talimatlari: Option<crate::proje_talimatlari::ProjeTalimatAnlikGoruntusu> = None;
+    let mut acik_soru: Option<crate::soru::KullaniciSorusu> = None;
 
     for zarf in kayitlar {
         match &zarf.yuk {
@@ -238,6 +248,23 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
             KayitOgesi::Denetim { cagri, sonuc, .. } => {
                 denetimler.insert(*cagri, sonuc.clone());
             }
+            KayitOgesi::PlanGuncellendi { plan: p, .. } => {
+                plan = Some(p.clone());
+            }
+            KayitOgesi::ProjeTalimatlari { goruntu } => {
+                proje_talimatlari = Some(goruntu.clone());
+            }
+            KayitOgesi::KullaniciSorusuSoruldu { soru } => {
+                acik_soru = Some(soru.clone());
+            }
+            KayitOgesi::KullaniciSorusuCozuldu { soru_kimligi, .. } => {
+                if acik_soru
+                    .as_ref()
+                    .is_some_and(|s| s.soru_kimligi == *soru_kimligi)
+                {
+                    acik_soru = None;
+                }
+            }
             // Gönderilmeyen istek ağa çıkmadı; sınırı tüketmez (§9.5). Sohbet
             // mantığına girmez: `gonderilen` ve sistem istemi buna bakmaz.
             // ponytail: sonucu yazılmadan çökülen istek sayılmaz (çağrı başına en
@@ -313,5 +340,8 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
         eklenti_kullanimi,
         bekleyen_ozetler,
         butce,
+        plan,
+        proje_talimatlari,
+        kesintiye_ugramis_soru: acik_soru,
     })
 }
