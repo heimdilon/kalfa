@@ -233,6 +233,72 @@ fn tekrar_anahtari(tc: &ToolCall) -> String {
     format!("{}\u{0}{}", tc.function.name, tc.function.arguments)
 }
 
+fn plan_hedef_yollari(p: &Planlanan) -> Vec<String> {
+    let mut yollar = Vec::new();
+    for okunan in &p.hazirlik.okunan {
+        yollar.push(okunan.as_str().to_string());
+    }
+    for yazilan in &p.hazirlik.yazilan {
+        yollar.push(yazilan.yol.as_str().to_string());
+    }
+    if let Some(kabuk) = &p.hazirlik.kabuk {
+        yollar.push(kabuk.dizin.clone());
+    }
+    for aday in crate::proje_talimatlari::arac_girdisinden_aday_yollari_cikar(&p.argumanlar) {
+        if !yollar.contains(&aday) {
+            yollar.push(aday);
+        }
+    }
+    yollar
+}
+
+fn yeni_kapsam_talimatlari(
+    p: &Planlanan,
+    proje_talimatlari: &crate::proje_talimatlari::YuklenenProjeTalimatlari,
+    gorulen_kaynaklar: &HashSet<String>,
+    gorulen_uyarilar: &HashSet<String>,
+) -> Vec<String> {
+    if !p.arac.yazar_mi() && p.hazirlik.yazilan.is_empty() {
+        return Vec::new();
+    }
+    let hedefler = plan_hedef_yollari(p);
+    let mut etkileyen = Vec::new();
+    let mut tum_yeni = Vec::new();
+    for kaynak in &proje_talimatlari.anlik.kaynaklar {
+        if gorulen_kaynaklar.contains(&kaynak.goreli_yol) {
+            continue;
+        }
+        tum_yeni.push(kaynak.goreli_yol.clone());
+        if hedefler.is_empty()
+            || hedefler
+                .iter()
+                .any(|h| kaynak.kapsam.hedefi_kapsar_mi(h.as_str()))
+        {
+            etkileyen.push(kaynak.goreli_yol.clone());
+        }
+    }
+    for uyari in &proje_talimatlari.anlik.uyarilar {
+        if gorulen_uyarilar.contains(&uyari.goreli_yol) {
+            continue;
+        }
+        if !tum_yeni.contains(&uyari.goreli_yol) {
+            tum_yeni.push(uyari.goreli_yol.clone());
+        }
+        if etkileyen.contains(&uyari.goreli_yol) {
+            continue;
+        }
+        let kapsam = uyari.kapsam();
+        if hedefler.is_empty() || hedefler.iter().any(|h| kapsam.hedefi_kapsar_mi(h.as_str())) {
+            etkileyen.push(uyari.goreli_yol.clone());
+        }
+    }
+    if etkileyen.is_empty() {
+        tum_yeni
+    } else {
+        etkileyen
+    }
+}
+
 fn taze_onay_cagrilari(cagrilar: Vec<ToolCall>, tamamlananlar: &HashSet<String>) -> Vec<ToolCall> {
     cagrilar
         .into_iter()
@@ -279,6 +345,20 @@ impl Oturum {
         let mut taze_mcp_onayi = false;
         let mut tamamlanan_model_cagrilari = HashSet::new();
         let mut bekleyen_sonuclar = Vec::new();
+        let modelin_gordugu_kaynaklar: HashSet<String> = self
+            .proje_talimatlari
+            .anlik
+            .kaynaklar
+            .iter()
+            .map(|k| k.goreli_yol.clone())
+            .collect();
+        let modelin_gordugu_uyarilar: HashSet<String> = self
+            .proje_talimatlari
+            .anlik
+            .uyarilar
+            .iter()
+            .map(|u| u.goreli_yol.clone())
+            .collect();
         // Git korumaları bu yanıtın planlamasında bir kez çözülür (ilk yazan
         // hazırlıkta); yürütme onları kilit altında yeniden çözer.
         let siniflandirici = self.baglam.siniflandirici.clone();
@@ -286,13 +366,21 @@ impl Oturum {
             let mut serbest = Vec::new();
             let mut onayli = Vec::new();
             let mut korumalar = None;
+            let mut yeni_hedef = false;
             for tc in std::mem::take(&mut siradaki_cagrilar) {
                 let cagri = CagriId::yeni();
                 let plan = if self.iptal.is_cancelled() {
                     Err("tur iptal edildi".into())
                 } else {
-                    self.planla(cagri, &tc, goruntu, &siniflandirici, &mut korumalar)
-                        .await
+                    self.planla(
+                        cagri,
+                        &tc,
+                        goruntu,
+                        &siniflandirici,
+                        &mut korumalar,
+                        &mut yeni_hedef,
+                    )
+                    .await
                 };
                 match plan {
                     Ok((mut plan, karar)) => {
@@ -377,6 +465,10 @@ impl Oturum {
                 return AsamaSonucu::Bitir(BitisNedeni::Iptal);
             }
 
+            if yeni_hedef {
+                self.proje_talimatlarini_yenile(true).await;
+            }
+
             // Daha sonraki bir hazırlık beklenirken önceki planların kipi de
             // değişmiş olabilir. Geçersiz planlar için onay kartı gösterme.
             let politika = self.politika.load(Ordering::SeqCst);
@@ -413,6 +505,53 @@ impl Oturum {
                     &mut bekleyen_sonuclar,
                 )
                 .await;
+            }
+
+            // Yeni keşfedilen bir alt dizin AGENTS.md kuralı (veya talimat uyarısı)
+            // varsa, yazan araçlar model bu yeni talimatı sistem mesajında görüp
+            // yeniden karar vermeden onay istemez ve çalıştırılmaz (SP-03).
+            let mut talimat_bekleyen = Vec::new();
+            let mut kalan_serbest = Vec::with_capacity(serbest.len());
+            for p in serbest {
+                let yeni_yollar = yeni_kapsam_talimatlari(
+                    &p,
+                    &self.proje_talimatlari,
+                    &modelin_gordugu_kaynaklar,
+                    &modelin_gordugu_uyarilar,
+                );
+                if yeni_yollar.is_empty() {
+                    kalan_serbest.push(p);
+                } else {
+                    talimat_bekleyen.push((p, yeni_yollar));
+                }
+            }
+            serbest = kalan_serbest;
+
+            let mut kalan_onayli = Vec::with_capacity(onayli.len());
+            for (p, uyarilar, yerel) in onayli {
+                let yeni_yollar = yeni_kapsam_talimatlari(
+                    &p,
+                    &self.proje_talimatlari,
+                    &modelin_gordugu_kaynaklar,
+                    &modelin_gordugu_uyarilar,
+                );
+                if yeni_yollar.is_empty() {
+                    kalan_onayli.push((p, uyarilar, yerel));
+                } else {
+                    talimat_bekleyen.push((p, yeni_yollar));
+                }
+            }
+            onayli = kalan_onayli;
+
+            for (p, yeni_yollar) in talimat_bekleyen {
+                let kaynak_listesi = yeni_yollar.join(", ");
+                let icerik = format!(
+                    "[çalıştırılmadı: hedef kapsam için yeni proje talimatları ({kaynak_listesi}) yüklendi; sistem mesajındaki kuralları değerlendirip işlemi yeniden çağırın]"
+                );
+                let mut s = CagriSonucu::plandan(&p, AracDurumu::IptalEdildi, icerik);
+                s.hata_sayilmaz = true;
+                self.sonuc_isle(s, hata_sayaci, &mut bekleyen_sonuclar)
+                    .await;
             }
 
             if self.ayarlar.kip == Kip::Otomatik
@@ -531,6 +670,7 @@ impl Oturum {
         goruntu: &AracAnlikGoruntusu,
         siniflandirici: &'s Siniflandirici,
         korumalar: &mut Option<TopluSiniflandirici<'s>>,
+        yeni_hedef: &mut bool,
     ) -> Result<(Planlanan, Karar), String> {
         let ad = tc.function.name.as_str();
         let arac = goruntu
@@ -559,18 +699,17 @@ impl Oturum {
                 .map_err(|_| "tur iptal edildi".to_string())?;
             *korumalar = Some(cozulen);
         }
-        let mut yeni_hedef = false;
         for yol in &hazirlik.okunan {
-            yeni_hedef |= self.hedef_yolu_ekle(yol.as_str());
+            *yeni_hedef |= self.hedef_yolu_ekle(yol.as_str());
         }
         for yazilan in &hazirlik.yazilan {
-            yeni_hedef |= self.hedef_yolu_ekle(yazilan.yol.as_str());
+            *yeni_hedef |= self.hedef_yolu_ekle(yazilan.yol.as_str());
+        }
+        if let Some(kabuk) = &hazirlik.kabuk {
+            *yeni_hedef |= self.hedef_yolu_ekle(&kabuk.dizin);
         }
         for aday in crate::proje_talimatlari::arac_girdisinden_aday_yollari_cikar(&argumanlar) {
-            yeni_hedef |= self.hedef_yolu_ekle(&aday);
-        }
-        if yeni_hedef {
-            self.proje_talimatlarini_yenile(true).await;
+            *yeni_hedef |= self.hedef_yolu_ekle(&aday);
         }
         let geri_alma = self.depo.is_some();
         let karar = Self::karar(

@@ -2073,6 +2073,7 @@ impl Oturum {
         );
         let degisti = self.proje_talimatlari.anlik.kaynaklar != yeni.anlik.kaynaklar
             || self.proje_talimatlari.anlik.uyarilar != yeni.anlik.uyarilar
+            || self.proje_talimatlari.anlik.eksik_baglam != yeni.anlik.eksik_baglam
             || !yeni.anlik.degisen_kaynaklar.is_empty();
         self.proje_talimatlari = yeni;
         if degisti
