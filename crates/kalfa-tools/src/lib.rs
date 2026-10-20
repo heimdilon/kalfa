@@ -13,6 +13,7 @@ pub mod kabuk;
 pub mod koruma;
 pub mod listele;
 pub mod oku;
+pub mod web;
 pub mod yaz;
 
 pub use ara::IcerikAra;
@@ -24,6 +25,7 @@ pub use duzenle::DosyaDuzenle;
 pub use kabuk::{KabukAraci, KabukGuveni, YalitimsizIzni};
 pub use listele::DosyaListele;
 pub use oku::DosyaOku;
+pub use web::WebGetirAraci;
 pub use yaz::DosyaYaz;
 
 use std::sync::Arc;
