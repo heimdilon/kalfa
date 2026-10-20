@@ -26,10 +26,13 @@ use std::sync::Arc;
 use serde::Serialize;
 
 pub use etkilesimli::{
-    CalistirmaKipi, EtkilesimliIstek, KAPANMA_PAYI, mcp_kip_uyusmasi, sunucu_ortami, sunucu_ozel,
+    CalistirmaKipi, EtkilesimliIstek, KAPANMA_PAYI, TerminalBoyutu, mcp_kip_uyusmasi,
+    sunucu_ortami, sunucu_ozel,
 };
 pub use profil::{AlanBilgisi, GitKimligi, Korumali, OzelDizinler, alan_kimligi};
-pub use surec::{Akis, Bitis, CalismaSonucu, EtkilesimliSurec, KapanisSonucu, Surec};
+pub use surec::{
+    Akis, Bitis, CalismaSonucu, EtkilesimliSurec, KapanisSonucu, Surec, TerminalDenetimi,
+};
 pub use tarama::Tarama;
 pub use yalitimsiz::Yalitimsiz;
 
@@ -187,6 +190,20 @@ pub trait Yalitici: Send + Sync {
     ) -> Result<EtkilesimliSurec, BaslatmaHatasi> {
         Err(BaslatmaHatasi::Yalitim(
             "bu yalıtıcı etkileşimli süreç başlatamaz".into(),
+        ))
+    }
+
+    /// Kabuk komutunu arka plan işi ya da etkileşimli terminal (PTY/ConPTY)
+    /// olarak başlatır. `terminal` `None` ise borulu stdin/stdout/stderr ile,
+    /// `Some(boyut)` ise sözde terminalle başlar. Tokio çalışma zamanının
+    /// içinden çağrılır.
+    fn baslat_kabuk_etkilesimli(
+        &self,
+        _istek: &CalistirmaIstegi,
+        _terminal: Option<TerminalBoyutu>,
+    ) -> Result<EtkilesimliSurec, BaslatmaHatasi> {
+        Err(BaslatmaHatasi::Yalitim(
+            "bu yalıtıcı etkileşimli kabuk süreci başlatamaz".into(),
         ))
     }
 
