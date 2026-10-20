@@ -471,3 +471,73 @@ async fn m04_sir_iceren_tanim_kataloga_girmez_ve_eski_surum_cagrisi_onay_eskidi_
 fn arac_olust(ad: &str, aciklama: &str, girdi_semasi: Value, cikti_semasi: Option<Value>) -> Tool {
     arac_olustur(ad, aciklama, girdi_semasi, cikti_semasi)
 }
+
+#[tokio::test]
+async fn m05_uzak_mcp_arac_hazirligi_yerel_yalitimli_degildir_ve_uzak_baglam_tasir() {
+    let katalog = Arc::new(UzakAracKatalogu::default());
+    let yurutucu = Arc::new(SahteUzakYurutucu {
+        katalog: Arc::clone(&katalog),
+    });
+    let kaynak = UzakAracKaynagi::yeni(Arc::clone(&katalog), yurutucu);
+    katalog.sunucu_katalogunu_guncelle(sunucu_girdisi(
+        "github",
+        19401,
+        1,
+        1,
+        1,
+        vec![arac_olust(
+            "issue_ara",
+            "Issue arar",
+            json!({"type": "object"}),
+            None,
+        )],
+        vec![],
+    ));
+    kaynak
+        .araclari_yukle(&["mcp__github__issue_ara".to_owned()])
+        .unwrap();
+    let defter = AracKayitDefteri::yeni_kaynakli(vec![], kaynak).unwrap();
+    let goruntu = defter.anlik_goruntu(Kip::Proje);
+    let arac = goruntu.bul("mcp__github__issue_ara").unwrap();
+    let hazirlik = arac.hazirla(&json!({"q": "kalfa"})).await.unwrap();
+    assert_eq!(
+        hazirlik.veri_cikisi,
+        Some(kalfa_core::protokol::VeriCikisi::UzakMcpCagrisi)
+    );
+    let mcp = hazirlik.mcp.as_ref().expect("Mcp hazırlığı beklendi");
+    assert_ne!(
+        mcp.erisim,
+        kalfa_core::arac::McpErisim::Yalitimli,
+        "Uzak MCP aracı yerel yalıtımlı (AppContainer/bwrap) olarak sınıflandırılamaz"
+    );
+    assert_eq!(mcp.erisim, kalfa_core::arac::McpErisim::UzakStreamableHttp);
+    assert_eq!(mcp.ag.uzak_origin(), Some("http://127.0.0.1:19401"));
+    assert_eq!(mcp.ag.kimlik_kapsami(), Some("Yetkisiz"));
+
+    let onay_karti = kalfa_core::protokol::McpOnayKarti::yeni(mcp);
+    assert_eq!(
+        onay_karti.erisim,
+        kalfa_core::arac::McpErisim::UzakStreamableHttp
+    );
+    assert_eq!(
+        onay_karti.uzak_origin.as_deref(),
+        Some("http://127.0.0.1:19401")
+    );
+    assert_eq!(onay_karti.kimlik_kapsami.as_deref(), Some("Yetkisiz"));
+
+    for kip in [Kip::Siki, Kip::Proje, Kip::Serbest] {
+        let karar = kalfa_core::izin::mcp_karari(kip, mcp.erisim, false, &mcp.ag);
+        assert_eq!(
+            karar,
+            kalfa_core::izin::Karar::Onayli {
+                uyarilar: vec![kalfa_core::izin::MCP_UZAK_VERI_CIKISI_UYARISI.to_string()],
+            },
+            "uzak MCP çağrısı {kip:?} kipinde dahi veri çıkışı uyarısıyla onay istemelidir"
+        );
+        assert_eq!(
+            kalfa_core::kisayol::teklif(arac.ad(), &hazirlik, &karar),
+            None,
+            "uzak MCP çağrısına oturum kısayolu önerilemez"
+        );
+    }
+}

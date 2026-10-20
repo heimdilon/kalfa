@@ -29,6 +29,7 @@ pub const MCP_ILK_CAGRI_UYARISI: &str = "Bu MCP sunucusu bu çalışma alanında
 pub const MCP_AG_UYARISI: &str = "Bu MCP sunucusu ağ erişimi kullanabilecek.";
 pub const MCP_TAM_ERISIM_UYARISI: &str =
     "MCP sunucusu yalıtım olmadan, hesabınızın yetkileriyle çalışacak.";
+pub const MCP_UZAK_VERI_CIKISI_UYARISI: &str = "Argümanlar uzak MCP sunucusuna gönderilecek; bu çağrı yerel yalıtım (AppContainer/bwrap) altında çalışmaz.";
 pub const YAPILANDIRMA_UYARISI: &str = "Bu dosyayı IDE'niz, git ya da paket yöneticiniz \
 Kalfa'nın yalıtımı dışında kendiliğinden çalıştırabilir.";
 
@@ -363,9 +364,11 @@ pub fn karar_ver(kip: Kip, islem: Islem, sinif: YolSinifi, coklu_baglanti: bool)
     }
 }
 
-/// MCP çağrısının izin kararı (11a-2 tasarımı §5.2). Tam erişim her çağrıda
-/// yerel onay ister; Serbest kipte yalıtımlı çağrı yalnız ilk kullanım veya
-/// ağ erişimi varsa oturum onayına yükselir.
+/// MCP çağrısının izin kararı (11a-2 tasarımı §5.2, 1.1b uzak MCP). Tam erişim
+/// her çağrıda yerel onay ister; uzak Streamable HTTP çağrısı ise yerel yalıtım
+/// altında çalışmadığı ve argümanları dış sunucuya gönderdiği için İnceleme
+/// dışındaki her kipte (`Serbest` ve `Otomatik` dahil) veri çıkışı uyarılı
+/// onay ister ve otomatik onay listesine girmez.
 pub fn mcp_karari(kip: Kip, erisim: McpErisim, ilk_cagri: bool, ag: &McpAgKarti) -> Karar {
     match (kip, erisim) {
         (Kip::Inceleme, _) => Karar::Yasak {
@@ -374,6 +377,13 @@ pub fn mcp_karari(kip: Kip, erisim: McpErisim, ilk_cagri: bool, ag: &McpAgKarti)
         (_, McpErisim::TamErisim) => Karar::YerelOnayli {
             uyarilar: vec![MCP_TAM_ERISIM_UYARISI.to_string()],
         },
+        (_, McpErisim::UzakStreamableHttp) => {
+            let mut uyarilar = vec![MCP_UZAK_VERI_CIKISI_UYARISI.to_string()];
+            if ilk_cagri {
+                uyarilar.push(MCP_ILK_CAGRI_UYARISI.to_string());
+            }
+            Karar::Onayli { uyarilar }
+        }
         (Kip::Siki | Kip::Proje, McpErisim::Yalitimli) => Karar::Onayli {
             uyarilar: Vec::new(),
         },

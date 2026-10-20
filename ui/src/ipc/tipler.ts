@@ -90,9 +90,11 @@ export interface OnayOgesi {
 export interface McpOnayKarti {
   sunucu: string;
   arac: string;
-  erisim: 'Yalitimli' | 'TamErisim';
+  erisim: 'Yalitimli' | 'TamErisim' | 'UzakStreamableHttp';
   ag_hostlari: string[];
   ag_sinirsiz: boolean;
+  uzak_origin?: string;
+  kimlik_kapsami?: string;
 }
 
 /** Eklenti aracının kimliği ve yetenekleri (aşama 4 tasarımı §8.1). */
@@ -128,7 +130,9 @@ export type VeriCikisi =
   | 'DosyaAdlari'
   | 'YalnizcaYazildi'
   /** Eklentinin ürettiği metin (aşama 4 tasarımı §8.1). */
-  | 'EklentiCiktisi';
+  | 'EklentiCiktisi'
+  /** Uzak MCP sunucusuna gönderilen argümanlar ve dönen yanıt (1.1b). */
+  | 'UzakMcpCagrisi';
 
 export interface OnaysizDegisiklikler {
   yollar: string[];

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { OnayOgesi } from '../ipc/tipler';
 import { onayOgesi } from '../sahte/arka';
 import BekleyenOnay from './BekleyenOnay.svelte';
+import OnaySayfasi from './OnaySayfasi.svelte';
 import { kararlariUret, kartKarariUret, kartKararlari } from './onay';
 
 const KISAYOL = { tip: 'Dosya', arac: 'dosya_duzenle', dizin: 'src' } as const;
@@ -128,6 +129,44 @@ describe('BekleyenOnay', () => {
     ]);
     expect(screen.getByText('Yalıtılmış süreç')).toBeTruthy();
     expect(screen.getByText(/api\.takvim\.ornek:443/)).toBeTruthy();
+  });
+
+  it('uzak MCP çağrısında yerel yalıtım iddia etmez; uzak origin, kimlik kapsamı ve veri çıkışını gösterir (SP-04)', () => {
+    const uzakOge = onayOgesi({
+      cagri: 'u1',
+      arac: 'mcp__uzak-ornek__sorgula',
+      muhur: 'mu1',
+      veri_cikisi: 'UzakMcpCagrisi',
+      mcp: {
+        sunucu: 'uzak-ornek',
+        arac: 'sorgula',
+        erisim: 'UzakStreamableHttp',
+        ag_hostlari: ['mcp.ornek.tr:443'],
+        ag_sinirsiz: false,
+        uzak_origin: 'https://mcp.ornek.tr',
+        kimlik_kapsami: 'OAuth 2.0 (PKCE) · kapsamlar: mcp:tools',
+      },
+    });
+    const { container } = render(BekleyenOnay, {
+      props: { ogeler: [uzakOge], onkarar: vi.fn(async () => {}), onincele: vi.fn() },
+    });
+    expect(screen.getByText('Uzak HTTP sunucusu (yerel yalıtım yok)')).toBeTruthy();
+    expect(screen.getByText(/Uzak uç \(origin\): https:\/\/mcp\.ornek\.tr/)).toBeTruthy();
+    expect(screen.getByText(/Kimlik kapsamı: OAuth 2\.0 \(PKCE\) · kapsamlar: mcp:tools/)).toBeTruthy();
+    expect(
+      screen.getByText(/Çağrı girdileri uzak MCP sunucusuna gönderilir; sunucunun döndürdüğü yanıt modele gidecek\./),
+    ).toBeTruthy();
+    expect(container.textContent).not.toContain('Yalıtılmış süreç');
+
+    const sayfa = render(OnaySayfasi, {
+      props: { ogeler: [uzakOge], onkarar: vi.fn(async () => {}), onkapat: vi.fn() },
+    });
+    expect(sayfa.container.textContent).not.toContain('Yalıtılmış süreç');
+    expect(sayfa.container.textContent).toContain('https://mcp.ornek.tr');
+    expect(sayfa.container.textContent).toContain('OAuth 2.0 (PKCE) · kapsamlar: mcp:tools');
+    expect(sayfa.container.textContent).toContain(
+      'Çağrı girdileri uzak MCP sunucusuna gönderilir; sunucunun döndürdüğü yanıt modele gidecek.',
+    );
   });
 
   it('öğe başına geri alınabilirlik sayfadaki metinle görünür (§3.2)', () => {

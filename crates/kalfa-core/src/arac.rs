@@ -1064,11 +1064,13 @@ impl McpProfilOzeti {
 }
 
 /// Yalıtım kipinin MCP sunucusu için özeti. Tam erişim her çağrıda yerel
-/// onay gerektirir; bu değer kullanıcı kartında açıkça gösterilir.
+/// onay gerektirir; uzak Streamable HTTP ise yerel süreç yalıtımı (AppContainer/bwrap)
+/// olmadığını ve çağrının uzak sunucuya ağ üzerinden çıktığını açıkça belirtir.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum McpErisim {
     Yalitimli,
     TamErisim,
+    UzakStreamableHttp,
 }
 
 /// Kartta gösterilecek sunucu veya araç etiketi. Yalnız görünür ad alır;
@@ -1214,8 +1216,16 @@ impl Serialize for McpAgHostu {
 #[serde(tag = "kip")]
 pub enum McpAgKarti {
     Kapali,
-    Sinirli { hostlar: Vec<McpAgHostu> },
+    Sinirli {
+        hostlar: Vec<McpAgHostu>,
+    },
     Sinirsiz,
+    /// Uzak Streamable HTTP MCP hedefi: kanonik origin ve sır içermeyen kimlik kapsamı.
+    UzakHedef {
+        host: McpAgHostu,
+        origin: String,
+        kimlik_kapsami: String,
+    },
 }
 
 impl McpAgKarti {
@@ -1223,7 +1233,21 @@ impl McpAgKarti {
         match self {
             Self::Kapali => false,
             Self::Sinirli { hostlar } => !hostlar.is_empty(),
-            Self::Sinirsiz => true,
+            Self::Sinirsiz | Self::UzakHedef { .. } => true,
+        }
+    }
+
+    pub fn uzak_origin(&self) -> Option<&str> {
+        match self {
+            Self::UzakHedef { origin, .. } => Some(origin.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn kimlik_kapsami(&self) -> Option<&str> {
+        match self {
+            Self::UzakHedef { kimlik_kapsami, .. } => Some(kimlik_kapsami.as_str()),
+            _ => None,
         }
     }
 }

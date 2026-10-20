@@ -446,9 +446,8 @@ impl UzakMcpTanim {
         self.maskeli_uzak_onay_metni(&[])
     }
 
-    /// Uzak MCP sunucusu için yerel onay penceresi metnini üretir; yerel yalıtım
-    /// veya tam sistem erişimi rozeti kullanmaz ve tüm sırları maskeler.
-    pub fn maskeli_uzak_onay_metni(&self, ek_sirlar: &[crate::maske::GizliDeger]) -> String {
+    /// Uzak MCP sunucusunun yetkilendirme kapsamını sır içermeyen özet olarak üretir.
+    pub fn maskeli_yetki_ozeti(&self, ek_sirlar: &[crate::maske::GizliDeger]) -> String {
         let yetki_ozeti = match &self.yetki {
             UzakYetkiTuru::Yetkisiz => "Yetkisiz".to_owned(),
             UzakYetkiTuru::SabitBaslikGizli { baslik_adi, .. } => {
@@ -462,6 +461,13 @@ impl UzakMcpTanim {
                 }
             }
         };
+        crate::maske::maskele_metin(&yetki_ozeti, ek_sirlar)
+    }
+
+    /// Uzak MCP sunucusu için yerel onay penceresi metnini üretir; yerel yalıtım
+    /// veya tam sistem erişimi rozeti kullanmaz ve tüm sırları maskeler.
+    pub fn maskeli_uzak_onay_metni(&self, ek_sirlar: &[crate::maske::GizliDeger]) -> String {
+        let yetki_ozeti = self.maskeli_yetki_ozeti(ek_sirlar);
         let metin = format!(
             "Sunucu: {}\nTür: Uzak MCP (Streamable HTTP)\nUç: {}\nOrigin: {}\nYetkilendirme: {yetki_ozeti}\nBaşlatma zaman aşımı: {} sn\nÇağrı zaman aşımı: {} sn",
             self.ad,

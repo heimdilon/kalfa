@@ -164,17 +164,35 @@ pub struct McpOnayKarti {
     pub ag_hostlari: Vec<String>,
     /// Tam erişimde ağ sınırsızdır.
     pub ag_sinirsiz: bool,
+    /// Uzak Streamable HTTP sunucusunda hedef origin (`https://...`); yerel sunucuda `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uzak_origin: Option<String>,
+    /// Uzak Streamable HTTP sunucusunda sır içermeyen kimlik/yetki kapsamı özeti; yerel sunucuda `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kimlik_kapsami: Option<String>,
 }
 
 impl McpOnayKarti {
     pub fn yeni(h: &McpAracHazirligi) -> Self {
-        let (ag_hostlari, ag_sinirsiz) = match &h.ag {
-            McpAgKarti::Kapali => (Vec::new(), false),
+        let (ag_hostlari, ag_sinirsiz, uzak_origin, kimlik_kapsami) = match &h.ag {
+            McpAgKarti::Kapali => (Vec::new(), false, None, None),
             McpAgKarti::Sinirli { hostlar } => (
                 hostlar.iter().map(|x| x.gorunen().to_owned()).collect(),
                 false,
+                None,
+                None,
             ),
-            McpAgKarti::Sinirsiz => (Vec::new(), true),
+            McpAgKarti::Sinirsiz => (Vec::new(), true, None, None),
+            McpAgKarti::UzakHedef {
+                host,
+                origin,
+                kimlik_kapsami,
+            } => (
+                vec![host.gorunen().to_owned()],
+                false,
+                Some(origin.clone()),
+                Some(kimlik_kapsami.clone()),
+            ),
         };
         Self {
             sunucu: h.sunucu.gorunen().to_owned(),
@@ -182,6 +200,8 @@ impl McpOnayKarti {
             erisim: h.erisim,
             ag_hostlari,
             ag_sinirsiz,
+            uzak_origin,
+            kimlik_kapsami,
         }
     }
 }
@@ -196,6 +216,8 @@ pub enum VeriCikisi {
     YalnizcaYazildi,
     /// Eklentinin ürettiği metin (aşama 4 tasarımı §8.1).
     EklentiCiktisi,
+    /// Uzak MCP sunucusuna gönderilen argümanlar ve dönen yanıt (1.1b).
+    UzakMcpCagrisi,
 }
 
 /// Kabuk onayında gösterilen bağlam: komut, modelin onaysız yazdığı kodu
