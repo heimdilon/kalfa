@@ -222,6 +222,9 @@ pub enum TanimHatasi {
     CiktiYoluDegisti,
     DosyaOkunamadi,
     ProfilKuraliEksik,
+    GecersizUzakUrl,
+    GecersizUzakYetki,
+    GecersizBaglamButcesi,
 }
 
 impl std::fmt::Display for TanimHatasi {
@@ -244,11 +247,431 @@ impl std::fmt::Display for TanimHatasi {
             Self::CiktiYoluDegisti => "Yerel onaydan sonra çözülen yol değişti.",
             Self::DosyaOkunamadi => "Yerel onaydan sonra kod özeti alınamadı.",
             Self::ProfilKuraliEksik => "Sunucunun özel çalışma kökü geçersiz.",
+            Self::GecersizUzakUrl => "Uzak MCP sunucu uç URL'si geçersiz veya güvensiz.",
+            Self::GecersizUzakYetki => "Uzak MCP yetkilendirme tanımı geçersiz.",
+            Self::GecersizBaglamButcesi => "Uzak MCP bağlam bütçesi sınırları geçersiz.",
         })
     }
 }
 
 impl std::error::Error for TanimHatasi {}
+
+/// Uzak MCP araç aramasında tek sorguda döndürülebilecek azami aday sayısı.
+pub const AZAMI_UZAK_ADAY_ARAC_SINIRI: usize = 8;
+/// Oturum başına aynı anda etkin yüklenebilecek azami uzak MCP aracı sayısı.
+pub const AZAMI_UZAK_ETKIN_ARAC_SINIRI: usize = 16;
+/// Yüklenen uzak MCP araç şemalarının toplam azami bayt bütçesi (64 KiB).
+pub const AZAMI_UZAK_SEMA_BAYT_SINIRI: usize = 64 * 1024;
+
+/// Uzak MCP sunucusunun yetkilendirme türü.
+///
+/// Ham sır veya erişim belirteci bu tipte **asla** tutulmaz; yalnızca opak
+/// kasa kimlikleri (`mcp-<uuid>`) ve genel OAuth yapılandırması yer alır.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UzakYetkiTuru {
+    Yetkisiz,
+    SabitBaslikGizli {
+        baslik_adi: String,
+        gizli_kimlik: String,
+    },
+    OAuth {
+        istemci_kimligi: Option<String>,
+        kapsamlar: Vec<String>,
+        kaynak_url: Option<String>,
+        yetki_kimligi: Option<String>,
+    },
+}
+
+/// Uzak MCP sunucusu için bağlam bütçesi sınırları.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UzakBaglamButcesi {
+    aday_arac_siniri: usize,
+    etkin_arac_siniri: usize,
+    sema_bayt_siniri: usize,
+}
+
+impl Default for UzakBaglamButcesi {
+    fn default() -> Self {
+        Self {
+            aday_arac_siniri: AZAMI_UZAK_ADAY_ARAC_SINIRI,
+            etkin_arac_siniri: AZAMI_UZAK_ETKIN_ARAC_SINIRI,
+            sema_bayt_siniri: AZAMI_UZAK_SEMA_BAYT_SINIRI,
+        }
+    }
+}
+
+impl UzakBaglamButcesi {
+    pub fn yeni(
+        aday_arac_siniri: usize,
+        etkin_arac_siniri: usize,
+        sema_bayt_siniri: usize,
+    ) -> Result<Self, TanimHatasi> {
+        if aday_arac_siniri == 0
+            || aday_arac_siniri > AZAMI_UZAK_ADAY_ARAC_SINIRI
+            || etkin_arac_siniri == 0
+            || etkin_arac_siniri > AZAMI_UZAK_ETKIN_ARAC_SINIRI
+            || sema_bayt_siniri == 0
+            || sema_bayt_siniri > AZAMI_UZAK_SEMA_BAYT_SINIRI
+        {
+            return Err(TanimHatasi::GecersizBaglamButcesi);
+        }
+        Ok(Self {
+            aday_arac_siniri,
+            etkin_arac_siniri,
+            sema_bayt_siniri,
+        })
+    }
+
+    pub const fn aday_arac_siniri(&self) -> usize {
+        self.aday_arac_siniri
+    }
+
+    pub const fn etkin_arac_siniri(&self) -> usize {
+        self.etkin_arac_siniri
+    }
+
+    pub const fn sema_bayt_siniri(&self) -> usize {
+        self.sema_bayt_siniri
+    }
+
+    pub const fn varsayilan() -> Self {
+        Self {
+            aday_arac_siniri: AZAMI_UZAK_ADAY_ARAC_SINIRI,
+            etkin_arac_siniri: AZAMI_UZAK_ETKIN_ARAC_SINIRI,
+            sema_bayt_siniri: AZAMI_UZAK_SEMA_BAYT_SINIRI,
+        }
+    }
+}
+
+/// Uzak Streamable HTTP MCP sunucu tanımı (`1.1b`).
+///
+/// Yerel süreç (`stdio`), sahte PID, kod kökü (`W`) veya yerel AppContainer/bwrap
+/// yalıtımı alanı içermez.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UzakMcpTanim {
+    ad: String,
+    kanonik_uc_url: String,
+    test_fiksturu_loopback: bool,
+    yetki: UzakYetkiTuru,
+    izinli_baslik_kimlikleri: Vec<String>,
+    baslatma_zamani_asimi: u32,
+    cagri_zamani_asimi: u32,
+    baglam_butcesi: UzakBaglamButcesi,
+}
+
+impl UzakMcpTanim {
+    pub fn yeni(
+        ad: String,
+        uc_url: String,
+        yetki: UzakYetkiTuru,
+        baslatma_zamani_asimi: u32,
+        cagri_zamani_asimi: u32,
+        test_fiksturu_loopback: bool,
+        baglam_butcesi: UzakBaglamButcesi,
+    ) -> Result<Self, TanimHatasi> {
+        if !sunucu_adi_gecerli(&ad) {
+            return Err(TanimHatasi::GecersizAd);
+        }
+        if baslatma_zamani_asimi == 0 || cagri_zamani_asimi == 0 {
+            return Err(TanimHatasi::SifirZamanAsimi);
+        }
+        let _ = UzakBaglamButcesi::yeni(
+            baglam_butcesi.aday_arac_siniri,
+            baglam_butcesi.etkin_arac_siniri,
+            baglam_butcesi.sema_bayt_siniri,
+        )?;
+        let kanonik_uc_url = uzak_uc_url_dogrula_ve_kanoniklestir(&uc_url, test_fiksturu_loopback)?;
+        let (yetki, izinli_baslik_kimlikleri) = uzak_yetki_dogrula(yetki, test_fiksturu_loopback)?;
+
+        Ok(Self {
+            ad,
+            kanonik_uc_url,
+            test_fiksturu_loopback,
+            yetki,
+            izinli_baslik_kimlikleri,
+            baslatma_zamani_asimi,
+            cagri_zamani_asimi,
+            baglam_butcesi,
+        })
+    }
+
+    pub fn varsayilan_sinirlarla(
+        ad: String,
+        uc_url: &str,
+        test_fiksturu_loopback: bool,
+        yetki: UzakYetkiTuru,
+    ) -> Result<Self, TanimHatasi> {
+        Self::yeni(
+            ad,
+            uc_url.to_owned(),
+            yetki,
+            VARSAYILAN_BASLATMA_SN,
+            VARSAYILAN_CAGRI_SN,
+            test_fiksturu_loopback,
+            UzakBaglamButcesi::default(),
+        )
+    }
+
+    pub fn ad(&self) -> &str {
+        &self.ad
+    }
+
+    pub fn kanonik_uc_url(&self) -> &str {
+        &self.kanonik_uc_url
+    }
+
+    pub fn uc_url(&self) -> &str {
+        &self.kanonik_uc_url
+    }
+
+    pub fn origin(&self) -> String {
+        url::Url::parse(&self.kanonik_uc_url)
+            .map(|u| u.origin().ascii_serialization())
+            .unwrap_or_default()
+    }
+
+    pub fn yetki_turu(&self) -> &UzakYetkiTuru {
+        &self.yetki
+    }
+
+    pub fn varsayilan_zaman_asimlari(
+        ad: String,
+        uc_url: String,
+        yetki: UzakYetkiTuru,
+    ) -> Result<Self, TanimHatasi> {
+        Self::varsayilan_sinirlarla(ad, &uc_url, false, yetki)
+    }
+
+    pub fn uzak_onay_metni(&self) -> String {
+        self.maskeli_uzak_onay_metni(&[])
+    }
+
+    /// Uzak MCP sunucusu için yerel onay penceresi metnini üretir; yerel yalıtım
+    /// veya tam sistem erişimi rozeti kullanmaz ve tüm sırları maskeler.
+    pub fn maskeli_uzak_onay_metni(&self, ek_sirlar: &[crate::maske::GizliDeger]) -> String {
+        let yetki_ozeti = match &self.yetki {
+            UzakYetkiTuru::Yetkisiz => "Yetkisiz".to_owned(),
+            UzakYetkiTuru::SabitBaslikGizli { baslik_adi, .. } => {
+                format!("Sabit başlık ({baslik_adi}: [gizli])")
+            }
+            UzakYetkiTuru::OAuth { kapsamlar, .. } => {
+                if kapsamlar.is_empty() {
+                    "OAuth 2.0 (varsayılan kapsam)".to_owned()
+                } else {
+                    format!("OAuth 2.0 (kapsamlar: {})", kapsamlar.join(", "))
+                }
+            }
+        };
+        let metin = format!(
+            "Sunucu: {}\nTür: Uzak MCP (Streamable HTTP)\nUç: {}\nOrigin: {}\nYetkilendirme: {yetki_ozeti}\nBaşlatma zaman aşımı: {} sn\nÇağrı zaman aşımı: {} sn",
+            self.ad,
+            self.kanonik_uc_url,
+            self.origin(),
+            self.baslatma_zamani_asimi,
+            self.cagri_zamani_asimi,
+        );
+        crate::maske::maskele_metin(&metin, ek_sirlar)
+    }
+
+    pub const fn test_fiksturu_loopback(&self) -> bool {
+        self.test_fiksturu_loopback
+    }
+
+    pub fn yetki(&self) -> &UzakYetkiTuru {
+        &self.yetki
+    }
+
+    pub fn izinli_baslik_kimlikleri(&self) -> &[String] {
+        &self.izinli_baslik_kimlikleri
+    }
+
+    pub const fn baslatma_zamani_asimi(&self) -> Duration {
+        Duration::from_secs(self.baslatma_zamani_asimi as u64)
+    }
+
+    pub const fn cagri_zamani_asimi(&self) -> Duration {
+        Duration::from_secs(self.cagri_zamani_asimi as u64)
+    }
+
+    pub const fn timeoutlar(&self) -> (u32, u32) {
+        (self.baslatma_zamani_asimi, self.cagri_zamani_asimi)
+    }
+
+    pub const fn baglam_butcesi(&self) -> UzakBaglamButcesi {
+        self.baglam_butcesi
+    }
+}
+
+/// Yerel (`1.1a`) ve uzak (`1.1b`) MCP sunucu tanımlarını ayıran üst varyant.
+pub enum McpSunucuTanimi {
+    Yerel(McpTanim),
+    Uzak(UzakMcpTanim),
+}
+
+impl McpSunucuTanimi {
+    pub fn ad(&self) -> &str {
+        match self {
+            Self::Yerel(y) => y.ad(),
+            Self::Uzak(u) => u.ad(),
+        }
+    }
+
+    pub const fn uzak_mi(&self) -> bool {
+        matches!(self, Self::Uzak(_))
+    }
+
+    pub const fn yerel(&self) -> Option<&McpTanim> {
+        match self {
+            Self::Yerel(y) => Some(y),
+            Self::Uzak(_) => None,
+        }
+    }
+
+    pub const fn uzak(&self) -> Option<&UzakMcpTanim> {
+        match self {
+            Self::Yerel(_) => None,
+            Self::Uzak(u) => Some(u),
+        }
+    }
+}
+
+/// Uzak uç URL'sini doğrular ve kanonik metin biçimine dönüştürür.
+pub fn uzak_uc_url_dogrula_ve_kanoniklestir(
+    ham_url: &str,
+    test_fiksturu_loopback: bool,
+) -> Result<String, TanimHatasi> {
+    let temiz = ham_url.trim();
+    if temiz != ham_url || temiz.is_empty() || temiz.chars().any(char::is_control) {
+        return Err(TanimHatasi::GecersizUzakUrl);
+    }
+    let url = url::Url::parse(temiz).map_err(|_| TanimHatasi::GecersizUzakUrl)?;
+    if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
+        return Err(TanimHatasi::GecersizUzakUrl);
+    }
+    let Some(host) = url.host_str() else {
+        return Err(TanimHatasi::GecersizUzakUrl);
+    };
+    let loopback_mi =
+        matches!(host, "127.0.0.1" | "::1" | "[::1]") || host.eq_ignore_ascii_case("localhost");
+    match url.scheme() {
+        "https" => {}
+        "http" if test_fiksturu_loopback && loopback_mi => {}
+        _ => return Err(TanimHatasi::GecersizUzakUrl),
+    }
+    Ok(url.into())
+}
+
+fn http_baslik_adi_gecerli(ad: &str) -> bool {
+    !ad.is_empty()
+        && ad.len() <= 64
+        && ad.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(
+                    c,
+                    '!' | '#'
+                        | '$'
+                        | '%'
+                        | '&'
+                        | '\''
+                        | '*'
+                        | '+'
+                        | '-'
+                        | '.'
+                        | '^'
+                        | '_'
+                        | '`'
+                        | '|'
+                        | '~'
+                )
+        })
+}
+
+fn opak_kimlik_gecerli(kimlik: &str) -> bool {
+    !kimlik.is_empty()
+        && kimlik.len() <= 128
+        && kimlik.trim() == kimlik
+        && !kimlik.chars().any(char::is_control)
+}
+
+fn uzak_yetki_dogrula(
+    yetki: UzakYetkiTuru,
+    test_fiksturu_loopback: bool,
+) -> Result<(UzakYetkiTuru, Vec<String>), TanimHatasi> {
+    match yetki {
+        UzakYetkiTuru::Yetkisiz => Ok((UzakYetkiTuru::Yetkisiz, Vec::new())),
+        UzakYetkiTuru::SabitBaslikGizli {
+            baslik_adi,
+            gizli_kimlik,
+        } => {
+            if !http_baslik_adi_gecerli(&baslik_adi) || !opak_kimlik_gecerli(&gizli_kimlik) {
+                return Err(TanimHatasi::GecersizUzakYetki);
+            }
+            let norm_baslik = baslik_adi.to_ascii_lowercase();
+            if matches!(
+                norm_baslik.as_str(),
+                "host" | "content-length" | "transfer-encoding" | "connection" | "cookie"
+            ) {
+                return Err(TanimHatasi::GecersizUzakYetki);
+            }
+            Ok((
+                UzakYetkiTuru::SabitBaslikGizli {
+                    baslik_adi: norm_baslik.clone(),
+                    gizli_kimlik: gizli_kimlik.clone(),
+                },
+                vec![format!("{norm_baslik}:{gizli_kimlik}")],
+            ))
+        }
+        UzakYetkiTuru::OAuth {
+            istemci_kimligi,
+            mut kapsamlar,
+            kaynak_url,
+            yetki_kimligi,
+        } => {
+            if let Some(ref istemci) = istemci_kimligi
+                && (istemci.trim().is_empty()
+                    || istemci.trim() != istemci
+                    || istemci.chars().any(char::is_control))
+            {
+                return Err(TanimHatasi::GecersizUzakYetki);
+            }
+            for kapsam in &kapsamlar {
+                if kapsam.trim().is_empty()
+                    || kapsam.trim() != kapsam
+                    || kapsam.chars().any(|c| c.is_control() || c.is_whitespace())
+                {
+                    return Err(TanimHatasi::GecersizUzakYetki);
+                }
+            }
+            kapsamlar.sort();
+            kapsamlar.dedup();
+            let norm_kaynak = match kaynak_url {
+                Some(ref u) => Some(
+                    uzak_uc_url_dogrula_ve_kanoniklestir(u, test_fiksturu_loopback)
+                        .map_err(|_| TanimHatasi::GecersizUzakYetki)?,
+                ),
+                None => None,
+            };
+            if let Some(ref yk) = yetki_kimligi
+                && !opak_kimlik_gecerli(yk)
+            {
+                return Err(TanimHatasi::GecersizUzakYetki);
+            }
+            let mut kimlikler = Vec::new();
+            if let Some(ref yk) = yetki_kimligi {
+                kimlikler.push(format!("oauth:{yk}"));
+            }
+            Ok((
+                UzakYetkiTuru::OAuth {
+                    istemci_kimligi,
+                    kapsamlar,
+                    kaynak_url: norm_kaynak,
+                    yetki_kimligi,
+                },
+                kimlikler,
+            ))
+        }
+    }
+}
 
 /// Ham tanım; özellikle Debug/Serialize/Deserialize uygulanmaz.
 pub struct McpTanim {
@@ -1567,5 +1990,125 @@ mod tests {
         );
         assert!(onay_metni.contains("sınırsız"));
         assert!(onay_metni.contains("geride çalışan süreçler kalabilir"));
+    }
+
+    #[test]
+    fn uzak_mcp_tanim_https_kanoniklestirir_ve_yerel_tanimdan_ayrilir() {
+        let uzak = UzakMcpTanim::yeni(
+            "uzak-ornek".into(),
+            "https://MCP.Example.com:443/v1/mcp?kip=test".into(),
+            UzakYetkiTuru::OAuth {
+                istemci_kimligi: Some("kalfa-istemci".into()),
+                kapsamlar: vec![
+                    "tools:call".into(),
+                    "tools:read".into(),
+                    "tools:call".into(),
+                ],
+                kaynak_url: Some("https://MCP.Example.com:443/v1/mcp".into()),
+                yetki_kimligi: Some("mcp-oauth-1".into()),
+            },
+            30,
+            120,
+            false,
+            UzakBaglamButcesi::varsayilan(),
+        )
+        .unwrap();
+
+        assert_eq!(uzak.ad(), "uzak-ornek");
+        assert_eq!(uzak.uc_url(), "https://mcp.example.com/v1/mcp?kip=test");
+        assert_eq!(uzak.origin(), "https://mcp.example.com");
+        assert_eq!(uzak.izinli_baslik_kimlikleri(), &["oauth:mcp-oauth-1"]);
+        assert_eq!(
+            uzak.yetki_turu(),
+            &UzakYetkiTuru::OAuth {
+                istemci_kimligi: Some("kalfa-istemci".into()),
+                kapsamlar: vec!["tools:call".into(), "tools:read".into()],
+                kaynak_url: Some("https://mcp.example.com/v1/mcp".into()),
+                yetki_kimligi: Some("mcp-oauth-1".into()),
+            }
+        );
+
+        let kapsayici = McpSunucuTanimi::Uzak(uzak.clone());
+        assert!(kapsayici.uzak_mi());
+        assert_eq!(kapsayici.ad(), "uzak-ornek");
+
+        let sir = crate::maske::GizliDeger::yeni("cok-gizli-oauth-token-123").unwrap();
+        let onay = uzak.maskeli_uzak_onay_metni(&[sir]);
+        assert!(onay.contains("Tür: Uzak MCP (Streamable HTTP)"));
+        assert!(onay.contains("Uç: https://mcp.example.com/v1/mcp?kip=test"));
+        assert!(onay.contains("OAuth 2.0 (kapsamlar: tools:call, tools:read)"));
+        assert!(!onay.contains("cok-gizli-oauth-token-123"));
+        assert!(!onay.contains("Yalıtımlı"));
+        assert!(!onay.contains("Tam erişim"));
+
+        // Loopback ve yasaklı başlık sınırları da aynı test modülünde doğrulanır.
+    }
+
+    #[test]
+    fn uzak_mcp_tanim_http_loopback_ve_yasakli_baslik_sinirlarini_zorlar() {
+        assert_eq!(
+            UzakMcpTanim::varsayilan_zaman_asimlari(
+                "yerel-http".into(),
+                "http://127.0.0.1:8080/mcp".into(),
+                UzakYetkiTuru::Yetkisiz,
+            )
+            .unwrap_err(),
+            TanimHatasi::GecersizUzakUrl
+        );
+
+        let fikstur = UzakMcpTanim::yeni(
+            "yerel-http".into(),
+            "http://127.0.0.1:8080/mcp".into(),
+            UzakYetkiTuru::Yetkisiz,
+            10,
+            30,
+            true,
+            UzakBaglamButcesi::varsayilan(),
+        )
+        .unwrap();
+        assert!(fikstur.test_fiksturu_loopback());
+        assert_eq!(
+            UzakMcpTanim::yeni(
+                "dis-http".into(),
+                "http://example.com/mcp".into(),
+                UzakYetkiTuru::Yetkisiz,
+                10,
+                30,
+                true,
+                UzakBaglamButcesi::varsayilan(),
+            )
+            .unwrap_err(),
+            TanimHatasi::GecersizUzakUrl
+        );
+
+        for gecersiz_url in [
+            "https://kullanici:parola@example.com/mcp",
+            "https://example.com/mcp#frag",
+        ] {
+            assert_eq!(
+                UzakMcpTanim::varsayilan_zaman_asimlari(
+                    "ornek".into(),
+                    gecersiz_url.into(),
+                    UzakYetkiTuru::Yetkisiz,
+                )
+                .unwrap_err(),
+                TanimHatasi::GecersizUzakUrl
+            );
+        }
+
+        for yasakli_baslik in ["Host", "Cookie", "Content-Length", " custom "] {
+            assert_eq!(
+                UzakMcpTanim::varsayilan_zaman_asimlari(
+                    "ornek".into(),
+                    "https://example.com/mcp".into(),
+                    UzakYetkiTuru::SabitBaslikGizli {
+                        baslik_adi: yasakli_baslik.into(),
+                        gizli_kimlik: "mcp-123".into(),
+                    },
+                )
+                .unwrap_err(),
+                TanimHatasi::GecersizUzakYetki
+            );
+        }
     }
 }
