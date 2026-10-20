@@ -2404,4 +2404,299 @@ mod tests {
         .await
         .expect("oturum kapanışı kilidi serbest bırakmalı");
     }
+
+    fn pid_yasiyor_mu(pid: u32) -> bool {
+        #[cfg(windows)]
+        {
+            std::process::Command::new("tasklist")
+                .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).contains(&format!("\"{pid}\"")))
+                .unwrap_or(false)
+        }
+        #[cfg(not(windows))]
+        {
+            std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                .map(|s| !s.contains(") Z ") && !s.contains(") X "))
+                .unwrap_or(false)
+        }
+    }
+
+    struct PidTemizlik(Arc<Mutex<Vec<u32>>>);
+
+    impl Drop for PidTemizlik {
+        fn drop(&mut self) {
+            let pidler = self.0.lock().unwrap_or_else(|z| z.into_inner()).clone();
+            for pid in pidler {
+                #[cfg(windows)]
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/F", "/PID", &pid.to_string()])
+                    .output();
+                #[cfg(not(windows))]
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output();
+            }
+        }
+    }
+
+    struct SiraOlcenDenetim {
+        yonetici: Arc<IsYoneticisi>,
+        oturum: OturumId,
+        is_id: Arc<Mutex<Option<String>>>,
+        kilitler: Arc<kalfa_core::kilit::KaynakKilitleri>,
+        izlenen_pidler: Arc<Mutex<Vec<u32>>>,
+        adimlar: Arc<Mutex<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl SonDenetimKancasi for SiraOlcenDenetim {
+        async fn denetle_ve_bitir(&self) -> Result<SonDenetimSonucu, String> {
+            let is_id = self
+                .is_id
+                .lock()
+                .unwrap_or_else(|z| z.into_inner())
+                .clone()
+                .expect("denetim anında is_id atanmış olmalı");
+            let okuma = self.yonetici.oku(self.oturum, &is_id, 0).unwrap();
+            let pid: u32 = okuma
+                .cikti
+                .lines()
+                .find_map(|s| s.strip_prefix("TORUN:"))
+                .and_then(|s| s.trim().parse().ok())
+                .expect("çıktıda TORUN:<pid> satırı bulunmalı");
+            self.izlenen_pidler
+                .lock()
+                .unwrap_or_else(|z| z.into_inner())
+                .push(pid);
+
+            let torun_oldu = !pid_yasiyor_mu(pid);
+            let cikti_tam = okuma.cikti.contains("SON-SATIR");
+            // Son denetim çalışırken çalışma alanı kilidi henüz bırakılmamış olmalı.
+            let kilit_tutuluyor = tokio::time::timeout(
+                Duration::from_millis(25),
+                self.kilitler.sahipli_al(&[], &[], true),
+            )
+            .await
+            .is_err();
+
+            let mut kayit = self.adimlar.lock().unwrap_or_else(|z| z.into_inner());
+            if torun_oldu {
+                kayit.push("torun_oldu".to_string());
+            }
+            if cikti_tam {
+                kayit.push("cikti_bosaldi".to_string());
+            }
+            if kilit_tutuluyor {
+                kayit.push("son_denetim_kilit_altinda".to_string());
+            }
+            Ok(SonDenetimSonucu {
+                uyarilar: Vec::new(),
+                karantina_basarisiz: false,
+                tarama_tam: true,
+                degisiklikler: None,
+                guncel_adli_girdiler: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn dogal_bitis_iptal_zaman_asimi_ve_torun_cikti_son_denetim_sirasi_olculur() {
+        let d = tempfile::tempdir().unwrap();
+        let kilit_y = KilitYoneticisi::yeni();
+        let kilitler = kilit_y.al(d.path()).unwrap();
+        let yonetici = Arc::new(IsYoneticisi::yeni());
+        let oturum = OturumId::yeni();
+        let temizlik_listesi = Arc::new(Mutex::new(Vec::new()));
+        let _temizlik = PidTemizlik(temizlik_listesi.clone());
+
+        // 1) Doğal bitiş (Linux'ta setsid ile ayrılmış torun, Windows'ta arka plan çocuk)
+        // 2) İptal (durdur)
+        // 3) Zaman aşımı (omur)
+        for kip in ["dogal", "iptal", "zaman_asimi"] {
+            let adimlar = Arc::new(Mutex::new(Vec::new()));
+            let is_id_kutu = Arc::new(Mutex::new(None));
+            let denetim = Arc::new(SiraOlcenDenetim {
+                yonetici: yonetici.clone(),
+                oturum,
+                is_id: is_id_kutu.clone(),
+                kilitler: kilitler.clone(),
+                izlenen_pidler: temizlik_listesi.clone(),
+                adimlar: adimlar.clone(),
+            });
+
+            let betik = match (cfg!(windows), kip) {
+                (false, "dogal") => {
+                    "setsid sleep 30 </dev/null >/dev/null 2>&1 & echo \"TORUN:$!\"; echo SON-SATIR; sleep 0.2"
+                }
+                (false, _) => {
+                    "setsid sleep 30 </dev/null >/dev/null 2>&1 & echo \"TORUN:$!\"; echo SON-SATIR; while :; do sleep 0.1; done"
+                }
+                (true, "dogal") => {
+                    "$c = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\\timeout.exe') -ArgumentList @('/t','30','/nobreak') -PassThru -WindowStyle Hidden; [Console]::Out.WriteLine(\"TORUN:$($c.Id)\"); [Console]::Out.WriteLine('SON-SATIR'); [Console]::Out.Flush()"
+                }
+                (true, _) => {
+                    "$c = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\\timeout.exe') -ArgumentList @('/t','30','/nobreak') -PassThru -WindowStyle Hidden; [Console]::Out.WriteLine(\"TORUN:$($c.Id)\"); [Console]::Out.WriteLine('SON-SATIR'); [Console]::Out.Flush(); Start-Sleep -Seconds 30"
+                }
+            };
+
+            let kilit = kilitler.sahipli_al(&[], &[], true).await;
+            let mut baslatma = IsBaslatma::yeni(oturum, kip, IsKipi::Borulu, kilit, denetim);
+            if kip == "zaman_asimi" {
+                baslatma.omur = if cfg!(windows) {
+                    Duration::from_millis(1500)
+                } else {
+                    Duration::from_millis(400)
+                };
+            }
+            let is_id = yonetici
+                .yaliticidan_baslat(&Yalitimsiz, &test_istegi(d.path(), betik), baslatma)
+                .await
+                .unwrap();
+            *is_id_kutu.lock().unwrap_or_else(|z| z.into_inner()) =
+                Some(is_id.as_str().to_string());
+
+            if kip == "iptal" {
+                let son = Instant::now() + Duration::from_secs(5);
+                while !yonetici
+                    .oku(oturum, is_id.as_str(), 0)
+                    .unwrap()
+                    .cikti
+                    .contains("SON-SATIR")
+                    && Instant::now() < son
+                {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                let ozet = yonetici.durdur(oturum, is_id.as_str()).await.unwrap();
+                assert!(matches!(
+                    ozet.durum,
+                    IsDurumu::Bitti {
+                        zaman_asimi: false,
+                        ..
+                    }
+                ));
+            } else {
+                let son = Instant::now() + Duration::from_secs(8);
+                while yonetici
+                    .oku(oturum, is_id.as_str(), 0)
+                    .unwrap()
+                    .durum
+                    .etkin_mi()
+                    && Instant::now() < son
+                {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+                let son_durum = yonetici.oku(oturum, is_id.as_str(), 0).unwrap().durum;
+                if kip == "dogal" {
+                    assert!(
+                        matches!(
+                            son_durum,
+                            IsDurumu::Bitti {
+                                cikis_kodu: Some(0),
+                                zaman_asimi: false,
+                                ..
+                            }
+                        ),
+                        "doğal bitiş durumu: {son_durum:?}"
+                    );
+                } else {
+                    assert!(
+                        matches!(
+                            son_durum,
+                            IsDurumu::Bitti {
+                                zaman_asimi: true,
+                                ..
+                            }
+                        ),
+                        "zaman aşımı durumu: {son_durum:?}"
+                    );
+                }
+            }
+
+            // Bitişten hemen sonra kilit serbest bırakılmış olmalı.
+            let _serbest = tokio::time::timeout(
+                Duration::from_millis(100),
+                kilitler.sahipli_al(&[], &[], true),
+            )
+            .await
+            .expect("son denetim bittikten sonra kilit açılmalı");
+            adimlar
+                .lock()
+                .unwrap_or_else(|z| z.into_inner())
+                .push("kilit_birakildi".to_string());
+
+            assert_eq!(
+                *adimlar.lock().unwrap_or_else(|z| z.into_inner()),
+                vec![
+                    "torun_oldu".to_string(),
+                    "cikti_bosaldi".to_string(),
+                    "son_denetim_kilit_altinda".to_string(),
+                    "kilit_birakildi".to_string(),
+                ],
+                "{kip} senaryosunda kapanış sırası bozuldu"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn terminal_kipinde_girdi_eof_programi_dogal_bitirir() {
+        let d = tempfile::tempdir().unwrap();
+        let kilit_y = KilitYoneticisi::yeni();
+        let kilitler = kilit_y.al(d.path()).unwrap();
+        let yonetici = Arc::new(IsYoneticisi::yeni());
+        let oturum = OturumId::yeni();
+        let kilit = kilitler.sahipli_al(&[], &[], true).await;
+
+        let betik = if cfg!(windows) {
+            "[Console]::In.ReadToEnd() > $null"
+        } else {
+            "cat >/dev/null"
+        };
+
+        let is_id = yonetici
+            .yaliticidan_baslat(
+                &Yalitimsiz,
+                &test_istegi(d.path(), betik),
+                IsBaslatma::yeni(
+                    oturum,
+                    "pty-eof",
+                    IsKipi::Terminal {
+                        boyut: TerminalBoyutu::default(),
+                    },
+                    kilit,
+                    Arc::new(BosSonDenetim),
+                ),
+            )
+            .await
+            .unwrap();
+
+        yonetici
+            .girdi(oturum, is_id.as_str(), b"", true)
+            .await
+            .unwrap();
+
+        let son = Instant::now() + Duration::from_secs(3);
+        while yonetici
+            .oku(oturum, is_id.as_str(), 0)
+            .unwrap()
+            .durum
+            .etkin_mi()
+            && Instant::now() < son
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let okuma = yonetici.oku(oturum, is_id.as_str(), 0).unwrap();
+        assert!(
+            matches!(
+                okuma.durum,
+                IsDurumu::Bitti {
+                    cikis_kodu: Some(0),
+                    zaman_asimi: false,
+                    ..
+                }
+            ),
+            "PTY eof=true sonrası iş doğal bitmeli: {:?}",
+            okuma.durum
+        );
+    }
 }
