@@ -1,5 +1,7 @@
 //! Görev 3 (G3b): Uzak MCP Streamable HTTP taşıması entegrasyon testleri (`M02`, `M05`, `M06`).
 
+mod tls_destek;
+
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{
@@ -15,7 +17,7 @@ use kalfa_mcp::tanim::{UzakMcpTanim, UzakYetkiTuru};
 use kalfa_mcp::tasima::TasimaHatasi;
 use kalfa_mcp::uzak::{
     BelirsizCagriNedeni, SabitDnsCozucu, SinirliHttpTasima, UzakGizliBaslik, UzakHttpSecenekleri,
-    dogrulanmis_istemci_ve_url_hazirla,
+    dogrulanmis_istemci_ve_url_hazirla, kok_sertifikalar,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -667,4 +669,237 @@ async fn m06_ag_politikasi_dns_yonlendirme_cerceve_ve_yetki_maskeleme_sinirlari(
     ));
     istemci.kapat().await;
     bozuk_sunucu.kapat().await;
+}
+
+struct SahteTlsMcpSunucusu {
+    adres: SocketAddr,
+    kapat_tx: Option<tokio::sync::watch::Sender<bool>>,
+    gorev: tokio::task::JoinHandle<()>,
+}
+
+impl SahteTlsMcpSunucusu {
+    async fn baslat(tls_ayari: Arc<rustls::ServerConfig>) -> Self {
+        let dinleyici = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let adres = dinleyici.local_addr().unwrap();
+        let (kapat_tx, mut kapat_rx) = tokio::sync::watch::channel(false);
+
+        let gorev = tokio::spawn(async move {
+            loop {
+                let kabul = tokio::select! {
+                    biased;
+                    _ = kapat_rx.changed() => break,
+                    sonuc = dinleyici.accept() => sonuc,
+                };
+                let Ok((soket, _)) = kabul else { break };
+                let ayar = tls_ayari.clone();
+                tokio::spawn(async move {
+                    let _ = tls_destek::tls_http_baglanti_isle(
+                        soket,
+                        ayar,
+                        |_ilk_satir, _basliklar, govde| {
+                            let istek: Value =
+                                serde_json::from_slice(&govde).unwrap_or(Value::Null);
+                            let metod = istek
+                                .get("method")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default();
+                            let id = istek.get("id").cloned().unwrap_or(Value::Null);
+                            let json_yanit = |deger: Value| -> Vec<u8> {
+                                let bayt = serde_json::to_vec(&deger).unwrap();
+                                let mut baslik = format!(
+                                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                    bayt.len()
+                                )
+                                .into_bytes();
+                                baslik.extend_from_slice(&bayt);
+                                baslik
+                            };
+                            match metod {
+                                "server/discover" => {
+                                    let mut yetenekler =
+                                        rmcp::model::ServerCapabilities::default();
+                                    yetenekler.tools = Some(Default::default());
+                                    let sonuc = rmcp::model::DiscoverResult::new(
+                                        vec![rmcp::model::ProtocolVersion::V_2026_07_28],
+                                        yetenekler,
+                                    )
+                                    .with_server_info(rmcp::model::Implementation::new(
+                                        "sahte-tls-mcp",
+                                        "1.0.0",
+                                    ));
+                                    json_yanit(json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": sonuc
+                                    }))
+                                }
+                                "subscriptions/listen" => {
+                                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                                        .to_vec()
+                                }
+                                "tools/list" => json_yanit(json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "tools": [{
+                                            "name": "tls_arac",
+                                            "description": "Gerçek TLS üzerinden çalışan uzak araç",
+                                            "inputSchema": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "girdi": { "type": "string" }
+                                                }
+                                            }
+                                        }]
+                                    }
+                                })),
+                                "tools/call" => json_yanit(json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{
+                                            "type": "text",
+                                            "text": "tls-dogrulandi-ok"
+                                        }]
+                                    }
+                                })),
+                                _ => {
+                                    b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                                        .to_vec()
+                                }
+                            }
+                        },
+                    )
+                    .await;
+                });
+            }
+        });
+
+        Self {
+            adres,
+            kapat_tx: Some(kapat_tx),
+            gorev,
+        }
+    }
+
+    async fn kapat(mut self) {
+        if let Some(tx) = self.kapat_tx.take() {
+            let _ = tx.send(true);
+        }
+        let _ = tokio::time::timeout(Duration::from_secs(1), self.gorev).await;
+    }
+}
+
+#[tokio::test]
+async fn m07_tls_dogrulamasi_guvenilen_zincir_gecer_guvenilmeyen_zincir_ve_yanlis_host_reddedilir()
+{
+    // 1) Boş kök sertifika listesiyle RootCertStore oluşturulması reddedilir;
+    // geçerli DER kök sertifikasıyla dolu bir RootCertStore üretilir.
+    assert!(
+        kok_sertifikalar(&[]).is_err(),
+        "boş güven kökü listesi kabul edilmemeli"
+    );
+    let kok_depo = kok_sertifikalar(&[tls_destek::TEST_KOK_CA_DER.to_vec()])
+        .expect("geçerli test kök CA sertifikası yüklenmeli");
+    assert!(!kok_depo.is_empty(), "kök sertifika deposu boş olmamalı");
+
+    let guvenilir_sunucu =
+        SahteTlsMcpSunucusu::baslat(tls_destek::guvenilir_tls_sunucu_ayari()).await;
+    let sahte_sunucu =
+        SahteTlsMcpSunucusu::baslat(tls_destek::guvenilmeyen_tls_sunucu_ayari()).await;
+
+    let dns = SabitDnsCozucu::yeni();
+    dns.kayit_ekle("belge.ornek.test", vec![guvenilir_sunucu.adres.ip()]);
+    dns.kayit_ekle("yanlis-host.ornek.test", vec![guvenilir_sunucu.adres.ip()]);
+    dns.kok_sertifika_der_ekle(tls_destek::TEST_KOK_CA_DER.to_vec());
+
+    // 2) Güvenilen kök CA + eşleşen SAN host adı (`belge.ornek.test`) -> HTTPS el sıkışması,
+    // `tools/list` ve `tools/call` başarılı olur.
+    let gecerli_url = format!(
+        "https://belge.ornek.test:{}/mcp",
+        guvenilir_sunucu.adres.port()
+    );
+    let tanim = UzakMcpTanim::varsayilan_sinirlarla(
+        "tls-gecerli".into(),
+        &gecerli_url,
+        true,
+        UzakYetkiTuru::Yetkisiz,
+    )
+    .unwrap();
+    let secenekler = UzakHttpSecenekleri::tanimdan(&tanim).dns_cozucu_ile(Arc::new(dns.clone()));
+    let (tasima, hata) = SinirliHttpTasima::yeni(secenekler);
+    let mut istemci = McpIstemcisi::yeni_uzak(tasima, hata)
+        .await
+        .expect("güvenilen CA zinciri ve eşleşen host adıyla HTTPS bağlantısı kurulmalı");
+    let araclar = istemci.araclari_listele().await.unwrap();
+    assert_eq!(araclar.len(), 1);
+    assert_eq!(araclar[0].name, "tls_arac");
+    let cevap = istemci
+        .arac_cagir_cevabi("tls_arac", rmcp::model::JsonObject::new())
+        .await
+        .unwrap();
+    let metin = serde_json::to_string(&cevap.sonuc).unwrap();
+    assert!(metin.contains("tls-dogrulandi-ok"));
+    istemci.kapat().await;
+
+    // 3) Güvenilen kök CA ile imzalı sertifikaya yanlış host adıyla (`yanlis-host.ornek.test`,
+    // SAN listesinde yok) bağlanıldığında TLS host doğrulaması başarısız olur.
+    let yanlis_host_url = format!(
+        "https://yanlis-host.ornek.test:{}/mcp",
+        guvenilir_sunucu.adres.port()
+    );
+    let yanlis_host_tanim = UzakMcpTanim::varsayilan_sinirlarla(
+        "tls-yanlis-host".into(),
+        &yanlis_host_url,
+        true,
+        UzakYetkiTuru::Yetkisiz,
+    )
+    .unwrap();
+    let (yh_tasima, yh_hata) = SinirliHttpTasima::yeni(
+        UzakHttpSecenekleri::tanimdan(&yanlis_host_tanim).dns_cozucu_ile(Arc::new(dns.clone())),
+    );
+    let yh_sonuc = McpIstemcisi::yeni_uzak(yh_tasima, yh_hata).await;
+    assert!(
+        yh_sonuc.is_err(),
+        "sertifika SAN listesinde olmayan host adı TLS doğrulamasında reddedilmeli"
+    );
+
+    // 4) Güvenilmeyen kök tarafından imzalanmış sertifika (`sahte_sunucu`) eşleşen host
+    // adıyla (`belge.ornek.test`) sunulsa bile TLS zincir doğrulamasında reddedilir.
+    let sahte_dns = SabitDnsCozucu::yeni();
+    sahte_dns.kayit_ekle("belge.ornek.test", vec![sahte_sunucu.adres.ip()]);
+    sahte_dns.kok_sertifika_der_ekle(tls_destek::TEST_KOK_CA_DER.to_vec());
+    let sahte_url = format!("https://belge.ornek.test:{}/mcp", sahte_sunucu.adres.port());
+    let sahte_tanim = UzakMcpTanim::varsayilan_sinirlarla(
+        "tls-sahte-ca".into(),
+        &sahte_url,
+        true,
+        UzakYetkiTuru::Yetkisiz,
+    )
+    .unwrap();
+    let (sahte_tasima, sahte_hata) = SinirliHttpTasima::yeni(
+        UzakHttpSecenekleri::tanimdan(&sahte_tanim).dns_cozucu_ile(Arc::new(sahte_dns)),
+    );
+    let sahte_sonuc = McpIstemcisi::yeni_uzak(sahte_tasima, sahte_hata).await;
+    assert!(
+        sahte_sonuc.is_err(),
+        "güvenilmeyen CA zinciri TLS doğrulamasında reddedilmeli"
+    );
+
+    // 5) Varsayılan üretim TLS politikası (yalnız işletim sistemi güven kökleri,
+    // test kök CA eklenmemiş) yerel özel CA sertifikasını reddeder (sertifika
+    // doğrulamasının kapatılmadığının kanıtı).
+    let sistem_dns = SabitDnsCozucu::yeni();
+    sistem_dns.kayit_ekle("belge.ornek.test", vec![guvenilir_sunucu.adres.ip()]);
+    let (sistem_tasima, sistem_hata) = SinirliHttpTasima::yeni(
+        UzakHttpSecenekleri::tanimdan(&tanim).dns_cozucu_ile(Arc::new(sistem_dns)),
+    );
+    let sistem_sonuc = McpIstemcisi::yeni_uzak(sistem_tasima, sistem_hata).await;
+    assert!(
+        sistem_sonuc.is_err(),
+        "üretim sistem kökleri politikası sistemde kayıtlı olmayan özel CA'yı reddetmeli"
+    );
+
+    guvenilir_sunucu.kapat().await;
+    sahte_sunucu.kapat().await;
 }
