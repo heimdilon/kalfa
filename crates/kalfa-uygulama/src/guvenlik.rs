@@ -33,11 +33,12 @@ fn sira(kip: Kip) -> u8 {
         Kip::Siki => 1,
         Kip::Proje => 2,
         Kip::Serbest => 3,
+        Kip::Otomatik => 4,
     }
 }
 
-/// İnceleme < Sıkı < Proje < Serbest; sağa her geçiş yükseltmedir ve yerel
-/// iletişim kutusunda onaylanır. Kipi düşürmek onay istemez.
+/// İnceleme < Sıkı < Proje < Serbest < Otomatik; sağa her geçiş yükseltmedir ve
+/// yerel iletişim kutusunda onaylanır. Kipi düşürmek onay istemez.
 pub fn yukseltme_mi(eski: Kip, yeni: Kip) -> bool {
     sira(yeni) > sira(eski)
 }
@@ -48,6 +49,7 @@ pub fn kip_adi(kip: Kip) -> &'static str {
         Kip::Siki => "Sıkı",
         Kip::Proje => "Proje",
         Kip::Serbest => "Serbest",
+        Kip::Otomatik => "Otomatik",
     }
 }
 
@@ -69,6 +71,15 @@ pub fn yukseltme_aciklamasi(yeni: Kip) -> &'static str {
              yalıtımlı ve ağsız komutları da onay sormadan çalıştırabilecek. Serbest kip yalnızca bu \
              oturum boyunca geçerlidir. Korumalı yollar, gizli dosyalar, çalışma alanı dışındaki \
              yollar, ağlı ve yalıtımsız komutlar yine onay ister."
+        }
+        Kip::Otomatik => {
+            "Kalfa, Serbest kipin onay sormadan yaptıklarına ek olarak, onay isteyen yalıtımlı \
+             komutları ve MCP çağrılarını bir hakem modele sorar. Hakem güvenli bulursa işlem onay \
+             sorulmadan çalışır; riskli bulursa reddedilir; emin olamazsa size sorulur. Her hakem \
+             kararı EVREN'e bir istek gönderir ve bütçeden düşer. Yalıtımsız komutlar, gizli \
+             dosyalar, korumalı yollar ve geri alınamaz yazmalar yine size sorulur. Otomatik kip \
+             yalnızca bu oturum boyunca geçerlidir. Göndermeden önce göster açıkken otomatik kip \
+             çalışmaz; her işlem size sorulur."
         }
     }
 }

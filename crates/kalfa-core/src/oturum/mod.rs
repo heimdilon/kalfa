@@ -10,7 +10,7 @@ pub mod compact;
 mod geri_alma;
 mod model_turu;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -795,6 +795,28 @@ mod tests {
         assert_eq!((g.aktif, g.bilinen_token, g.bilinmeyen), (0, 7, 0));
         assert!(oturum.butce_hatasi.is_none(), "çift bitiş bozmamalı");
     }
+
+    #[tokio::test]
+    async fn son_kullanici_istekleri_en_cok_uc_oge_tutar_ve_kip_degisince_ret_sifirlanir() {
+        let (mut oturum, _olaylar) = kayitsiz_oturum();
+        for m in ["bir", "iki", "uc", "dort"] {
+            oturum.tur_calistir(TurIsi::Mesaj(m.to_string())).await;
+        }
+        let istekler: Vec<&str> = oturum
+            .son_kullanici_istekleri
+            .iter()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(istekler, vec!["iki", "uc", "dort"]);
+
+        oturum.hakem_ret_ardisik = 2;
+        oturum.hakem_ret_toplam = 15;
+        oturum
+            .genel_komut(Komut::IzinKipiDegistir { kip: Kip::Otomatik })
+            .await;
+        assert_eq!(oturum.hakem_ret_ardisik, 0);
+        assert_eq!(oturum.hakem_ret_toplam, 0);
+    }
 }
 
 #[derive(Clone)]
@@ -1148,6 +1170,14 @@ struct Oturum {
     butce_hatasi: Option<String>,
     /// Denetçi, özetleyici ve eklentinin izin talepleri (5b tasarımı §4.1).
     butce_talep_alici: mpsc::Receiver<ButceMesaji>,
+    /// Otomatik kipte modele dönen ardışık hakem retleri (tasarım §5);
+    /// hakem izni ya da kullanıcı onayı sıfırlar, belirsiz sonuç saymaz.
+    pub(super) hakem_ret_ardisik: u32,
+    /// Otomatik kipte oturumdaki toplam hakem reti (tasarım §5).
+    pub(super) hakem_ret_toplam: u32,
+    /// Kullanıcının yazdığı son en çok 3 mesajın ham metni; hakemin durumu
+    /// (tasarım §4.2). Compact özetleri ve Kalfa notları girmez.
+    pub(super) son_kullanici_istekleri: VecDeque<String>,
     /// Talep göndericisi; oturum yaşadıkça kanal açık kalır.
     butce_talepci: ButceTalepci,
 }
@@ -1234,6 +1264,9 @@ impl Oturum {
             butce_hatasi: None,
             butce_talep_alici,
             butce_talepci: butce_talepci.clone(),
+            hakem_ret_ardisik: 0,
+            hakem_ret_toplam: 0,
+            son_kullanici_istekleri: VecDeque::with_capacity(3),
         };
         (
             oturum,
@@ -1348,6 +1381,8 @@ impl Oturum {
                 }
             }
             Komut::IzinKipiDegistir { kip } => {
+                self.hakem_ret_ardisik = 0;
+                self.hakem_ret_toplam = 0;
                 self.ayarlar.kip = kip;
                 self.politika.fetch_add(1, Ordering::SeqCst);
                 self.kaydet(KayitOgesi::KipDegisti { kip }).await;
@@ -1420,6 +1455,10 @@ impl Oturum {
         let mut neden = match is {
             TurIsi::Mesaj(metin) => {
                 self.geri_alma.tur_basladi(tur, &metin);
+                if self.son_kullanici_istekleri.len() >= 3 {
+                    self.son_kullanici_istekleri.pop_front();
+                }
+                self.son_kullanici_istekleri.push_back(metin.clone());
                 self.mesaj_ekle(
                     ChatMessage::user(metin),
                     Some("mesaj:kullanıcı".to_string()),

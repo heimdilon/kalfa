@@ -246,6 +246,14 @@ pub enum OzetTetigi {
     Elle,
 }
 
+/// Otomatik kip hakeminin çağrı başına kararı (tasarım §5, §6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OtomatikSonuc {
+    Izin,
+    Ret,
+    Kullaniciya,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "tip")]
 pub enum Olay {
@@ -384,6 +392,17 @@ pub enum Olay {
     BaglamDurumu {
         tahmin: u64,
         esik: u64,
+    },
+    /// Otomatik kip hakeminin kararı (tasarım §6).
+    OtomatikKarar {
+        cagri: CagriId,
+        arac: String,
+        aciklama: String,
+        sonuc: OtomatikSonuc,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        risk: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        olasilik: Option<f64>,
     },
 }
 

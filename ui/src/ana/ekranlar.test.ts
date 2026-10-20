@@ -197,6 +197,109 @@ describe('ana pencere (1c tasarımı §8.1)', () => {
     expect(within(kart as HTMLElement).getByText('`.git` kenara alındı.')).toBeTruthy();
   });
 
+  it('kip menüsünde beş kip görünür; otomatik karar satırları geçmişten ve canlı olaydan çizilir', async () => {
+    const { arka } = await ciz((a) =>
+      a.oturumEkle(
+        {
+          oturum: 'o1',
+          gecmis: {
+            ogeler: [
+              { tip: 'KullaniciMesaji', sira: 1, tur: 't1', metin: 'Dosyaları incele' },
+              {
+                tip: 'OtomatikKarar',
+                sira: 2,
+                tur: 't1',
+                cagri: 'c0',
+                arac: 'kabuk',
+                aciklama: 'gecmis onay',
+                sonuc: 'Izin',
+                olasilik: 0.12,
+              },
+              {
+                tip: 'OtomatikKarar',
+                sira: 3,
+                tur: 't1',
+                cagri: 'c0b',
+                arac: 'kabuk',
+                aciklama: 'gecmis ret',
+                sonuc: 'Ret',
+                risk: 'veri_sizdirma',
+                olasilik: 0.88,
+              },
+              {
+                tip: 'OtomatikKarar',
+                sira: 4,
+                tur: 't1',
+                cagri: 'c0c',
+                arac: 'kabuk',
+                aciklama: 'gecmis belirsiz',
+                sonuc: 'Kullaniciya',
+                olasilik: 0.51,
+              },
+            ],
+            daha_eski_var: false,
+          },
+        },
+        { baslik: 'Dosyaları incele', durum: { tip: 'Tamamlandi' } },
+      ),
+    );
+
+    const kipDugmesi = screen.getByRole('combobox', { name: 'İzin kipi' });
+    await fireEvent.click(kipDugmesi);
+    const secenekler = screen.getAllByRole('option').map((o) => o.textContent?.trim());
+    expect(secenekler).toEqual(['İnceleme', 'Sıkı', 'Proje', 'Serbest', 'Otomatik']);
+
+    expect(screen.getByText('Otomatik kip onayladı: gecmis onay').getAttribute('title')).toContain(
+      '%12',
+    );
+    expect(
+      screen.getByText('Otomatik kip reddetti: gecmis ret (veri sızdırma riski)').getAttribute(
+        'title',
+      ),
+    ).toContain('%88');
+    expect(
+      screen.getByText('Otomatik kip size bıraktı: gecmis belirsiz').getAttribute('title'),
+    ).toContain('%51');
+
+    arka.olaylar('o1', [
+      { tip: 'TurBasladi' },
+      {
+        tip: 'OtomatikKarar',
+        cagri: 'c1',
+        arac: 'kabuk',
+        aciklama: 'canli onay',
+        sonuc: 'Izin',
+        olasilik: 0.15,
+      },
+      {
+        tip: 'OtomatikKarar',
+        cagri: 'c2',
+        arac: 'kabuk',
+        aciklama: 'canli ret',
+        sonuc: 'Ret',
+        risk: 'yikici',
+        olasilik: 0.92,
+      },
+      {
+        tip: 'OtomatikKarar',
+        cagri: 'c3',
+        arac: 'kabuk',
+        aciklama: 'canli belirsiz',
+        sonuc: 'Kullaniciya',
+      },
+    ]);
+
+    expect(
+      (await screen.findByText('Otomatik kip onayladı: canli onay')).getAttribute('title'),
+    ).toContain('%15');
+    expect(
+      screen
+        .getByText('Otomatik kip reddetti: canli ret (yıkıcı bir işlem)')
+        .getAttribute('title'),
+    ).toContain('%92');
+    expect(screen.getByText('Otomatik kip size bıraktı: canli belirsiz')).toBeTruthy();
+  });
+
   it('aktarım durunca kart oturumu yeniden açtırır', async () => {
     const { arka } = await ciz();
     arka.olaylar('o1', [{ tip: 'AktarimDurdu', neden: 'TuketiciYetismedi' }]);
