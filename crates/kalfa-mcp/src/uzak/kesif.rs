@@ -153,6 +153,8 @@ pub struct UzakSunucuKatalogGirdisi {
 pub(crate) struct KatalogAracKaydi {
     pub sunucu_adi: String,
     pub origin_host: McpAgHostu,
+    pub uzak_origin: String,
+    pub kimlik_kapsami: String,
     pub tarif: McpTarifi,
     pub uzak_d: McpAracTanimOzeti,
     pub tanim_revizyonu: u64,
@@ -225,6 +227,7 @@ impl UzakAracKatalogu {
     pub fn sunucu_katalogunu_guncelle(&self, girdi: UzakSunucuKatalogGirdisi) -> Vec<usize> {
         let sunucu_adi = girdi.tanim.ad().to_owned();
         let origin = girdi.tanim.origin();
+        let kimlik_kapsami = girdi.tanim.maskeli_yetki_ozeti(&girdi.sirlar);
         let origin_host = origin_host_cikar(&origin).unwrap_or_else(|| {
             McpAgHostu::yeni("uzak.invalid").expect("sabit yedek host geçerlidir")
         });
@@ -259,6 +262,8 @@ impl UzakAracKatalogu {
                 KatalogAracKaydi {
                     sunucu_adi: sunucu_adi.clone(),
                     origin_host: origin_host.clone(),
+                    uzak_origin: origin.clone(),
+                    kimlik_kapsami: kimlik_kapsami.clone(),
                     tarif,
                     uzak_d,
                     tanim_revizyonu: girdi.tanim_revizyonu,
@@ -544,6 +549,8 @@ impl UzakAracKaynagi {
             let uzak_arac = Arc::new(UzakMcpArac {
                 sunucu_adi: kayit.sunucu_adi.clone(),
                 origin_host: kayit.origin_host.clone(),
+                uzak_origin: kayit.uzak_origin.clone(),
+                kimlik_kapsami: kayit.kimlik_kapsami.clone(),
                 sunucu_etiketi: kayit.denetlenmis.sunucu_etiketi().clone(),
                 arac_etiketi: kayit.denetlenmis.arac_etiketi().clone(),
                 sunum: kayit.denetlenmis.sunum_kopyasi(),
@@ -656,6 +663,8 @@ impl AracKaynagi for UzakAracKaynagi {
 pub struct UzakMcpArac {
     sunucu_adi: String,
     origin_host: McpAgHostu,
+    uzak_origin: String,
+    kimlik_kapsami: String,
     sunucu_etiketi: McpKartEtiketi,
     arac_etiketi: McpKartEtiketi,
     sunum: McpAracSunumu,
@@ -712,9 +721,11 @@ impl Arac for UzakMcpArac {
             sunucu: self.sunucu_etiketi.clone(),
             arac: self.arac_etiketi.clone(),
             kip,
-            erisim: McpErisim::Yalitimli,
-            ag: McpAgKarti::Sinirli {
-                hostlar: vec![self.origin_host.clone()],
+            erisim: McpErisim::UzakStreamableHttp,
+            ag: McpAgKarti::UzakHedef {
+                host: self.origin_host.clone(),
+                origin: self.uzak_origin.clone(),
+                kimlik_kapsami: self.kimlik_kapsami.clone(),
             },
             ilk_cagri,
             tarif: self.yuklenen_tarif,
@@ -722,10 +733,12 @@ impl Arac for UzakMcpArac {
         };
         Ok(Hazirlik {
             aciklama: format!(
-                "`{}` uzak MCP sunucusundaki `{}` aracını çağırmak istiyor.",
+                "`{}` uzak MCP sunucusundaki `{}` aracını çağırmak istiyor ({}).",
                 self.sunucu_etiketi.gorunen(),
-                self.arac_etiketi.gorunen()
+                self.arac_etiketi.gorunen(),
+                self.uzak_origin
             ),
+            veri_cikisi: Some(kalfa_core::protokol::VeriCikisi::UzakMcpCagrisi),
             tum_calisma_alani: false,
             kilitsiz: true,
             mcp: Some(mcp),
@@ -743,7 +756,9 @@ impl Arac for UzakMcpArac {
         let Some(mcp_hazirlik) = &hazirlik.mcp else {
             return Err(AracHatasi::OnayEskidi);
         };
-        if mcp_hazirlik.tarif != self.yuklenen_tarif || mcp_hazirlik.arac_tanimi != self.yuklenen_d
+        if mcp_hazirlik.erisim != McpErisim::UzakStreamableHttp
+            || mcp_hazirlik.tarif != self.yuklenen_tarif
+            || mcp_hazirlik.arac_tanimi != self.yuklenen_d
         {
             return Err(AracHatasi::OnayEskidi);
         }

@@ -102,13 +102,27 @@
         {:else if o.mcp}
           <!-- Erişim ve ağ kapsamı sayfadakiyle aynı metinlerle. -->
           {@const tam = o.mcp.erisim === 'TamErisim'}
+          {@const uzak = o.mcp.erisim === 'UzakStreamableHttp'}
           <div class="rozetler">
-            <Badge tone={tam ? 'danger' : 'accent'}>
-              {m(tam ? 'mcp.rozet.tam_erisim' : 'mcp.rozet.yalitimli')}
+            <Badge tone={tam ? 'danger' : uzak ? 'warn' : 'accent'}>
+              {m(
+                tam
+                  ? 'mcp.rozet.tam_erisim'
+                  : uzak
+                    ? 'uzak_mcp.rozet.uzak_streamable_http'
+                    : 'mcp.rozet.yalitimli',
+              )}
             </Badge>
             <span class="kapsam">
               {#if tam}
                 {m('mcp.onay.tam_erisim')}
+              {:else if uzak}
+                <GorunurMetin
+                  metin={m('uzak_mcp.onay.ozet', {
+                    origin: o.mcp.uzak_origin ?? o.mcp.ag_hostlari.join(', '),
+                    kimlik: o.mcp.kimlik_kapsami ?? m('uzak_mcp.yetki.yetkisiz'),
+                  })}
+                />
               {:else if o.mcp.ag_hostlari.length === 0}
                 {m('mcp.onay.yalitimli_ag_yok')}
               {:else}
@@ -118,6 +132,12 @@
               {/if}
             </span>
           </div>
+          {#if uzak || o.veri_cikisi === 'UzakMcpCagrisi'}
+            <p class="geri">
+              <Icon name="send" size={13} />
+              {m('onay.sayfa.veri_cikisi')}: {m('onay.veri.UzakMcpCagrisi')}
+            </p>
+          {/if}
         {:else if o.web}
           <code class="komut"><GorunurMetin metin={o.web.maskeli_url} /></code>
           <div class="rozetler">

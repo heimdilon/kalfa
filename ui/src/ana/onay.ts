@@ -50,6 +50,8 @@ export function riskliMi(o: OnayOgesi): boolean {
     o.web?.maskeli_url,
     o.web?.host,
     o.diff,
+    o.mcp?.uzak_origin,
+    o.mcp?.kimlik_kapsami,
     ...o.hedefler,
   ].some(gorunmezVar);
 }

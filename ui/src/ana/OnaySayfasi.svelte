@@ -43,6 +43,8 @@
         return m('onay.veri.YalnizcaYazildi');
       case 'EklentiCiktisi':
         return m('onay.veri.EklentiCiktisi');
+      case 'UzakMcpCagrisi':
+        return m('onay.veri.UzakMcpCagrisi');
       case 'WebSayfasi':
         return m('onay.veri.WebSayfasi');
       default:
@@ -325,20 +327,34 @@
       {#if aktifOge.mcp}
         {@const k = aktifOge.mcp}
         {@const tam = k.erisim === 'TamErisim'}
+        {@const uzak = k.erisim === 'UzakStreamableHttp'}
         <div class="bilgi">
           <dt><Icon name="box" size={16} />{m('onay.sayfa.kaynak')}</dt>
           <dd class="mcp-kaynak">
             <GorunurMetin metin={m('mcp.onay.kaynak', { sunucu: k.sunucu, arac: k.arac })} />
-            <Badge tone={tam ? 'danger' : 'accent'}>
-              {m(tam ? 'mcp.rozet.tam_erisim' : 'mcp.rozet.yalitimli')}
+            <Badge tone={tam ? 'danger' : uzak ? 'warn' : 'accent'}>
+              {m(
+                tam
+                  ? 'mcp.rozet.tam_erisim'
+                  : uzak
+                    ? 'uzak_mcp.rozet.uzak_streamable_http'
+                    : 'mcp.rozet.yalitimli',
+              )}
             </Badge>
           </dd>
         </div>
-        <div class={['bilgi', { uyari: tam }]}>
+        <div class={['bilgi', { uyari: tam || uzak }]}>
           <dt><Icon name="shield" size={16} />{m('mcp.onay.erisim')}</dt>
           <dd>
             {#if tam}
               {m('mcp.onay.tam_erisim')}
+            {:else if uzak}
+              <GorunurMetin
+                metin={m('uzak_mcp.onay.ozet', {
+                  origin: k.uzak_origin ?? k.ag_hostlari.join(', '),
+                  kimlik: k.kimlik_kapsami ?? m('uzak_mcp.yetki.yetkisiz'),
+                })}
+              />
             {:else if k.ag_hostlari.length === 0}
               {m('mcp.onay.yalitimli_ag_yok')}
             {:else}

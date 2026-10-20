@@ -299,6 +299,8 @@ export const tr = {
   'onay.veri.DosyaAdlari': 'Dosya adları',
   'onay.veri.YalnizcaYazildi': 'Yalnızca "yazıldı" bilgisi',
   'onay.veri.EklentiCiktisi': 'Eklentinin ürettiği metin modele gidecek.',
+  'onay.veri.UzakMcpCagrisi':
+    'Çağrı girdileri uzak MCP sunucusuna gönderilir; sunucunun döndürdüğü yanıt modele gidecek.',
   'onay.veri.WebSayfasi': 'Dış web sayfasından okunan metin modele gidecek.',
   'onay.veri.Bilinmiyor': 'Araç sonucu',
   'onay.web.hedef': 'Hedef',
@@ -844,6 +846,8 @@ export const tr = {
   'uzak_mcp.rozet.uzak_streamable_http': 'Uzak HTTP sunucusu (yerel yalıtım yok)',
   'uzak_mcp.rozet_aciklama.uzak_streamable_http':
     'Bu sunucu ağ üzerinden uzak bir adreste çalışır; bilgisayarınızda yerel yalıtımlı süreç başlatılmaz. Çağrı verileri onayınızla uzak sunucuya gönderilir.',
+  'uzak_mcp.onay.ozet':
+    'Uzak uç (origin): {origin} · Kimlik kapsamı: {kimlik} · Bilgisayarınızda yerel yalıtım (AppContainer/bwrap) kullanılmaz.',
   'uzak_mcp.durum.bagli_degil': 'Bağlı değil',
   'uzak_mcp.durum.baglaniyor': 'Bağlanıyor',
   'uzak_mcp.durum.bagli': 'Bağlı',
