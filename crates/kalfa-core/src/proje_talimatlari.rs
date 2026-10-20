@@ -114,6 +114,24 @@ pub struct ProjeTalimatUyarisi {
     pub uyari: ProjeTalimatUyariTuru,
 }
 
+impl ProjeTalimatUyarisi {
+    /// Uyarının ait olduğu `AGENTS.md` dosyasının kapsamını döner.
+    pub fn kapsam(&self) -> ProjeTalimatKapsami {
+        if self.goreli_yol == TALIMAT_DOSYA_ADI {
+            ProjeTalimatKapsami::Kok
+        } else if let Some(dizin) = self
+            .goreli_yol
+            .strip_suffix(&format!("/{TALIMAT_DOSYA_ADI}"))
+        {
+            ProjeTalimatKapsami::AltDizin {
+                dizin: dizin.to_string(),
+            }
+        } else {
+            ProjeTalimatKapsami::Kok
+        }
+    }
+}
+
 /// Turlar arasında algılanan kaynak sürümü (SHA-256 özeti) değişimi.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjeTalimatDegisimi {
@@ -343,31 +361,119 @@ where
     I: IntoIterator<Item = &'a str>,
 {
     let aday_dizinler = aday_dizinleri_cikar(hedef_yollari);
-    let mut kaynaklar = Vec::new();
-    let mut metinler = Vec::new();
-    let mut uyarilar = Vec::new();
     let mut degisen_kaynaklar = Vec::new();
-    let mut eksik_baglam = false;
-    let mut toplam_bayt = 0usize;
 
     if tur_ici_koru && let Some(mevcut) = onceki {
         degisen_kaynaklar.extend(mevcut.anlik.degisen_kaynaklar.iter().cloned());
     }
 
+    struct YuklemeBirikimi {
+        kaynaklar: Vec<ProjeTalimatKaynagi>,
+        metinler: Vec<YuklenenProjeTalimati>,
+        uyarilar: Vec<ProjeTalimatUyarisi>,
+        eksik_baglam: bool,
+        toplam_bayt: usize,
+    }
+
+    impl YuklemeBirikimi {
+        fn kaynak_eklemeyi_dene(
+            &mut self,
+            goreli_yol: String,
+            kapsam: ProjeTalimatKapsami,
+            icerik: String,
+            bayt: usize,
+            ozet: String,
+            yuklendigi_tur: u32,
+        ) {
+            if bayt > DOSYA_BOYUT_SINIRI || icerik.len() > DOSYA_BOYUT_SINIRI {
+                self.eksik_baglam = true;
+                self.uyarilar.push(ProjeTalimatUyarisi {
+                    goreli_yol,
+                    uyari: ProjeTalimatUyariTuru::DosyaBoyutuAsildi {
+                        sinir: DOSYA_BOYUT_SINIRI,
+                        gercek: bayt.max(icerik.len()),
+                    },
+                });
+                return;
+            }
+
+            if self.kaynaklar.len() >= KAYNAK_SAYISI_SINIRI {
+                self.eksik_baglam = true;
+                self.uyarilar.push(ProjeTalimatUyarisi {
+                    goreli_yol,
+                    uyari: ProjeTalimatUyariTuru::KaynakSayisiAsildi {
+                        sinir: KAYNAK_SAYISI_SINIRI,
+                    },
+                });
+                return;
+            }
+
+            let yeni_toplam = self.toplam_bayt.saturating_add(bayt);
+            if yeni_toplam > TOPLAM_BOYUT_SINIRI {
+                self.eksik_baglam = true;
+                self.uyarilar.push(ProjeTalimatUyarisi {
+                    goreli_yol,
+                    uyari: ProjeTalimatUyariTuru::ToplamBoyutAsildi {
+                        sinir: TOPLAM_BOYUT_SINIRI,
+                        gercek: yeni_toplam,
+                    },
+                });
+                return;
+            }
+
+            self.toplam_bayt = yeni_toplam;
+            let kaynak = ProjeTalimatKaynagi {
+                goreli_yol,
+                kapsam,
+                bayt,
+                ozet,
+            };
+            self.kaynaklar.push(kaynak.clone());
+            self.metinler.push(YuklenenProjeTalimati {
+                kaynak,
+                yuklendigi_tur,
+                icerik,
+            });
+        }
+    }
+
+    let mut birikim = YuklemeBirikimi {
+        kaynaklar: Vec::new(),
+        metinler: Vec::new(),
+        uyarilar: Vec::new(),
+        eksik_baglam: false,
+        toplam_bayt: 0,
+    };
+
+    // Tur içi korumada mevcut turda zaten yüklenmiş kaynaklar öncelikle (aynı
+    // boyut ve kaynak sayısı sınırlarından geçirilerek) korunur; alfabetik olarak
+    // daha önce gelen yeni bir dizin mevcut tur kaynaklarını bütçe dışına itemez
+    // veya toplam bütçeyi aşamaz.
+    let mut korunan_yollar = BTreeSet::new();
+    if tur_ici_koru && let Some(mevcut) = onceki {
+        for dizin in &aday_dizinler {
+            let (goreli_yol, _) = dizin_icin_kaynak_yolu_ve_kapsami(dizin);
+            if let Some(mevcut_metin) = mevcut
+                .metinler
+                .iter()
+                .find(|m| m.kaynak.goreli_yol == goreli_yol)
+            {
+                korunan_yollar.insert(goreli_yol.clone());
+                birikim.kaynak_eklemeyi_dene(
+                    mevcut_metin.kaynak.goreli_yol.clone(),
+                    mevcut_metin.kaynak.kapsam.clone(),
+                    mevcut_metin.icerik.clone(),
+                    mevcut_metin.kaynak.bayt,
+                    mevcut_metin.kaynak.ozet.clone(),
+                    mevcut_metin.yuklendigi_tur,
+                );
+            }
+        }
+    }
+
     for dizin in aday_dizinler {
         let (goreli_yol, kapsam) = dizin_icin_kaynak_yolu_ve_kapsami(&dizin);
-
-        // Tur içinde zaten yüklenmiş bir kaynak varsa aynı turda sürümünü sabit tut.
-        if tur_ici_koru
-            && let Some(mevcut_metin) = onceki.and_then(|o| {
-                o.metinler
-                    .iter()
-                    .find(|m| m.kaynak.goreli_yol == goreli_yol)
-            })
-        {
-            toplam_bayt = toplam_bayt.saturating_add(mevcut_metin.kaynak.bayt);
-            kaynaklar.push(mevcut_metin.kaynak.clone());
-            metinler.push(mevcut_metin.clone());
+        if korunan_yollar.contains(&goreli_yol) {
             continue;
         }
 
@@ -389,46 +495,12 @@ where
                 }
             }
             TalimatOkumaSonucu::Uyari(uyari) => {
-                eksik_baglam = true;
-                uyarilar.push(ProjeTalimatUyarisi { goreli_yol, uyari });
+                birikim.eksik_baglam = true;
+                birikim
+                    .uyarilar
+                    .push(ProjeTalimatUyarisi { goreli_yol, uyari });
             }
             TalimatOkumaSonucu::Yuklendi { icerik, bayt, ozet } => {
-                if bayt > DOSYA_BOYUT_SINIRI || icerik.len() > DOSYA_BOYUT_SINIRI {
-                    eksik_baglam = true;
-                    uyarilar.push(ProjeTalimatUyarisi {
-                        goreli_yol,
-                        uyari: ProjeTalimatUyariTuru::DosyaBoyutuAsildi {
-                            sinir: DOSYA_BOYUT_SINIRI,
-                            gercek: bayt.max(icerik.len()),
-                        },
-                    });
-                    continue;
-                }
-
-                if kaynaklar.len() >= KAYNAK_SAYISI_SINIRI {
-                    eksik_baglam = true;
-                    uyarilar.push(ProjeTalimatUyarisi {
-                        goreli_yol,
-                        uyari: ProjeTalimatUyariTuru::KaynakSayisiAsildi {
-                            sinir: KAYNAK_SAYISI_SINIRI,
-                        },
-                    });
-                    continue;
-                }
-
-                let yeni_toplam = toplam_bayt.saturating_add(bayt);
-                if yeni_toplam > TOPLAM_BOYUT_SINIRI {
-                    eksik_baglam = true;
-                    uyarilar.push(ProjeTalimatUyarisi {
-                        goreli_yol,
-                        uyari: ProjeTalimatUyariTuru::ToplamBoyutAsildi {
-                            sinir: TOPLAM_BOYUT_SINIRI,
-                            gercek: yeni_toplam,
-                        },
-                    });
-                    continue;
-                }
-
                 if !tur_ici_koru
                     && let Some(eski) = onceki.and_then(|o| {
                         o.anlik
@@ -445,34 +517,38 @@ where
                     });
                 }
 
-                toplam_bayt = yeni_toplam;
-                let kaynak = ProjeTalimatKaynagi {
-                    goreli_yol,
-                    kapsam,
-                    bayt,
-                    ozet,
-                };
                 let yuklendigi_tur = onceki
                     .and_then(|o| {
                         o.metinler
                             .iter()
-                            .find(|m| {
-                                m.kaynak.goreli_yol == kaynak.goreli_yol
-                                    && m.kaynak.ozet == kaynak.ozet
-                            })
+                            .find(|m| m.kaynak.goreli_yol == goreli_yol && m.kaynak.ozet == ozet)
                             .map(|m| m.yuklendigi_tur)
                     })
                     .unwrap_or(tur);
 
-                kaynaklar.push(kaynak.clone());
-                metinler.push(YuklenenProjeTalimati {
-                    kaynak,
-                    yuklendigi_tur,
+                birikim.kaynak_eklemeyi_dene(
+                    goreli_yol,
+                    kapsam,
                     icerik,
-                });
+                    bayt,
+                    ozet,
+                    yuklendigi_tur,
+                );
             }
         }
     }
+
+    let mut metinler = birikim.metinler;
+    let uyarilar = birikim.uyarilar;
+    let eksik_baglam = birikim.eksik_baglam;
+    metinler.sort_by(|a, b| {
+        a.kaynak
+            .kapsam
+            .derinlik()
+            .cmp(&b.kaynak.kapsam.derinlik())
+            .then_with(|| a.kaynak.goreli_yol.cmp(&b.kaynak.goreli_yol))
+    });
+    let kaynaklar = metinler.iter().map(|m| m.kaynak.clone()).collect();
 
     YuklenenProjeTalimatlari {
         anlik: ProjeTalimatAnlikGoruntusu {
@@ -676,5 +752,85 @@ mod tests {
             sonuc.anlik.uyarilar[0].uyari,
             ProjeTalimatUyariTuru::DosyaBoyutuAsildi { .. }
         ));
+    }
+
+    #[test]
+    fn tur_ici_yeni_hedef_toplam_talimat_butcesini_ve_kaynak_sinirini_asamaz() {
+        let mut okuyucu = BellekOkuyucu::yeni();
+        for dizin in ["z0", "z1", "z2", "z3"] {
+            okuyucu.ekle(dizin, &"x".repeat(DOSYA_BOYUT_SINIRI));
+        }
+        let ilk = talimatlari_yukle(&okuyucu, 1, ["z0/f", "z1/f", "z2/f", "z3/f"], None, false);
+        let ilk_bayt: usize = ilk.metinler.iter().map(|m| m.icerik.len()).sum();
+        assert_eq!(ilk_bayt, TOPLAM_BOYUT_SINIRI);
+        assert!(!ilk.anlik.eksik_baglam);
+
+        // Alfabetik olarak z*'dan önce gelen a/AGENTS.md eklendiğinde toplam 64 KiB aşılmamalı:
+        okuyucu.ekle("a", &"x".repeat(DOSYA_BOYUT_SINIRI));
+        let ikinci = talimatlari_yukle(
+            &okuyucu,
+            1,
+            ["z0/f", "z1/f", "z2/f", "z3/f", "a/f"],
+            Some(&ilk),
+            true,
+        );
+        let toplam: usize = ikinci.metinler.iter().map(|m| m.icerik.len()).sum();
+        assert!(
+            toplam <= TOPLAM_BOYUT_SINIRI,
+            "tur içi bağlam sınırı aşıldı: {toplam} > {TOPLAM_BOYUT_SINIRI}; eksik_baglam={}",
+            ikinci.anlik.eksik_baglam
+        );
+        assert_eq!(toplam, TOPLAM_BOYUT_SINIRI);
+        assert!(ikinci.anlik.eksik_baglam);
+        assert!(ikinci.anlik.uyarilar.iter().any(|u| {
+            u.goreli_yol == "a/AGENTS.md"
+                && matches!(
+                    u.uyari,
+                    ProjeTalimatUyariTuru::ToplamBoyutAsildi {
+                        sinir: TOPLAM_BOYUT_SINIRI,
+                        ..
+                    }
+                )
+        }));
+
+        // Aynı durum 16 kaynak sınırı (KAYNAK_SAYISI_SINIRI) için de geçerlidir:
+        let mut okuyucu_16 = BellekOkuyucu::yeni();
+        let mut ilk_hedefler = Vec::new();
+        for i in 0..KAYNAK_SAYISI_SINIRI {
+            let d = format!("z{i:02}");
+            okuyucu_16.ekle(&d, "kısa kural");
+            ilk_hedefler.push(format!("{d}/dosya.rs"));
+        }
+        let ilk_16 = talimatlari_yukle(
+            &okuyucu_16,
+            1,
+            ilk_hedefler.iter().map(String::as_str),
+            None,
+            false,
+        );
+        assert_eq!(ilk_16.anlik.kaynaklar.len(), KAYNAK_SAYISI_SINIRI);
+        assert!(!ilk_16.anlik.eksik_baglam);
+
+        okuyucu_16.ekle("a", "fazla kaynak");
+        let mut ikinci_hedefler = ilk_hedefler.clone();
+        ikinci_hedefler.push("a/dosya.rs".to_string());
+        let ikinci_16 = talimatlari_yukle(
+            &okuyucu_16,
+            1,
+            ikinci_hedefler.iter().map(String::as_str),
+            Some(&ilk_16),
+            true,
+        );
+        assert_eq!(ikinci_16.anlik.kaynaklar.len(), KAYNAK_SAYISI_SINIRI);
+        assert!(ikinci_16.anlik.eksik_baglam);
+        assert!(ikinci_16.anlik.uyarilar.iter().any(|u| {
+            u.goreli_yol == "a/AGENTS.md"
+                && matches!(
+                    u.uyari,
+                    ProjeTalimatUyariTuru::KaynakSayisiAsildi {
+                        sinir: KAYNAK_SAYISI_SINIRI
+                    }
+                )
+        }));
     }
 }

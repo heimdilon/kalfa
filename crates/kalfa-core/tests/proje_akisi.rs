@@ -982,3 +982,236 @@ async fn kullaniciya_sor_tur_iptali_ve_kurtarma_davranisi() {
     ));
     d2.kapat().await;
 }
+
+#[tokio::test]
+async fn ilk_cagrisi_dogrudan_yazma_olan_alt_dizin_talimati_model_kararina_katilmadan_yurumez() {
+    let okuyucu = BellekTalimatOkuyucu::yeni();
+    okuyucu.metin_ekle("", "Kök talimatı: Türkçe konuş.");
+    okuyucu.metin_ekle(
+        "alt",
+        "Alt dizin kuralı: her fonksiyonun başına // ALT-KURAL yorumu ekle.",
+    );
+
+    let dosyalar = SahteGeriYukleyici::yeni();
+    dosyalar.yaz("alt/dosya.rs", b"fn mevcut() {}\n");
+
+    let dosya_duzenle = Arc::new(
+        SahteArac::yazan("dosya_duzenle")
+            .dosyalar(dosyalar.clone())
+            .onceki_icerikli(),
+    );
+
+    // Kullanıcı ilk mesajında dosya yolunu belirtmez; model ilk çağrısında doğrudan
+    // `dosya_duzenle` ile `alt/dosya.rs` dosyasını değiştirmek ister.
+    // İlk yanıt `alt/AGENTS.md` kuralını görmeden üretildiği için bu yazma
+    // çalıştırılmamalı ve onay istememelidir; model ikinci istekte `alt/AGENTS.md`
+    // kuralını sistem mesajında görüp yeni hazırlık ve yeni mühürle yazmalıdır.
+    let s = SahteSaglayici::yeni(vec![
+        SahteYanit::arac(
+            "dosya_duzenle",
+            json!({
+                "yol": "alt/dosya.rs",
+                "icerik": "fn kuralsiz_degisiklik() {}\n"
+            }),
+        ),
+        SahteYanit::arac(
+            "dosya_duzenle",
+            json!({
+                "yol": "alt/dosya.rs",
+                "icerik": "// ALT-KURAL\nfn kuralli_degisiklik() {}\n"
+            }),
+        ),
+        SahteYanit::metin("Alt dizin kuralına göre güncellendi."),
+    ]);
+
+    let araclar: Vec<Arc<dyn Arac>> = vec![
+        Arc::new(PlanGuncelleAraci::yeni()),
+        Arc::new(KullaniciyaSorAraci::yeni()),
+        Arc::new(SahteArac::okuyan("dosya_oku")),
+        dosya_duzenle.clone(),
+    ];
+    let mut baglam = test_baglami(s.clone(), araclar, sanal_siniflandirici());
+    baglam.talimat_okuyucu = Some(okuyucu);
+
+    let mut d = test_oturumu(baglam, OturumAyarlari::yeni("glm-5.3", Path::new("proje")));
+    d.gonder(Komut::KullaniciMesaji {
+        metin: "Lütfen modüldeki fonksiyonu güncelle.".into(),
+    })
+    .await;
+
+    // Onay kartı yalnız model `alt/AGENTS.md` kuralını gördükten sonraki ikinci
+    // çağrı için çıkmalıdır; ilk (kuralsız) çağrı için onay istenmemeli ve dosya değişmemelidir.
+    let onay = d.bekle(|o| matches!(o, Olay::OnayGerekiyor { .. })).await;
+    assert_eq!(
+        dosyalar.oku("alt/dosya.rs").as_deref(),
+        Some(b"fn mevcut() {}\n".as_slice()),
+        "onaydan ve alt dizin kuralı değerlendirilmeden önce dosya değişmemeli"
+    );
+    let istekler = s.istekler();
+    assert_eq!(
+        istekler.len(),
+        2,
+        "onay kartı çıkmadan önce model yeni alt dizin talimatıyla ikinci kez çağrılmış olmalı"
+    );
+    let ikinci_sistem = istekler[1].messages[0].content.as_deref().unwrap();
+    assert!(
+        ikinci_sistem
+            .contains("Alt dizin kuralı: her fonksiyonun başına // ALT-KURAL yorumu ekle."),
+        "ikinci model isteğinde alt/AGENTS.md sistem mesajında bulunmalı"
+    );
+
+    if let Olay::OnayGerekiyor { ogeler, .. } = onay.yuk {
+        assert_eq!(ogeler.len(), 1);
+        assert_eq!(ogeler[0].arac, "dosya_duzenle");
+        d.gonder(Komut::AracOnayi {
+            cagri: ogeler[0].cagri,
+            karar: OnayKarari::Onayla,
+            muhur: ogeler[0].muhur.clone(),
+            kisayol: false,
+        })
+        .await;
+    }
+
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+    assert_eq!(dosya_duzenle.cagri_sayisi(), 1);
+    assert_eq!(
+        dosyalar.oku("alt/dosya.rs").as_deref(),
+        Some(b"// ALT-KURAL\nfn kuralli_degisiklik() {}\n".as_slice())
+    );
+}
+
+#[tokio::test]
+async fn ayni_yanitta_farkli_alt_dizinlere_coklu_yazma_kurallari_onceden_alir_ve_eski_hazirlikla_calismaz()
+ {
+    let okuyucu = BellekTalimatOkuyucu::yeni();
+    okuyucu.metin_ekle("", "Kök kural.");
+    okuyucu.metin_ekle("alt1", "Alt1 kuralı: // ALT1-ZORUNLU ekle.");
+    okuyucu.metin_ekle("alt2", "Alt2 kuralı: // ALT2-ZORUNLU ekle.");
+
+    let dosyalar = SahteGeriYukleyici::yeni();
+    dosyalar.yaz("alt1/a.rs", b"fn a_eski() {}\n");
+    dosyalar.yaz("alt2/b.rs", b"fn b_eski() {}\n");
+
+    let dosya_yaz = Arc::new(
+        SahteArac::yazan("dosya_yaz")
+            .dosyalar(dosyalar.clone())
+            .onceki_icerikli(),
+    );
+    let dosya_duzenle = Arc::new(
+        SahteArac::yazan("dosya_duzenle")
+            .dosyalar(dosyalar.clone())
+            .onceki_icerikli(),
+    );
+
+    let s = SahteSaglayici::yeni(vec![
+        // İlk model yanıtında iki farklı alt dizine aynı anda yazma çağrısı gelir:
+        SahteYanit::araclar(vec![
+            (
+                "dosya_yaz",
+                json!({ "yol": "alt1/a.rs", "icerik": "fn a_kuralsiz() {}\n" }),
+            ),
+            (
+                "dosya_duzenle",
+                json!({ "yol": "alt2/b.rs", "icerik": "fn b_kuralsiz() {}\n" }),
+            ),
+        ]),
+        // İkinci model yanıtında her iki alt dizin kuralı da sistem mesajındadır;
+        // model kurallara uygun yeni içeriklerle yeniden çağrı yapar:
+        SahteYanit::araclar(vec![
+            (
+                "dosya_yaz",
+                json!({ "yol": "alt1/a.rs", "icerik": "// ALT1-ZORUNLU\nfn a_kuralli() {}\n" }),
+            ),
+            (
+                "dosya_duzenle",
+                json!({ "yol": "alt2/b.rs", "icerik": "// ALT2-ZORUNLU\nfn b_kuralli() {}\n" }),
+            ),
+        ]),
+        SahteYanit::metin("İki alt dizin de kurallarına göre güncellendi."),
+    ]);
+
+    let araclar: Vec<Arc<dyn Arac>> = vec![dosya_yaz.clone(), dosya_duzenle.clone()];
+    let mut baglam = test_baglami(s.clone(), araclar, sanal_siniflandirici());
+    baglam.talimat_okuyucu = Some(okuyucu);
+
+    let mut ayar = OturumAyarlari::yeni("glm-5.3", Path::new("proje"));
+    ayar.kip = Kip::Serbest;
+    let mut d = test_oturumu(baglam, ayar);
+    d.gonder(Komut::KullaniciMesaji {
+        metin: "Her iki alt modülü de güncelle.".into(),
+    })
+    .await;
+
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+
+    let istekler = s.istekler();
+    assert_eq!(istekler.len(), 3);
+    let ikinci_sistem = istekler[1].messages[0].content.as_deref().unwrap();
+    assert!(ikinci_sistem.contains("Alt1 kuralı: // ALT1-ZORUNLU ekle."));
+    assert!(ikinci_sistem.contains("Alt2 kuralı: // ALT2-ZORUNLU ekle."));
+
+    // İlk yanıttaki hazırlıklar hiç çalıştırılmamış, yalnız ikinci yanıttaki taze hazırlıklar çalışmıştır:
+    assert_eq!(dosya_yaz.cagri_sayisi(), 1);
+    assert_eq!(dosya_duzenle.cagri_sayisi(), 1);
+    assert_eq!(
+        dosyalar.oku("alt1/a.rs").as_deref(),
+        Some(b"// ALT1-ZORUNLU\nfn a_kuralli() {}\n".as_slice())
+    );
+    assert_eq!(
+        dosyalar.oku("alt2/b.rs").as_deref(),
+        Some(b"// ALT2-ZORUNLU\nfn b_kuralli() {}\n".as_slice())
+    );
+}
+
+#[tokio::test]
+async fn tur_icinde_korunan_kaynaklar_64_kib_ve_16_kaynak_sinirini_asamaz() {
+    use kalfa_core::proje_talimatlari::TOPLAM_BOYUT_SINIRI;
+
+    let okuyucu = BellekTalimatOkuyucu::yeni();
+    for dizin in ["z0", "z1", "z2", "z3"] {
+        okuyucu.metin_ekle(dizin, &"x".repeat(DOSYA_BOYUT_SINIRI));
+    }
+    // Alfabetik olarak z*'dan önce gelen a/AGENTS.md de 16 KiB:
+    okuyucu.metin_ekle("a", &"y".repeat(DOSYA_BOYUT_SINIRI));
+
+    let s = SahteSaglayici::yeni(vec![
+        // Tur 1 başında z0..z3 mesajdan yüklenir (4 * 16 KiB = 64 KiB).
+        // Ardından model tur içinde a/dosya.rs dosyasını okur:
+        SahteYanit::arac("dosya_oku", json!({ "yol": "a/dosya.rs" })),
+        SahteYanit::metin("Tamam."),
+    ]);
+    let mut baglam = test_baglami(s, standart_araclar(), sanal_siniflandirici());
+    baglam.talimat_okuyucu = Some(okuyucu);
+
+    let mut d = test_oturumu(baglam, OturumAyarlari::yeni("glm-5.3", Path::new("proje")));
+    d.gonder(Komut::KullaniciMesaji {
+        metin: "z0/f.rs z1/f.rs z2/f.rs z3/f.rs dosyalarını incele.".into(),
+    })
+    .await;
+    assert_eq!(d.tur_sonu().await, BitisNedeni::Normal);
+
+    let goruntuler: Vec<_> = d
+        .olaylar()
+        .into_iter()
+        .filter_map(|o| match o {
+            Olay::ProjeTalimatlari { goruntu } => Some(goruntu),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(goruntuler.len(), 2);
+    assert!(!goruntuler[0].eksik_baglam);
+    let son = goruntuler.last().unwrap();
+    let toplam_bayt: usize = son.kaynaklar.iter().map(|k| k.bayt).sum();
+    assert_eq!(toplam_bayt, TOPLAM_BOYUT_SINIRI);
+    assert!(son.eksik_baglam);
+    assert!(son.uyarilar.iter().any(|u| {
+        u.goreli_yol == "a/AGENTS.md"
+            && matches!(
+                u.uyari,
+                ProjeTalimatUyariTuru::ToplamBoyutAsildi {
+                    sinir: TOPLAM_BOYUT_SINIRI,
+                    ..
+                }
+            )
+    }));
+}
