@@ -32,8 +32,8 @@ use std::sync::Arc;
 
 use kalfa_core::arac::Arac;
 
-/// Yerleşik dosya araçları (spec §12.1). Kabuk aracı ayrıca kurulur
-/// (`KabukAraci::yeni`): yalıtıcı ve çalışma alanının güven kaydını ister.
+/// Yerleşik dosya ve web getirme araçları (spec §12.1). Kabuk aracı ayrıca
+/// kurulur (`KabukAraci::yeni`): yalıtıcı ve çalışma alanının güven kaydını ister.
 pub fn varsayilan_araclar(alan: Arc<CalismaAlani>) -> Vec<Arc<dyn Arac>> {
     vec![
         Arc::new(DosyaOku::yeni(alan.clone())) as Arc<dyn Arac>,
@@ -41,5 +41,6 @@ pub fn varsayilan_araclar(alan: Arc<CalismaAlani>) -> Vec<Arc<dyn Arac>> {
         Arc::new(IcerikAra::yeni(alan.clone())) as Arc<dyn Arac>,
         Arc::new(DosyaYaz::yeni(alan.clone())) as Arc<dyn Arac>,
         Arc::new(DosyaDuzenle::yeni(alan)) as Arc<dyn Arac>,
+        Arc::new(WebGetirAraci::yeni()) as Arc<dyn Arac>,
     ]
 }

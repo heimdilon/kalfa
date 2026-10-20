@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::arac::{McpAgKarti, McpErisim};
+use crate::arac::{McpAgKarti, McpErisim, WebTarifi, YonlendirmeIzni};
 use crate::git_koruma;
 use crate::kabuk::{KabukTarifi, YalitimOzeti};
 use crate::yol::CalismaYolu;
@@ -29,6 +29,11 @@ pub const MCP_ILK_CAGRI_UYARISI: &str = "Bu MCP sunucusu bu çalışma alanında
 pub const MCP_AG_UYARISI: &str = "Bu MCP sunucusu ağ erişimi kullanabilecek.";
 pub const MCP_TAM_ERISIM_UYARISI: &str =
     "MCP sunucusu yalıtım olmadan, hesabınızın yetkileriyle çalışacak.";
+pub const WEB_AG_UYARISI: &str = "Bu işlem dış bir web adresine HTTP/HTTPS isteği gönderecek.";
+pub const WEB_ILK_HOST_UYARISI: &str = "Bu web hostuna bu oturumda ilk kez erişilecek.";
+pub const WEB_YONLENDIRME_UYARISI: &str = "Bu istek farklı bir hosta yönlendirmeye izin veriyor.";
+pub const WEB_SIFRESIZ_HTTP_UYARISI: &str =
+    "Bağlantı şifresiz HTTP kullanıyor; ağ trafiği üçüncü taraflarca görülebilir.";
 pub const YAPILANDIRMA_UYARISI: &str = "Bu dosyayı IDE'niz, git ya da paket yöneticiniz \
 Kalfa'nın yalıtımı dışında kendiliğinden çalıştırabilir.";
 
@@ -416,6 +421,57 @@ pub fn mcp_karari(kip: Kip, erisim: McpErisim, ilk_cagri: bool, ag: &McpAgKarti)
                 Karar::Onayli { uyarilar }
             }
         }
+    }
+}
+
+/// `web_getir` çağrısının izin kararı (Yetenek-05 planı G4a ve SP-05).
+///
+/// - `Kip::Inceleme`: her zaman `Karar::Yasak`.
+/// - `Kip::Siki`, `Kip::Proje`, `Kip::Serbest`, `Kip::Otomatik`: `web_getir`
+///   hiçbir kipte otomatik (`Karar::Serbest`) çalışmaz; ilk host erişimi,
+///   şifresiz HTTP, farklı hosta yönlendirme izni ya da `Serbest`/`Otomatik`
+///   kipinde `Karar::YerelOnayli` ister.
+pub fn web_karari(kip: Kip, tarif: &WebTarifi) -> Karar {
+    if kip == Kip::Inceleme {
+        return Karar::Yasak {
+            neden: "İnceleme kipinde dış ağ isteği (`web_getir`) çalıştırılamaz.".into(),
+        };
+    }
+
+    if tarif.sema != "https" && tarif.sema != "http" {
+        return Karar::Yasak {
+            neden: format!("Desteklenmeyen web şeması: {}", tarif.sema),
+        };
+    }
+
+    if tarif.yontem != "GET" {
+        return Karar::Yasak {
+            neden: format!("Yalnızca GET yöntemine izin verilir: {}", tarif.yontem),
+        };
+    }
+
+    let mut uyarilar = vec![WEB_AG_UYARISI.to_string()];
+    let mut yerel_onay_gerekli = false;
+
+    if tarif.oturumda_ilk_host {
+        uyarilar.push(WEB_ILK_HOST_UYARISI.to_string());
+        yerel_onay_gerekli = true;
+    }
+    if tarif.sema == "http" {
+        uyarilar.push(WEB_SIFRESIZ_HTTP_UYARISI.to_string());
+        yerel_onay_gerekli = true;
+    }
+    if let YonlendirmeIzni::IzinliHostlar(ek_hostlar) = &tarif.yonlendirme_izni
+        && !ek_hostlar.is_empty()
+    {
+        uyarilar.push(WEB_YONLENDIRME_UYARISI.to_string());
+        yerel_onay_gerekli = true;
+    }
+
+    if yerel_onay_gerekli || matches!(kip, Kip::Serbest | Kip::Otomatik) {
+        Karar::YerelOnayli { uyarilar }
+    } else {
+        Karar::Onayli { uyarilar }
     }
 }
 

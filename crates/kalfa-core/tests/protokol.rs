@@ -110,6 +110,7 @@ fn butun_olaylar_gidip_gelir() {
                 kisayol: None,
                 eklenti: None,
                 mcp: None,
+                web: None,
             }],
         },
         Olay::OnayGerekiyor {
@@ -204,6 +205,7 @@ fn kabuk_ogesi(cagri: CagriId) -> OnayOgesi {
         kisayol: None,
         eklenti: None,
         mcp: None,
+        web: None,
     }
 }
 
@@ -247,6 +249,45 @@ fn kabuk_json_bicimi() {
 }
 
 #[test]
+fn web_onay_ogesi_json_bicimi() {
+    let c = CagriId::yeni();
+    let mut oge = kabuk_ogesi(c);
+    oge.arac = "web_getir".into();
+    oge.kabuk = None;
+    oge.veri_cikisi = Some(VeriCikisi::WebSayfasi);
+    oge.web = Some(WebTarifi {
+        kanonik_url: "https://docs.rs/tokio".into(),
+        maskeli_url: "https://docs.rs/tokio".into(),
+        host: "docs.rs".into(),
+        port: 443,
+        sema: "https".into(),
+        yontem: "GET".into(),
+        yonlendirme_izni: YonlendirmeIzni::IzinliHostlar(vec!["cdn.docs.rs".into()]),
+        oturumda_ilk_host: true,
+    });
+
+    let j = serde_json::to_value(&oge).unwrap();
+    assert_eq!(j["veri_cikisi"], json!("WebSayfasi"));
+    assert_eq!(
+        j["web"],
+        json!({
+            "kanonik_url": "https://docs.rs/tokio",
+            "maskeli_url": "https://docs.rs/tokio",
+            "host": "docs.rs",
+            "port": 443,
+            "sema": "https",
+            "yontem": "GET",
+            "yonlendirme_izni": {
+                "tip": "IzinliHostlar",
+                "hostlar": ["cdn.docs.rs"]
+            },
+            "oturumda_ilk_host": true
+        })
+    );
+    gidip_gelir(&oge);
+}
+
+#[test]
 fn zarf_bicimi() {
     let z = Zarf {
         sema: SEMA_SURUMU,
@@ -277,4 +318,5 @@ fn eski_onay_ogesi_veri_cikissiz_acilir() {
     });
     let oge: OnayOgesi = serde_json::from_value(json).unwrap();
     assert_eq!(oge.veri_cikisi, None);
+    assert_eq!(oge.web, None);
 }

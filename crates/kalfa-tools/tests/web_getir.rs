@@ -14,8 +14,8 @@ use kalfa_tools::web::{
     AramaSonucOgesi, KaynakliIddia, KaynakliYanitHatasi, SikistirmaHatasi, TestFixtureIzni,
     WEB_ARAC_ADI, WebGetirAraci, WebGetirHatasi, WebIstemci, WebIzinDefteri, YonlendirmeIzni,
     arama_kaynaklarini_oku, arama_sonuclarini_dogrula, gzip_bomba_uret, gzip_paketle,
-    kaynakli_yanit_dogrula, mcp_arama_json_coz, naif_url_on_kontrolu, web_karari,
-    yaniti_metne_donustur,
+    kaynakli_yanit_dogrula, mcp_arac_sonucunu_coz, mcp_arama_json_coz, naif_url_on_kontrolu,
+    web_karari, yaniti_metne_donustur,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -675,7 +675,8 @@ async fn gorev3_w06_arac_kaynak_izin_muhur_ve_prompt_injection_sizinti_engeli() 
     assert_eq!(defter.tanimlar(Kip::Siki).len(), 1);
     assert_eq!(defter.tanimlar(Kip::Serbest).len(), 1);
 
-    // 2. Hazırlık ve mühür: ilk host erişimi yerel onay (`ilk_gonderim: true`) ister.
+    // 2. Hazırlık ve mühür: ilk host erişimi yerel onay (`oturumda_ilk_host: true`)
+    //    ve açık `WebTarifi` + `VeriCikisi::WebSayfasi` taşır; `EklentiTarifi` kullanmaz.
     let argumanlar = json!({
         "url": format!("https://belge.ornek.test:{port}/duyuru?token=gizli-oturum-1")
     });
@@ -689,9 +690,20 @@ async fn gorev3_w06_arac_kaynak_izin_muhur_ve_prompt_injection_sizinti_engeli() 
         hazirlik.aciklama
     );
     assert!(hazirlik.aciklama.contains("[MASKELENDI]"));
-    let eklenti_tarifi = hazirlik.eklenti.as_ref().expect("mühür tarifi olmalı");
-    assert_eq!(eklenti_tarifi.ad, WEB_ARAC_ADI);
-    assert!(eklenti_tarifi.ilk_gonderim);
+    assert!(
+        hazirlik.eklenti.is_none(),
+        "web_getir EklentiTarifi kullanmamalı"
+    );
+    assert_eq!(
+        hazirlik.veri_cikisi,
+        Some(kalfa_core::protokol::VeriCikisi::WebSayfasi)
+    );
+    let web_tarifi = hazirlik.web.as_ref().expect("açık WebTarifi olmalı");
+    assert_eq!(web_tarifi.host, "belge.ornek.test");
+    assert_eq!(web_tarifi.port, port);
+    assert_eq!(web_tarifi.sema, "https");
+    assert_eq!(web_tarifi.yontem, "GET");
+    assert!(web_tarifi.oturumda_ilk_host);
 
     // 3. Onaydan sonra argüman (URL) değiştirilirse `calistir` OnayEskidi ile reddeder.
     let degismis_argumanlar = json!({
@@ -1042,5 +1054,317 @@ fn gorev2_sp07_uzun_satir_ortada_ve_sonda_cok_baytli_utf8_ve_ardisik_imlec_kayip
     let yanit_karma = sahte_yanit_kur(&ortada_ve_sonda_uzun);
     let (parcalar_karma, _) = tumunu_imlecle_oku(&yanit_karma, 256);
     assert!(parcalar_karma.len() >= 6);
-    assert_eq!(parcalar_karma.concat(), ortada_ve_sonda_uzun);
+    assert!(
+        ortada_ve_sonda_uzun == parcalar_karma.concat(),
+        "parçalar eksiksiz birleşmeli"
+    );
+}
+
+#[tokio::test]
+async fn gorev3_sp05_web_onayi_eklenti_ilk_gonderim_degil_acik_web_tarifi_ve_veri_cikisi_tasir() {
+    use kalfa_core::izin::{
+        WEB_AG_UYARISI, WEB_ILK_HOST_UYARISI, WEB_YONLENDIRME_UYARISI, hakeme_uygun,
+    };
+    use kalfa_core::kimlik::CagriId;
+    use kalfa_core::muhur::muhur_hesapla;
+    use kalfa_core::protokol::VeriCikisi;
+
+    let sunucu = YerelWebSunucusu::https_baslat().await;
+    let port = sunucu.adres().port();
+    sunucu.rota_ekle("/belge", SunucuYaniti::metin("içerik"));
+
+    let (istemci, _cozucu) = https_istemci_kur(&[("belge.ornek.test", &sunucu)]);
+    let izin_defteri = Arc::new(WebIzinDefteri::yeni());
+    let arac = WebGetirAraci::ozel(istemci, izin_defteri);
+
+    let argumanlar = json!({
+        "url": format!("https://belge.ornek.test:{port}/belge?api_key=gizli-123"),
+        "izinli_yonlendirme_hostlari": ["cdn.ornek.test"]
+    });
+    let hazirlik = arac
+        .hazirla(&argumanlar)
+        .await
+        .expect("hazırlık başarılı olmalı");
+
+    assert!(
+        hazirlik.eklenti.is_none(),
+        "SP-05: web_getir hazırlığı rastgele web isteğini EVREN eklenti gönderimi (EklentiTarifi) olarak sunmamalı"
+    );
+    assert_eq!(
+        hazirlik.veri_cikisi,
+        Some(VeriCikisi::WebSayfasi),
+        "SP-05: web_getir hazırlığı açık veri çıkışı (VeriCikisi::WebSayfasi) taşımalı"
+    );
+    let web = hazirlik
+        .web
+        .as_ref()
+        .expect("SP-05: Hazirlik.web dolu olmalı");
+    assert_eq!(web.host, "belge.ornek.test");
+    assert_eq!(web.port, port);
+    assert_eq!(web.sema, "https");
+    assert_eq!(web.yontem, "GET");
+    assert_eq!(
+        web.maskeli_url,
+        format!("https://belge.ornek.test:{port}/belge?api_key=[MASKELENDI]")
+    );
+    assert_eq!(
+        web.yonlendirme_izni,
+        YonlendirmeIzni::IzinliHostlar(vec!["cdn.ornek.test".into()])
+    );
+    assert!(web.oturumda_ilk_host);
+
+    // İzin kararı her kipte onay ister ve ilk host + yönlendirme uyarısı üretir;
+    // ayrıca otomatik kip hakemi için uygun değildir (kullanıcıya sorulur).
+    for kip in [Kip::Siki, Kip::Proje, Kip::Serbest, Kip::Otomatik] {
+        match web_karari(kip, web) {
+            Karar::YerelOnayli { uyarilar } => {
+                assert!(uyarilar.iter().any(|u| u == WEB_AG_UYARISI));
+                assert!(uyarilar.iter().any(|u| u == WEB_ILK_HOST_UYARISI));
+                assert!(uyarilar.iter().any(|u| u == WEB_YONLENDIRME_UYARISI));
+                assert!(!hakeme_uygun(&uyarilar, true));
+                assert!(!hakeme_uygun(&uyarilar, false));
+            }
+            diger => panic!("{kip:?} için YerelOnayli bekleniyordu, gelen: {diger:?}"),
+        }
+    }
+
+    // Mühür `hazirlik.web` alanına bağlanır: hedef port veya yönlendirme kapsamı değişince mühür değişir.
+    let cagri = CagriId::yeni();
+    let muhur_1 = muhur_hesapla(cagri, WEB_ARAC_ADI, &argumanlar, &hazirlik);
+    let mut farkli_hazirlik = hazirlik.clone();
+    farkli_hazirlik.web.as_mut().unwrap().yonlendirme_izni = YonlendirmeIzni::AyniHost;
+    let muhur_2 = muhur_hesapla(cagri, WEB_ARAC_ADI, &argumanlar, &farkli_hazirlik);
+    assert_ne!(muhur_1, muhur_2, "yönlendirme kapsamı mühre bağlı olmalı");
+}
+
+#[tokio::test]
+async fn gorev5_sp08_mcp_arama_saglayici_bicimleri_ve_oturum_web_getir_kayit_akisi() {
+    use kalfa_core::arac::{AracCiktisi, AracHatasi};
+    use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
+    use kalfa_core::kurtarma::kurtar;
+    use kalfa_core::oturum::OturumAyarlari;
+    use kalfa_core::protokol::{BitisNedeni, Komut, Olay, VeriCikisi};
+    use kalfa_core::test_destek::{SahteSaglayici, SahteYanit, test_baglami, test_oturumu};
+    use kalfa_tools::{CalismaAlani, varsayilan_araclar};
+
+    // 1. Brave Search MCP iç içe `{"web": {"results": [...]}}` biçimi:
+    let brave_json = r#"{
+        "web": {
+            "results": [
+                {
+                    "title": "Brave Tokio Rehberi",
+                    "url": "https://tokio.rs/tokio/tutorial?api_key=gizli",
+                    "description": "Brave üzerinden Tokio zaman uyumsuz çalışma zamanı özeti."
+                }
+            ]
+        }
+    }"#;
+    let brave_sonuclar = mcp_arama_json_coz(brave_json)
+        .expect("SP-08: Brave iç içe web.results JSON'u ayrıştırılmalı");
+    assert_eq!(brave_sonuclar.len(), 1);
+    assert_eq!(brave_sonuclar[0].baslik, "Brave Tokio Rehberi");
+    assert_eq!(
+        brave_sonuclar[0].ozet_parcacigi,
+        "Brave üzerinden Tokio zaman uyumsuz çalışma zamanı özeti."
+    );
+
+    // 2. Tavily MCP `content` alanı ve Exa MCP `highlights` / düz metin (`Title:` / `URL:` / `Text:`) biçimi:
+    let tavily_json = r#"{
+        "results": [
+            {
+                "title": "Tavily Serde Rehberi",
+                "url": "https://serde.rs/derive.html",
+                "content": "Serde derive makroları ile serileştirme."
+            }
+        ]
+    }"#;
+    let tavily_sonuclar =
+        mcp_arama_json_coz(tavily_json).expect("SP-08: Tavily results JSON'u ayrıştırılmalı");
+    assert_eq!(
+        tavily_sonuclar[0].ozet_parcacigi,
+        "Serde derive makroları ile serileştirme."
+    );
+
+    let exa_metin = "Title: Exa Rust Nomicon\nURL: https://doc.rust-lang.org/nomicon?token=abc#bolum\nText: Sahiplik ve ödünç alma kuralları.\n\nTitle: Exa Tokio Sync\nURL: https://docs.rs/tokio/latest/tokio/sync/\nHighlights: mpsc ve oneshot kanalları.";
+    let exa_sonuclar =
+        mcp_arama_json_coz(exa_metin).expect("SP-08: Exa MCP düz metin blokları ayrıştırılmalı");
+    assert_eq!(exa_sonuclar.len(), 2);
+    assert_eq!(exa_sonuclar[0].baslik, "Exa Rust Nomicon");
+    assert_eq!(
+        exa_sonuclar[0].ozet_parcacigi,
+        "Sahiplik ve ödünç alma kuralları."
+    );
+    assert_eq!(exa_sonuclar[1].baslik, "Exa Tokio Sync");
+    assert_eq!(exa_sonuclar[1].ozet_parcacigi, "mpsc ve oneshot kanalları.");
+
+    // 3. `mcp_arac_sonucunu_coz` ile Hat04 `Result<AracCiktisi, AracHatasi>` sözleşmesi:
+    let ok_mcp = Ok(AracCiktisi {
+        icerik: exa_metin.to_string(),
+        kaynak: "mcp:exa:web_search_exa".to_string(),
+        kalfa_uretimi: false,
+        ..AracCiktisi::default()
+    });
+    assert_eq!(
+        mcp_arac_sonucunu_coz(&ok_mcp).expect("MCP çıktısı çözümlenmeli"),
+        AramaSaglayiciYaniti::Basarili(exa_sonuclar)
+    );
+
+    let hiz_siniri_mcp = Err(AracHatasi::Basarisiz(AracCiktisi {
+        icerik: r#"{"status": 429, "retry_after": 12}"#.to_string(),
+        kaynak: "mcp:exa:web_search_exa".to_string(),
+        kalfa_uretimi: false,
+        ..AracCiktisi::default()
+    }));
+    assert_eq!(
+        mcp_arac_sonucunu_coz(&hiz_siniri_mcp).expect("429 hız sınırı olarak sınıflanmalı"),
+        AramaSaglayiciYaniti::HizSiniri {
+            yeniden_dene_sn: Some(12)
+        }
+    );
+
+    let bakiye_mcp = Err(AracHatasi::Basarisiz(AracCiktisi {
+        icerik: "HTTP 402 Payment Required: insufficient credits".to_string(),
+        kaynak: "mcp:exa:web_search_exa".to_string(),
+        kalfa_uretimi: false,
+        ..AracCiktisi::default()
+    }));
+    assert!(matches!(
+        mcp_arac_sonucunu_coz(&bakiye_mcp).expect("402 bakiye hatası olarak sınıflanmalı"),
+        AramaSaglayiciYaniti::YetersizBakiyeVeyaKimlik { .. }
+    ));
+
+    let yanlis_kaynak = Ok(AracCiktisi {
+        icerik: tavily_json.to_string(),
+        kaynak: "dosya:sahte.json".to_string(),
+        kalfa_uretimi: false,
+        ..AracCiktisi::default()
+    });
+    assert!(matches!(
+        mcp_arac_sonucunu_coz(&yanlis_kaynak),
+        Err(AramaHatasi::CiktiAyristirma(_))
+    ));
+
+    // 4. `varsayilan_araclar` + `kalfa-core::oturum` uçtan uca onay, JSONL kayıt ve kurtarma akışı:
+    let sunucu = YerelWebSunucusu::https_baslat().await;
+    let port = sunucu.adres().port();
+    sunucu.rota_ekle(
+        "/oturum-belge",
+        SunucuYaniti::html(
+            "<html><head><title>Oturum Web Testi</title></head><body><h2>Kurulum</h2><p>Oturum üzerinden web_getir doğrulandı.</p></body></html>",
+        ),
+    );
+    let (istemci, _cozucu) = https_istemci_kur(&[("belge.ornek.test", &sunucu)]);
+
+    let alan_dir = tempfile::tempdir().unwrap();
+    let kayit_dir = tempfile::tempdir().unwrap();
+    let siniflandirici =
+        Arc::new(kalfa_core::izin::Siniflandirici::yeni(alan_dir.path(), &[]).unwrap());
+    let calisma_alani = CalismaAlani::ac(siniflandirici.clone()).unwrap();
+
+    // `varsayilan_araclar` içinde `web_getir` yer aldığını doğrula, ardından test TLS/DNS
+    // çözümleyicili örnekle oturumda çalıştır.
+    let mut araclar = varsayilan_araclar(calisma_alani);
+    assert!(
+        araclar.iter().any(|a| a.ad() == WEB_ARAC_ADI),
+        "varsayilan_araclar içinde web_getir bulunmalı"
+    );
+    araclar.retain(|a| a.ad() != WEB_ARAC_ADI);
+    araclar.push(Arc::new(WebGetirAraci::ozel(
+        istemci,
+        Arc::new(WebIzinDefteri::yeni()),
+    )));
+
+    let hedef_url = format!("https://belge.ornek.test:{port}/oturum-belge?token=gizli-99#kurulum");
+    let sahte_saglayici = SahteSaglayici::yeni(vec![
+        SahteYanit::arac(
+            WEB_ARAC_ADI,
+            json!({
+                "url": hedef_url,
+                "bolum": "Kurulum"
+            }),
+        ),
+        SahteYanit::metin("Belgedeki kurulum bölümü okundu."),
+    ]);
+
+    let kayit_yolu = kayit_dir.path().join("oturum-web.jsonl");
+    let mut ayarlar = OturumAyarlari::yeni("glm-5.3", alan_dir.path());
+    ayarlar.kip = Kip::Serbest;
+    ayarlar.kayit_yolu = Some(kayit_yolu.clone());
+
+    let mut surucu = test_oturumu(
+        test_baglami(sahte_saglayici.clone(), araclar, siniflandirici),
+        ayarlar,
+    );
+    surucu
+        .gonder(Komut::KullaniciMesaji {
+            metin: "belge.ornek.test kurulum belgesini oku".into(),
+        })
+        .await;
+
+    let ogeler = match surucu
+        .bekle(|o| matches!(o, Olay::OnayGerekiyor { .. }))
+        .await
+        .yuk
+    {
+        Olay::OnayGerekiyor { ogeler, .. } => ogeler,
+        _ => unreachable!(),
+    };
+    assert_eq!(ogeler.len(), 1);
+    let oge = &ogeler[0];
+    assert_eq!(oge.arac, WEB_ARAC_ADI);
+    assert!(oge.yerel_onay, "web_getir yerel onay gerektirmeli");
+    assert_eq!(oge.veri_cikisi, Some(VeriCikisi::WebSayfasi));
+    assert!(
+        oge.eklenti.is_none(),
+        "SP-05/SP-08: OnayOgesi.eklenti web_getir için None olmalı"
+    );
+    let web_tarifi = oge.web.as_ref().expect("OnayOgesi.web dolu olmalı");
+    assert_eq!(web_tarifi.host, "belge.ornek.test");
+    assert_eq!(web_tarifi.port, port);
+    assert_eq!(web_tarifi.sema, "https");
+    assert_eq!(web_tarifi.yontem, "GET");
+    assert_eq!(
+        web_tarifi.maskeli_url,
+        format!("https://belge.ornek.test:{port}/oturum-belge?token=[MASKELENDI]")
+    );
+
+    surucu
+        .gonder(Komut::YerelOnay {
+            cagri: oge.cagri,
+            muhur: oge.muhur.clone(),
+        })
+        .await;
+
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
+
+    // Kayıt (JSONL) ve kurtarma doğrulaması:
+    let kayitlar = OturumKaydi::oku(&kayit_yolu).expect("oturum kaydı okunmalı");
+    let web_sonuc_kaydi = kayitlar.iter().find_map(|satir| match &satir.yuk {
+        KayitOgesi::Mesaj { mesaj, kaynak }
+            if kaynak.as_deref().is_some_and(|k| k.starts_with("web:")) =>
+        {
+            Some((kaynak.clone(), mesaj.content.clone().unwrap_or_default()))
+        }
+        _ => None,
+    });
+    let (kayit_kaynagi, kayit_icerigi) = web_sonuc_kaydi.unwrap_or_else(|| {
+        panic!("JSONL kaydında web_getir Mesaj kaydı bulunmalı; mevcut kayıtlar: {kayitlar:#?}")
+    });
+    assert_eq!(
+        kayit_kaynagi.as_deref(),
+        Some(
+            format!("web:https://belge.ornek.test:{port}/oturum-belge?token=[MASKELENDI]").as_str()
+        )
+    );
+    assert!(kayit_icerigi.contains("[DIŞ WEB İÇERİĞİ — GÜVENİLMEZ KAYNAK:"));
+    assert!(kayit_icerigi.contains("Oturum üzerinden web_getir doğrulandı."));
+    assert!(!kayit_icerigi.contains("gizli-99"));
+
+    let kurtarilan = kurtar(&kayitlar).expect("kayıt kurtarılabilmeli");
+    assert_eq!(kurtarilan.kip, Kip::Siki);
+    assert!(kurtarilan.mesajlar.iter().any(|m| {
+        m.content
+            .as_deref()
+            .is_some_and(|c| c.contains("Oturum üzerinden web_getir doğrulandı."))
+    }));
 }

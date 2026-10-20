@@ -6,6 +6,7 @@ use kalfa_evren::tipler::DusunceEforu;
 use serde::{Deserialize, Serialize};
 
 use crate::arac::{McpAgKarti, McpAracHazirligi, McpErisim};
+pub use crate::arac::{WebTarifi, YonlendirmeIzni};
 use crate::butce::ButceGorunumu;
 use crate::denetci::DenetimSonucu;
 use crate::geri_alma::{GeriAlmaPlani, GeriAlmaSonucu};
@@ -151,6 +152,9 @@ pub struct OnayOgesi {
     /// §9). Mühre girmez; mühür hazırlıktan gelir.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp: Option<McpOnayKarti>,
+    /// Web getirme (`web_getir`) aracında hedef origin, yöntem ve yönlendirme kapsamı.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web: Option<crate::arac::WebTarifi>,
 }
 
 /// MCP onay kartının özeti. Yalnız doğrulanmış görünen adlar ve hostlar;
@@ -196,6 +200,8 @@ pub enum VeriCikisi {
     YalnizcaYazildi,
     /// Eklentinin ürettiği metin (aşama 4 tasarımı §8.1).
     EklentiCiktisi,
+    /// Dış web sayfasından okunan düzleştirilmiş metin.
+    WebSayfasi,
 }
 
 /// Kabuk onayında gösterilen bağlam: komut, modelin onaysız yazdığı kodu

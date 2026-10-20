@@ -43,6 +43,8 @@
         return m('onay.veri.YalnizcaYazildi');
       case 'EklentiCiktisi':
         return m('onay.veri.EklentiCiktisi');
+      case 'WebSayfasi':
+        return m('onay.veri.WebSayfasi');
       default:
         return m('onay.veri.Bilinmiyor');
     }
@@ -202,7 +204,9 @@
                 ? 'puzzle'
                 : aktifOge.mcp
                   ? 'box'
-                  : 'file-text'}
+                  : aktifOge.web
+                    ? 'external-link'
+                    : 'file-text'}
             size={16}
           />
           <div class="yol-blogu">
@@ -266,6 +270,30 @@
           </dl>
         {:else if ilkGonderim}
           <IlkGonderimKarti oge={aktifOge} />
+        {:else if aktifOge.web}
+          {@const w = aktifOge.web}
+          <dl class="kabuk">
+            <dt>{m('onay.web.hedef')}</dt>
+            <dd class="mono">
+              <GorunurMetin metin={`${w.sema}://${w.host}:${w.port}`} />
+            </dd>
+            <dt>{m('onay.web.yontem')}</dt>
+            <dd class="mono"><GorunurMetin metin={w.yontem} /></dd>
+            <dt>{m('onay.web.adres')}</dt>
+            <dd><pre class="komut"><GorunurMetin metin={w.maskeli_url} /></pre></dd>
+            <dt>{m('onay.web.yonlendirme')}</dt>
+            <dd class={{ uyari: w.yonlendirme_izni.tip === 'IzinliHostlar' && w.yonlendirme_izni.hostlar.length > 0 }}>
+              {#if w.yonlendirme_izni.tip === 'AyniHost' || w.yonlendirme_izni.hostlar.length === 0}
+                <GorunurMetin metin={m('onay.web.yonlendirme_ayni_host', { host: w.host })} />
+              {:else}
+                <GorunurMetin
+                  metin={m('onay.web.yonlendirme_izinli', {
+                    hostlar: w.yonlendirme_izni.hostlar.join(', '),
+                  })}
+                />
+              {/if}
+            </dd>
+          </dl>
         {:else}
           <div class="diff">
             {#each parcalar as p, i (i)}
@@ -369,11 +397,14 @@
     {/if}
 
     <!-- Eklentinin yerel onayını ilk gönderim kartı anlatır. -->
-    {#if ogeler.some((o) => o.yerel_onay && !o.eklenti && !o.mcp)}
+    {#if ogeler.some((o) => o.yerel_onay && !o.eklenti && !o.mcp && !o.web)}
       <p class="yerel"><Icon name="shield-alert" size={16} />{m('onay.kabuk.yerel')}</p>
     {/if}
     {#if ogeler.some((o) => o.yerel_onay && o.mcp)}
       <p class="yerel"><Icon name="shield-alert" size={16} />{m('mcp.onay.yerel')}</p>
+    {/if}
+    {#if ogeler.some((o) => o.yerel_onay && o.web)}
+      <p class="yerel"><Icon name="shield-alert" size={16} />{m('onay.web.yerel')}</p>
     {/if}
 
     <div class="alt">

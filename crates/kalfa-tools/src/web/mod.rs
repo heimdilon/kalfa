@@ -19,7 +19,7 @@ pub use arac::{WEB_ARAC_ADI, WebGetirAraci};
 pub use arama::{
     AramaHatasi, AramaSaglayiciYaniti, AramaSonucOgesi, DogrulanmisAramaSonucu, KaynakliIddia,
     KaynakliYanitHatasi, OkunanKaynakSayfa, arama_kaynaklarini_oku, arama_sonuclarini_dogrula,
-    kaynakli_yanit_dogrula, mcp_arama_json_coz,
+    kaynakli_yanit_dogrula, mcp_arac_sonucunu_coz, mcp_arama_json_coz,
 };
 pub use html::{
     HtmlBaglantisi, HtmlBelgesi, HtmlBolumu, html_cozumle, html_meta_karakter_kumesi_bul,

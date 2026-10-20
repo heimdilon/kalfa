@@ -93,10 +93,101 @@ pub struct Hazirlik {
     /// MCP aracının güvenli kart özeti ve R/D mühür girdileri. Ham komut,
     /// ortam değişkeni, sır ve dosya yolu bu alana konmaz.
     pub mcp: Option<McpAracHazirligi>,
+    /// Web getirme aracının (`web_getir`) hedef, yöntem ve yönlendirme tarifi.
+    /// Mühre girer: onaydan sonra hedef URL, host, port veya yönlendirme kapsamı
+    /// değişirse çağrı çalışmaz.
+    pub web: Option<WebTarifi>,
     /// Araç çağrı boyunca kilit tutmaz; dosyaya kendisi dokunurken o yolun
     /// kilidini kısa süre alır (aşama 4 tasarımı §8.3, karar 5). Uzun bir
     /// eklenti çağrısı aynı çalışma alanındaki komutları bekletmez.
     pub kilitsiz: bool,
+}
+
+/// Yönlendirme sırasında hangi hedef hostlara geçiş yapılabileceğini belirler.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "tip", content = "hostlar")]
+pub enum YonlendirmeIzni {
+    /// Yalnızca ilk istekteki aynı hosta yönlendirmeye izin verilir (varsayılan).
+    #[default]
+    AyniHost,
+    /// İlk hosta ek olarak açıkça onaylanmış hedef host listesine izin verilir.
+    IzinliHostlar(Vec<String>),
+}
+
+impl YonlendirmeIzni {
+    /// Verilen `hedef_host`, `baslangic_host` veya onaylı listede mi?
+    pub fn host_izinli_mi(&self, baslangic_host: &str, hedef_host: &str) -> bool {
+        let baslangic = baslangic_host.trim().to_ascii_lowercase();
+        let hedef = hedef_host.trim().to_ascii_lowercase();
+        if baslangic == hedef {
+            return true;
+        }
+        match self {
+            Self::AyniHost => false,
+            Self::IzinliHostlar(liste) => liste
+                .iter()
+                .any(|izinli| izinli.trim().eq_ignore_ascii_case(&hedef)),
+        }
+    }
+}
+
+/// Bir `web_getir` çağrısının onay ve mühürlemeye esas tarifi.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebTarifi {
+    /// Fragment (`#...`) arındırılmış kanonik istek URL'si.
+    pub kanonik_url: String,
+    /// Günlük ve onay penceresi için hassas sorgu parametreleri maskelenmiş URL.
+    pub maskeli_url: String,
+    /// Küçük harfe normalize edilmiş hedef host adı.
+    pub host: String,
+    /// Etkin hedef port (ör. HTTPS için 443, HTTP için 80).
+    pub port: u16,
+    /// URL şeması (`"https"` veya `"http"`).
+    pub sema: String,
+    /// HTTP yöntemi (`"GET"`).
+    pub yontem: String,
+    /// Yönlendirme kapsamı.
+    pub yonlendirme_izni: YonlendirmeIzni,
+    /// Bu `(host, port)` çiftine mevcut oturumda ilk kez mi çıkılıyor?
+    #[serde(default)]
+    pub oturumda_ilk_host: bool,
+}
+
+/// [`WebTarifi`] için tek yönlü, alan sınırları ayrılmış SHA-256 mühür özeti üretir.
+pub fn web_muhur_ozeti(tarif: &WebTarifi) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+
+    fn uzunluklu_yaz(ozetleyici: &mut Sha256, alan: &[u8]) {
+        ozetleyici.update((alan.len() as u64).to_le_bytes());
+        ozetleyici.update(alan);
+    }
+
+    let mut ozetleyici = Sha256::new();
+    uzunluklu_yaz(&mut ozetleyici, b"kalfa-web-muhur-v1");
+    uzunluklu_yaz(&mut ozetleyici, tarif.yontem.as_bytes());
+    uzunluklu_yaz(&mut ozetleyici, tarif.sema.as_bytes());
+    uzunluklu_yaz(&mut ozetleyici, tarif.host.as_bytes());
+    ozetleyici.update(tarif.port.to_le_bytes());
+    uzunluklu_yaz(&mut ozetleyici, tarif.kanonik_url.as_bytes());
+    match &tarif.yonlendirme_izni {
+        YonlendirmeIzni::AyniHost => {
+            uzunluklu_yaz(&mut ozetleyici, b"ayni-host");
+        }
+        YonlendirmeIzni::IzinliHostlar(hostlar) => {
+            uzunluklu_yaz(&mut ozetleyici, b"izinli-hostlar");
+            let mut sirali: Vec<String> = hostlar
+                .iter()
+                .map(|h| h.trim().to_ascii_lowercase())
+                .collect();
+            sirali.sort();
+            sirali.dedup();
+            ozetleyici.update((sirali.len() as u64).to_le_bytes());
+            for h in &sirali {
+                uzunluklu_yaz(&mut ozetleyici, h.as_bytes());
+            }
+        }
+    }
+    ozetleyici.finalize().into()
 }
 
 /// Eklenti aracının kimliği ve yetenekleri (aşama 4 tasarımı §8.1, §8.3).

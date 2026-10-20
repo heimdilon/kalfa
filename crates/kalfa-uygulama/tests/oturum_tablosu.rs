@@ -927,3 +927,105 @@ async fn efor_degistir_kaydedilir_ve_kurtarilir() {
         Some("low")
     );
 }
+
+#[tokio::test]
+async fn uygulama_oturumu_web_getir_aracini_varsayilan_kayitta_sunar_ve_yerel_onay_penceresini_baglar()
+ {
+    use kalfa_core::protokol::{OnayKarari, VeriCikisi, YonlendirmeIzni};
+    use kalfa_uygulama::sozlesme::OnayGirdisi;
+
+    let o = ortam(vec![
+        SahteYanit::arac(
+            "web_getir",
+            serde_json::json!({
+                "url": "https://docs.rs/tokio?api_key=gizli-anahtar-1",
+                "izinli_yonlendirme_hostlari": ["cdn.docs.rs"]
+            }),
+        ),
+        SahteYanit::metin("Web isteği yerel onayda reddedildi."),
+    ])
+    .await;
+
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .izin_kipi_degistir(oturum, Kip::Serbest)
+        .await
+        .unwrap();
+    o.t.uygulama
+        .mesaj_gonder(oturum, "docs.rs sayfasını getir".into())
+        .await
+        .unwrap();
+
+    let olaylar = olay_bekle(&o.t, oturum, &mut rx, |x| {
+        matches!(x, Olay::OnayGerekiyor { .. })
+    })
+    .await;
+
+    // 1. Model isteğinde `varsayilan_araclar` üzerinden `web_getir` aracı sunulmuş olmalı.
+    let ilk_istek = &o.t.saglayici.istekler()[0];
+    let arac_adlari: Vec<&str> = ilk_istek
+        .tools
+        .iter()
+        .map(|t| t.function.name.as_str())
+        .collect();
+    assert!(
+        arac_adlari.contains(&"web_getir"),
+        "Uygulama oturumunda web_getir varsayılan araç olarak sunulmalı"
+    );
+
+    // 2. OnayGerekiyor olayı açık WebTarifi ve VeriCikisi::WebSayfasi taşımalı, EklentiTarifi taşımamalı.
+    let ogeler = olaylar
+        .into_iter()
+        .find_map(|x| match x {
+            Olay::OnayGerekiyor { ogeler, .. } => Some(ogeler),
+            _ => None,
+        })
+        .expect("OnayGerekiyor olayı gelmeli");
+    assert_eq!(ogeler.len(), 1);
+    let oge = &ogeler[0];
+    assert_eq!(oge.arac, "web_getir");
+    assert!(oge.yerel_onay);
+    assert_eq!(oge.veri_cikisi, Some(VeriCikisi::WebSayfasi));
+    assert!(oge.eklenti.is_none());
+    let web = oge.web.as_ref().expect("OnayOgesi.web dolu olmalı");
+    assert_eq!(web.host, "docs.rs");
+    assert_eq!(web.port, 443);
+    assert_eq!(web.sema, "https");
+    assert_eq!(web.yontem, "GET");
+    assert_eq!(
+        web.maskeli_url,
+        "https://docs.rs/tokio?api_key=[MASKELENDI]"
+    );
+    assert_eq!(
+        web.yonlendirme_izni,
+        YonlendirmeIzni::IzinliHostlar(vec!["cdn.docs.rs".into()])
+    );
+
+    // 3. Uygulama üzerinden onay gönderildiğinde yerel iletişim kutusu (`yerel_onay_sorusu`)
+    //    hedef/yöntem/veri çıkışı/yönlendirme kapsamıyla açılır; kullanıcı yerel pencerede
+    //    vazgeçerse ağa çıkılmadan çağrı reddedilir.
+    o.t.iletisim.onay_ver(false);
+    o.t.uygulama
+        .arac_onayi(
+            oturum,
+            vec![OnayGirdisi {
+                cagri: oge.cagri,
+                karar: OnayKarari::Onayla,
+                muhur: oge.muhur.clone(),
+                kisayol: false,
+            }],
+        )
+        .await
+        .unwrap();
+
+    let bitis_olaylari = olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+    assert!(bitis_olaylari.iter().any(|x| matches!(
+        x,
+        Olay::AracSonucu {
+            arac,
+            durum: kalfa_core::protokol::AracDurumu::Reddedildi,
+            ..
+        } if arac == "web_getir"
+    )));
+}

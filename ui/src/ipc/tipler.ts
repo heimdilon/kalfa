@@ -86,6 +86,24 @@ export interface OnayOgesi {
   eklenti?: EklentiTarifi;
   /** MCP aracında sunucu, araç, erişim ve ağ (1.1a tasarımı §9). */
   mcp?: McpOnayKarti;
+  /** Web getirme (`web_getir`) aracında hedef adres, yöntem ve yönlendirme kapsamı. */
+  web?: WebTarifi;
+}
+
+export type YonlendirmeIzni =
+  | { tip: 'AyniHost' }
+  | { tip: 'IzinliHostlar'; hostlar: string[] };
+
+/** Web getirme (`web_getir`) aracının onay kartında gösterilen tarifi. */
+export interface WebTarifi {
+  kanonik_url: string;
+  maskeli_url: string;
+  host: string;
+  port: number;
+  sema: string;
+  yontem: string;
+  yonlendirme_izni: YonlendirmeIzni;
+  oturumda_ilk_host: boolean;
 }
 
 /** MCP onay kartının özeti; komut, ortam ve yol taşımaz. */
@@ -130,7 +148,9 @@ export type VeriCikisi =
   | 'DosyaAdlari'
   | 'YalnizcaYazildi'
   /** Eklentinin ürettiği metin (aşama 4 tasarımı §8.1). */
-  | 'EklentiCiktisi';
+  | 'EklentiCiktisi'
+  /** Dış web sayfasından okunan düzleştirilmiş metin. */
+  | 'WebSayfasi';
 
 export interface OnaysizDegisiklikler {
   yollar: string[];

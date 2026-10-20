@@ -169,6 +169,10 @@ pub fn muhur_hesapla(
         alan(&mut h, &calisma);
         alan(&mut h, &arac_tanimi);
     }
+    if let Some(web) = &hazirlik.web {
+        alan(&mut h, b"web-v1");
+        alan(&mut h, &crate::arac::web_muhur_ozeti(web));
+    }
     if hazirlik.kilitsiz {
         alan(&mut h, b"kilitsiz");
     }

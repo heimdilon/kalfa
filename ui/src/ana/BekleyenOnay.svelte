@@ -118,6 +118,25 @@
               {/if}
             </span>
           </div>
+        {:else if o.web}
+          <code class="komut"><GorunurMetin metin={o.web.maskeli_url} /></code>
+          <div class="rozetler">
+            <Badge tone="accent">{o.web.yontem} {o.web.sema}://{o.web.host}:{o.web.port}</Badge>
+            {#if o.web.oturumda_ilk_host}
+              <Badge tone="warn">{m('onay.web.ilk_host')}</Badge>
+            {/if}
+            <span class="kapsam">
+              {#if o.web.yonlendirme_izni.tip === 'AyniHost' || o.web.yonlendirme_izni.hostlar.length === 0}
+                <GorunurMetin metin={m('onay.web.yonlendirme_ayni_host', { host: o.web.host })} />
+              {:else}
+                <GorunurMetin
+                  metin={m('onay.web.yonlendirme_izinli', {
+                    hostlar: o.web.yonlendirme_izni.hostlar.join(', '),
+                  })}
+                />
+              {/if}
+            </span>
+          </div>
         {/if}
         {#if d && d.parcalar.length > 0}
           {#each acikDiffler.has(o.cagri) ? d.parcalar : d.kisa.parcalar as p, j (j)}

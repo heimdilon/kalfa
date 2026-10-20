@@ -643,6 +643,9 @@ impl Oturum {
                 &mcp.ag,
             ));
         }
+        if let Some(web) = &hazirlik.web {
+            karar = karar.birlestir(crate::izin::web_karari(kip, web));
+        }
         // Onaysız yazmanın güvenlik ağı geri almadır; önceki hâli saklanamayan
         // yazma o ağın dışındadır ve her kipte onay ister (K9). Kayıtsız
         // oturumda geri alma yoktur, kural işlemez.
@@ -1031,6 +1034,7 @@ impl Oturum {
                 kisayol: teklifler.get(&p.cagri).cloned(),
                 eklenti: p.hazirlik.eklenti.clone(),
                 mcp: p.hazirlik.mcp.as_ref().map(McpOnayKarti::yeni),
+                web: p.hazirlik.web.clone(),
             })
             .collect();
         // Yerel iletişim kutusu komutu çekirdekten okur, webview'dan değil
@@ -2335,9 +2339,19 @@ fn gorunmez_icerir(h: &Hazirlik) -> bool {
         .iter()
         .map(CalismaYolu::as_str)
         .chain(h.yazilan.iter().map(|y| y.yol.as_str()));
+    let web = h.web.iter().flat_map(|w| {
+        let ek: &[String] = match &w.yonlendirme_izni {
+            crate::arac::YonlendirmeIzni::AyniHost => &[],
+            crate::arac::YonlendirmeIzni::IzinliHostlar(liste) => liste.as_slice(),
+        };
+        [w.maskeli_url.as_str(), w.host.as_str()]
+            .into_iter()
+            .chain(ek.iter().map(String::as_str))
+    });
     kabuk
         .chain(h.diff.as_deref())
         .chain(yollar)
+        .chain(web)
         .any(gorunmez_var_mi)
 }
 
@@ -2372,6 +2386,12 @@ fn onayla_kapsanan(mut taze: Hazirlik, onaylanan: &Hazirlik) -> Hazirlik {
         t.ilk_gonderim = true;
         t.dosya_sayisi = o.dosya_sayisi;
         t.bayt = o.bayt;
+    }
+    if let (Some(o), Some(t)) = (&onaylanan.web, taze.web.as_mut())
+        && o.oturumda_ilk_host
+        && !t.oturumda_ilk_host
+    {
+        t.oturumda_ilk_host = true;
     }
     taze
 }

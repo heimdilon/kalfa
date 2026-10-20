@@ -9,6 +9,7 @@
 
 use std::net::IpAddr;
 
+use kalfa_core::arac::{AracCiktisi, AracHatasi};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -28,8 +29,33 @@ pub struct AramaSonucOgesi {
     /// Ham sonuç URL'si.
     pub url: String,
     /// Kısa özet parçacığı (snippet).
-    #[serde(default, alias = "snippet", alias = "description")]
+    #[serde(
+        default,
+        alias = "snippet",
+        alias = "description",
+        alias = "content",
+        alias = "text",
+        alias = "summary"
+    )]
     pub ozet_parcacigi: String,
+}
+
+#[derive(Deserialize)]
+struct HamAramaSonucOgesi {
+    #[serde(alias = "title")]
+    baslik: String,
+    url: String,
+    #[serde(
+        default,
+        alias = "snippet",
+        alias = "description",
+        alias = "content",
+        alias = "text",
+        alias = "summary"
+    )]
+    ozet_parcacigi: String,
+    #[serde(default, alias = "highlights", alias = "extra_snippets")]
+    ek_vurgular: Vec<String>,
 }
 
 /// Doğrulanmış ve maskelenmiş arama sonucu öğesi.
@@ -117,15 +143,118 @@ pub enum KaynakliYanitHatasi {
     AlintiBulunamadi { kaynak_url: String, alinti: String },
 }
 
-/// MCP arama aracından gelen JSON metnini [`AramaSonucOgesi`] listesine çözümler.
-pub fn mcp_arama_json_coz(json_metni: &str) -> Result<Vec<AramaSonucOgesi>, AramaHatasi> {
-    let deger: serde_json::Value = serde_json::from_str(json_metni.trim())
-        .map_err(|h| AramaHatasi::CiktiAyristirma(h.to_string()))?;
+fn oge_normallestir(mut oge: HamAramaSonucOgesi) -> AramaSonucOgesi {
+    if oge.ozet_parcacigi.trim().is_empty() && !oge.ek_vurgular.is_empty() {
+        oge.ozet_parcacigi = oge
+            .ek_vurgular
+            .iter()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+    }
+    AramaSonucOgesi {
+        baslik: oge.baslik,
+        url: oge.url,
+        ozet_parcacigi: oge.ozet_parcacigi,
+    }
+}
 
-    if let Some(hata_kodu) = deger.get("hata_kodu").and_then(|v| v.as_u64()) {
+/// Exa MCP ve Brave Search MCP gibi sunucuların `CallToolResult.content` metin
+/// bloklarında ürettiği `Title:` / `URL:` / `Text:` (`Description:` / `Highlights:`)
+/// biçimli düz metin çıktısını [`AramaSonucOgesi`] listesine çözümler.
+fn mcp_arama_metin_bloklarini_coz(metin: &str) -> Option<Vec<AramaSonucOgesi>> {
+    let mut sonuclar = Vec::new();
+    let mut baslik: Option<String> = None;
+    let mut url: Option<String> = None;
+    let mut ozet_parcalari: Vec<String> = Vec::new();
+
+    let kayit_tamamla = |baslik: &mut Option<String>,
+                         url: &mut Option<String>,
+                         ozet_parcalari: &mut Vec<String>,
+                         sonuclar: &mut Vec<AramaSonucOgesi>| {
+        if let (Some(b), Some(u)) = (baslik.take(), url.take()) {
+            let b_temiz = b.trim().to_string();
+            let u_temiz = u.trim().to_string();
+            if !b_temiz.is_empty() && !u_temiz.is_empty() {
+                sonuclar.push(AramaSonucOgesi {
+                    baslik: b_temiz,
+                    url: u_temiz,
+                    ozet_parcacigi: ozet_parcalari.join(" ").trim().to_string(),
+                });
+            }
+        }
+        ozet_parcalari.clear();
+    };
+
+    for ham_satir in metin.lines() {
+        let satir = ham_satir.trim();
+        if satir.is_empty() {
+            continue;
+        }
+        if let Some(deger) = satir
+            .strip_prefix("Title:")
+            .or_else(|| satir.strip_prefix("Başlık:"))
+        {
+            if baslik.is_some() && url.is_some() {
+                kayit_tamamla(&mut baslik, &mut url, &mut ozet_parcalari, &mut sonuclar);
+            }
+            baslik = Some(deger.trim().to_string());
+        } else if let Some(deger) = satir
+            .strip_prefix("URL:")
+            .or_else(|| satir.strip_prefix("Url:"))
+        {
+            url = Some(deger.trim().to_string());
+        } else if let Some(deger) = satir
+            .strip_prefix("Text:")
+            .or_else(|| satir.strip_prefix("Description:"))
+            .or_else(|| satir.strip_prefix("Snippet:"))
+            .or_else(|| satir.strip_prefix("Highlights:"))
+            .or_else(|| satir.strip_prefix("Content:"))
+            .or_else(|| satir.strip_prefix("Summary:"))
+            .or_else(|| satir.strip_prefix("Özet:"))
+        {
+            let parca = deger.trim();
+            if !parca.is_empty() {
+                ozet_parcalari.push(parca.to_string());
+            }
+        }
+    }
+
+    kayit_tamamla(&mut baslik, &mut url, &mut ozet_parcalari, &mut sonuclar);
+    if sonuclar.is_empty() {
+        None
+    } else {
+        Some(sonuclar)
+    }
+}
+
+/// MCP arama aracından gelen JSON veya yapılandırılmış metin çıktısını
+/// [`AramaSonucOgesi`] listesine çözümler.
+pub fn mcp_arama_json_coz(json_metni: &str) -> Result<Vec<AramaSonucOgesi>, AramaHatasi> {
+    let temiz = json_metni.trim();
+    let deger: serde_json::Value = match serde_json::from_str(temiz) {
+        Ok(d) => d,
+        Err(json_hatasi) => {
+            if let Some(bloklar) = mcp_arama_metin_bloklarini_coz(temiz) {
+                return Ok(bloklar);
+            }
+            return Err(AramaHatasi::CiktiAyristirma(json_hatasi.to_string()));
+        }
+    };
+
+    if let Some(hata_kodu) = deger
+        .get("hata_kodu")
+        .or_else(|| deger.get("status"))
+        .or_else(|| deger.get("code"))
+        .and_then(|v| v.as_u64())
+    {
         match hata_kodu {
             429 => {
-                let sn = deger.get("yeniden_dene_sn").and_then(|v| v.as_u64());
+                let sn = deger
+                    .get("yeniden_dene_sn")
+                    .or_else(|| deger.get("retry_after"))
+                    .and_then(|v| v.as_u64());
                 return Err(AramaHatasi::HizSiniri {
                     yeniden_dene_sn: sn,
                 });
@@ -133,6 +262,8 @@ pub fn mcp_arama_json_coz(json_metni: &str) -> Result<Vec<AramaSonucOgesi>, Aram
             401..=403 => {
                 let detay = deger
                     .get("mesaj")
+                    .or_else(|| deger.get("message"))
+                    .or_else(|| deger.get("error"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("yetkisiz veya yetersiz kredi")
                     .to_string();
@@ -148,17 +279,106 @@ pub fn mcp_arama_json_coz(json_metni: &str) -> Result<Vec<AramaSonucOgesi>, Aram
         deger
             .get("sonuclar")
             .or_else(|| deger.get("results"))
-            .or_else(|| deger.get("web"))
+            .or_else(|| {
+                deger.get("web").and_then(|w| {
+                    if w.is_array() {
+                        Some(w)
+                    } else {
+                        w.get("results").or_else(|| w.get("sonuclar"))
+                    }
+                })
+            })
     };
 
     let Some(dizi) = dizi_degeri else {
         return Err(AramaHatasi::CiktiAyristirma(
-            "JSON içinde sonuç dizisi (`sonuclar` veya `results`) bulunamadı".into(),
+            "JSON içinde sonuç dizisi (`sonuclar`, `results` veya `web.results`) bulunamadı".into(),
         ));
     };
 
-    serde_json::from_value::<Vec<AramaSonucOgesi>>(dizi.clone())
-        .map_err(|h| AramaHatasi::CiktiAyristirma(h.to_string()))
+    let ogeler = serde_json::from_value::<Vec<HamAramaSonucOgesi>>(dizi.clone())
+        .map_err(|h| AramaHatasi::CiktiAyristirma(h.to_string()))?;
+    Ok(ogeler.into_iter().map(oge_normallestir).collect())
+}
+
+fn hata_metnini_sinifla(icerik: &str) -> Option<AramaSaglayiciYaniti> {
+    match mcp_arama_json_coz(icerik) {
+        Err(AramaHatasi::HizSiniri { yeniden_dene_sn }) => {
+            return Some(AramaSaglayiciYaniti::HizSiniri { yeniden_dene_sn });
+        }
+        Err(AramaHatasi::YetersizBakiyeVeyaKimlik { detay }) => {
+            return Some(AramaSaglayiciYaniti::YetersizBakiyeVeyaKimlik { detay });
+        }
+        _ => {}
+    }
+
+    let kucuk = icerik.to_ascii_lowercase();
+    if kucuk.contains("429")
+        || kucuk.contains("rate limit")
+        || kucuk.contains("too many requests")
+        || icerik.contains("hız sınırı")
+    {
+        return Some(AramaSaglayiciYaniti::HizSiniri {
+            yeniden_dene_sn: None,
+        });
+    }
+    if kucuk.contains("401")
+        || kucuk.contains("402")
+        || kucuk.contains("403")
+        || kucuk.contains("unauthorized")
+        || kucuk.contains("payment required")
+        || kucuk.contains("insufficient")
+        || kucuk.contains("quota")
+        || icerik.contains("yetkisiz")
+        || icerik.contains("bakiye")
+    {
+        return Some(AramaSaglayiciYaniti::YetersizBakiyeVeyaKimlik {
+            detay: icerik.trim().to_string(),
+        });
+    }
+    None
+}
+
+/// `kalfa-mcp` araç yürütücüsünün (`McpArac` / `sonucu_donustur`) ürettiği
+/// `Result<AracCiktisi, AracHatasi>` sözleşmesini [`AramaSaglayiciYaniti`]'na
+/// dönüştürür.
+pub fn mcp_arac_sonucunu_coz(
+    sonuc: &Result<AracCiktisi, AracHatasi>,
+) -> Result<AramaSaglayiciYaniti, AramaHatasi> {
+    match sonuc {
+        Ok(cikti) => {
+            if !cikti.kaynak.starts_with("mcp:") {
+                return Err(AramaHatasi::CiktiAyristirma(format!(
+                    "beklenen `mcp:` kaynak etiketi, gelen: `{}`",
+                    cikti.kaynak
+                )));
+            }
+            match mcp_arama_json_coz(&cikti.icerik) {
+                Ok(liste) => Ok(AramaSaglayiciYaniti::Basarili(liste)),
+                Err(AramaHatasi::HizSiniri { yeniden_dene_sn }) => {
+                    Ok(AramaSaglayiciYaniti::HizSiniri { yeniden_dene_sn })
+                }
+                Err(AramaHatasi::YetersizBakiyeVeyaKimlik { detay }) => {
+                    Ok(AramaSaglayiciYaniti::YetersizBakiyeVeyaKimlik { detay })
+                }
+                Err(diger) => Err(diger),
+            }
+        }
+        Err(AracHatasi::Iptal) => Err(AramaHatasi::IptalEdildi),
+        Err(AracHatasi::Basarisiz(cikti)) => {
+            if !cikti.kaynak.is_empty() && !cikti.kaynak.starts_with("mcp:") {
+                return Err(AramaHatasi::CiktiAyristirma(format!(
+                    "beklenen `mcp:` kaynak etiketi, gelen: `{}`",
+                    cikti.kaynak
+                )));
+            }
+            if let Some(yanit) = hata_metnini_sinifla(&cikti.icerik) {
+                return Ok(yanit);
+            }
+            Err(AramaHatasi::CiktiAyristirma(cikti.icerik.clone()))
+        }
+        Err(diger) => Err(AramaHatasi::CiktiAyristirma(diger.to_string())),
+    }
 }
 
 /// Arama sağlayıcısı yanıtını ve içindeki her URL'yi şema, kimlik bilgisi ve

@@ -5,7 +5,8 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, AracOrtami, EklentiTarifi, Hazirlik};
+use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, AracOrtami, Hazirlik};
+use kalfa_core::protokol::VeriCikisi;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use url::Host;
@@ -262,28 +263,15 @@ impl Arac for WebGetirAraci {
 
     async fn hazirla(&self, argumanlar: &Value) -> Result<Hazirlik, AracHatasi> {
         let cozulmus = self.argumanlari_coz(argumanlar)?;
-        let muhur_ozeti = hex::encode(web_muhur_ozeti(&cozulmus.tarif));
         let aciklama = format!(
             "`{}` ({}:{}) web adresini GET ile okumak istiyor.",
             cozulmus.tarif.maskeli_url, cozulmus.tarif.host, cozulmus.tarif.port
         );
 
-        // `EklentiTarifi` üzerinden mühür özeti (`ozet`) ve `ilk_gonderim: true`
-        // bayrağı taşınır: böylece ortak çekirdek (`Oturum::karar` ve
-        // `muhur_hesapla`) `Kip::Serbest` dahil her kipte yerel onay (`YerelOnayli`)
-        // ister ve `web_muhur_ozeti` değerini doğrudan onay mührüne bağlar.
         Ok(Hazirlik {
             aciklama,
-            eklenti: Some(EklentiTarifi {
-                ad: WEB_ARAC_ADI.to_string(),
-                surum: "0.1.1".to_string(),
-                ozet: muhur_ozeti,
-                globlar: Vec::new(),
-                evren_uclari: vec![cozulmus.tarif.maskeli_url],
-                ilk_gonderim: true,
-                dosya_sayisi: 0,
-                bayt: 0,
-            }),
+            veri_cikisi: Some(VeriCikisi::WebSayfasi),
+            web: Some(cozulmus.tarif),
             kilitsiz: true,
             ..Default::default()
         })
@@ -300,13 +288,9 @@ impl Arac for WebGetirAraci {
         }
 
         let cozulmus = self.argumanlari_coz(argumanlar)?;
-        let beklenen_ozet = hex::encode(web_muhur_ozeti(&cozulmus.tarif));
-        let hazirlik_ozeti = hazirlik
-            .eklenti
-            .as_ref()
-            .map(|e| e.ozet.as_str())
-            .ok_or(AracHatasi::OnayEskidi)?;
-        if hazirlik_ozeti != beklenen_ozet {
+        let beklenen_ozet = web_muhur_ozeti(&cozulmus.tarif);
+        let hazirlik_web = hazirlik.web.as_ref().ok_or(AracHatasi::OnayEskidi)?;
+        if web_muhur_ozeti(hazirlik_web) != beklenen_ozet {
             return Err(AracHatasi::OnayEskidi);
         }
 
