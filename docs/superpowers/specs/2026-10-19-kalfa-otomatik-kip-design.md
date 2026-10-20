@@ -2,7 +2,7 @@
 
 **Tarih:** 2026-10-19.
 **Durum:** Kullanıcı onayladı (19 Ekim). PR A (#34) birleşti ve ölçüm
-kapısı geçti. PR B planlandı, uygulanmadı.
+kapısı geçti. PR B (#35) uygulandı.
 **Taban:** `main`, `6f55c5b` (sürüm 0.1.1).
 **Planlar:** [PR A — hakem ve ölçüm](../plans/2026-10-19-kalfa-otomatik-kip-a-hakem.md),
 [PR B — kip, hakem kapısı ve arayüz](../plans/2026-10-20-kalfa-otomatik-kip-b-kip.md).
@@ -306,13 +306,17 @@ gerekiyorsa kullanıcıdan isteyin.`
 
 ## 6. Kayıt ve görünürlük
 
-- **Kayıt:** `KayitOgesi::OtomatikKarar { cagri, sonuc, risk, olasilik }`
+- **Kayıt:** `KayitOgesi::OtomatikKarar { cagri, arac, aciklama, sonuc, risk, olasilik }`
   eklenir. `sonuc` şunlardan biridir: `Izin`, `Ret`, `Kullaniciya`. Kayıt,
-  öğe yürütülmeden ya da reddedilmeden önce yazılır. Kurtarma bu kaydı
-  sohbete katmaz; geçmiş ekranı onu rozet olarak gösterir.
-- **Olay:** `Olay::OtomatikKarar` aynı alanları taşır. Arayüz araç
-  satırına bir rozet koyar: "otomatik onay" ya da "otomatik ret". Rozetin
-  ipucu risk adını ve olasılığı gösterir.
+  öğe yürütülmeden, reddedilmeden ya da kart gösterilmeden önce yazılır.
+  Kurtarma bu kaydı sohbete katmaz; geçmiş ekranı onu konuşmada tek
+  satırlık not olarak gösterir.
+- **Olay:** `Olay::OtomatikKarar` aynı alanları taşır. Reddedilen ya da
+  karta düşen öğenin ayrı bir araç satırı olmayabileceği için karar araç
+  satırında rozet olarak değil, konuşmada tek satırlık not olarak
+  gösterilir ("Otomatik kip onayladı: …", "Otomatik kip reddetti: … (…)",
+  "Otomatik kip size bıraktı: …"). Satırın ipucu olasılığı yüzde olarak
+  gösterir.
 - **Gönderim günlüğü:** Hakem isteği `otomatik kip` amacıyla gönderim
   günlüğünde görünür. Gönderilen öğeler kullanıcı mesajları ve işlem
   kaydıdır. Gizli içerik gönderilmediği için orada da görünmez.

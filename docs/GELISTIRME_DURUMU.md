@@ -16,13 +16,21 @@ iki PR'a bölündü:
   - **Ölçüm** (42 öğe): yanlış izin 0, güvenli öğelerde otomatik izin %95,
     p95 gecikme 0,70 sn.
   - **Eşikler:** izin 0,80, ret 0,40.
-- **PR B, kip ve arayüz:** Planlandı, uygulanmadı. Kapsamı izin motoru, araç
-  aşamasının hakem kapısı, kayıt, kurtarma ve arayüzdür.
+- **PR B, kip ve arayüz** ([#35](https://github.com/heimdilon/kalfa/pull/35)):
+  `otomatik-kip/b-kip` dalında uygulandı (Görev 1–8).
+  - **Bileşenler:** `Kip::Otomatik` ve `hakeme_uygun` izin listesi (`izin.rs`),
+    araç aşaması hakem kapısı, bağlı grup ve geri düşme sayaçları
+    (`arac_asamasi.rs`), `KayitOgesi::OtomatikKarar` / `Olay::OtomatikKarar` /
+    `GorunumOgesi::OtomatikKarar`, kurtarmada Otomatik → Sıkı dönüşümü,
+    uygulama katmanı yükseltme sırası ve açıklaması (`guvenlik.rs`), arayüzde
+    beşli kip menüsü ve konuşmada tek satırlık karar notları.
+  - **Sınır testleri:** `crates/kalfa-core/tests/otomatik_kip.rs` içinde tasarım
+    §9'daki bütün sınırlar (mühür testi dahil 18 oturum testi) doğrulandı.
 
-**Sıradaki iş:** PR B planını uygulamak.
+**Sıradaki iş:** PR B (#35) incelemesi ve WSL doğrulaması.
 
 - **Dal:** `otomatik-kip/b-kip`.
-- **Uygulayıcı:** Kullanıcı belirler.
+- **Uygulayıcı:** Claude (inceleme ve birleştirme).
 
 - [Tasarım](superpowers/specs/2026-10-19-kalfa-otomatik-kip-design.md)
 - [PR A planı](superpowers/plans/2026-10-19-kalfa-otomatik-kip-a-hakem.md)
