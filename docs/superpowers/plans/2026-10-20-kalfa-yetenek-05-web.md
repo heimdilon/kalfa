@@ -1,7 +1,7 @@
 # kaynaklı web getirme ve MCP arama planı
 
-**Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity.
-**Durum:** Plan taslağı; ürün uygulanmadı, iki platform ön doğrulaması yapılmadı.
+**Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity (`Antigravity-Hat-05`).
+**Durum:** G4a (`web_getir`, ağ/izin/mühür, HTML/metin çıkarımı, sızıntı önleme, UI kartı) ve G4b yerel fixture doğrulaması (`W01`–`W06`) Windows + WSL Ubuntu 24.04 üzerinde tamamlandı; canlı arama sağlayıcısı seçimi kullanıcı kararını ve `#40` (G3b) birleşmesini bekliyor.
 **Plan tabanı:** main `4041a39995e3bea3d56515e53ffc8af47f68e1ae`. **Çalışma dalı:** `codex/plan-yetenek-web`.
 **İlk başlanacak iş:** Önce ağ/izin sözleşmesini ve yerel HTTP fixture'larını hazırlayın. Arama sağlayıcısı kararı sayfa getirme çalışmalarını bekletmez.
 **Koordinasyon:** [iş sırası ve ortak dosyalar](https://github.com/heimdilon/kalfa/blob/codex/plan-yetenek-koordinasyon/docs/superpowers/specs/2026-10-20-kalfa-yetenek-programi.md).
@@ -48,37 +48,37 @@ G4a kaynaklı metin/HTML getirme → G4b seçilmiş tek arama MCP'siyle arama ve
 
 ## Görev 1 — Ağ ve izin deneyi
 
-- [ ] Mevcut `vekil/adres.rs`, DNS/bağlantı ve sistem proxy davranışını inceleyin. Adres yardımcılarını çağırmakla soket hedefinin doğrulanmasının aynı olmadığını testle gösterin.
-- [ ] Ürün izin tarifi, host/redirect kapsamı ve özel ağ reddini PR'a somut olarak yazın. Test fixture özel izni ürün moduna taşınmasın.
-- [ ] TLS/redirect/IP değişimi ve açılmış gövde sınırı testleri eksik davranışta düşsün.
-- [ ] Tamam: hedef IP/host politikasını atlayan bağlantı yolu kalmaz; yeni onay sınıfı ve mühür girdileri belgelenir.
+- [x] Mevcut `vekil/adres.rs`, DNS/bağlantı ve sistem proxy davranışını inceleyin. Adres yardımcılarını çağırmakla soket hedefinin doğrulanmasının aynı olmadığını testle gösterin.
+- [x] Ürün izin tarifi, host/redirect kapsamı ve özel ağ reddini PR'a somut olarak yazın. Test fixture özel izni ürün moduna taşınmasın.
+- [x] TLS/redirect/IP değişimi ve açılmış gövde sınırı testleri eksik davranışta düşsün.
+- [x] Tamam: hedef IP/host politikasını atlayan bağlantı yolu kalmaz; yeni onay sınıfı ve mühür girdileri belgelenir.
 
 ## Görev 2 — Sınırlı HTTP ve metin
 
-- [ ] Mevcut workspace reqwest/url'yi kullanın. HTML için mevcut bağımlılık yeterli değilse en fazla bir küçük parser adayı, sürüm/lisans/bağımlılık/audit bulgusu ve alternatifini karar raporuna yazın; kurulumu ayrıca yetkilendirilir.
-- [ ] HTML'yi regex'le genel ayrıştırıcı gibi işlemeyin; parser kanıtı yoksa düz metin sınırını açık gösterin ve HTML'yi tamamlandı saymayın.
-- [ ] Charset/UTF-8, sıkıştırma bombası, eksik cevap, sonsuz akış ve yanlış content-type testleri.
-- [ ] Tamam: W02/W04/W05, gerçek yerel HTTP bağlantı testlerinde geçer; mock DNS testi tek başına SSRF kanıtı değildir.
+- [x] Mevcut workspace reqwest/url'yi kullanın. HTML için mevcut bağımlılık yeterli değilse en fazla bir küçük parser adayı, sürüm/lisans/bağımlılık/audit bulgusu ve alternatifini karar raporuna yazın; kurulumu ayrıca yetkilendirilir.
+- [x] HTML'yi regex'le genel ayrıştırıcı gibi işlemeyin; parser kanıtı yoksa düz metin sınırını açık gösterin ve HTML'yi tamamlandı saymayın.
+- [x] Charset/UTF-8, sıkıştırma bombası, eksik cevap, sonsuz akış ve yanlış content-type testleri.
+- [x] Tamam: W02/W04/W05, gerçek yerel HTTP bağlantı testlerinde geçer; mock DNS testi tek başına SSRF kanıtı değildir.
 
 ## Görev 3 — Araç, kaynak ve görünürlük
 
-- [ ] Hazırlık/izin/mühür ve araç kaydına bağlayın; yeni araç mevcut Review/Otomatik kip kuralını aşmasın.
-- [ ] Çıktıda URL/kaynak/eksik içerik tek anlam taşır. UI ham HTML basmaz; link açma mevcut yerel onaydan geçer.
-- [ ] Dış sayfa sahte sistem/kullanıcı onayı içerdiğinde meşru görev devam eder; sır istenirse engellenir.
-- [ ] Tamam: W06 ve gönderim önizlemesi/denetçi/bütçe testi geçer.
+- [x] Hazırlık/izin/mühür ve araç kaydına bağlayın; yeni araç mevcut Review/Otomatik kip kuralını aşmasın.
+- [x] Çıktıda URL/kaynak/eksik içerik tek anlam taşır. UI ham HTML basmaz; link açma mevcut yerel onaydan geçer.
+- [x] Dış sayfa sahte sistem/kullanıcı onayı içerdiğinde meşru görev devam eder; sır istenirse engellenir.
+- [x] Tamam: W06 ve gönderim önizlemesi/denetçi/bütçe testi geçer.
 
 ## Görev 4 — Arama sağlayıcısı kararı
 
-- [ ] Kullanıcının mevcut uygun arama MCP'si varsa önce onu değerlendirin. Yoksa en çok iki adayın güncel resmî belgesini, hesap/ücret/veri gönderimi ve kurulum ihtiyacını raporlayın.
-- [ ] Tek sağlayıcı seçimi kullanıcıya açık olsun; plan görevi servis satın alma/kayıt onayı değildir. Arama için model sağlayıcısı değiştirilmez.
-- [ ] Uzak arama G3b'ye bağlıdır. Aynı uzak aracı ikinci bir yerleşik isimle sunup izin/bütçe yolu çoğaltmayın.
-- [ ] Tamam: somut sağlayıcı/tanım, erişim koşulu ve fixture sonuç formatı sabittir; karar veya erişim eksikse G4b açık bekler.
+- [x] Kullanıcının mevcut uygun arama MCP'si varsa önce onu değerlendirin. Yoksa en çok iki adayın güncel resmî belgesini, hesap/ücret/veri gönderimi ve kurulum ihtiyacını raporlayın.
+- [x] Tek sağlayıcı seçimi kullanıcıya açık olsun; plan görevi servis satın alma/kayıt onayı değildir. Arama için model sağlayıcısı değiştirilmez.
+- [x] Uzak arama G3b'ye bağlıdır. Aynı uzak aracı ikinci bir yerleşik isimle sunup izin/bütçe yolu çoğaltmayın.
+- [x] Tamam: somut sağlayıcı/tanım, erişim koşulu ve fixture sonuç formatı sabittir; karar veya erişim eksikse G4b açık bekler.
 
 ## Görev 5 — Arama → kaynak → yanıt
 
-- [ ] Başlık/URL/kısa arama sonucu → asıl sayfayı getir → iddiayı o sayfaya bağla akışını fixture'larla kurun.
-- [ ] İptal, hız sınırı, yetersiz bakiye/kimlik, boş sonuç, hatalı URL ve kaynağın değişmesi durumları açık olsun.
-- [ ] W01/W03'ün fixture başarısı gerçek sağlayıcı denemesi diye sunulmaz. Gerçek bağlantı yetkisi ve varsa deney bütçesi kullanıcıdan gelir.
+- [x] Başlık/URL/kısa arama sonucu → asıl sayfayı getir → iddiayı o sayfaya bağla akışını fixture'larla kurun.
+- [x] İptal, hız sınırı, yetersiz bakiye/kimlik, boş sonuç, hatalı URL ve kaynağın değişmesi durumları açık olsun.
+- [x] W01/W03'ün fixture başarısı gerçek sağlayıcı denemesi diye sunulmaz. Gerçek bağlantı yetkisi ve varsa deney bütçesi kullanıcıdan gelir.
 - [ ] Tamam: gerçek sağlayıcıyla dar yetkili kabul raporu vardır; yoksa arama aşaması tamamlanmadı görünür.
 
 ## Kaynaklar ve doğrulama
@@ -89,9 +89,9 @@ G4a kaynaklı metin/HTML getirme → G4b seçilmiş tek arama MCP'siyle arama ve
 
 ## Bitirme ve devir
 
-- [ ] Windows ve WSL Ubuntu 24.04 için uygulanan AGENTS kontrollerini komut, HEAD ve sonuçla kaydedin. Koşmayan kontrolü ve nedenini ayrıca yazın.
-- [ ] Yeni güvenlik sınırları için olumlu/olumsuz test, iptal ve kurtarma kanıtı ekleyin; gerçek yalıtım kabulü gereken işte yalnız sahtelerle tamam demeyin.
-- [ ] Diff yalnız bu hattın kodu, testleri ve belgelerinden oluşsun. Yeni davranış aynı commit'te Rust/TypeScript sözleşmelerine ve Türkçe metinlere işlensin.
-- [ ] Kendi plan kutularınızı ve bu hat için ayrı bulgu raporunu güncelleyin. GELISTIRME_DURUMU/README'yi bütünleştirme sırası geldiğinde güncel diff'i okuyarak değiştirin.
-- [ ] PR'ı kullanıcı haber verdiğinde Codex'in inceleyeceği şekilde bırakın; otomatik merge veya başka hatta kendiliğinden geçiş yoktur.
-- [ ] Devirde baş/HEAD, yapılan görevler, test/loglar, açık kararlar, tek sıradaki adım ve varsa canlı deney bütçesi bulunsun.
+- [x] Windows ve WSL Ubuntu 24.04 için uygulanan AGENTS kontrollerini komut, HEAD ve sonuçla kaydedin. Koşmayan kontrolü ve nedenini ayrıca yazın.
+- [x] Yeni güvenlik sınırları için olumlu/olumsuz test, iptal ve kurtarma kanıtı ekleyin; gerçek yalıtım kabulü gereken işte yalnız sahtelerle tamam demeyin.
+- [x] Diff yalnız bu hattın kodu, testleri ve belgelerinden oluşsun. Yeni davranış aynı commit'te Rust/TypeScript sözleşmelerine ve Türkçe metinlere işlensin.
+- [x] Kendi plan kutularınızı ve bu hat için ayrı bulgu raporunu güncelleyin. GELISTIRME_DURUMU/README'yi bütünleştirme sırası geldiğinde güncel diff'i okuyarak değiştirin.
+- [x] PR'ı kullanıcı haber verdiğinde Codex'in inceleyeceği şekilde bırakın; otomatik merge veya başka hatta kendiliğinden geçiş yoktur.
+- [x] Devirde baş/HEAD, yapılan görevler, test/loglar, açık kararlar, tek sıradaki adım ve varsa canlı deney bütçesi bulunsun.
