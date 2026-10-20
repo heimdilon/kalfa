@@ -3,7 +3,7 @@
 - **Tarih:** 2026-10-20
 - **Hat / Ajan:** Yetenek 05 (`Antigravity-Hat-05`)
 - **Dal / PR:** `codex/plan-yetenek-web` ([PR #41](https://github.com/heimdilon/kalfa/pull/41))
-- **Kapsam:** `G4a` (Ağ/izin sözleşmesi, açık `WebTarifi`/`VeriCikisi::WebSayfasi` onay/mühür/kayıt yüzeyi [SP-05], kayıpsız UTF-8 bayt ofsetli devam imleci [SP-07], yerel HTTP/HTTPS test sunucuları, sınırlı `web_getir` aracı, kaynak/güven zarflaması, sızıntı önleme ve arayüz/oturum/IPC ürün bağlantısı [SP-08]) + `G4b`'nin yerel/Uzak MCP (`Hat04`) doğrulama katmanı (`W01`–`W06`).
+- **Kapsam:** `G4a` (Ağ/izin sözleşmesi, açık `WebTarifi`/`VeriCikisi::WebSayfasi` onay/mühür/kayıt yüzeyi [SP-05], günlük/DTO/olay/hata yüzeylerinde hassas URL parametresi maskelemesi ve iç yürütme/mühür ayrımı [R2-SP-01], kayıpsız UTF-8 bayt ofsetli devam imleci [SP-07], yerel HTTP/HTTPS test sunucuları, sınırlı `web_getir` aracı, kaynak/güven zarflaması, sızıntı önleme ve arayüz/oturum/IPC ürün bağlantısı [SP-08]) + `G4b`'nin yerel/Uzak MCP (`Hat04`) doğrulama katmanı (`W01`–`W06`).
 
 ---
 
@@ -37,8 +37,8 @@ Kalfa'nın kabuk yalıtımı (`kalfa-sandbox`: Linux'ta `bubblewrap` + `seccomp`
 - **İzin ve Mühür Sözleşmesi (`crates/kalfa-tools/src/web/izin.rs` ve `crates/kalfa-core/src/protokol.rs` — SP-05):**
   - `Kip::Inceleme` kipinde `web_getir` yasaktır ve araç listesinde modele sunulmaz (`yazar_mi() == true`).
   - `Kip::Siki`, `Kip::Proje` ve `Kip::Serbest` kiplerinde daha önce onaylanmamış her `(host, port)` hedefi, şifresiz `http://` istekleri ve farklı host yönlendirmesine izin veren çağrılar `Karar::YerelOnayli` döndürür (`Serbest` kip ilk dış host erişimini otomatik onaylamaz; `Otomatik` kip hakemi dış ağa çıkan `WebTarifi`'ni otomatik onaylamaz).
-  - `WebGetirAraci::hazirla`, `EklentiTarifi` (`evren_uclari` / `ilk_gonderim`) **kullanmaz**; açık `kalfa_core::protokol::WebTarifi` (`maskeli_url`, `sema`, `host`, `port`, `yontem`, `yonlendirme_izni`, `ilk_host_erisimi`, `muhur_ozeti`) ve `VeriCikisi::WebSayfasi` üretir.
-  - `Hazirlik.web` ve `OnayOgesi.web` üzerinden `kalfa_core::onay::muhur_hesapla` doğrudan `WebTarifi` alanlarını mühürler; onaydan sonra URL veya yönlendirme kapsamı değiştirilirse `AracHatasi::OnayEskidi` döner.
+  - `WebGetirAraci::hazirla`, `EklentiTarifi` (`evren_uclari` / `ilk_gonderim`) **kullanmaz**; açık `kalfa_core::arac::WebTarifi` (`maskeli_url`, `sema`, `host`, `port`, `yontem`, `yonlendirme_izni`, `oturumda_ilk_host`, `#[serde(skip)] hedef_ozeti`) ve `VeriCikisi::WebSayfasi` üretir.
+  - `WebTarifi` serileştirildiğinde (`OnayOgesi.web`, IPC olayları, arayüz `ui/src/ipc/tipler.ts`) ham `kanonik_url` **taşımaz** (`R2-SP-01`); bunun yerine iç yürütmede `WebArgumanlari.kanonik_url` kullanılır ve mühür bağlamında `WebTarifi.hedef_ozeti = web_hedef_ozeti(&kanonik_url)` üzerinden ham kanonik URL'in SHA-256 özeti mühürlenir. Onaydan sonra maskeli görünen bir sorgu parametresi bile değiştirilirse `AracHatasi::OnayEskidi` döner.
 
 ---
 
@@ -107,7 +107,7 @@ Plan kuralları gereği kullanıcı onayı olmadan dış serviste hesap açılma
 
 ---
 
-## 5. Codex İncelemesi (`INCELEME.md`) Düzeltme Turu Kanıtları (`SP-05`, `SP-07`, `SP-08`)
+## 5. Codex İncelemesi (`INCELEME.md` ve `r2/INCELEME.md`) Düzeltme Turu Kanıtları (`SP-05`, `SP-07`, `SP-08`, `R2-SP-01`)
 
 - **SP-05 (`[P2] #41: Web onayı EVREN eklenti gönderimi gibi hazırlanıyor`):**
   - **Önce düşen kanıt:** `crates/kalfa-tools/tests/web_getir.rs::gorev3_sp05_web_onayi_eklenti_ilk_gonderim_degil_acik_web_tarifi_ve_veri_cikisi_tasir` (`Hazirlik.eklenti` dolu olduğu ve `VeriCikisi::WebSayfasi` / `Hazirlik.web` bulunmadığı için `crates\kalfa-tools\tests\web_getir.rs:1070:5` satırında düştü).
@@ -121,5 +121,13 @@ Plan kuralları gereği kullanıcı onayı olmadan dış serviste hesap açılma
     2. `crates/kalfa-tools/tests/web_getir.rs::gorev5_sp08_mcp_arama_saglayici_bicimleri_ve_oturum_web_getir_kayit_akisi` (Exa düz metin biçimi ayrıştırılamadığı için düştü).
     3. `crates/kalfa-uygulama/tests/oturum_tablosu.rs::hat04_uzak_mcp_arac_ara_ve_web_getir_kaynakli_yanit_sozlesmesi` (`kalfa-mcp` `"mcp__<sunucu>__<arac>"` kaynak etiketi ürettiği için düştü).
   - **Düzeltme ve geçen kanıtlar (`daca462`, `0ecca05`, `a26f3e3`):** `Hat02 → Hat03 → Hat04` ortak sözleşme commit'leri dala alındı; `WebGetirAraci` `varsayilan_araclar`'a eklendi; `KonusmaOgesi.svelte` + `SourceTag.svelte` + `WebKaynakKarti.svelte` bağlandı; `mcp_arac_sonucunu_coz` hem `"mcp__"` hem `"mcp:"` kaynak etiketleriyle `Hat04` `arac_ara` + `UzakAracKaynagi` akışına bağlandı.
-- **Taban `cargo audit` (Wasmtime) Notu:**
-  - `main` tabanından gelen `wasmtime` `43.0.0` RustSec duyuruları (`RUSTSEC-2026-0085`..`0089`, `0091`..`0096`) `web` hattıyla ilgisizdir; talimat gereği bu hatta rastgele bağımlılık yükseltmesi yapılmamıştır ve ayrıca raporlanmıştır.
+- **R2-SP-01 (`[P2] #41: web_getir URL içindeki hassas parametreleri oturum günlüğüne ve onay DTO'suna açık yazıyor`):**
+  - **Önce düşen kanıtlar:**
+    1. `crates/kalfa-tools/tests/web_getir.rs::gorev5_sp08_mcp_arama_saglayici_bicimleri_ve_oturum_web_getir_kayit_akisi` (`R2-SP-01: Web URL token canary'si ham model araç argümanları üzerinden JSONL'e sızdı (satır #3)` ile düştü).
+    2. `crates/kalfa-tools/tests/web_getir.rs::gorev3_r2_sp01_gunluk_dto_olay_ve_hata_yollarinda_hassas_url_parametresi_maskelenir_gercek_istek_ve_muhur_korunur` (`R2-SP-01: OnayOgesi.web ham kanonik_url serileştirmemeli` ile düştü).
+  - **Düzeltme ve geçen kanıtlar (`ae76cce`):**
+    1. **DTO / Onay Yüzeyi:** `WebTarifi` içinden serileştirilen `kanonik_url` alanı kaldırıldı (`crates/kalfa-core/src/arac.rs`, `ui/src/ipc/tipler.ts`). İç yürütme `WebArgumanlari.kanonik_url` alanını kullanırken, mühür bağlamı `#[serde(skip)] pub hedef_ozeti: [u8; 32]` (`web_hedef_ozeti(&kanonik_url)`) üzerinden ham kanonik URL'in SHA-256 özetini mühürler (`web_muhur_ozeti`). Böylece `OnayOgesi.web` yalnızca `maskeli_url` taşırken, onaydan sonra gizli bir sorgu parametresi bile değiştirildiğinde eski mühürle yürütme `AracHatasi::OnayEskidi` ile reddedilir.
+    2. **JSONL Günlük ve Konuşma Görünümü:** `Arac::kayit_argumanlarini_maskele` ve `AracAnlikGoruntusu::kayit_cagrilarini_maskele` eklendi; `model_turu.rs` içinde `KayitOgesi::Mesaj` (`ChatMessage::assistant`) oturum geçmişine ve JSONL günlüğüne yazılmadan önce `ToolCall.function.arguments` içindeki `url` alanı `arac_argumanlarini_maskele` ile maskelenir (`Olay::AracBasladi` ve `gorunum_uret` de aynı maskelenmiş argümanları kullanır). Buna karşılık `arac_asamasi`'na iletilen canlı `ModelCevabi.cagrilar` ham URL'i korur; gerçek HTTP isteği hedef sunucuya tam ve maskesiz sorgu parametresini (`?token=gizli-r2-canary-987654&q=rust`) gönderir.
+    3. **Hata Yolları:** Şema doğrulama hataları (`AracKayitDefteri::dogrula`, `AracAnlikGoruntusu::dogrula`), geçersiz URL hataları (`WebGetirHatasi::GecersizUrl` içinde `url_maskele`) ve `reqwest` bağlantı/TLS/gövde hataları (`hata.without_url()`) ham URL sorgu parametrelerini hata metnine sızdırmaz.
+- **Taban `cargo audit` (Wasmtime `49.0.3`) Notu:**
+  - `main` tabanındaki `Cargo.lock` içinde bulunan `wasmtime 49.0.3` için yayımlanan `RUSTSEC-2026-0378` ve `RUSTSEC-2026-0379` duyuruları `web` hattıyla ilgisizdir; talimat gereği bu hatta rastgele bağımlılık yükseltmesi yapılmamıştır ve ayrıca raporlanmıştır.
