@@ -3,8 +3,8 @@
   sayfanın kaynak URL'sini, yönlendirme sonrası son URL'sini, başlığını,
   kırpma/imleç durumunu ve düz metin önizlemesini gösterir.
   Güvenlik sınırları:
-  - Ham HTML (`{@html}`) asla basılmaz; tüm metin düğümleri düz metin olarak işlenir.
-  - Şablonda sabit `style="…"` kullanılmaz (sıkı CSP uyumu).
+  - Ham HTML yönergesi asla kullanılmaz; tüm metin düğümleri düz metin olarak işlenir.
+  - Şablonda satır içi stil özniteliği kullanılmaz (sıkı CSP uyumu).
   - Harici bağlantı kullanıcı açıkça onaylamadan açılmaz; yalnız `http:` ve
     `https:` şemalarına izin verilir.
 -->
