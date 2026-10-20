@@ -1,6 +1,6 @@
-# Kalfa Yetenek Programı — Hat 03 (G2a): Süreç Sahipliği, Kilit ve Terminal Deneyi (2026-10-20)
+# Kalfa Yetenek Programı — Hat 03 (G2a / G2b / G2c): Süreç Sahipliği, Kilit ve Terminal Deneyi ve Uygulama Raporu (2026-10-20)
 
-**Soru:** Kalfa'nın süreç ve terminal hattı (`docs/superpowers/plans/2026-10-20-kalfa-yetenek-03-surec-terminal.md`, Görev 1 ve Görev 2) kapsamında ürün uygulamasına (`G2b` arka plan işleri ve `G2c` etkileşimli PTY/ConPTY) geçmeden önce dört temel teknik soru deneysel olarak doğrulandı:
+**Soru:** Kalfa'nın süreç ve terminal hattı (`docs/superpowers/plans/2026-10-20-kalfa-yetenek-03-surec-terminal.md`, Görev 1–6) kapsamında ürün uygulamasına (`G2b` arka plan işleri ve `G2c` etkileşimli PTY/ConPTY) geçmeden önce dört temel teknik soru deneysel olarak doğrulandı ve ardından ürün katmanları iki platformda gerçek yalıtımla uygulandı:
 
 1. Mevcut `kabuk` aracının (`KabukAraci`) çalışma alanı kilidi (`KaynakKilitleri`), yazma penceresi (`yazma_basladi_bildir` / `yazma_bitisini_bekle`) ve son koruma taraması (`komut_sonrasi_denetim`) süreç arka plana alındığında nasıl davranır; kontrol çağrıları (`oku`/`girdi`/`durdur`) genel kilidi beklerse kilitlenme (`deadlock`) oluşur mu?
 2. Süreç çalışırken kilidi ve son denetimi erken bırakmak korunan dosyalar (`.git`, `.kalfa`, `.mcp.json` vb.) ve eşzamanlı `dosya_yaz` üzerinde hangi güvenlik açığını doğurur?
@@ -52,7 +52,7 @@ sequenceDiagram
   - **Linux (WSL2):** Ubuntu 24.04 (`kalfatest`, `uid=1000`), Rust `1.98.1`, `/usr/lib/kalfa/bwrap` (`--unshare-user --unshare-pid --unshare-net --unshare-ipc --unshare-uts --unshare-cgroup-try --disable-userns --die-with-parent --new-session --clearenv --tmpfs / --remount-ro /`) + çift `seccomp` filtresi (`engel_filtresi` + `enosys_filtresi`, `TIOCSTI` ve `TIOCLINUX` `EPERM` engelli) + `PR_SET_CHILD_SUBREAPER` + `openpty` + `/usr/bin/setsid -c`.
 - **Prototip aracı:** `prototip/yetenek-surec` (ürün workspace'inden bağımsız; mevcut önbellekle `--offline` olarak derlendi, hiçbir yeni crate veya paket indirilmedi).
 
-## 3. Deney Sonuçları
+## 3. Deney Sonuçları (G2a)
 
 ### 3.1 Windows Koşusu (`cargo run --offline -- olc`)
 
@@ -128,6 +128,36 @@ stateDiagram-v2
 
 ### İzin Verilen `unsafe` Dosya Listesi
 
-- `crates/kalfa-sandbox/src/linux/mod.rs` (veya `crates/kalfa-sandbox/src/linux/` altındaki PTY yardımcısı): `libc::openpty`, `libc::ioctl(TIOCSWINSZ)`, `libc::fcntl`, `libc::prctl`, `pidfd` / `waitpid`. Her blok `// SAFETY:` açıklaması taşır.
+- `crates/kalfa-sandbox/src/linux/mod.rs`: `libc::openpty`, `libc::ioctl(TIOCSWINSZ)`, `libc::fcntl`, `libc::prctl`, `pidfd` / `waitpid`. Her blok `// SAFETY:` açıklaması taşır.
 - `crates/kalfa-sandbox/src/windows/kap.rs` ve `crates/kalfa-sandbox/src/windows/yalitici.rs`: `CreatePseudoConsole`, `ResizePseudoConsole`, `ClosePseudoConsole`, `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`, `CreateProcessW`, `AssignProcessToJobObject`, `TerminateJobObject`. Her blok `// SAFETY:` açıklaması taşır.
 - `crates/kalfa-uygulama`, `crates/kalfa-core`, `crates/kalfa-tools` ve `crates/kalfa` içinde **yeni `unsafe` blok kullanılmaz**.
+
+## 5. Ürün Uygulaması ve İki Platform Doğrulaması (Görev 3–6)
+
+1. **`crates/kalfa-sandbox` (`etkilesimli.rs`, `linux/mod.rs`, `windows/kap.rs`, `windows/yalitici.rs`, `sahte.rs`):**
+   - `TerminalBoyutu` (`1..=500` sütun, `1..=200` satır, varsayılan `80x24`) ve `TerminalDenetimi` trait'i eklendi.
+   - `Yalitici::baslat_kabuk_etkilesimli(&self, istek: &CalistirmaIstegi, pty: Option<TerminalBoyutu>)` eklendi; MCP özel kökü açmadan çalışma alanının kendi yalıtım profili içinde borulu veya PTY/ConPTY kipinde etkileşimli kabuk başlatır.
+   - Linux (`bwrap` + `seccomp` + `openpty` + `/usr/bin/setsid -c`) ve Windows (`AppContainer` + `Job Object` + `ConPTY`) gerçek yalıtım testleri (`kabuk_etkilesimli_borulu_ve_pty_yalitim_icinde_calisir_ve_temizlenir`, `kabuk_etkilesimli_conpty_yalitim_icinde_calisir_ve_temizlenir`) her iki platformda geçti.
+2. **`crates/kalfa-uygulama/src/isler/mod.rs`:**
+   - `IsId` (`is-<uuid>`, ham PID ve yol dizelerini reddeder), `IsKipi` (`Borulu`, `Terminal`), `IsDurumu` (`Calisiyor`, `Durduruluyor`, `Bitti`, `SonucuBilinmiyor`), `IsYoneticisi`, `OturumIsBaglantisi`, `SonDenetimKancasi`, `AlanSonDenetimi`, `IsKayitOlayi` ve `isler_kayittan_kurtar` uygulandı.
+   - `s01_arka_plan_test_calistir_ve_izle`, `s02_canli_log_takibi_ve_temiz_durdurma`, `s03_pty_interaktif_arac_prompts_ve_resize`, `s04_stdin_onay_ve_yetki_siniri_korunur`, `s05_uygulama_cokmesi_sonrasi_eski_pid_oldurulmez_sonucu_bilinmiyor_olur` ve `s06_calisan_is_varken_dosya_yaz_kilidi_seri_bekler` dahil 15 birim/entegrasyon testi hem Windows hem Linux'ta geçti.
+3. **`crates/kalfa-tools/src/kabuk/isler.rs` ve `mod.rs`:**
+   - `KabukAraci` şemasına isteğe bağlı `arka_plan: bool`, `terminal: bool`, `sutun: u16`, `satir: u16` alanları eklendi.
+   - `KomutOkuAraci` (`komut_oku`), `KomutGirdiAraci` (`komut_girdi`), `KomutDurdurAraci` (`komut_durdur`) ve `KomutBoyutlandirAraci` (`komut_boyutlandir`) araçları ve `ArkaPlanIsBaglantisi` sözleşmesi eklendi.
+   - Başlatma ve girdi (`komut_girdi`, `Ctrl+C`, `EOF`) tarifleri ayrı `EtkiTarifi` olarak mühürlenir; okuma/durdurma/boyutlandırma kontrol araçları çalışma alanı kilidini beklemeden (`kilitsiz`) çalışır.
+4. **`ui/src/bilesenler/IsKarti.svelte` ve `IsKarti.test.ts`:**
+   - Kalfa tasarım sistemi (`Card`, `Badge`, `Button`, `Input`, `GorunurMetin`, `ansiParcala`) ile oluşturuldu.
+   - OSC 8 bağlantı, OSC 52 pano ve DCS/APC/PM/SOS kaçış dizilerini temizler; modelin mühürlü onaylı `komut_girdi` durumunu yerel kullanıcı denetimlerinden (`Girdi gönder`, `Ctrl+C`, `EOF`, `Durdur`) görsel ve işlevsel olarak ayırır.
+   - `npm run check` (`0 error, 0 warnings`), `npm test` (`33` dosya, `493` test) ve `npm run build` (`Paket denetimi temiz.`) geçti.
+
+## 6. Ortak Dosya Sözleşme Notu (PR #38 Bütünleştirmesi Sonrası)
+
+Koordinasyon planı (`docs/superpowers/specs/2026-10-20-kalfa-yetenek-programi.md`) uyarınca `crates/kalfa-core` (`arac.rs`, `oturum/arac_asamasi.rs`, `kilit.rs`, `kayit.rs`, `olay.rs`) ve `crates/kalfa-uygulama/src/oturumlar.rs` / IPC ortak dosyaları PR #38'in (`codex/plan-yetenek-arac-cekirdegi`) sahipliğindedir. PR #38 birleştikten sonra bağlanacak dar sözleşme:
+
+1. **Kaynak ve Kilit Devri (`kalfa-core` -> `kalfa-uygulama::isler`):**
+   - `Arac::kilitsiz_kontrol_mu(&self) -> bool` (varsayılan `false`; `KomutOkuAraci`, `KomutGirdiAraci`, `KomutDurdurAraci`, `KomutBoyutlandirAraci` için `true`) ile kontrol araçları `KaynakKilitleri.genel` kuyruğunda kilitlenmeden çalışır.
+   - `KabukAraci::calistir_kilitli(..., Some(kilit_seti))` çağrıldığında `OturumIsBaglantisi::arka_plan_baslat` `KilitSeti`'ni, `yazma_basladi_bildir()` penceresini ve `KorumaGoruntusu::yakala(kok)` anlık görüntüsünü `AlanSonDenetimi` içinde sahiplenir.
+2. **Kayıt ve Kurtarma (`kalfa-core::kayit`):**
+   - `IsKayitOlayi::{IsBasladi, IsBitti, IsIptalEdildi, IsSonucuBilinmiyor}` oturum JSONL kaydına yazılır; uygulama açılışında `isler_kayittan_kurtar` kapanış kaydı olmayan işleri eski PID'ye sinyal göndermeden `IsDurumu::SonucuBilinmiyor` olarak yükler.
+3. **Otomatik Kip Hakem Sınırı:**
+   - Arka plan başlatma (`arka_plan: true` veya `terminal: true`) ve `komut_girdi` çağrıları `Otomatik` kipte kendiliğinden güvenli ön-onay listesine (`salt_okunur`) girmez; her girdi kendi `EtkiTarifi` mührüyle izin/onay kapısından geçer.

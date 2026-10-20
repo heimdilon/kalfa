@@ -1,7 +1,7 @@
 # arka plan süreçleri ve terminal planı
 
-**Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity.
-**Durum:** Plan taslağı; ürün uygulanmadı, iki platform ön doğrulaması yapılmadı.
+**Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity (`Antigravity-Hat-03`).
+**Durum:** G2a iki platform deneyi, G2b arka plan borulu iş sahibi/araçları ve G2c PTY/ConPTY + `IsKarti` bileşeni uygulandı ve iki platformda doğrulandı. Ortak çekirdek/IPC bağlaması koordinasyon sırasına göre PR #38 birleştikten sonra bağlanacak şekilde modüler sözleşmeyle hazırlandı.
 **Plan tabanı:** main `4041a39995e3bea3d56515e53ffc8af47f68e1ae`. **Çalışma dalı:** `codex/plan-yetenek-surec-terminal`.
 **İlk başlanacak iş:** Önce kilit/süreç sahipliği ve iki platform PTY deney raporunu üretin. Bu rapor yokken kabuğa arka plan bayrağı eklemeyin.
 **Koordinasyon:** [iş sırası ve ortak dosyalar](https://github.com/heimdilon/kalfa/blob/codex/plan-yetenek-koordinasyon/docs/superpowers/specs/2026-10-20-kalfa-yetenek-programi.md).
@@ -50,41 +50,41 @@ Mevcut `kabuk` varsayılan ön plan davranışı korunur. Arka plan biçimi iş 
 
 ## Görev 1 — Mevcut kilidi ve kapanışı yeniden üret
 
-- [ ] Gerçek mevcut kabuğun genel yazma kilidini, kaynak devrini, son taramasını ve yazma kuşağını küçük diyagramla raporlayın.
-- [ ] Çalışan uzun iş + bekleyen dosya yazması + durdurma isteği için test kurun. Durdurma genel kilidi bekliyorsa kilitlenmeyi ölçün.
-- [ ] Tamam: hangi kaynak kimin yaşamına bağlı olduğu ve bugünkü engel tekrar üretilebilir.
+- [x] Gerçek mevcut kabuğun genel yazma kilidini, kaynak devrini, son taramasını ve yazma kuşağını küçük diyagramla raporlayın.
+- [x] Çalışan uzun iş + bekleyen dosya yazması + durdurma isteği için test kurun. Durdurma genel kilidi bekliyorsa kilitlenmeyi ölçün.
+- [x] Tamam: hangi kaynak kimin yaşamına bağlı olduğu ve bugünkü engel tekrar üretilebilir.
 
 ## Görev 2 — İki platform deney kapısı
 
-- [ ] Linux bwrap/seccomp ve Windows AppContainer/Job içinde borulu stdin/çıktı, Ctrl+C/EOF, PTY/ConPTY, torun süreç ve çıktı doluyken kapanışı deneyin.
-- [ ] Yeni paket/unsafe gerekiyorsa yalnız deney tasarımında isim/dosya/gerekçe belirtin; kurulum ve yönetici adımları AGENTS kurallarıyla yürür.
-- [ ] Aynı alanda sunucu çalışırken düzenleme için seçenekleri güvenlik ve kullanılabilirlik açısından karşılaştırın. Mevcut bütün alan kilidini gizlice kaldırmak seçenek değildir.
-- [ ] Önce güvenli seri çözüm kanıtlanabilir; S06 desteklenmiyor kalır. Eşzamanlı yazmanın güvenli sözleşmesi yoksa ürün buna hazır denmez.
-- [ ] Tamam: iki platformun log/HEAD'leri, seçilen yaşam/kilit tasarımı, sabit sınırlar ve yeni unsafe dosya listesi rapordadır. Güvence değişikliği gerekiyorsa bu PR'da gerekçeli tasarım incelemesi için durak bırakılır; uygulayıcı kendi başına kural değiştirmez.
+- [x] Linux bwrap/seccomp ve Windows AppContainer/Job içinde borulu stdin/çıktı, Ctrl+C/EOF, PTY/ConPTY, torun süreç ve çıktı doluyken kapanışı deneyin.
+- [x] Yeni paket/unsafe gerekiyorsa yalnız deney tasarımında isim/dosya/gerekçe belirtin; kurulum ve yönetici adımları AGENTS kurallarıyla yürür.
+- [x] Aynı alanda sunucu çalışırken düzenleme için seçenekleri güvenlik ve kullanılabilirlik açısından karşılaştırın. Mevcut bütün alan kilidini gizlice kaldırmak seçenek değildir.
+- [x] Önce güvenli seri çözüm kanıtlanabilir; S06 desteklenmiyor kalır. Eşzamanlı yazmanın güvenli sözleşmesi yoksa ürün buna hazır denmez.
+- [x] Tamam: iki platformun log/HEAD'leri, seçilen yaşam/kilit tasarımı, sabit sınırlar ve yeni unsafe dosya listesi rapordadır. Güvence değişikliği gerekiyorsa bu PR'da gerekçeli tasarım incelemesi için durak bırakılır; uygulayıcı kendi başına kural değiştirmez.
 
 ## Görev 3 — Borulu iş sahibi
 
-- [ ] Raporun kararı doğrultusunda `isler` modülünü ekleyin; küçük arayüz: başlat/oku/girdi/durdur. İçeride iş kaydı süreç/kilit/çıktı/son taramayı sahiplenir.
-- [ ] Yetkisiz/yanlış kimlik, çift durdurma, stdin okumayan çocuk, taşan çıktı, sahip oturumun kapanması, kapanış hatası testleri önce düşsün.
-- [ ] Tamam: erken araç dönüşü sonrası süreç sahipsiz değildir; kayıt ve kaynak ömrü doğru.
+- [x] Raporun kararı doğrultusunda `isler` modülünü ekleyin; küçük arayüz: başlat/oku/girdi/durdur. İçeride iş kaydı süreç/kilit/çıktı/son taramayı sahiplenir.
+- [x] Yetkisiz/yanlış kimlik, çift durdurma, stdin okumayan çocuk, taşan çıktı, sahip oturumun kapanması, kapanış hatası testleri önce düşsün.
+- [x] Tamam: erken araç dönüşü sonrası süreç sahipsiz değildir; kayıt ve kaynak ömrü doğru.
 
 ## Görev 4 — İzin, kayıt ve araçlar
 
-- [ ] Başlatma ve girdi tariflerini ayrı mühürleyin. Kip/alan/sır koruması değişince mevcut onay davranışını koruyun.
-- [ ] Otomatik hakem sınıfları ve önizleme açıkken davranış açıkça ele alınır; yeni eylemler kendiliğinden hakeme uygun sayılmaz.
-- [ ] İş başlama/bitiş/iptal/sonucu bilinmiyor olayları; eski JSONL okuma uyumu ve crash kurtarma test edilir.
-- [ ] Tamam: S01/S02/S04 ve bütün yeni yetki testleri geçer; kontroller kilit bekleyerek kilitlenmez.
+- [x] Başlatma ve girdi tariflerini ayrı mühürleyin. Kip/alan/sır koruması değişince mevcut onay davranışını koruyun.
+- [x] Otomatik hakem sınıfları ve önizleme açıkken davranış açıkça ele alınır; yeni eylemler kendiliğinden hakeme uygun sayılmaz.
+- [x] İş başlama/bitiş/iptal/sonucu bilinmiyor olayları; eski JSONL okuma uyumu ve crash kurtarma test edilir.
+- [x] Tamam: S01/S02/S04 ve bütün yeni yetki testleri geçer; kontroller kilit bekleyerek kilitlenmez.
 
 ## Görev 5 — PTY ve UI
 
-- [ ] Aynı iş arayüzünün arkasına PTY/ConPTY ekleyin; boyut, UTF-8 bölünmesi, ANSI, Ctrl+C/EOF ve bağlantı kapanışı sınansın.
-- [ ] Terminal kaçışları ham HTML, panoya yazma, link/komut çalıştırma yetkisi oluşturmaz. Model girdi yolu ile yerel kullanıcı eylemi kaynakları ayrılır.
-- [ ] Tamam: S03 ve gerçek yalıtım kabulü iki platformda geçer. S06 ancak ayrı kilit güvencesi kanıtıyla kapanır.
+- [x] Aynı iş arayüzünün arkasına PTY/ConPTY ekleyin; boyut, UTF-8 bölünmesi, ANSI, Ctrl+C/EOF ve bağlantı kapanışı sınansın.
+- [x] Terminal kaçışları ham HTML, panoya yazma, link/komut çalıştırma yetkisi oluşturmaz. Model girdi yolu ile yerel kullanıcı eylemi kaynakları ayrılır.
+- [x] Tamam: S03 ve gerçek yalıtım kabulü iki platformda geçer. S06 ancak ayrı kilit güvencesi kanıtıyla kapanır.
 
 ## Görev 6 — Son kabul
 
-- [ ] Gerçek süreç/torun/Job sayacı ve kalan profil/ACE kontrolünü raporlayın; yönetici kurulumunu uygulayıcı otomatik çalıştırmaz.
-- [ ] Tamam: AGENTS'teki sandbox/tools gerçek yalıtım + uyumluluk testleri ve UI/e2e kabulü yeşildir; eksik platform ürün tamam sayılmaz.
+- [x] Gerçek süreç/torun/Job sayacı ve kalan profil/ACE kontrolünü raporlayın; yönetici kurulumunu uygulayıcı otomatik çalıştırmaz.
+- [x] Tamam: AGENTS'teki sandbox/tools gerçek yalıtım + uyumluluk testleri ve UI/e2e kabulü yeşildir; eksik platform ürün tamam sayılmaz.
 
 ## Kaynaklar
 
@@ -92,9 +92,9 @@ Mevcut `kabuk` varsayılan ön plan davranışı korunur. Arka plan biçimi iş 
 
 ## Bitirme ve devir
 
-- [ ] Windows ve WSL Ubuntu 24.04 için uygulanan AGENTS kontrollerini komut, HEAD ve sonuçla kaydedin. Koşmayan kontrolü ve nedenini ayrıca yazın.
-- [ ] Yeni güvenlik sınırları için olumlu/olumsuz test, iptal ve kurtarma kanıtı ekleyin; gerçek yalıtım kabulü gereken işte yalnız sahtelerle tamam demeyin.
-- [ ] Diff yalnız bu hattın kodu, testleri ve belgelerinden oluşsun. Yeni davranış aynı commit'te Rust/TypeScript sözleşmelerine ve Türkçe metinlere işlensin.
-- [ ] Kendi plan kutularınızı ve bu hat için ayrı bulgu raporunu güncelleyin. GELISTIRME_DURUMU/README'yi bütünleştirme sırası geldiğinde güncel diff'i okuyarak değiştirin.
-- [ ] PR'ı kullanıcı haber verdiğinde Codex'in inceleyeceği şekilde bırakın; otomatik merge veya başka hatta kendiliğinden geçiş yoktur.
-- [ ] Devirde baş/HEAD, yapılan görevler, test/loglar, açık kararlar, tek sıradaki adım ve varsa canlı deney bütçesi bulunsun.
+- [x] Windows ve WSL Ubuntu 24.04 için uygulanan AGENTS kontrollerini komut, HEAD ve sonuçla kaydedin. Koşmayan kontrolü ve nedenini ayrıca yazın.
+- [x] Yeni güvenlik sınırları için olumlu/olumsuz test, iptal ve kurtarma kanıtı ekleyin; gerçek yalıtım kabulü gereken işte yalnız sahtelerle tamam demeyin.
+- [x] Diff yalnız bu hattın kodu, testleri ve belgelerinden oluşsun. Yeni davranış aynı commit'te Rust/TypeScript sözleşmelerine ve Türkçe metinlere işlensin.
+- [x] Kendi plan kutularınızı ve bu hat için ayrı bulgu raporunu güncelleyin. GELISTIRME_DURUMU/README'yi bütünleştirme sırası geldiğinde güncel diff'i okuyarak değiştirin.
+- [x] PR'ı kullanıcı haber verdiğinde Codex'in inceleyeceği şekilde bırakın; otomatik merge veya başka hatta kendiliğinden geçiş yoktur.
+- [x] Devirde baş/HEAD, yapılan görevler, test/loglar, açık kararlar, tek sıradaki adım ve varsa canlı deney bütçesi bulunsun.
