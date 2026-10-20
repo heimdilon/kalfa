@@ -64,3 +64,24 @@ Doğrulanan `prototip/yetenek-mcp-http/src/lib.rs` testleri:
 | `cargo fmt -- --check` | Geçti | Geçti |
 | `cargo clippy --all-targets --locked --offline -- -D warnings` | Geçti (0 uyarı) | Geçti (0 uyarı) |
 | `cargo test --locked --offline` | Geçti (6/6 test) | Geçti (6/6 test) |
+
+
+## 5. Ürün Uygulaması ve Kabul Doğrulaması (Görev 2–6)
+
+G3a prototipinde doğrulanan `rmcp =3.5.1` Streamable HTTP kuralları aşağıdaki commit dizisiyle ürün modüllerine taşınmış ve iki platformda doğrulanmıştır:
+
+- **Görev 2 (`5bc009d73f31400f06871a67a90a3fe805db3c08`):** Yerel `McpTanim` ve uzak `UzakMcpTanim` / `McpSunucuKaynagi` ayrımı, `uzak_sunucu_tanim_ozeti`, `uzak_arac_tanim_ozeti`, `uzak_calisma_tarifi`, `UzakMcpSunucu` ayarları ve kasa entegrasyonu.
+- **Görev 3 / G3b (`bc40673683f71337d548e979bde74bb611b1a5b3`):** `crates/kalfa-mcp/src/uzak/{http,sse,oturum}.rs` içinde `SinirliHttpTasima`, DNS/IP/yönlendirme ağ politikası, 4 MiB çerçeve sınırı, `McpIstemcisi::yeni_uzak` ve `M02`/`M05`/`M06` (`crates/kalfa-mcp/tests/uzak_http.rs`) testleri.
+- **Görev 4 (`e9635b1f3ed3e67c8f1e312272dcc2f0e45285ee`):** `crates/kalfa-mcp/src/uzak/oauth.rs` ve `crates/kalfa-uygulama/src/mcp/uzak_oauth.rs` içinde PKCE (`S256`), `state`/oturum bağlama, `issuer`/`resource` doğrulaması, tek uçuşlu yenileme, yerel onaylı tarayıcı açma, `GizliKasa` saklaması ve `M03` testleri (`crates/kalfa-mcp/tests/uzak_oauth.rs` ve `uzak_oauth::testler`).
+- **Görev 5 (`a8769087b7ac7db6eadf2f3e63e21e9a0af08682`):** `crates/kalfa-mcp/src/uzak/kesif.rs` içinde `UzakAracKatalogu`, `AracAraAraci` (`arac_ara`), `UzakAracKaynagi` (en çok 8 aday, 16 etkin araç, 64 KiB şema bütçesi, sonraki tur anlık görüntü garantisi) ve `M04` testleri (`crates/kalfa-mcp/tests/uzak_kesif.rs`).
+- **Görev 6 (`63ae19ca367c854bae81ee84b3378c6ada2cd09a`):** `crates/kalfa-uygulama/src/mcp/uzak_yonetici.rs` (`UzakMcpYoneticisi`, `UzakMcpRozeti::UzakStreamableHttp`, `UzakMcpDurumEtiketi`), `ui/src/bilesenler/UzakMcpFormu.svelte`, `ui/src/bilesenler/UzakMcpSunuculari.svelte`, `ui/src/bilesenler/uzakMcp.test.ts`, `ui/src/ipc/tipler.ts` ve `ui/src/dil/tr.ts`.
+
+| Ürün Doğrulama Kontrolü | Windows (`1.98.1`) | WSL `Ubuntu-24.04` (`kalfatest`, `1.98.1`) |
+|---|---|---|
+| `cargo check -p kalfa-mcp --lib --bins --locked --offline` | Geçti | Geçti |
+| `cargo clippy --workspace --all-targets --locked --offline -- -D warnings` | Geçti (0 uyarı) | Geçti (0 uyarı) |
+| `cargo clippy -p kalfa -p kalfa-uygulama --features e2e --all-targets --locked --offline -- -D warnings` | Geçti (0 uyarı) | Geçti (0 uyarı) |
+| `cargo test -p kalfa-mcp --locked --offline` (birim + `protokol` + `sinirlar` + `uzak_http` + `uzak_oauth` + `uzak_kesif`) | Geçti (79 + 17 + 12 + 3 + 1 + 3 test) | Geçti (79 + 17 + 12 + 3 + 1 + 3 test) |
+| `cargo test -p kalfa-uygulama mcp:: --locked --offline` + `--test mcp_komutlari` | Geçti (82 + 6 test) | Geçti (82 + 6 test) |
+| `cargo test -p kalfa-uygulama -p kalfa --features e2e --locked --offline` | Geçti | Geçti |
+| `ui/`: `npm run check && npm test && npm run build` | Geçti (`svelte-check` 0 hata/0 uyarı, `vitest` 22 dosya geçti, `Paket denetimi temiz.`) | — |

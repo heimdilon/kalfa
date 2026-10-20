@@ -1,7 +1,7 @@
 # uzak MCP, OAuth ve araç keşfi planı
 
-**Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity.
-**Durum:** Plan taslağı; ürün uygulanmadı, iki platform ön doğrulaması yapılmadı.
+**Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity (`Antigravity-Hat-04`).
+**Durum:** Görev 1–6 (G3a, G3b, OAuth, araç keşfi ve ayarlar/UI bileşenleri) tamamlandı ve Windows + WSL `Ubuntu-24.04` üzerinde doğrulandı. Ortak çekirdek/IPC entegrasyonu koordinasyon sırasına göre #38 ve #39 sonrası bağlanacaktır.
 **Plan tabanı:** main `4041a39995e3bea3d56515e53ffc8af47f68e1ae`. **Çalışma dalı:** `codex/plan-yetenek-uzak-mcp`.
 **İlk başlanacak iş:** Önce mevcut rmcp sürümüyle HTTP ve protokol uyumluluk deneyini yapın; yerel stdio yolunu değiştirmeyin.
 **Koordinasyon:** [iş sırası ve ortak dosyalar](https://github.com/heimdilon/kalfa/blob/codex/plan-yetenek-koordinasyon/docs/superpowers/specs/2026-10-20-kalfa-yetenek-programi.md).
@@ -48,42 +48,49 @@ Yerel `surec.rs/koruma.rs` başlatma/kapatma sözleşmesi korunur. Ortak MCP tan
 
 ## Görev 1 — SDK ve protokol deneyi
 
-- [ ] Sabit `rmcp =3.5.1` ve mevcut bağımlılıkları okuyun. Çalışan yerel üretim özelliklerini kaydedin.
-- [ ] Yerel sahte HTTP sunucusunda liste/çağrı, SSE/JSON yanıt, iptal, bozuk/sınırsız yanıtı deneyin; desteklenecek eski/yeni protokol dönemlerini adlarıyla matrise yazın.
-- [ ] Gereken feature/dependency ve transport seçeneklerini somutlaştırın. Yeni SDK yükseltmesi bu işin sessiz yan etkisi değildir; gerekirse ayrı gerekçeli karar yazılır.
-- [ ] Tamam: Windows/Linux derleme/deney logları ve tam sürüm matrisi vardır; uygulanmamış API örneği derlendi diye sunulmaz.
+- [x] Sabit `rmcp =3.5.1` ve mevcut bağımlılıkları okuyun. Çalışan yerel üretim özelliklerini kaydedin.
+- [x] Yerel sahte HTTP sunucusunda liste/çağrı, SSE/JSON yanıt, iptal, bozuk/sınırsız yanıtı deneyin; desteklenecek eski/yeni protokol dönemlerini adlarıyla matrise yazın.
+- [x] Gereken feature/dependency ve transport seçeneklerini somutlaştırın. Yeni SDK yükseltmesi bu işin sessiz yan etkisi değildir; gerekirse ayrı gerekçeli karar yazılır.
+- [x] Tamam: Windows/Linux derleme/deney logları ve tam sürüm matrisi vardır; uygulanmamış API örneği derlendi diye sunulmaz.
 
 ## Görev 2 — Yerel/uzak tanım ayrımı
 
-- [ ] Mevcut yerel tanımların deserialize/kurtarma uyumunu koruyan varyant ve tarif taslağını PR'a yazın.
-- [ ] Sır, host, auth revizyonu ve outputSchema testleri; yerel tanım uzak alanlarla bozulmasın.
-- [ ] Tamam: iki tanım türü ayrı yetki/rozet/sahip kullanır; yerel 1.1a testleri değişmeden geçer.
+- [x] Mevcut yerel tanımların deserialize/kurtarma uyumunu koruyan varyant ve tarif taslağını PR'a yazın.
+- [x] Sır, host, auth revizyonu ve outputSchema testleri; yerel tanım uzak alanlarla bozulmasın.
+- [x] Tamam: iki tanım türü ayrı yetki/rozet/sahip kullanır; yerel 1.1a testleri değişmeden geçer.
 
 ## Görev 3 — Kimliksiz HTTP ürünü
 
-- [ ] Deneyin seçtiği sürüm/taşımayı ürün modülüne taşıyın. URL/redirect/DNS/IP kontrolü, kuyruk/boyut/süre, kapalı düşme ve maskeleme uygulanır.
-- [ ] Liste yenilenince mevcut denetim ve tur başı anlık görüntü yolu korunur.
-- [ ] Tamam: M02/M05/M06 testleri geçer; yan etkili isteği körlemesine tekrar eden yol yoktur.
+- [x] Deneyin seçtiği sürüm/taşımayı ürün modülüne taşıyın. URL/redirect/DNS/IP kontrolü, kuyruk/boyut/süre, kapalı düşme ve maskeleme uygulanır.
+- [x] Liste yenilenince mevcut denetim ve tur başı anlık görüntü yolu korunur.
+- [x] Tamam: M02/M05/M06 testleri geçer; yan etkili isteği körlemesine tekrar eden yol yoktur.
 
 ## Görev 4 — OAuth
 
-- [ ] Kullanıcının başlattığı akışta PKCE, state/istek bağlama, issuer/resource doğrulaması ve token yenileme seçilmiş protokol sürümüyle uygulanır.
-- [ ] Yanlış state/issuer/resource, eski callback, yanlış oturum, reddedilen kapsam, yenileme yarışı ve iptal testleri önce düşsün.
-- [ ] Sistem tarayıcısını açma mevcut yerel kullanıcı onayına uysun; model oturum çerezi/anahtar görmesin. Sır sentetik canary ile log/UI/JSONL'de aranarak denetlensin.
-- [ ] Tamam: M03 fixture ve kimlik deposu/UI akışı iki platformda geçer. Gerçek üçüncü taraf girişini kullanıcı yapar; hesap kurulumu kendiliğinden yapılmaz.
+- [x] Kullanıcının başlattığı akışta PKCE, state/istek bağlama, issuer/resource doğrulaması ve token yenileme seçilmiş protokol sürümüyle uygulanır.
+- [x] Yanlış state/issuer/resource, eski callback, yanlış oturum, reddedilen kapsam, yenileme yarışı ve iptal testleri önce düşsün.
+- [x] Sistem tarayıcısını açma mevcut yerel kullanıcı onayına uysun; model oturum çerezi/anahtar görmesin. Sır sentetik canary ile log/UI/JSONL'de aranarak denetlensin.
+- [x] Tamam: M03 fixture ve kimlik deposu/UI akışı iki platformda geçer. Gerçek üçüncü taraf girişini kullanıcı yapar; hesap kurulumu kendiliğinden yapılmaz.
 
 ## Görev 5 — Araç keşfi
 
-- [ ] Denetlenmiş katalog üstünde `arac_ara` ve seçilen tanımı yükleme yolu ekleyin; tek isim veya iki araç seçimi sözleşme notunda sabitlensin.
-- [ ] Başlangıç önerisi: sonuçta en çok 8 aday, oturumda en çok 16 yüklenmiş uzak araç ve şemalar için toplam 64 KiB. Bağlam bütçesiyle uyumu deneyde doğrulanır.
-- [ ] Sonuç kaynağı/sürümü, sır denetimi ve çıktı şeması korunur. Yeni yüklenen araç ancak sonraki model turunun görüntüsünde kullanılabilir; eski sürümle çağrı çalışmaz.
-- [ ] Tamam: M04, birden çok sunuculu katalogda saklı aracı bulur; katalog şişmesi bütçeyi aşmaz.
+- [x] Denetlenmiş katalog üstünde `arac_ara` ve seçilen tanımı yükleme yolu ekleyin; tek isim veya iki araç seçimi sözleşme notunda sabitlensin.
+- [x] Başlangıç önerisi: sonuçta en çok 8 aday, oturumda en çok 16 yüklenmiş uzak araç ve şemalar için toplam 64 KiB. Bağlam bütçesiyle uyumu deneyde doğrulanır.
+- [x] Sonuç kaynağı/sürümü, sır denetimi ve çıktı şeması korunur. Yeni yüklenen araç ancak sonraki model turunun görüntüsünde kullanılabilir; eski sürümle çağrı çalışmaz.
+- [x] Tamam: M04, birden çok sunuculu katalogda saklı aracı bulur; katalog şişmesi bütçeyi aşmaz.
 
 ## Görev 6 — Ayarlar, UI ve kabul
 
-- [ ] Uzak sunucu ekle/bağlan/kimliği kaldır durumları; yerel/uzak rozet; bağlantı ve belirsiz sonuç mesajları.
-- [ ] Rust DTO ve TS tipleri tek commit; Tauri izinleri dar; UI'den keyfi dosya yolu/sır dönüşü yoktur.
-- [ ] Tamam: yerel MCP regresyonları, üretim özellikleriyle derleme, e2e özellikli Rust/UI ve gerçek kimlik bağlama akışının testleri rapordadır.
+- [x] Uzak sunucu ekle/bağlan/kimliği kaldır durumları; yerel/uzak rozet; bağlantı ve belirsiz sonuç mesajları.
+- [x] Rust DTO ve TS tipleri tek commit; Tauri izinleri dar; UI'den keyfi dosya yolu/sır dönüşü yoktur.
+- [x] Tamam: yerel MCP regresyonları, üretim özellikleriyle derleme, e2e özellikli Rust/UI ve gerçek kimlik bağlama akışının testleri rapordadır.
+
+## Sözleşme notu — Ortak çekirdek/IPC ve Hat 05 (#41) entegrasyon sınırları
+
+- **G3b (Hat 05 / #41 için ortak HTTP taşıması):** `bc40673683f71337d548e979bde74bb611b1a5b3` commit'iyle `kalfa_mcp::uzak` altında `SinirliHttpTasima`, `UzakHttpSecenekleri`, `UzakDnsCozucu` (`SistemDnsCozucu`, `SabitDnsCozucu`), `dogrulanmis_istemci_ve_url_hazirla` ve `McpIstemcisi::yeni_uzak` kullanıma hazırdır.
+- **Araç keşfi sözleşmesi (Görev 5):** Tek yerleşik araç adı `arac_ara` (`kalfa_mcp::uzak::ARAC_ARA_ADI`) olarak sabitlenmiştir; aynı çağrıda `sorgu` ile en çok 8 aday döner ve isteğe bağlı `yukle: ["mcp__<sunucu>__<arac>"]` listesiyle seçilen araçları oturum başına en çok 16 etkin araç ve toplam 64 KiB şema bütçesi içinde `UzakAracKaynagi` üzerinden **sonraki model turunun** `AracKayitDefteri::anlik_goruntu` görüntüsüne yayımlar.
+- **Mühür ve tarif özeti:** `kalfa_mcp::tarif::{uzak_sunucu_tanim_ozeti, uzak_arac_tanim_ozeti, uzak_calisma_tarifi}` uzak çağrının `McpTarifi` ve `McpAracTanimOzeti` mühürlerini (`kanonik_uc_url`, `origin`, `yetki_turu`, `tanim_revizyonu`, `kimlik_revizyonu`, `arac_revizyonu`, `protokol_surumu`, `baglanti_sayaci` ve `outputSchema`) mevcut `kalfa-core` `McpHazirlik` yapısını kırmadan üretir. Bunlardan biri değiştiğinde eski hazırlık `AracHatasi::OnayEskidi` ile reddedilir.
+- **Ortak çekirdek/IPC sıralaması:** Koordinasyon planı uyarınca paylaşılan `crates/kalfa-core/`, `crates/kalfa/src/komutlar.rs` ve `ui/src/ipc/komutlar.ts` dosyalarına dokunulmamıştır; `UzakMcpYoneticisi` ve DTO/Svelte bileşenleri #38 ve #39'un ortak çekirdek/IPC sözleşmeleri birleştikten sonra doğrudan bağlanmaya hazırdır.
 
 ## Kaynaklar ve doğrulama
 
@@ -93,9 +100,9 @@ Yerel `surec.rs/koruma.rs` başlatma/kapatma sözleşmesi korunur. Ortak MCP tan
 
 ## Bitirme ve devir
 
-- [ ] Windows ve WSL Ubuntu 24.04 için uygulanan AGENTS kontrollerini komut, HEAD ve sonuçla kaydedin. Koşmayan kontrolü ve nedenini ayrıca yazın.
-- [ ] Yeni güvenlik sınırları için olumlu/olumsuz test, iptal ve kurtarma kanıtı ekleyin; gerçek yalıtım kabulü gereken işte yalnız sahtelerle tamam demeyin.
-- [ ] Diff yalnız bu hattın kodu, testleri ve belgelerinden oluşsun. Yeni davranış aynı commit'te Rust/TypeScript sözleşmelerine ve Türkçe metinlere işlensin.
-- [ ] Kendi plan kutularınızı ve bu hat için ayrı bulgu raporunu güncelleyin. GELISTIRME_DURUMU/README'yi bütünleştirme sırası geldiğinde güncel diff'i okuyarak değiştirin.
-- [ ] PR'ı kullanıcı haber verdiğinde Codex'in inceleyeceği şekilde bırakın; otomatik merge veya başka hatta kendiliğinden geçiş yoktur.
-- [ ] Devirde baş/HEAD, yapılan görevler, test/loglar, açık kararlar, tek sıradaki adım ve varsa canlı deney bütçesi bulunsun.
+- [x] Windows ve WSL Ubuntu 24.04 için uygulanan AGENTS kontrollerini komut, HEAD ve sonuçla kaydedin. Koşmayan kontrolü ve nedenini ayrıca yazın.
+- [x] Yeni güvenlik sınırları için olumlu/olumsuz test, iptal ve kurtarma kanıtı ekleyin; gerçek yalıtım kabulü gereken işte yalnız sahtelerle tamam demeyin.
+- [x] Diff yalnız bu hattın kodu, testleri ve belgelerinden oluşsun. Yeni davranış aynı commit'te Rust/TypeScript sözleşmelerine ve Türkçe metinlere işlensin.
+- [x] Kendi plan kutularınızı ve bu hat için ayrı bulgu raporunu güncelleyin. GELISTIRME_DURUMU/README'yi bütünleştirme sırası geldiğinde güncel diff'i okuyarak değiştirin.
+- [x] PR'ı kullanıcı haber verdiğinde Codex'in inceleyeceği şekilde bırakın; otomatik merge veya başka hatta kendiliğinden geçiş yoktur.
+- [x] Devirde baş/HEAD, yapılan görevler, test/loglar, açık kararlar, tek sıradaki adım ve varsa canlı deney bütçesi bulunsun.
