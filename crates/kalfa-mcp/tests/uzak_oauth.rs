@@ -2,6 +2,8 @@
 //! `issuer` ve `resource` doğrulaması, kimlikli Streamable HTTP çağrısı ve
 //! sentetik canary sır maskelemesi) entegrasyon testleri.
 
+mod tls_destek;
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -493,4 +495,302 @@ async fn m03_kimliksiz_401_sonrasi_oauth_pkce_akisi_kimlikli_cagri_ve_canary_mas
     assert_eq!(yenilenmis.access_token(), CANARY_REFRESHED);
 
     sunucu.kapat().await;
+}
+
+struct SahteTlsOAuthSunucusu {
+    adres: SocketAddr,
+    beklenen_challenge: Arc<Mutex<Option<String>>>,
+    kapat_tx: Option<tokio::sync::watch::Sender<bool>>,
+    gorev: tokio::task::JoinHandle<()>,
+}
+
+impl SahteTlsOAuthSunucusu {
+    async fn baslat(tls_ayari: Arc<rustls::ServerConfig>, host_adi: &'static str) -> Self {
+        let dinleyici = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let adres = dinleyici.local_addr().unwrap();
+        let port = adres.port();
+        let beklenen_challenge: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let (kapat_tx, mut kapat_rx) = tokio::sync::watch::channel(false);
+
+        let ch_kopya = beklenen_challenge.clone();
+        let gorev = tokio::spawn(async move {
+            loop {
+                let kabul = tokio::select! {
+                    biased;
+                    _ = kapat_rx.changed() => break,
+                    sonuc = dinleyici.accept() => sonuc,
+                };
+                let Ok((soket, _)) = kabul else { break };
+                let ayar = tls_ayari.clone();
+                let ch = ch_kopya.clone();
+                tokio::spawn(async move {
+                    let _ = tls_destek::tls_http_baglanti_isle(
+                        soket,
+                        ayar,
+                        move |ilk_satir, _basliklar, govde| {
+                            let resource_url = format!("https://{host_adi}:{port}/mcp");
+                            let issuer_url = format!("https://{host_adi}:{port}/issuer");
+                            let json_yanit = |durum: &str, deger: Value| -> Vec<u8> {
+                                let bayt = serde_json::to_vec(&deger).unwrap();
+                                let mut baslik = format!(
+                                    "HTTP/1.1 {durum}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                    bayt.len()
+                                )
+                                .into_bytes();
+                                baslik.extend_from_slice(&bayt);
+                                baslik
+                            };
+
+                            if ilk_satir.contains("/.well-known/oauth-protected-resource") {
+                                return json_yanit(
+                                    "200 OK",
+                                    json!({
+                                        "resource": resource_url,
+                                        "authorization_servers": [issuer_url],
+                                        "scopes_supported": ["tools:read", "tools:call"]
+                                    }),
+                                );
+                            }
+                            if ilk_satir.contains("/.well-known/oauth-authorization-server") {
+                                return json_yanit(
+                                    "200 OK",
+                                    json!({
+                                        "issuer": issuer_url,
+                                        "authorization_endpoint": format!("https://{host_adi}:{port}/authorize"),
+                                        "token_endpoint": format!("https://{host_adi}:{port}/token"),
+                                        "code_challenge_methods_supported": ["S256"]
+                                    }),
+                                );
+                            }
+                            if ilk_satir.starts_with("POST /token") {
+                                let form_metni = String::from_utf8_lossy(&govde);
+                                let form: HashMap<String, String> =
+                                    url::form_urlencoded::parse(form_metni.as_bytes())
+                                        .into_owned()
+                                        .collect();
+                                let grant_type = form
+                                    .get("grant_type")
+                                    .map(String::as_str)
+                                    .unwrap_or_default();
+                                if grant_type == "authorization_code" {
+                                    let verifier =
+                                        form.get("code_verifier").cloned().unwrap_or_default();
+                                    let Some(pkce) =
+                                        kalfa_mcp::uzak::PkceCifti::dogrulayicidan(verifier).ok()
+                                    else {
+                                        return json_yanit(
+                                            "400 Bad Request",
+                                            json!({"error": "invalid_grant"}),
+                                        );
+                                    };
+                                    let beklenen = ch.lock().unwrap().clone();
+                                    if beklenen.as_deref() != Some(pkce.code_challenge()) {
+                                        return json_yanit(
+                                            "400 Bad Request",
+                                            json!({"error": "invalid_grant"}),
+                                        );
+                                    }
+                                    return json_yanit(
+                                        "200 OK",
+                                        json!({
+                                            "access_token": CANARY_ACCESS,
+                                            "refresh_token": CANARY_REFRESH,
+                                            "token_type": "Bearer",
+                                            "expires_in": 3600,
+                                            "scope": "tools:read tools:call",
+                                            "resource": resource_url
+                                        }),
+                                    );
+                                }
+                                if grant_type == "refresh_token" {
+                                    return json_yanit(
+                                        "200 OK",
+                                        json!({
+                                            "access_token": CANARY_REFRESHED,
+                                            "refresh_token": CANARY_REFRESH,
+                                            "token_type": "Bearer",
+                                            "expires_in": 3600,
+                                            "scope": "tools:read tools:call",
+                                            "resource": resource_url
+                                        }),
+                                    );
+                                }
+                            }
+                            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                                .to_vec()
+                        },
+                    )
+                    .await;
+                });
+            }
+        });
+
+        Self {
+            adres,
+            beklenen_challenge,
+            kapat_tx: Some(kapat_tx),
+            gorev,
+        }
+    }
+
+    async fn kapat(mut self) {
+        if let Some(tx) = self.kapat_tx.take() {
+            let _ = tx.send(true);
+        }
+        let _ = tokio::time::timeout(Duration::from_secs(1), self.gorev).await;
+    }
+}
+
+#[tokio::test]
+async fn m03_https_tls_dogrulamasi_oauth_metadata_ve_token_uclarinda_gecerli_ve_gecersiz_zincirleri_ayirir()
+ {
+    let guvenilir =
+        SahteTlsOAuthSunucusu::baslat(tls_destek::guvenilir_tls_sunucu_ayari(), "belge.ornek.test")
+            .await;
+    let sahte = SahteTlsOAuthSunucusu::baslat(
+        tls_destek::guvenilmeyen_tls_sunucu_ayari(),
+        "belge.ornek.test",
+    )
+    .await;
+
+    let port = guvenilir.adres.port();
+    let sahte_port = sahte.adres.port();
+
+    let dns = SabitDnsCozucu::yeni();
+    dns.kayit_ekle("belge.ornek.test", vec![guvenilir.adres.ip()]);
+    dns.kayit_ekle("yanlis-host.ornek.test", vec![guvenilir.adres.ip()]);
+    dns.kok_sertifika_der_ekle(tls_destek::TEST_KOK_CA_DER.to_vec());
+    let dns_arc: Arc<dyn UzakDnsCozucu> = Arc::new(dns);
+
+    let resource_url = format!("https://belge.ornek.test:{port}/mcp");
+    let issuer_url = format!("https://belge.ornek.test:{port}/issuer");
+    let resource_meta_url =
+        format!("https://belge.ornek.test:{port}/.well-known/oauth-protected-resource");
+    let auth_meta_url =
+        format!("https://belge.ornek.test:{port}/.well-known/oauth-authorization-server");
+
+    // 1) Güvenilen CA zinciri + eşleşen host (`belge.ornek.test`) ile HTTPS OAuth metadata
+    // ve token takası/yenilemesi başarılı olur.
+    let kaynak_meta = korunmus_kaynak_metadatasini_getir(
+        &resource_meta_url,
+        &resource_url,
+        true,
+        false,
+        Duration::from_secs(5),
+        &dns_arc,
+    )
+    .await
+    .expect("güvenilen TLS zinciriyle korunmuş kaynak metadatası alınmalı");
+    assert_eq!(kaynak_meta.resource, resource_url);
+
+    let yetki_meta = yetki_sunucusu_metadatasini_getir(
+        &auth_meta_url,
+        &issuer_url,
+        true,
+        false,
+        Duration::from_secs(5),
+        &dns_arc,
+    )
+    .await
+    .expect("güvenilen TLS zinciriyle yetki sunucusu metadatası alınmalı");
+    assert_eq!(yetki_meta.issuer, issuer_url);
+
+    let akis = OAuthDurumBaglami::yeni(
+        "m03-tls",
+        Some("oturum-tls".into()),
+        yetki_meta.issuer.clone(),
+        kaynak_meta.resource.clone(),
+        "http://127.0.0.1:49152/callback",
+        vec!["tools:read".into(), "tools:call".into()],
+        1_000,
+    );
+    *guvenilir.beklenen_challenge.lock().unwrap() = Some(akis.pkce.code_challenge().to_owned());
+
+    let paket = kod_ile_token_al(
+        &yetki_meta.token_endpoint,
+        "kalfa-tls",
+        "gecerli-kod",
+        &akis,
+        true,
+        false,
+        Duration::from_secs(5),
+        &dns_arc,
+    )
+    .await
+    .expect("güvenilen TLS zinciriyle token takası başarılı olmalı");
+    assert_eq!(paket.access_token(), CANARY_ACCESS);
+
+    let yenilenmis = yenileme_tokeni_ile_token_al(
+        &yetki_meta.token_endpoint,
+        "kalfa-tls",
+        CANARY_REFRESH,
+        &resource_url,
+        &["tools:read".into(), "tools:call".into()],
+        true,
+        false,
+        Duration::from_secs(5),
+        &dns_arc,
+    )
+    .await
+    .expect("güvenilen TLS zinciriyle token yenileme başarılı olmalı");
+    assert_eq!(yenilenmis.access_token(), CANARY_REFRESHED);
+
+    // 2) Yanlış host (`yanlis-host.ornek.test`, SAN listesinde yok) ile HTTPS OAuth
+    // metadata isteği TLS doğrulamasında reddedilir.
+    let yanlis_host_meta = korunmus_kaynak_metadatasini_getir(
+        &format!("https://yanlis-host.ornek.test:{port}/.well-known/oauth-protected-resource"),
+        &format!("https://yanlis-host.ornek.test:{port}/mcp"),
+        true,
+        false,
+        Duration::from_secs(5),
+        &dns_arc,
+    )
+    .await;
+    assert_eq!(
+        yanlis_host_meta,
+        Err(OAuthHatasi::BaglantiHatasi),
+        "SAN listesinde olmayan host adı OAuth HTTPS isteğinde reddedilmeli"
+    );
+
+    // 3) Güvenilmeyen kök CA ile imzalı sertifika (`sahte`) hem metadata hem token
+    // uçlarında TLS doğrulamasında reddedilir.
+    let sahte_dns = SabitDnsCozucu::yeni();
+    sahte_dns.kayit_ekle("belge.ornek.test", vec![sahte.adres.ip()]);
+    sahte_dns.kok_sertifika_der_ekle(tls_destek::TEST_KOK_CA_DER.to_vec());
+    let sahte_dns_arc: Arc<dyn UzakDnsCozucu> = Arc::new(sahte_dns);
+
+    let sahte_meta = korunmus_kaynak_metadatasini_getir(
+        &format!("https://belge.ornek.test:{sahte_port}/.well-known/oauth-protected-resource"),
+        &format!("https://belge.ornek.test:{sahte_port}/mcp"),
+        true,
+        false,
+        Duration::from_secs(5),
+        &sahte_dns_arc,
+    )
+    .await;
+    assert_eq!(
+        sahte_meta,
+        Err(OAuthHatasi::BaglantiHatasi),
+        "güvenilmeyen CA zinciri OAuth metadata ucunda reddedilmeli"
+    );
+
+    let sahte_token = kod_ile_token_al(
+        &format!("https://belge.ornek.test:{sahte_port}/token"),
+        "kalfa-tls",
+        "gecerli-kod",
+        &akis,
+        true,
+        false,
+        Duration::from_secs(5),
+        &sahte_dns_arc,
+    )
+    .await;
+    assert_eq!(
+        sahte_token,
+        Err(OAuthHatasi::BaglantiHatasi),
+        "güvenilmeyen CA zinciri OAuth token ucunda reddedilmeli"
+    );
+
+    guvenilir.kapat().await;
+    sahte.kapat().await;
 }

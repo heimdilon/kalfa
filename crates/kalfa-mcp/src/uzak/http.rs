@@ -55,13 +55,20 @@ use crate::uzak::sse::SseAkisAyristiricisi;
 pub const AZAMI_YONLENDIRME: usize = 5;
 
 /// DNS çözümleme sözleşmesi; üretimde [`SistemDnsCozucu`], birim/entegrasyon
-/// testlerinde DNS rebinding senaryoları için [`SabitDnsCozucu`] kullanılır.
+/// testlerinde DNS rebinding ve yerel TLS senaryoları için [`SabitDnsCozucu`] kullanılır.
 pub trait UzakDnsCozucu: Send + Sync {
     fn coz<'a>(
         &'a self,
         host: &'a str,
         port: u16,
     ) -> Pin<Box<dyn Future<Output = io::Result<Vec<SocketAddr>>> + Send + 'a>>;
+
+    /// Yerel HTTPS test fixture'ları veya seçilmiş kök sertifika doğrulaması için
+    /// DER biçiminde ek güvenilir kök sertifikaları. Üretimde (`SistemDnsCozucu`) boştur
+    /// ve işletim sisteminin yerleşik güven kökleri (`rustls-platform-verifier`) kullanılır.
+    fn ozel_kok_sertifikalari_der(&self) -> Vec<Vec<u8>> {
+        Vec::new()
+    }
 }
 
 /// İşletim sistemi DNS çözümleyicisi (`tokio::net::lookup_host`).
@@ -91,6 +98,7 @@ impl UzakDnsCozucu for SistemDnsCozucu {
 #[derive(Default, Clone)]
 pub struct SabitDnsCozucu {
     kayitlar: Arc<Mutex<BTreeMap<String, Vec<IpAddr>>>>,
+    kok_sertifikalar_der: Arc<Mutex<Vec<Vec<u8>>>>,
 }
 
 impl SabitDnsCozucu {
@@ -101,6 +109,12 @@ impl SabitDnsCozucu {
     pub fn kayit_ekle(&self, host: impl Into<String>, ipler: Vec<IpAddr>) {
         if let Ok(mut g) = self.kayitlar.lock() {
             g.insert(host.into().to_ascii_lowercase(), ipler);
+        }
+    }
+
+    pub fn kok_sertifika_der_ekle(&self, der: Vec<u8>) {
+        if let Ok(mut k) = self.kok_sertifikalar_der.lock() {
+            k.push(der);
         }
     }
 }
@@ -136,6 +150,13 @@ impl UzakDnsCozucu for SabitDnsCozucu {
                 .map(|ip| SocketAddr::new(ip, port))
                 .collect())
         })
+    }
+
+    fn ozel_kok_sertifikalari_der(&self) -> Vec<Vec<u8>> {
+        self.kok_sertifikalar_der
+            .lock()
+            .map(|k| k.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -212,6 +233,7 @@ pub struct UzakHttpSecenekleri {
     pub gizli_baslik: Option<UzakGizliBaslik>,
     pub ek_maskeler: Vec<GizliDeger>,
     pub dns_cozucu: Arc<dyn UzakDnsCozucu>,
+    pub guvenilir_kok_sertifikalar_der: Vec<Vec<u8>>,
 }
 
 impl UzakHttpSecenekleri {
@@ -225,6 +247,7 @@ impl UzakHttpSecenekleri {
             gizli_baslik: None,
             ek_maskeler: Vec::new(),
             dns_cozucu: Arc::new(SistemDnsCozucu),
+            guvenilir_kok_sertifikalar_der: Vec::new(),
         }
     }
 
@@ -248,6 +271,11 @@ impl UzakHttpSecenekleri {
         self
     }
 
+    pub fn guvenilir_kok_sertifikalar_der_ile(mut self, kokler: Vec<Vec<u8>>) -> Self {
+        self.guvenilir_kok_sertifikalar_der = kokler;
+        self
+    }
+
     pub(crate) fn tum_maskeler(&self) -> Vec<GizliDeger> {
         let mut sonuc = self.ek_maskeler.clone();
         if let Some(ref b) = self.gizli_baslik {
@@ -265,6 +293,27 @@ pub async fn dogrulanmis_istemci_ve_url_hazirla(
     ozel_ag_izinli: bool,
     zaman_asimi: Duration,
     dns_cozucu: &dyn UzakDnsCozucu,
+) -> Result<(reqwest::Client, Url, Vec<SocketAddr>), TasimaHatasi> {
+    dogrulanmis_istemci_ve_url_hazirla_koklerle(
+        ham_url,
+        test_fiksturu_loopback,
+        ozel_ag_izinli,
+        zaman_asimi,
+        dns_cozucu,
+        &[],
+    )
+    .await
+}
+
+/// Verilen URL'yi, DNS/IP politikasını ve TLS güven köklerini doğrulayarak
+/// sabitlenmiş bir `reqwest::Client` döner.
+pub async fn dogrulanmis_istemci_ve_url_hazirla_koklerle(
+    ham_url: &str,
+    test_fiksturu_loopback: bool,
+    ozel_ag_izinli: bool,
+    zaman_asimi: Duration,
+    dns_cozucu: &dyn UzakDnsCozucu,
+    ek_kok_sertifikalar_der: &[Vec<u8>],
 ) -> Result<(reqwest::Client, Url, Vec<SocketAddr>), TasimaHatasi> {
     let url = Url::parse(ham_url).map_err(|_| TasimaHatasi::AgPolitikasiReddi)?;
     if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
@@ -302,26 +351,39 @@ pub async fn dogrulanmis_istemci_ve_url_hazirla(
 
     for soket in &adresler {
         let ip = soket.ip();
-        if test_fiksturu_loopback && loopback_host && ip_gercek_loopback_mi(ip) {
+        if test_fiksturu_loopback
+            && ip_gercek_loopback_mi(ip)
+            && (url.scheme() == "https" || loopback_host)
+        {
             continue;
         }
         kalfa_sandbox::vekil::adres::adres_izinli_mi(ip, ozel_ag_izinli)
             .map_err(|_| TasimaHatasi::AgPolitikasiReddi)?;
     }
 
-    let tls_yapilandirma = rustls::ClientConfig::builder_with_provider(Arc::new(
-        rustls::crypto::ring::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .map_err(|_| TasimaHatasi::GirdiCikti)?
-    .with_root_certificates(kok_sertifikalar())
-    .with_no_client_auth();
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let secili_kokler: Vec<Vec<u8>> = if !ek_kok_sertifikalar_der.is_empty() {
+        ek_kok_sertifikalar_der.to_vec()
+    } else {
+        dns_cozucu.ozel_kok_sertifikalari_der()
+    };
 
     let mut olusturucu = reqwest::Client::builder()
-        .use_preconfigured_tls(tls_yapilandirma)
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
         .timeout(zaman_asimi);
+
+    if !secili_kokler.is_empty() {
+        let kok_depo = kok_sertifikalar(&secili_kokler)?;
+        let tls_yapilandirma = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .map_err(|_| TasimaHatasi::GirdiCikti)?
+        .with_root_certificates(kok_depo)
+        .with_no_client_auth();
+        olusturucu = olusturucu.use_preconfigured_tls(tls_yapilandirma);
+    }
 
     if temiz_host.parse::<IpAddr>().is_err() {
         olusturucu = olusturucu.resolve_to_addrs(temiz_host, &adresler);
@@ -338,8 +400,28 @@ fn ip_gercek_loopback_mi(ip: IpAddr) -> bool {
     }
 }
 
-fn kok_sertifikalar() -> rustls::RootCertStore {
-    rustls::RootCertStore::empty()
+/// Verilen DER biçimindeki X.509 kök sertifikalarından boş olmayan bir
+/// [`rustls::RootCertStore`] oluşturur. Boş dilim veya bozuk sertifika reddedilir.
+pub fn kok_sertifikalar(
+    secili_kokler_der: &[Vec<u8>],
+) -> Result<rustls::RootCertStore, TasimaHatasi> {
+    if secili_kokler_der.is_empty() {
+        return Err(TasimaHatasi::GirdiCikti);
+    }
+    let mut kok_depo = rustls::RootCertStore::empty();
+    for der in secili_kokler_der {
+        if der.is_empty() {
+            return Err(TasimaHatasi::GirdiCikti);
+        }
+        let sertifika = rustls::pki_types::CertificateDer::from(der.clone());
+        kok_depo
+            .add(sertifika)
+            .map_err(|_| TasimaHatasi::GirdiCikti)?;
+    }
+    if kok_depo.is_empty() {
+        return Err(TasimaHatasi::GirdiCikti);
+    }
+    Ok(kok_depo)
 }
 
 struct GidenHttpIleti {
@@ -651,12 +733,13 @@ async fn http_post_ve_yanit_akisi(
 
     let mut bulunana_yanit = None;
     for adim in 0..=AZAMI_YONLENDIRME {
-        let (istemci, dogrulanmis_url, _) = dogrulanmis_istemci_ve_url_hazirla(
+        let (istemci, dogrulanmis_url, _) = dogrulanmis_istemci_ve_url_hazirla_koklerle(
             &mevcut_url_metni,
             secenekler.test_fiksturu_loopback,
             secenekler.ozel_ag_izinli,
             secenekler.istek_zamani_asimi,
             secenekler.dns_cozucu.as_ref(),
+            &secenekler.guvenilir_kok_sertifikalar_der,
         )
         .await?;
 
