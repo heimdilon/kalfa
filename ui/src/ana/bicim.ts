@@ -86,6 +86,8 @@ export function satirDurumu(
       return { status: 'waiting', etiket: m('oturum.durum.onay') };
     case 'SartBekliyor':
       return { status: 'waiting', etiket: m('oturum.durum.sart') };
+    case 'SoruBekliyor':
+      return { status: 'waiting', etiket: m('oturum.durum.soru') };
   }
   switch (durum.tip) {
     case 'Tamamlandi':
@@ -152,6 +154,16 @@ const ARAC_BASLIGI: Record<string, [MetinAnahtari, MetinAnahtari, MetinAnahtari]
     'arac.dosya_duzenle.ad',
   ],
   kabuk: ['arac.kabuk.suruyor', 'arac.kabuk.bitti', 'arac.kabuk.ad'],
+  plan_guncelle: [
+    'arac.plan_guncelle.suruyor',
+    'arac.plan_guncelle.bitti',
+    'arac.plan_guncelle.ad',
+  ],
+  kullaniciya_sor: [
+    'arac.kullaniciya_sor.suruyor',
+    'arac.kullaniciya_sor.bitti',
+    'arac.kullaniciya_sor.ad',
+  ],
 };
 
 /**
@@ -177,7 +189,7 @@ export function aracHedefi(oge: AracOgesi): string | undefined {
       const argumanlar = Array.isArray(a.argumanlar) ? a.argumanlar : [];
       return [a.program, ...argumanlar].join(' ');
     }
-    for (const alan of ['yol', 'desen', 'dizin']) {
+    for (const alan of ['yol', 'desen', 'dizin', 'baslik']) {
       if (typeof a[alan] === 'string') return a[alan];
     }
   } catch {

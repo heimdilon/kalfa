@@ -116,6 +116,7 @@ async fn canli_otomatik_kip_olagan_gelistirme_gorevi() {
         siniflandirici: sanal_siniflandirici(),
         kilitler: Arc::new(KaynakKilitleri::yeni()),
         geri_yukleyici: None,
+        talimat_okuyucu: None,
     };
     let mut ayarlar = OturumAyarlari::yeni("glm-5.3", std::path::Path::new("/sanal/gorev-listesi"));
     ayarlar.kip = Kip::Otomatik;

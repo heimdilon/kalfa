@@ -7,10 +7,12 @@
   Dosyaya tıklamak Değişiklikler bölümünde açar.
 -->
 <script lang="ts">
+  import Badge from '../bilesenler/Badge.svelte';
+  import PlanListesi from '../bilesenler/PlanListesi.svelte';
   import { EFOR_ADI, KIP_ADI, m } from '../dil/tr';
   import * as ipc from '../ipc/ana';
   import { komutHatasi } from '../ipc/hata';
-  import type { CalismaAlaniOzeti } from '../ipc/tipler';
+  import type { CalismaAlaniOzeti, ProjeTalimatUyarisi } from '../ipc/tipler';
   import type { AnaDurum } from './anaDurum.svelte';
   import { projeAdi, sayi } from './bicim';
 
@@ -42,6 +44,33 @@
       (e) => (hata = komutHatasi(e).mesaj),
     );
   });
+
+  function talimatUyariMetni(u: ProjeTalimatUyarisi): string {
+    switch (u.uyari.tur) {
+      case 'dosya_boyutu_asildi':
+        return m('proje_talimatlari.uyari.dosya_boyutu_asildi', {
+          gercek: u.uyari.gercek,
+          sinir: u.uyari.sinir,
+        });
+      case 'toplam_boyut_asildi':
+        return m('proje_talimatlari.uyari.toplam_boyut_asildi', {
+          gercek: u.uyari.gercek,
+          sinir: u.uyari.sinir,
+        });
+      case 'kaynak_sayisi_asildi':
+        return m('proje_talimatlari.uyari.kaynak_sayisi_asildi', {
+          sinir: u.uyari.sinir,
+        });
+      case 'gecersiz_utf8':
+        return m('proje_talimatlari.uyari.gecersiz_utf8');
+      case 'sembolik_baglanti_reddedildi':
+        return m('proje_talimatlari.uyari.sembolik_baglanti_reddedildi');
+      case 'gizli_veya_korumali_reddedildi':
+        return m('proje_talimatlari.uyari.gizli_veya_korumali_reddedildi');
+      case 'okunamadi':
+        return m('proje_talimatlari.uyari.okunamadi', { neden: u.uyari.neden });
+    }
+  }
 </script>
 
 {#if ekran}
@@ -111,6 +140,57 @@
         <p class="soluk">{m('sag.baglam_ozetleme', { sayi: ozet.ozetlenen })}</p>
       {/if}
     </section>
+
+    {#if ekran.plan && ekran.plan.adimlar.length > 0}
+      <section>
+        <PlanListesi plan={ekran.plan} />
+      </section>
+    {/if}
+
+    {#if ekran.proje_talimatlari}
+      {@const talimatlar = ekran.proje_talimatlari}
+      <section>
+        <div class="bolum-basligi">
+          <h3>{m('proje_talimatlari.baslik')}</h3>
+          {#if talimatlar.eksik_baglam}
+            <Badge tone="warn">{m('proje_talimatlari.eksik_baglam')}</Badge>
+          {/if}
+        </div>
+        {#if talimatlar.kaynaklar.length === 0}
+          <p class="soluk">{m('proje_talimatlari.yok')}</p>
+        {:else}
+          <ul class="talimat-kaynaklari">
+            {#each talimatlar.kaynaklar as kaynak (kaynak.goreli_yol)}
+              {@const degisti = talimatlar.degisen_kaynaklar?.some(
+                (d) => d.goreli_yol === kaynak.goreli_yol,
+              )}
+              <li class="talimat-satiri">
+                <code class="yol-ad">{kaynak.goreli_yol}</code>
+                <Badge tone="neutral">
+                  {kaynak.kapsam.tur === 'kok'
+                    ? m('proje_talimatlari.kapsam.kok')
+                    : m('proje_talimatlari.kapsam.alt_dizin', {
+                        dizin: kaynak.kapsam.deger.dizin,
+                      })}
+                </Badge>
+                {#if degisti}
+                  <Badge tone="info">{m('proje_talimatlari.degisti')}</Badge>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if talimatlar.uyarilar && talimatlar.uyarilar.length > 0}
+          <ul class="talimat-uyarilari">
+            {#each talimatlar.uyarilar as u (`${u.goreli_yol}:${u.uyari.tur}`)}
+              <li class="talimat-uyari">
+                <code>{u.goreli_yol}</code>: {talimatUyariMetni(u)}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
+    {/if}
 
     <section>
       <h3>{m('sag.ciktilar')}</h3>
@@ -231,5 +311,36 @@
   }
   .eksi {
     color: var(--status-danger);
+  }
+  .bolum-basligi {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .bolum-basligi h3 {
+    margin: 0;
+  }
+  .talimat-kaynaklari {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .talimat-satiri {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .talimat-uyarilari {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .talimat-uyari {
+    font: var(--type-meta);
+    color: var(--status-warn);
   }
 </style>

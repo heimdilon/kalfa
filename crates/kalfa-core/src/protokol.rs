@@ -94,6 +94,13 @@ pub enum Komut {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         talimat: Option<String>,
     },
+    /// Bekleyen yapılandırılmış kullanıcı sorusuna verilen yanıt.
+    /// Araç onayından tamamen ayrıdır; yalnız eşleşen `(tur, soru_kimligi)` için geçerlidir.
+    KullaniciSorusuYaniti {
+        tur: TurId,
+        soru_kimligi: String,
+        yanit: crate::soru::KullaniciSorusuYaniti,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -403,6 +410,24 @@ pub enum Olay {
         risk: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         olasilik: Option<f64>,
+    },
+    /// Bu turda etkin olan proje talimatı (`AGENTS.md`) kaynakları ve uyarıları.
+    ProjeTalimatlari {
+        goruntu: crate::proje_talimatlari::ProjeTalimatAnlikGoruntusu,
+    },
+    /// Oturum çalışma planı güncellendi (`plan_guncelle`).
+    PlanGuncellendi {
+        plan: crate::plan::OturumPlani,
+    },
+    /// Kullanıcıya yapılandırılmış soru soruldu (`kullaniciya_sor`).
+    KullaniciSorusuGerekiyor {
+        soru: crate::soru::KullaniciSorusu,
+    },
+    /// Bekleyen kullanıcı sorusu yanıtlandı, yönlendirildi veya iptal edildi.
+    KullaniciSorusuCozuldu {
+        soru_kimligi: String,
+        cagri: CagriId,
+        sonuc: crate::soru::SoruSonucu,
     },
 }
 

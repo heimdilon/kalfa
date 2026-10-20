@@ -352,6 +352,8 @@ fn durum_ozeti_kayittan_cikarilir() {
             tamamlama: 6,
             dusunce: 2,
             onizleme_acik: false,
+            plan: None,
+            proje_talimatlari: None,
         }
     );
     k.ekle(None, KayitOgesi::OnizlemeDegisti { acik: true });
