@@ -1170,11 +1170,13 @@ struct Oturum {
     butce_hatasi: Option<String>,
     /// Denetçi, özetleyici ve eklentinin izin talepleri (5b tasarımı §4.1).
     butce_talep_alici: mpsc::Receiver<ButceMesaji>,
-    /// Otomatik kipte hakemin ardışık ret/emin_degil sayacı (tasarım §7).
+    /// Otomatik kipte modele dönen ardışık hakem retleri (tasarım §5);
+    /// hakem izni ya da kullanıcı onayı sıfırlar, belirsiz sonuç saymaz.
     pub(super) hakem_ret_ardisik: u32,
-    /// Otomatik kipte hakemin oturumdaki toplam ret/emin_degil sayacı (§7).
+    /// Otomatik kipte oturumdaki toplam hakem reti (tasarım §5).
     pub(super) hakem_ret_toplam: u32,
-    /// Son en çok 3 kullanıcı mesajının ham metni; hakem bağlamı (§4.3).
+    /// Kullanıcının yazdığı son en çok 3 mesajın ham metni; hakemin durumu
+    /// (tasarım §4.2). Compact özetleri ve Kalfa notları girmez.
     pub(super) son_kullanici_istekleri: VecDeque<String>,
     /// Talep göndericisi; oturum yaşadıkça kanal açık kalır.
     butce_talepci: ButceTalepci,
