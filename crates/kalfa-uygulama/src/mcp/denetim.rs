@@ -1069,6 +1069,7 @@ mod testler {
                     }],
                     silinecek_gizliler: Vec::new(),
                     secili_yurutulebilirler: BTreeMap::new(),
+                    uzak_sunucular: Vec::new(),
                 },
                 0,
             )

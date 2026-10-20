@@ -56,11 +56,20 @@ pub struct McpAyarlar {
     /// ham yol olarak gönderilmez.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub secili_yurutulebilirler: BTreeMap<String, PathBuf>,
+    /// Uzak Streamable HTTP MCP sunucu tanımları (`1.1b`).
+    /// Boş olduğunda serileştirilmez; mevcut `1.1a` `ayarlar.json` dosyalarıyla
+    /// geriye dönük uyumludur.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uzak_sunucular: Vec<UzakMcpSunucu>,
 }
 
 impl McpAyarlar {
     pub fn sunucu(&self, ad: &str) -> Option<&McpSunucu> {
         self.sunucular.iter().find(|s| s.ad == ad)
+    }
+
+    pub fn uzak_sunucu(&self, ad: &str) -> Option<&UzakMcpSunucu> {
+        self.uzak_sunucular.iter().find(|s| s.ad == ad)
     }
 
     /// Ayarlarda aktif olarak referans verilen tüm sır kimliklerini döner.
@@ -69,8 +78,18 @@ impl McpAyarlar {
         for sunucu in &self.sunucular {
             for degisken in &sunucu.ortam {
                 if let McpOrtamDegeri::Gizli { kimlik } = &degisken.deger {
+                    for uzak in &self.uzak_sunucular {
+                        for kimlik in uzak.gizli_kimlikler() {
+                            kumeler.insert(kimlik);
+                        }
+                    }
                     kumeler.insert(kimlik.clone());
                 }
+            }
+        }
+        for uzak in &self.uzak_sunucular {
+            for kimlik in uzak.gizli_kimlikler() {
+                kumeler.insert(kimlik);
             }
         }
         kumeler
@@ -79,6 +98,19 @@ impl McpAyarlar {
     /// Arayüze gönderilecek sır-güvenli özet listesini üretir.
     pub fn ozet_listesi(&self) -> Vec<McpSunucuOzetiDto> {
         self.sunucular.iter().map(McpSunucu::ozet_dto).collect()
+    }
+
+    /// Uzak MCP sunucularının sır içermeyen özet listesini üretir.
+    pub fn uzak_ozet_listesi(&self) -> Vec<UzakMcpSunucuOzetiDto> {
+        self.uzak_sunucular
+            .iter()
+            .map(UzakMcpSunucu::ozet_dto)
+            .collect()
+    }
+
+    /// Bir sunucu adının yerel veya uzak sunuculardan herhangi birinde kayıtlı olup olmadığını döner.
+    pub fn ad_kayitli_mi(&self, ad: &str) -> bool {
+        self.sunucular.iter().any(|s| s.ad == ad) || self.uzak_sunucular.iter().any(|s| s.ad == ad)
     }
 }
 
@@ -312,6 +344,241 @@ pub struct McpSunucuTaslagi {
     pub cagri_zamani_asimi_sn: u32,
 }
 
+const fn varsayilan_revizyon() -> u64 {
+    1
+}
+
+/// Uzak Streamable HTTP MCP sunucusunun kalıcı ayarı (`1.1b`).
+///
+/// Yerel süreç/komut/AppContainer alanları taşımaz; yalnız kanonik uç URL'si,
+/// yetki türü (opak kasa kimliğiyle), zaman aşımları ve tanım/kimlik revizyonları
+/// saklanır.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UzakMcpSunucu {
+    pub ad: String,
+    #[serde(default)]
+    pub etkin: bool,
+    pub uc_url: String,
+    #[serde(default)]
+    pub yetki: UzakMcpYetkiAyari,
+    #[serde(default = "varsayilan_baslatma_zaman_asimi")]
+    pub baslatma_zamani_asimi_sn: u32,
+    #[serde(default = "varsayilan_cagri_zaman_asimi")]
+    pub cagri_zamani_asimi_sn: u32,
+    #[serde(default = "varsayilan_revizyon")]
+    pub tanim_revizyonu: u64,
+    #[serde(default = "varsayilan_revizyon")]
+    pub kimlik_revizyonu: u64,
+}
+
+impl UzakMcpSunucu {
+    /// Bu uzak sunucunun kasada tuttuğu opak gizli kimlikleri döner.
+    pub fn gizli_kimlikler(&self) -> BTreeSet<GizliKimlik> {
+        let mut kumeler = BTreeSet::new();
+        match &self.yetki {
+            UzakMcpYetkiAyari::Yetkisiz => {}
+            UzakMcpYetkiAyari::SabitBaslik { gizli_kimlik, .. } => {
+                kumeler.insert(gizli_kimlik.clone());
+            }
+            UzakMcpYetkiAyari::OAuth {
+                yetki_kimligi: Some(kimlik),
+                ..
+            } => {
+                kumeler.insert(kimlik.clone());
+            }
+            UzakMcpYetkiAyari::OAuth {
+                yetki_kimligi: None,
+                ..
+            } => {}
+        }
+        kumeler
+    }
+
+    /// Arayüz listesi için sır taşımayan uzak sunucu özeti üretir.
+    pub fn ozet_dto(&self) -> UzakMcpSunucuOzetiDto {
+        let (yetki_turu, kimlik_bagli, kapsamlar) = match &self.yetki {
+            UzakMcpYetkiAyari::Yetkisiz => (UzakMcpYetkiEtiketi::Yetkisiz, false, Vec::new()),
+            UzakMcpYetkiAyari::SabitBaslik { .. } => {
+                (UzakMcpYetkiEtiketi::SabitBaslik, true, Vec::new())
+            }
+            UzakMcpYetkiAyari::OAuth {
+                kapsamlar,
+                yetki_kimligi,
+                ..
+            } => (
+                UzakMcpYetkiEtiketi::OAuth,
+                yetki_kimligi.is_some(),
+                kapsamlar.clone(),
+            ),
+        };
+        UzakMcpSunucuOzetiDto {
+            ad: self.ad.clone(),
+            etkin: self.etkin,
+            uc_url: self.uc_url.clone(),
+            yetki_turu,
+            kimlik_bagli,
+            kapsamlar,
+            tanim_revizyonu: self.tanim_revizyonu,
+            kimlik_revizyonu: self.kimlik_revizyonu,
+        }
+    }
+
+    /// Arayüz düzenleme formu için sır içermeyen ayrıntı DTO'su üretir.
+    pub fn ayrinti_dto(&self) -> UzakMcpSunucuAyrintiDto {
+        let yetki = match &self.yetki {
+            UzakMcpYetkiAyari::Yetkisiz => UzakMcpYetkiDto::Yetkisiz,
+            UzakMcpYetkiAyari::SabitBaslik {
+                baslik_adi,
+                gizli_kimlik,
+            } => UzakMcpYetkiDto::SabitBaslik {
+                baslik_adi: baslik_adi.clone(),
+                gizli_var: true,
+                gizli_kimlik: gizli_kimlik.clone(),
+            },
+            UzakMcpYetkiAyari::OAuth {
+                istemci_kimligi,
+                kapsamlar,
+                kaynak_url,
+                yetki_kimligi,
+            } => UzakMcpYetkiDto::OAuth {
+                istemci_kimligi: istemci_kimligi.clone(),
+                kapsamlar: kapsamlar.clone(),
+                kaynak_url: kaynak_url.clone(),
+                kimlik_bagli: yetki_kimligi.is_some(),
+                yetki_kimligi: yetki_kimligi.clone(),
+            },
+        };
+        UzakMcpSunucuAyrintiDto {
+            ad: self.ad.clone(),
+            etkin: self.etkin,
+            uc_url: self.uc_url.clone(),
+            yetki,
+            baslatma_zamani_asimi_sn: self.baslatma_zamani_asimi_sn,
+            cagri_zamani_asimi_sn: self.cagri_zamani_asimi_sn,
+            tanim_revizyonu: self.tanim_revizyonu,
+            kimlik_revizyonu: self.kimlik_revizyonu,
+        }
+    }
+}
+
+/// Uzak MCP sunucusunun kalıcı yetki ayarı.
+///
+/// Ham token veya başlık sırrı bu tipte asla bulunmaz; yalnız opak [`GizliKimlik`]
+/// referansı tutulur.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "tur", rename_all = "snake_case", deny_unknown_fields)]
+pub enum UzakMcpYetkiAyari {
+    #[default]
+    Yetkisiz,
+    SabitBaslik {
+        baslik_adi: String,
+        gizli_kimlik: GizliKimlik,
+    },
+    OAuth {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        istemci_kimligi: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        kapsamlar: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kaynak_url: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        yetki_kimligi: Option<GizliKimlik>,
+    },
+}
+
+/// Arayüzde uzak sunucu yetki rozetini gösteren etiket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UzakMcpYetkiEtiketi {
+    Yetkisiz,
+    SabitBaslik,
+    OAuth,
+}
+
+/// Arayüz listesi için sır taşımayan uzak MCP sunucu özeti DTO'su.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UzakMcpSunucuOzetiDto {
+    pub ad: String,
+    pub etkin: bool,
+    pub uc_url: String,
+    pub yetki_turu: UzakMcpYetkiEtiketi,
+    pub kimlik_bagli: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kapsamlar: Vec<String>,
+    pub tanim_revizyonu: u64,
+    pub kimlik_revizyonu: u64,
+}
+
+/// Arayüz ayrıntı ekranı için sır taşımayan uzak MCP yetki DTO'su.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "tur", rename_all = "snake_case", deny_unknown_fields)]
+pub enum UzakMcpYetkiDto {
+    Yetkisiz,
+    SabitBaslik {
+        baslik_adi: String,
+        gizli_var: bool,
+        gizli_kimlik: GizliKimlik,
+    },
+    OAuth {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        istemci_kimligi: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        kapsamlar: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kaynak_url: Option<String>,
+        kimlik_bagli: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        yetki_kimligi: Option<GizliKimlik>,
+    },
+}
+
+/// Arayüz düzenleme ekranı için sır taşımayan uzak MCP sunucu DTO'su.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UzakMcpSunucuAyrintiDto {
+    pub ad: String,
+    pub etkin: bool,
+    pub uc_url: String,
+    pub yetki: UzakMcpYetkiDto,
+    pub baslatma_zamani_asimi_sn: u32,
+    pub cagri_zamani_asimi_sn: u32,
+    pub tanim_revizyonu: u64,
+    pub kimlik_revizyonu: u64,
+}
+
+/// Uzak MCP sunucusu ekleme veya düzenleme taslağındaki yetki girdisi.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UzakMcpYetkiGirdisi {
+    Yetkisiz,
+    YeniSabitBaslik {
+        baslik_adi: String,
+        deger: YeniGizliDeger,
+    },
+    KorunanSabitBaslik {
+        baslik_adi: String,
+        kimlik: GizliKimlik,
+    },
+    OAuth {
+        istemci_kimligi: Option<String>,
+        kapsamlar: Vec<String>,
+        kaynak_url: Option<String>,
+        korunan_yetki_kimligi: Option<GizliKimlik>,
+    },
+}
+
+/// Uzak MCP sunucusu ekleme veya düzenleme taslağı.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UzakMcpSunucuTaslagi {
+    pub ad: String,
+    pub etkin: bool,
+    pub uc_url: String,
+    pub yetki: UzakMcpYetkiGirdisi,
+    pub baslatma_zamani_asimi_sn: u32,
+    pub cagri_zamani_asimi_sn: u32,
+}
+
 /// Tek bir işlemde uygulanabilecek MCP ayar değişiklikleri.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpDegisikligi {
@@ -329,6 +596,21 @@ pub enum McpDegisikligi {
     EtkinlikAyarla { ad: String, etkin: bool },
     /// Arka uçta seçilmiş bir yürütülebilir kimliğini mutlak dosya yoluyla kaydeder.
     SeciliYurutulebilirKaydet { kimlik: String, yol: PathBuf },
+    /// Uzak Streamable HTTP MCP sunucusunu ekler veya `eski_ad` verilmişse günceller.
+    UzakKaydet {
+        eski_ad: Option<String>,
+        taslak: UzakMcpSunucuTaslagi,
+        test_fiksturu_loopback: bool,
+    },
+    /// OAuth yetkilendirme akışı tamamlandığında token paketini kasaya bağlar ve
+    /// `kimlik_revizyonu` sayacını artırır.
+    UzakOAuthKimlikBagla {
+        ad: String,
+        token_paketi_json: YeniGizliDeger,
+    },
+    /// Uzak sunucunun bağlı kimliğini (OAuth token paketi) kaldırır, kasadan emekliye
+    /// ayırır ve `kimlik_revizyonu` sayacını artırır.
+    UzakKimlikKaldir { ad: String },
 }
 
 /// Ayarlar deposu için atomik okuma/yazma sözleşmesi.
@@ -396,6 +678,10 @@ pub enum McpAyarlarHatasi {
     PaylasilanGizliKimlik,
     #[error("tam erişim kipinde ağ izin listesi tanımlanamaz")]
     TamErisimdeAgListesi,
+    #[error("geçersiz uzak MCP uç URL'si")]
+    GecersizUzakUrl,
+    #[error("geçersiz uzak MCP yetkilendirme ayarı")]
+    GecersizUzakYetki,
     #[error("zaman aşımı en az 1 saniye olmalıdır")]
     SifirZamanAsimi,
     #[error("gizli değer en az {EN_AZ_GIZLI_KARAKTER} karakter olmalıdır")]
@@ -484,6 +770,7 @@ impl McpAyarlarIslemi {
                         .iter()
                         .enumerate()
                         .any(|(i, s)| Some(i) != mevcut_indis && s.ad == taslak.ad)
+                        || aday.uzak_sunucular.iter().any(|s| s.ad == taslak.ad)
                     {
                         return Err(McpAyarlarHatasi::YinelenenSunucuAdi);
                     }
@@ -498,6 +785,11 @@ impl McpAyarlarIslemi {
                         .enumerate()
                         .filter(|(i, _)| Some(*i) != mevcut_indis)
                         .flat_map(|(_, s)| s.gizli_kimlikler())
+                        .chain(
+                            aday.uzak_sunucular
+                                .iter()
+                                .flat_map(UzakMcpSunucu::gizli_kimlikler),
+                        )
                         .collect();
 
                     let mut korunacaklar = BTreeSet::new();
@@ -575,12 +867,20 @@ impl McpAyarlarIslemi {
                         .iter()
                         .enumerate()
                         .any(|(i, s)| i != indis && s.ad == yeni_ad)
+                        || aday.uzak_sunucular.iter().any(|s| s.ad == yeni_ad)
                     {
                         return Err(McpAyarlarHatasi::YinelenenSunucuAdi);
                     }
                     aday.sunucular[indis].ad = yeni_ad;
                 }
                 McpDegisikligi::Sil { ad } => {
+                    if let Some(uzak_indis) = aday.uzak_sunucular.iter().position(|s| s.ad == ad) {
+                        let silinen = aday.uzak_sunucular.remove(uzak_indis);
+                        for kimlik in silinen.gizli_kimlikler() {
+                            emekli_kimlikler.insert(kimlik);
+                        }
+                        continue;
+                    }
                     let indis = aday
                         .sunucular
                         .iter()
@@ -592,6 +892,10 @@ impl McpAyarlarIslemi {
                     }
                 }
                 McpDegisikligi::EtkinlikAyarla { ad, etkin } => {
+                    if let Some(uzak) = aday.uzak_sunucular.iter_mut().find(|s| s.ad == ad) {
+                        uzak.etkin = etkin;
+                        continue;
+                    }
                     let sunucu = aday
                         .sunucular
                         .iter_mut()
@@ -604,6 +908,35 @@ impl McpAyarlarIslemi {
                         return Err(McpAyarlarHatasi::GecersizKomut);
                     }
                     aday.secili_yurutulebilirler.insert(kimlik, yol);
+                }
+                McpDegisikligi::UzakKaydet {
+                    eski_ad,
+                    taslak,
+                    test_fiksturu_loopback,
+                } => {
+                    uzak_kaydet_uygula(
+                        &mut aday,
+                        eski_ad,
+                        taslak,
+                        test_fiksturu_loopback,
+                        &mut yeni_yazilacaklar,
+                        &mut emekli_kimlikler,
+                    )?;
+                }
+                McpDegisikligi::UzakOAuthKimlikBagla {
+                    ad,
+                    token_paketi_json,
+                } => {
+                    uzak_oauth_kimlik_bagla_uygula(
+                        &mut aday,
+                        &ad,
+                        token_paketi_json,
+                        &mut yeni_yazilacaklar,
+                        &mut emekli_kimlikler,
+                    )?;
+                }
+                McpDegisikligi::UzakKimlikKaldir { ad } => {
+                    uzak_kimlik_kaldir_uygula(&mut aday, &ad, &mut emekli_kimlikler)?;
                 }
             }
         }
@@ -786,7 +1119,362 @@ pub(crate) fn sunucu_taslagini_dogrula(taslak: &McpSunucuTaslagi) -> Result<(), 
         | TanimHatasi::CiktiYoluDegisti
         | TanimHatasi::DosyaOkunamadi
         | TanimHatasi::ProfilKuraliEksik => McpAyarlarHatasi::GecersizKomut,
+        TanimHatasi::GecersizUzakUrl => McpAyarlarHatasi::GecersizUzakUrl,
+        TanimHatasi::GecersizUzakYetki | TanimHatasi::GecersizBaglamButcesi => {
+            McpAyarlarHatasi::GecersizUzakYetki
+        }
     })
+}
+
+fn uzak_kaydet_uygula(
+    aday: &mut McpAyarlar,
+    eski_ad: Option<String>,
+    taslak: UzakMcpSunucuTaslagi,
+    test_fiksturu_loopback: bool,
+    yeni_yazilacaklar: &mut Vec<(GizliKimlik, String)>,
+    emekli_kimlikler: &mut BTreeSet<GizliKimlik>,
+) -> Result<(), McpAyarlarHatasi> {
+    let mevcut_indis = match &eski_ad {
+        Some(ad) => Some(
+            aday.uzak_sunucular
+                .iter()
+                .position(|s| s.ad == *ad)
+                .ok_or(McpAyarlarHatasi::SunucuBulunamadi)?,
+        ),
+        None => None,
+    };
+
+    if aday.sunucular.iter().any(|s| s.ad == taslak.ad)
+        || aday
+            .uzak_sunucular
+            .iter()
+            .enumerate()
+            .any(|(i, s)| Some(i) != mevcut_indis && s.ad == taslak.ad)
+    {
+        return Err(McpAyarlarHatasi::YinelenenSunucuAdi);
+    }
+
+    let mevcut_sunucu = mevcut_indis.map(|i| &aday.uzak_sunucular[i]);
+    let mevcut_kimlikler: BTreeSet<GizliKimlik> = mevcut_sunucu
+        .map(UzakMcpSunucu::gizli_kimlikler)
+        .unwrap_or_default();
+
+    let diger_sunucu_kimlikleri: BTreeSet<GizliKimlik> = aday
+        .sunucular
+        .iter()
+        .flat_map(McpSunucu::gizli_kimlikler)
+        .chain(
+            aday.uzak_sunucular
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| Some(*i) != mevcut_indis)
+                .flat_map(|(_, s)| s.gizli_kimlikler()),
+        )
+        .collect();
+
+    let mut korunacaklar = BTreeSet::new();
+    let mut kimlik_degisti = false;
+
+    let yetki_ayari = match &taslak.yetki {
+        UzakMcpYetkiGirdisi::Yetkisiz => {
+            if !mevcut_kimlikler.is_empty() {
+                kimlik_degisti = true;
+            }
+            UzakMcpYetkiAyari::Yetkisiz
+        }
+        UzakMcpYetkiGirdisi::YeniSabitBaslik { baslik_adi, deger } => {
+            gizli_deger_dogrula(deger.as_str())?;
+            let kimlik = benzersiz_kimlik_uret(
+                &mevcut_kimlikler,
+                &diger_sunucu_kimlikleri,
+                emekli_kimlikler,
+                yeni_yazilacaklar,
+            );
+            yeni_yazilacaklar.push((kimlik.clone(), deger.as_str().to_owned()));
+            kimlik_degisti = true;
+            UzakMcpYetkiAyari::SabitBaslik {
+                baslik_adi: baslik_adi.to_ascii_lowercase(),
+                gizli_kimlik: kimlik,
+            }
+        }
+        UzakMcpYetkiGirdisi::KorunanSabitBaslik { baslik_adi, kimlik } => {
+            let _ = GizliKimlik::yeni_dogrulanmis(kimlik.as_str())?;
+            if !mevcut_kimlikler.contains(kimlik) {
+                return Err(McpAyarlarHatasi::BilinmeyenKorunanGizliKimlik);
+            }
+            let norm_baslik = baslik_adi.to_ascii_lowercase();
+            let ayni_baslik = matches!(
+                mevcut_sunucu.map(|s| &s.yetki),
+                Some(UzakMcpYetkiAyari::SabitBaslik {
+                    baslik_adi: eski_baslik,
+                    gizli_kimlik: eski_kimlik,
+                }) if eski_baslik == &norm_baslik && eski_kimlik == kimlik
+            );
+            if !ayni_baslik {
+                return Err(McpAyarlarHatasi::BilinmeyenKorunanGizliKimlik);
+            }
+            korunacaklar.insert(kimlik.clone());
+            UzakMcpYetkiAyari::SabitBaslik {
+                baslik_adi: norm_baslik,
+                gizli_kimlik: kimlik.clone(),
+            }
+        }
+        UzakMcpYetkiGirdisi::OAuth {
+            istemci_kimligi,
+            kapsamlar,
+            kaynak_url,
+            korunan_yetki_kimligi,
+        } => {
+            let mut sirali_kapsamlar = kapsamlar.clone();
+            sirali_kapsamlar.sort();
+            sirali_kapsamlar.dedup();
+            let norm_kaynak = match kaynak_url {
+                Some(u) => Some(
+                    kalfa_mcp::tanim::uzak_uc_url_dogrula_ve_kanoniklestir(
+                        u,
+                        test_fiksturu_loopback,
+                    )
+                    .map_err(|_| McpAyarlarHatasi::GecersizUzakYetki)?,
+                ),
+                None => None,
+            };
+            let kanonik_uc = kalfa_mcp::tanim::uzak_uc_url_dogrula_ve_kanoniklestir(
+                &taslak.uc_url,
+                test_fiksturu_loopback,
+            )
+            .map_err(|_| McpAyarlarHatasi::GecersizUzakUrl)?;
+
+            let yetki_kimligi = match korunan_yetki_kimligi {
+                Some(kimlik) => {
+                    let _ = GizliKimlik::yeni_dogrulanmis(kimlik.as_str())?;
+                    if !mevcut_kimlikler.contains(kimlik) {
+                        return Err(McpAyarlarHatasi::BilinmeyenKorunanGizliKimlik);
+                    }
+                    // Uç URL, istemci kimliği, kaynak URL veya kapsam kümesi değiştiyse
+                    // eski OAuth kimliği korunamaz; emekliye ayrılır ve yeniden yetkilendirme gerekir.
+                    let oauth_baglami_ayni = matches!(
+                        mevcut_sunucu,
+                        Some(eski) if eski.uc_url == kanonik_uc && matches!(
+                            &eski.yetki,
+                            UzakMcpYetkiAyari::OAuth {
+                                istemci_kimligi: eski_istemci,
+                                kapsamlar: eski_kapsamlar,
+                                kaynak_url: eski_kaynak,
+                                yetki_kimligi: Some(eski_yk),
+                            } if eski_istemci == istemci_kimligi
+                                && eski_kapsamlar == &sirali_kapsamlar
+                                && eski_kaynak == &norm_kaynak
+                                && eski_yk == kimlik
+                        )
+                    );
+                    if oauth_baglami_ayni {
+                        korunacaklar.insert(kimlik.clone());
+                        Some(kimlik.clone())
+                    } else {
+                        kimlik_degisti = true;
+                        None
+                    }
+                }
+                None => {
+                    if !mevcut_kimlikler.is_empty() {
+                        kimlik_degisti = true;
+                    }
+                    None
+                }
+            };
+
+            UzakMcpYetkiAyari::OAuth {
+                istemci_kimligi: istemci_kimligi.clone(),
+                kapsamlar: sirali_kapsamlar,
+                kaynak_url: norm_kaynak,
+                yetki_kimligi,
+            }
+        }
+    };
+
+    for eski_kimlik in mevcut_kimlikler.difference(&korunacaklar) {
+        emekli_kimlikler.insert(eski_kimlik.clone());
+    }
+
+    let kanonik_tanim = uzak_sunucu_tanimina_donustur_parcalardan(
+        &taslak.ad,
+        &taslak.uc_url,
+        &yetki_ayari,
+        taslak.baslatma_zamani_asimi_sn,
+        taslak.cagri_zamani_asimi_sn,
+        test_fiksturu_loopback,
+    )?;
+
+    let (tanim_revizyonu, kimlik_revizyonu) = match mevcut_sunucu {
+        Some(eski) => {
+            let tanim_degisti = eski.ad != kanonik_tanim.ad()
+                || eski.uc_url != kanonik_tanim.uc_url()
+                || eski.yetki != yetki_ayari
+                || eski.baslatma_zamani_asimi_sn != taslak.baslatma_zamani_asimi_sn
+                || eski.cagri_zamani_asimi_sn != taslak.cagri_zamani_asimi_sn;
+            let yeni_tanim_rev = if tanim_degisti {
+                eski.tanim_revizyonu.saturating_add(1)
+            } else {
+                eski.tanim_revizyonu
+            };
+            let yeni_kimlik_rev = if kimlik_degisti {
+                eski.kimlik_revizyonu.saturating_add(1)
+            } else {
+                eski.kimlik_revizyonu
+            };
+            (yeni_tanim_rev, yeni_kimlik_rev)
+        }
+        None => (1, 1),
+    };
+
+    let yeni_uzak = UzakMcpSunucu {
+        ad: kanonik_tanim.ad().to_owned(),
+        etkin: taslak.etkin,
+        uc_url: kanonik_tanim.uc_url().to_owned(),
+        yetki: yetki_ayari,
+        baslatma_zamani_asimi_sn: taslak.baslatma_zamani_asimi_sn,
+        cagri_zamani_asimi_sn: taslak.cagri_zamani_asimi_sn,
+        tanim_revizyonu,
+        kimlik_revizyonu,
+    };
+
+    if let Some(indis) = mevcut_indis {
+        aday.uzak_sunucular[indis] = yeni_uzak;
+    } else {
+        aday.uzak_sunucular.push(yeni_uzak);
+    }
+    Ok(())
+}
+
+fn uzak_oauth_kimlik_bagla_uygula(
+    aday: &mut McpAyarlar,
+    ad: &str,
+    token_paketi_json: YeniGizliDeger,
+    yeni_yazilacaklar: &mut Vec<(GizliKimlik, String)>,
+    emekli_kimlikler: &mut BTreeSet<GizliKimlik>,
+) -> Result<(), McpAyarlarHatasi> {
+    gizli_deger_dogrula(token_paketi_json.as_str())?;
+    let tum_aktifler = aday.aktif_gizli_kimlikler();
+    let indis = aday
+        .uzak_sunucular
+        .iter()
+        .position(|s| s.ad == ad)
+        .ok_or(McpAyarlarHatasi::SunucuBulunamadi)?;
+
+    let mevcut_kimlikler = aday.uzak_sunucular[indis].gizli_kimlikler();
+    let yeni_kimlik = benzersiz_kimlik_uret(
+        &mevcut_kimlikler,
+        &tum_aktifler,
+        emekli_kimlikler,
+        yeni_yazilacaklar,
+    );
+
+    let sunucu = &mut aday.uzak_sunucular[indis];
+    let UzakMcpYetkiAyari::OAuth { yetki_kimligi, .. } = &mut sunucu.yetki else {
+        return Err(McpAyarlarHatasi::GecersizUzakYetki);
+    };
+    if let Some(eski_kimlik) = yetki_kimligi.replace(yeni_kimlik.clone()) {
+        emekli_kimlikler.insert(eski_kimlik);
+    }
+    yeni_yazilacaklar.push((yeni_kimlik, token_paketi_json.as_str().to_owned()));
+    sunucu.kimlik_revizyonu = sunucu.kimlik_revizyonu.saturating_add(1);
+    Ok(())
+}
+
+fn uzak_kimlik_kaldir_uygula(
+    aday: &mut McpAyarlar,
+    ad: &str,
+    emekli_kimlikler: &mut BTreeSet<GizliKimlik>,
+) -> Result<(), McpAyarlarHatasi> {
+    let sunucu = aday
+        .uzak_sunucular
+        .iter_mut()
+        .find(|s| s.ad == ad)
+        .ok_or(McpAyarlarHatasi::SunucuBulunamadi)?;
+    match &mut sunucu.yetki {
+        UzakMcpYetkiAyari::OAuth { yetki_kimligi, .. } => {
+            if let Some(eski) = yetki_kimligi.take() {
+                emekli_kimlikler.insert(eski);
+                sunucu.kimlik_revizyonu = sunucu.kimlik_revizyonu.saturating_add(1);
+            }
+            Ok(())
+        }
+        UzakMcpYetkiAyari::SabitBaslik { .. } => {
+            for kimlik in sunucu.gizli_kimlikler() {
+                emekli_kimlikler.insert(kimlik);
+            }
+            sunucu.yetki = UzakMcpYetkiAyari::Yetkisiz;
+            sunucu.tanim_revizyonu = sunucu.tanim_revizyonu.saturating_add(1);
+            sunucu.kimlik_revizyonu = sunucu.kimlik_revizyonu.saturating_add(1);
+            Ok(())
+        }
+        UzakMcpYetkiAyari::Yetkisiz => Ok(()),
+    }
+}
+
+fn uzak_sunucu_tanimina_donustur_parcalardan(
+    ad: &str,
+    uc_url: &str,
+    yetki: &UzakMcpYetkiAyari,
+    baslatma_zamani_asimi_sn: u32,
+    cagri_zamani_asimi_sn: u32,
+    test_fiksturu_loopback: bool,
+) -> Result<kalfa_mcp::tanim::UzakMcpTanim, McpAyarlarHatasi> {
+    use kalfa_mcp::tanim::{TanimHatasi, UzakBaglamButcesi, UzakMcpTanim, UzakYetkiTuru};
+
+    let yetki_turu = match yetki {
+        UzakMcpYetkiAyari::Yetkisiz => UzakYetkiTuru::Yetkisiz,
+        UzakMcpYetkiAyari::SabitBaslik {
+            baslik_adi,
+            gizli_kimlik,
+        } => UzakYetkiTuru::SabitBaslikGizli {
+            baslik_adi: baslik_adi.clone(),
+            gizli_kimlik: gizli_kimlik.as_str().to_owned(),
+        },
+        UzakMcpYetkiAyari::OAuth {
+            istemci_kimligi,
+            kapsamlar,
+            kaynak_url,
+            yetki_kimligi,
+        } => UzakYetkiTuru::OAuth {
+            istemci_kimligi: istemci_kimligi.clone(),
+            kapsamlar: kapsamlar.clone(),
+            kaynak_url: kaynak_url.clone(),
+            yetki_kimligi: yetki_kimligi.as_ref().map(|k| k.as_str().to_owned()),
+        },
+    };
+
+    UzakMcpTanim::yeni(
+        ad.to_owned(),
+        uc_url.to_owned(),
+        yetki_turu,
+        baslatma_zamani_asimi_sn,
+        cagri_zamani_asimi_sn,
+        test_fiksturu_loopback,
+        UzakBaglamButcesi::varsayilan(),
+    )
+    .map_err(|hata| match hata {
+        TanimHatasi::GecersizAd => McpAyarlarHatasi::GecersizSunucuAdi,
+        TanimHatasi::SifirZamanAsimi => McpAyarlarHatasi::SifirZamanAsimi,
+        TanimHatasi::GecersizUzakUrl => McpAyarlarHatasi::GecersizUzakUrl,
+        _ => McpAyarlarHatasi::GecersizUzakYetki,
+    })
+}
+
+/// Kalıcı uzak MCP sunucu ayarını çalışma zamanı [`kalfa_mcp::tanim::UzakMcpTanim`]
+/// yapısına dönüştürür.
+pub fn uzak_sunucu_tanimina_donustur(
+    sunucu: &UzakMcpSunucu,
+    test_fiksturu_loopback: bool,
+) -> Result<kalfa_mcp::tanim::UzakMcpTanim, McpAyarlarHatasi> {
+    uzak_sunucu_tanimina_donustur_parcalardan(
+        &sunucu.ad,
+        &sunucu.uc_url,
+        &sunucu.yetki,
+        sunucu.baslatma_zamani_asimi_sn,
+        sunucu.cagri_zamani_asimi_sn,
+        test_fiksturu_loopback,
+    )
 }
 
 pub fn sunucu_adi_gecerli(ad: &str) -> bool {
@@ -1258,5 +1946,110 @@ mod tests {
             saldiri.kaydet(&depo, &kasa),
             Err(McpAyarlarHatasi::BilinmeyenKorunanGizliKimlik)
         );
+
+        // Yerel 1.1a ayarları ve uzak 1.1b sunucuları geriye dönük uyumlu olmalı,
+        // ad çakışmasını reddetmeli ve kapsam/kimlik revizyonlarını atomik yönetmeli.
+        let eski_json = r#"{"sunucular":[{"ad":"yerel-bir","etkin":true,"komut":{"tur":"program_adi","ad":"npx","argumanlar":["-y","ornek"]},"ortam":[],"kip":"yalitimli","baslatma_zamani_asimi_sn":30,"cagri_zamani_asimi_sn":120}]}"#;
+        let cozulmus_eski: McpAyarlar = serde_json::from_str(eski_json).unwrap();
+        assert_eq!(cozulmus_eski.sunucular.len(), 1);
+        assert!(cozulmus_eski.uzak_sunucular.is_empty());
+        let yeniden_json = serde_json::to_string(&cozulmus_eski).unwrap();
+        assert!(!yeniden_json.contains("uzak_sunucular"));
+
+        // Yerel sunucu adıyla aynı adla uzak sunucu eklenemez.
+        let mut cakisma_islemi = McpAyarlarIslemi::baslat(&depo);
+        cakisma_islemi.degisiklik_ekle(McpDegisikligi::UzakKaydet {
+            eski_ad: None,
+            taslak: UzakMcpSunucuTaslagi {
+                ad: "hedef-sunucu".into(),
+                etkin: true,
+                uc_url: "https://mcp.example.com/v1".into(),
+                yetki: UzakMcpYetkiGirdisi::Yetkisiz,
+                baslatma_zamani_asimi_sn: 30,
+                cagri_zamani_asimi_sn: 120,
+            },
+            test_fiksturu_loopback: false,
+        });
+        assert_eq!(
+            cakisma_islemi.kaydet(&depo, &kasa),
+            Err(McpAyarlarHatasi::YinelenenSunucuAdi)
+        );
+
+        // OAuth uzak sunucu kaydı, kimlik bağlama, kapsam genişletmede eski kimliğin düşmesi
+        // ve kimlik kaldırma.
+        let mut uzak_ekle = McpAyarlarIslemi::baslat(&depo);
+        uzak_ekle.degisiklik_ekle(McpDegisikligi::UzakKaydet {
+            eski_ad: None,
+            taslak: UzakMcpSunucuTaslagi {
+                ad: "uzak-oauth".into(),
+                etkin: true,
+                uc_url: "https://MCP.Example.com:443/v1/mcp".into(),
+                yetki: UzakMcpYetkiGirdisi::OAuth {
+                    istemci_kimligi: Some("istemci-a".into()),
+                    kapsamlar: vec!["tools:read".into()],
+                    kaynak_url: Some("https://MCP.Example.com:443/v1/mcp".into()),
+                    korunan_yetki_kimligi: None,
+                },
+                baslatma_zamani_asimi_sn: 30,
+                cagri_zamani_asimi_sn: 120,
+            },
+            test_fiksturu_loopback: false,
+        });
+        let ayarlar = uzak_ekle.kaydet(&depo, &kasa).unwrap();
+        let uzak = ayarlar.uzak_sunucu("uzak-oauth").unwrap();
+        assert_eq!(uzak.uc_url, "https://mcp.example.com/v1/mcp");
+        assert_eq!(uzak.tanim_revizyonu, 1);
+        assert_eq!(uzak.kimlik_revizyonu, 1);
+        assert!(!uzak.ozet_dto().kimlik_bagli);
+
+        // OAuth token paketi bağlandığında kimlik_revizyonu artmalı ve ham token JSON/DTO'ya sızmamalı.
+        let gizli_oauth_json = r#"{"access_token":"canary-oauth-access-9999","refresh_token":"canary-oauth-refresh-8888"}"#;
+        let mut bagla = McpAyarlarIslemi::baslat(&depo);
+        bagla.degisiklik_ekle(McpDegisikligi::UzakOAuthKimlikBagla {
+            ad: "uzak-oauth".into(),
+            token_paketi_json: YeniGizliDeger::yeni(gizli_oauth_json).unwrap(),
+        });
+        let ayarlar = bagla.kaydet(&depo, &kasa).unwrap();
+        let uzak = ayarlar.uzak_sunucu("uzak-oauth").unwrap();
+        assert_eq!(uzak.tanim_revizyonu, 1);
+        assert_eq!(uzak.kimlik_revizyonu, 2);
+        assert!(uzak.ozet_dto().kimlik_bagli);
+        let bagli_kimlik = uzak.gizli_kimlikler().into_iter().next().unwrap();
+        assert_eq!(
+            kasa.ham_oku(&bagli_kimlik).as_deref(),
+            Some(gizli_oauth_json)
+        );
+
+        let ayarlar_serisi = serde_json::to_string(&ayarlar).unwrap();
+        let dto_serisi = serde_json::to_string(&uzak.ayrinti_dto()).unwrap();
+        assert!(!ayarlar_serisi.contains("canary-oauth"));
+        assert!(!dto_serisi.contains("canary-oauth"));
+
+        // Kapsam genişletildiğinde korunan_yetki_kimligi verilse bile eski OAuth kimliği
+        // emekliye ayrılmalı ve kimlik_revizyonu ile tanim_revizyonu artmalı.
+        let mut kapsam_genislet = McpAyarlarIslemi::baslat(&depo);
+        kapsam_genislet.degisiklik_ekle(McpDegisikligi::UzakKaydet {
+            eski_ad: Some("uzak-oauth".into()),
+            taslak: UzakMcpSunucuTaslagi {
+                ad: "uzak-oauth".into(),
+                etkin: true,
+                uc_url: "https://mcp.example.com/v1/mcp".into(),
+                yetki: UzakMcpYetkiGirdisi::OAuth {
+                    istemci_kimligi: Some("istemci-a".into()),
+                    kapsamlar: vec!["tools:read".into(), "tools:write".into()],
+                    kaynak_url: Some("https://mcp.example.com/v1/mcp".into()),
+                    korunan_yetki_kimligi: Some(bagli_kimlik.clone()),
+                },
+                baslatma_zamani_asimi_sn: 30,
+                cagri_zamani_asimi_sn: 120,
+            },
+            test_fiksturu_loopback: false,
+        });
+        let ayarlar = kapsam_genislet.kaydet(&depo, &kasa).unwrap();
+        let uzak = ayarlar.uzak_sunucu("uzak-oauth").unwrap();
+        assert_eq!(uzak.tanim_revizyonu, 2);
+        assert_eq!(uzak.kimlik_revizyonu, 3);
+        assert!(!uzak.ozet_dto().kimlik_bagli);
+        assert_eq!(kasa.ham_oku(&bagli_kimlik), None);
     }
 }
