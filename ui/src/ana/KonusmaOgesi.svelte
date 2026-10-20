@@ -6,6 +6,7 @@
   import CodeBlock from '../bilesenler/CodeBlock.svelte';
   import type { IkonAdi } from '../bilesenler/ikonlar';
   import Message from '../bilesenler/Message.svelte';
+  import SoruKarti from '../bilesenler/SoruKarti.svelte';
   import ThoughtPanel from '../bilesenler/ThoughtPanel.svelte';
   import ToolCallCard from '../bilesenler/ToolCallCard.svelte';
   import WebKaynakKarti from '../bilesenler/WebKaynakKarti.svelte';
@@ -51,6 +52,8 @@
     dosya_yaz: 'file-pen',
     dosya_duzenle: 'file-pen',
     kabuk: 'square-terminal',
+    plan_guncelle: 'list',
+    kullaniciya_sor: 'info',
     web_getir: 'external-link',
   };
 
@@ -166,6 +169,13 @@
   </ToolCallCard>
 {:else if oge.tip === 'OnayIstegi'}
   <OnayKarti {oge} />
+{:else if oge.tip === 'KullaniciSorusu'}
+  <SoruKarti
+    {oge}
+    disabled={Boolean(durum.aktif?.salt_okunur)}
+    onyanitla={(tur, soruKimligi, yanit) => durum.soruYanitla(oturum, tur, soruKimligi, yanit)}
+    oniptal={() => durum.iptal()}
+  />
 {:else if oge.tip === 'GonderimOnizlemesi'}
   <OnizlemeKarti
     {oge}

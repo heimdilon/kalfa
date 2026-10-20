@@ -50,6 +50,7 @@ import type {
   GunlukSinirDurumu,
   IslemId,
   Kip,
+  KullaniciSorusuYaniti,
   McpBaslatmaKarti,
   McpDurumu,
   McpSunucuSatiri,
@@ -247,6 +248,25 @@ export class AnaDurum {
     if (gitti === undefined) return;
     this.#uygula(oturum, { tip: 'OnayYanitlandi', islem, karar: onayOzeti(kararlar) });
     this.onay = null;
+  }
+
+  async soruYanitla(
+    oturum: OturumId,
+    tur: TurId,
+    soruKimligi: string,
+    yanit: KullaniciSorusuYaniti,
+  ): Promise<void> {
+    this.#uygula(oturum, {
+      tip: 'SoruYanitlandi',
+      soru_kimligi: soruKimligi,
+      sonuc: { durum: 'Yanitlandi', yanit },
+    });
+    const basarili = await this.#dene(() =>
+      ipc.kullaniciSorusuYaniti(oturum, tur, soruKimligi, yanit),
+    );
+    if (basarili === undefined) {
+      this.#uygula(oturum, { tip: 'SoruGonderilemedi', soru_kimligi: soruKimligi });
+    }
   }
 
   async modelSec(model: string): Promise<void> {

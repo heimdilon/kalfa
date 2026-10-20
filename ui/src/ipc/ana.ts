@@ -28,6 +28,7 @@ import type {
   IslemId,
   KanalMesaji,
   Kip,
+  KullaniciSorusuYaniti,
   ModelSecenegi,
   OnarimSonucu,
   OnayGirdisi,
@@ -75,6 +76,13 @@ export const turuIptalEt = (oturum: OturumId) => invoke<void>('turu_iptal_et', {
 
 export const aracOnayi = (oturum: OturumId, kararlar: OnayGirdisi[]) =>
   invoke<void>('arac_onayi', { oturum, kararlar });
+
+export const kullaniciSorusuYaniti = (
+  oturum: OturumId,
+  tur: TurId,
+  soru_kimligi: string,
+  yanit: KullaniciSorusuYaniti,
+) => invoke<void>('kullanici_sorusu_yaniti', { oturum, tur, soru_kimligi, yanit });
 
 export const modelDegistir = (oturum: OturumId, model: string) =>
   invoke<void>('model_degistir', { oturum, model });

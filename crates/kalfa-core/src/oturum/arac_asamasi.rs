@@ -59,6 +59,11 @@ struct EklentiBekleyen {
     yanit: oneshot::Sender<GonderimYaniti>,
 }
 
+struct SoruBekleyen {
+    soru: crate::soru::KullaniciSorusu,
+    yanit: oneshot::Sender<Result<crate::soru::SoruSonucu, String>>,
+}
+
 struct BekleyenSonuc {
     cagri: CagriId,
     model_id: String,
@@ -553,6 +558,19 @@ impl Oturum {
                 .await
                 .map_err(|_| "tur iptal edildi".to_string())?;
             *korumalar = Some(cozulen);
+        }
+        let mut yeni_hedef = false;
+        for yol in &hazirlik.okunan {
+            yeni_hedef |= self.hedef_yolu_ekle(yol.as_str());
+        }
+        for yazilan in &hazirlik.yazilan {
+            yeni_hedef |= self.hedef_yolu_ekle(yazilan.yol.as_str());
+        }
+        for aday in crate::proje_talimatlari::arac_girdisinden_aday_yollari_cikar(&argumanlar) {
+            yeni_hedef |= self.hedef_yolu_ekle(&aday);
+        }
+        if yeni_hedef {
+            self.proje_talimatlarini_yenile(true).await;
         }
         let geri_alma = self.depo.is_some();
         let karar = Self::karar(
@@ -1458,11 +1476,30 @@ impl Oturum {
         // hep gönder" verilenler (aşama 4 tasarımı §9.4). Kapsam bu yürütmedir.
         let mut eklenti_bekleyen: HashMap<IslemId, EklentiBekleyen> = HashMap::new();
         let mut eklenti_hep: HashSet<CagriId> = HashSet::new();
+        let mut soru_bekleyen: Option<SoruBekleyen> = None;
         // Arayüze iletilemeyen ara çıktının çağrı başına bayt sayısı.
         let mut atlanan: HashMap<CagriId, u64> = HashMap::new();
         loop {
             // İptal gelmişse bekleyen eklenti istekleri bırakılır; araç
             // `GonderimYaniti::Iptal` alıp çıkar.
+            if iptal_nedeni.is_some()
+                && let Some(bekleyen) = soru_bekleyen.take()
+            {
+                let sonuc = crate::soru::SoruSonucu::IptalEdildi;
+                self.kaydet(KayitOgesi::KullaniciSorusuCozuldu {
+                    cagri: bekleyen.soru.cagri,
+                    soru_kimligi: bekleyen.soru.soru_kimligi.clone(),
+                    sonuc: sonuc.clone(),
+                })
+                .await;
+                self.yay(Olay::KullaniciSorusuCozuldu {
+                    cagri: bekleyen.soru.cagri,
+                    soru_kimligi: bekleyen.soru.soru_kimligi.clone(),
+                    sonuc: sonuc.clone(),
+                })
+                .await;
+                let _ = bekleyen.yanit.send(Ok(sonuc));
+            }
             if iptal_nedeni.is_some() && !eklenti_bekleyen.is_empty() {
                 eklenti_bekleyen.clear();
                 self.bekleyen_govdeleri_temizle();
@@ -1502,7 +1539,7 @@ impl Oturum {
                 // Eklenti isteği de sonuçtan önce işlenir: araç `IstekBitti`'yi
                 // gönderip hemen dönebilir (aynı sıralama, aşama 4 tasarımı §8.7).
                 istek = ortam_rx.recv(), if !ortam_kapali => match istek {
-                    Some(istek) => self.ortam_istegi_isle(istek, &mut eklenti_bekleyen, &mut eklenti_hep).await,
+                    Some(istek) => self.ortam_istegi_isle(istek, &mut eklenti_bekleyen, &mut eklenti_hep, &mut soru_bekleyen).await,
                     None => ortam_kapali = true,
                 },
                 komut = self.komutlar.recv(), if iptal_nedeni.is_none() => {
@@ -1521,7 +1558,7 @@ impl Oturum {
                             .await;
                         }
                         Some(k) => {
-                            if self.genel_komut(k).await == Etki::Iptal {
+                            if self.yurutme_komutu_isle(k, &mut soru_bekleyen).await == Etki::Iptal {
                                 iptal_nedeni = Some(BitisNedeni::Iptal);
                             }
                         }
@@ -1683,6 +1720,12 @@ impl Oturum {
         // için artık gönderim izni sorulmaz.
         while let Ok(istek) = ortam_rx.try_recv() {
             match istek {
+                OrtamIstegi::PlanGuncelle { yanit, .. } => {
+                    let _ = yanit.send(Err("araç aşaması kapandı".to_string()));
+                }
+                OrtamIstegi::KullaniciSorusu { yanit, .. } => {
+                    let _ = yanit.send(Ok(crate::soru::SoruSonucu::IptalEdildi));
+                }
                 OrtamIstegi::Gonderim { yanit, .. } => {
                     let _ = yanit.send(GonderimYaniti::Iptal);
                 }
@@ -1701,6 +1744,10 @@ impl Oturum {
         }
         YurutmeSonucu {
             bitis: if self.kayit_hatasi.is_some() {
+                Some(BitisNedeni::Hata)
+            } else if self.ertelenen_kullanici_mesaji.is_some() {
+                Some(BitisNedeni::Iptal)
+            } else if false {
                 Some(BitisNedeni::Hata)
             } else {
                 iptal_nedeni
@@ -2048,13 +2095,167 @@ impl Oturum {
 
 impl Oturum {
     /// Eklenti aracından oturuma gelen istek (aşama 4 tasarımı §8.7).
+    async fn yurutme_komutu_isle(
+        &mut self,
+        komut: Komut,
+        soru_bekleyen: &mut Option<SoruBekleyen>,
+    ) -> Etki {
+        match komut {
+            Komut::KullaniciSorusuYaniti {
+                tur,
+                soru_kimligi,
+                yanit,
+            } => {
+                let eslesiyor = soru_bekleyen
+                    .as_ref()
+                    .is_some_and(|b| b.soru.tur == tur && b.soru.soru_kimligi == soru_kimligi);
+                if !eslesiyor {
+                    self.hata("Bu soru yanıtı artık geçerli değil; eşleşen bekleyen bir soru yok.")
+                        .await;
+                } else if let Some(bekleyen_ref) = soru_bekleyen.as_ref() {
+                    match crate::soru::yaniti_dogrula(&bekleyen_ref.soru, yanit) {
+                        Ok((dogrulanmis, secilen_etiket)) => {
+                            if let Some(bekleyen) = soru_bekleyen.take() {
+                                let sonuc = crate::soru::SoruSonucu::Yanitlandi {
+                                    yanit: dogrulanmis,
+                                    secilen_etiket,
+                                };
+                                self.kaydet_kalici(KayitOgesi::KullaniciSorusuCozuldu {
+                                    cagri: bekleyen.soru.cagri,
+                                    soru_kimligi: bekleyen.soru.soru_kimligi.clone(),
+                                    sonuc: sonuc.clone(),
+                                })
+                                .await;
+                                self.yay(Olay::KullaniciSorusuCozuldu {
+                                    cagri: bekleyen.soru.cagri,
+                                    soru_kimligi: bekleyen.soru.soru_kimligi.clone(),
+                                    sonuc: sonuc.clone(),
+                                })
+                                .await;
+                                let _ = bekleyen.yanit.send(Ok(sonuc));
+                            }
+                        }
+                        Err(hata) => {
+                            self.hata(hata.to_string()).await;
+                        }
+                    }
+                }
+                Etki::Devam
+            }
+            Komut::KullaniciMesaji { metin } if soru_bekleyen.is_some() => {
+                if let Some(bekleyen) = soru_bekleyen.take() {
+                    let sonuc = crate::soru::SoruSonucu::KullaniciMesajiylaIptal {
+                        yeni_mesaj: metin.clone(),
+                    };
+                    self.kaydet_kalici(KayitOgesi::KullaniciSorusuCozuldu {
+                        cagri: bekleyen.soru.cagri,
+                        soru_kimligi: bekleyen.soru.soru_kimligi.clone(),
+                        sonuc: sonuc.clone(),
+                    })
+                    .await;
+                    self.yay(Olay::KullaniciSorusuCozuldu {
+                        cagri: bekleyen.soru.cagri,
+                        soru_kimligi: bekleyen.soru.soru_kimligi.clone(),
+                        sonuc: sonuc.clone(),
+                    })
+                    .await;
+                    self.ertelenen_kullanici_mesaji = Some(metin);
+                    let _ = bekleyen.yanit.send(Ok(sonuc));
+                }
+                Etki::Devam
+            }
+            diger => self.genel_komut(diger).await,
+        }
+    }
+
     async fn ortam_istegi_isle(
         &mut self,
         istek: OrtamIstegi,
         bekleyen: &mut HashMap<IslemId, EklentiBekleyen>,
         hep: &mut HashSet<CagriId>,
+        soru_bekleyen: &mut Option<SoruBekleyen>,
     ) {
         match istek {
+            OrtamIstegi::PlanGuncelle {
+                cagri,
+                adimlar,
+                yanit,
+            } => {
+                if self.iptal.is_cancelled() {
+                    let _ = yanit.send(Err("tur iptal edildi".to_string()));
+                    return;
+                }
+                match crate::plan::plan_adimlarini_dogrula(self.tur, adimlar) {
+                    Ok(guncel_plan) => {
+                        if !self
+                            .kaydet_kalici(KayitOgesi::PlanGuncellendi {
+                                cagri,
+                                plan: guncel_plan.clone(),
+                            })
+                            .await
+                        {
+                            let _ = yanit.send(Err("oturum kaydı yazılamadı".to_string()));
+                            return;
+                        }
+                        self.plan = Some(guncel_plan.clone());
+                        self.yay(Olay::PlanGuncellendi {
+                            plan: guncel_plan.clone(),
+                        })
+                        .await;
+                        let _ = yanit.send(Ok(guncel_plan));
+                    }
+                    Err(hata) => {
+                        let _ = yanit.send(Err(hata.to_string()));
+                    }
+                }
+            }
+            OrtamIstegi::KullaniciSorusu {
+                cagri,
+                baslik,
+                secenekler,
+                serbest_yanit_izni,
+                yanit,
+            } => {
+                if self.iptal.is_cancelled() {
+                    let _ = yanit.send(Ok(crate::soru::SoruSonucu::IptalEdildi));
+                    return;
+                }
+                if soru_bekleyen.is_some() {
+                    let _ = yanit.send(Err(
+                        "Bu oturumda zaten yanıt bekleyen bir kullanıcı sorusu var.".to_string(),
+                    ));
+                    return;
+                }
+                let Some(tur) = self.tur else {
+                    let _ = yanit.send(Err("aktif tur yok".to_string()));
+                    return;
+                };
+                match crate::soru::soru_girdisini_dogrula(
+                    tur,
+                    cagri,
+                    &baslik,
+                    secenekler,
+                    serbest_yanit_izni,
+                ) {
+                    Ok(soru) => {
+                        if !self
+                            .kaydet_kalici(KayitOgesi::KullaniciSorusuSoruldu {
+                                soru: soru.clone(),
+                            })
+                            .await
+                        {
+                            let _ = yanit.send(Err("oturum kaydı yazılamadı".to_string()));
+                            return;
+                        }
+                        self.yay(Olay::KullaniciSorusuGerekiyor { soru: soru.clone() })
+                            .await;
+                        *soru_bekleyen = Some(SoruBekleyen { soru, yanit });
+                    }
+                    Err(hata) => {
+                        let _ = yanit.send(Err(hata.to_string()));
+                    }
+                }
+            }
             OrtamIstegi::Gonderim {
                 cagri,
                 talep,

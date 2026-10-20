@@ -22,8 +22,8 @@ use kalfa_uygulama::mcp::komutlar::{
 use kalfa_uygulama::mcp::tanimlar::{IceAktarmaOnizlemeDto, SeciliKomutBilgisi, TaslakKimligi};
 use kalfa_uygulama::sozlesme::{
     AgHostu, AnahtarSonucu, CalismaAlani, DenetciDurumu, DusunceEforu, GizliAyarGorunumu,
-    GunlukSayfasi, KabulYaniti, ModelSecenegi, OnarimSonucu, OnayGirdisi, OturumAcilisi,
-    OturumSatiri, SartPenceresiDurumu, UygulamaDurumu, YalitimCalismaAlani,
+    GunlukSayfasi, KabulYaniti, KullaniciSorusuYaniti, ModelSecenegi, OnarimSonucu, OnayGirdisi,
+    OturumAcilisi, OturumSatiri, SartPenceresiDurumu, UygulamaDurumu, YalitimCalismaAlani,
 };
 use kalfa_uygulama::sozlesme::{
     AlanHedefi, EklentiSatiri, GunlukSinirDurumu, KurulumSonucu, OturumEklentisi,
@@ -53,6 +53,7 @@ pub fn kur<R: Runtime>(kurucu: Builder<R>) -> Builder<R> {
         oturum_ozetle,
         turu_iptal_et,
         arac_onayi,
+        kullanici_sorusu_yaniti,
         model_degistir,
         efor_degistir,
         izin_kipi_degistir,
@@ -231,6 +232,18 @@ pub async fn arac_onayi(
     kararlar: Vec<OnayGirdisi>,
 ) -> Sonuc<()> {
     u.arac_onayi(oturum, kararlar).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn kullanici_sorusu_yaniti(
+    u: State<'_, Arc<Uygulama>>,
+    oturum: OturumId,
+    tur: TurId,
+    soru_kimligi: String,
+    yanit: KullaniciSorusuYaniti,
+) -> Sonuc<()> {
+    u.kullanici_sorusu_yaniti(oturum, tur, soru_kimligi, yanit)
+        .await
 }
 
 #[tauri::command(rename_all = "snake_case")]
