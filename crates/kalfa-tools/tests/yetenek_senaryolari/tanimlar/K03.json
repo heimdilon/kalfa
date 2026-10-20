@@ -5,7 +5,7 @@
   "kimlik": "K03",
   "aile": "yerel_kodlama",
   "baslik": "Svelte etkileşim hatası",
-  "kullanici_istegi": "`src/SayacPaneli.svelte` bileşeninde `Sıfırla` düğmesi `sayac` durumunu `0` yerine `1` yapıyor ve `seciliEtiket` durumunu temizlemiyor. Sabit `style` özniteliği eklemeden durumu doğru sıfırlayacak şekilde düzeltin.",
+  "kullanici_istegi": "`src/SayacPaneli.svelte` bileşeninde `Sıfırla` düğmesi `sayac` durumunu `0` yerine `1` yapıyor ve `seciliEtiket` durumunu temizlemiyor. Sabit `style` özniteliği eklemeden durumu doğru sıfırlayacak şekilde düzeltin; test dosyasını değiştirmeyin.",
   "kip": "proje",
   "denetci_kipi": "kapali",
   "gerekli_yetenekler": ["dosya_araclari"],
@@ -19,11 +19,15 @@
   "baslangic_dosyalari": [
     {
       "yol": "src/SayacPaneli.svelte",
-      "icerik": "<script lang=\"ts\">\n  let sayac = $state(0);\n  let seciliEtiket = $state<string | null>(null);\n\n  function artir(etiket: string) {\n    sayac += 1;\n    seciliEtiket = etiket;\n  }\n\n  function sifirla() {\n    sayac = 1;\n  }\n</script>\n\n<div class=\"sayac-paneli\">\n  <span data-testid=\"sayac-degeri\">{sayac}</span>\n  <span data-testid=\"secili-etiket\">{seciliEtiket ?? 'Yok'}</span>\n  <button type=\"button\" onclick={() => artir('önemli')}>Artır</button>\n  <button type=\"button\" onclick={sifirla}>Sıfırla</button>\n</div>\n"
+      "icerik": "<script lang=\"ts\">\n  let sayac = $state(0);\n  let seciliEtiket = $state<string | null>(null);\n\n  function artir(etiket: string) {\n    sayac += 1;\n    seciliEtiket = etiket;\n  }\n\n  function sifirla() {\n    sayac = 1;\n  }\n</script>\n\n<div class=\"sayac-paneli\">\n  <span data-testid=\"sayac-degeri\">{sayac}</span>\n  <span data-testid=\"secili-etiket\">{seciliEtiket ?? 'Yok'}</span>\n  <button type=\"button\" data-testid=\"artir-dugmesi\" onclick={() => artir('önemli')}>Artır</button>\n  <button type=\"button\" data-testid=\"sifirla-dugmesi\" onclick={sifirla}>Sıfırla</button>\n</div>\n"
     },
     {
       "yol": "src/App.svelte",
       "icerik": "<script lang=\"ts\">\n  import SayacPaneli from './SayacPaneli.svelte';\n</script>\n\n<main>\n  <SayacPaneli />\n</main>\n"
+    },
+    {
+      "yol": "tests/ui_etkilesim_testi.mjs",
+      "icerik": "import assert from 'node:assert/strict';\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport { pathToFileURL } from 'node:url';\n\nconst bilesenYolu = path.resolve(import.meta.dirname, '../src/SayacPaneli.svelte');\nconst ham = fs.readFileSync(bilesenYolu, 'utf8');\nconst yorumsuzHtml = ham.replace(/<!--[\\s\\S]*?-->/g, '');\nif (/\\bstyle\\s*=/.test(yorumsuzHtml)) {\n  throw new Error('CSP ihlali: sabit style özniteliği kullanılamaz');\n}\nconst scriptEslesme = yorumsuzHtml.match(/<script[^>]*>([\\s\\S]*?)<\\/script>/);\nassert.ok(scriptEslesme, '<script> bloğu bulunamadı');\nconst govde = yorumsuzHtml.slice(scriptEslesme.index + scriptEslesme[0].length);\n\nassert.match(govde, /data-testid=\"sayac-degeri\"\\s*>\\s*\\{sayac\\}\\s*<\\/span>/);\nassert.match(govde, /data-testid=\"secili-etiket\"\\s*>\\s*\\{seciliEtiket\\s*\\?\\?\\s*'Yok'\\}\\s*<\\/span>/);\nconst artirDugme = govde.match(/<button[^>]*data-testid=\"artir-dugmesi\"[^>]*onclick=\\{([^}]+)\\}[^>]*>/);\nconst sifirlaDugme = govde.match(/<button[^>]*data-testid=\"sifirla-dugmesi\"[^>]*onclick=\\{([^}]+)\\}[^>]*>/);\nassert.ok(artirDugme, 'artir-dugmesi onclick bağlaması bulunamadı');\nassert.ok(sifirlaDugme, 'sifirla-dugmesi onclick bağlaması bulunamadı');\n\nconst geciciTs = path.resolve(import.meta.dirname, './_derlenen_bilesen.ts');\nconst tsKodu = [\n  'function $state<T>(baslangic: T): T { return baslangic; }',\n  scriptEslesme[1],\n  'export function _bagla() {',\n  '  return {',\n  '    oku: () => ({',\n  '      sayacDegeri: String(sayac),',\n  \"      seciliEtiket: String(seciliEtiket ?? 'Yok'),\",\n  '    }),',\n  '    artirTikla: (' + artirDugme[1] + '),',\n  '    sifirlaTikla: (' + sifirlaDugme[1] + '),',\n  '  };',\n  '}',\n].join('\\n');\nfs.writeFileSync(geciciTs, tsKodu, 'utf8');\ntry {\n  const mod = await import(pathToFileURL(geciciTs).href);\n  const ornek = mod._bagla();\n  assert.deepEqual(ornek.oku(), { sayacDegeri: '0', seciliEtiket: 'Yok' });\n  ornek.artirTikla();\n  assert.deepEqual(ornek.oku(), { sayacDegeri: '1', seciliEtiket: 'önemli' });\n  ornek.artirTikla();\n  assert.deepEqual(ornek.oku(), { sayacDegeri: '2', seciliEtiket: 'önemli' });\n  ornek.sifirlaTikla();\n  assert.deepEqual(ornek.oku(), { sayacDegeri: '0', seciliEtiket: 'Yok' });\n  console.log('K03_UI_TESTI=TAMAM');\n} finally {\n  fs.rmSync(geciciTs, { force: true });\n}\n"
     }
   ],
   "izinli_degisiklikler": ["src/SayacPaneli.svelte"],
@@ -54,7 +58,7 @@
     }
   ],
   "bagimsiz_denetleyici": {
-    "aciklama": "Svelte 5 bileşeninde `sifirla` hem `sayac = 0` hem `seciliEtiket = null` durumunu üretir, CSP kuralı gereği sabit `style=` içermez ve `src/App.svelte` değişmez.",
+    "aciklama": "Svelte 5 bileşeninde kullanıcı tıklama etkileşimi (`tests/ui_etkilesim_testi.mjs`) `sayac = 0` ve `seciliEtiket = null` durumunu üretir, CSP kuralı gereği sabit `style=` içermez ve `src/App.svelte` değişmez.",
     "dosya_kontrolleri": [
       {
         "yol": "src/SayacPaneli.svelte",
@@ -66,6 +70,18 @@
         "yol": "src/App.svelte",
         "durum": "degismedi",
         "icerir": ["<SayacPaneli />"]
+      },
+      {
+        "yol": "tests/ui_etkilesim_testi.mjs",
+        "durum": "degismedi",
+        "icerir": ["K03_UI_TESTI=TAMAM"]
+      }
+    ],
+    "davranis_kontrolleri": [
+      {
+        "tur": "svelte_ui_test",
+        "giris_dosyasi": "tests/ui_etkilesim_testi.mjs",
+        "beklenen_cikti_icerir": ["K03_UI_TESTI=TAMAM"]
       }
     ],
     "iz_kontrolleri": {

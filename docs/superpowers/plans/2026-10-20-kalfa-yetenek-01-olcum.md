@@ -1,7 +1,7 @@
 # yetenek ölçümü ve bütünleşik kabul planı
 
 **Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity.
-**Durum:** Görev 1–4 (`G0` sabit görev kümesi, çevrimdışı koşucu, `olcum-sozlesmesi.md`, `olcum-g0-baslangic.md` ve `e2e/yetenekler/` G5 kabul sözleşmesi) uygulandı ve Windows + WSL Ubuntu 24.04 üzerinde doğrulandı; Görev 5 (`G5` son bütünleşik kabul) Hat 02–05 (`PR #38`–`#41`) birleşimini bekliyor. Canlı model karşılaştırmaları kullanıcı bütçe/kapsam onayı olmadan çalıştırılmadı.
+**Durum:** Görev 1–4 (`G0` sabit görev kümesi, çevrimdışı koşucu, `olcum-sozlesmesi.md`, `olcum-g0-baslangic.md` ve `e2e/yetenekler/` G5 kabul sözleşmesi) ve inceleme düzeltme turu (`SP-01` gerçek yerel MCP + yalıtım yoluyla `M01` ölçümü ve `SP-02` `K01`–`K03` davranışsal derleme/tip/UI denetleyicisi ile yorum içi alt dizge regresyonu) uygulandı; Windows, WSL `Ubuntu-24.04` (`kalfatest`) ve `ui/` üzerinde doğrulandı. Görev 5 (`G5` son bütünleşik kabul) Hat 02–05 (`PR #38`–`#41`) ortak sözleşme (`ST-01`–`ST-03`) ve hat bulgularının (`SP-03`–`SP-08`) doğrulanmış entegrasyon commit'lerini bekliyor. Canlı model karşılaştırmaları kullanıcı bütçe/kapsam onayı olmadan çalıştırılmadı.
 **Plan tabanı:** main `4041a39995e3bea3d56515e53ffc8af47f68e1ae`. **Çalışma dalı:** `codex/plan-yetenek-olcum`.
 **İlk başlanacak iş:** Ürün kodunu değiştirmeden 24 görevin senaryo tanımlarını ve bağımsız kabul ölçütlerini yazın.
 **Koordinasyon:** [iş sırası ve ortak dosyalar](https://github.com/heimdilon/kalfa/blob/codex/plan-yetenek-koordinasyon/docs/superpowers/specs/2026-10-20-kalfa-yetenek-programi.md).

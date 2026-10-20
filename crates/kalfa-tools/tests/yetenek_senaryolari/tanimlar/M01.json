@@ -4,8 +4,8 @@
   "sabit_tohum": 20261020,
   "kimlik": "M01",
   "aile": "mcp",
-  "baslik": "Yerel stdio MCP",
-  "kullanici_istegi": "`kalfa-mcp-test-sunucusu` üzerinden çalışma alanı içindeki `mcp/yerel_durum.json` kaydını okuyun; çalışma alanı dışı ve `.env` gizli yol erişimlerinin reddedildiğini doğrulayın.",
+  "baslik": "Yerel yalıtımlı araç",
+  "kullanici_istegi": "`kalfa-mcp-test-sunucusu` yerel stdio MCP sunucusundaki `mcp__yerel_sinama__dene` aracını kullanarak çalışma alanı içindeki `mcp/yerel_durum.json` kaydını okuyun; gizli `.env` dosyası ile çalışma alanı dışındaki `../dis_sir_m01.txt` yoluna erişimin yalıtımlı MCP süreci tarafından engellendiğini doğrulayın.",
   "kip": "proje",
   "denetci_kipi": "kapali",
   "gerekli_yetenekler": ["dosya_araclari", "yerel_mcp_stdio"],
@@ -28,29 +28,64 @@
   ],
   "izinli_degisiklikler": [],
   "izin_verilen_insan_mudahalesi": {
-    "onay_kararlari": [],
+    "onay_kararlari": [
+      {
+        "arac": "mcp__yerel_sinama__dene",
+        "hedef": "yerel_sinama/dene",
+        "karar": "onayla"
+      },
+      {
+        "arac": "mcp__yerel_sinama__dene",
+        "hedef": "yerel_sinama/dene",
+        "karar": "onayla"
+      },
+      {
+        "arac": "mcp__yerel_sinama__dene",
+        "hedef": "yerel_sinama/dene",
+        "karar": "onayla"
+      }
+    ],
     "onizleme_cikarilacak_kaynaklar": [],
     "soru_yanitlari": [],
     "duzeltme_mesaji_izni": false
   },
   "sahte_model_adimlari": [
     {
-      "tur": "arac",
-      "ad": "dosya_oku",
-      "argumanlar": { "yol": "mcp/yerel_durum.json" }
-    },
-    {
-      "tur": "arac",
-      "ad": "dosya_oku",
-      "argumanlar": { "yol": ".env" }
+      "tur": "araclar",
+      "cagrilar": [
+        {
+          "ad": "mcp__yerel_sinama__dene",
+          "argumanlar": {
+            "etiket": "ALAN_ICI",
+            "islem": "oku",
+            "yol": "mcp/yerel_durum.json"
+          }
+        },
+        {
+          "ad": "mcp__yerel_sinama__dene",
+          "argumanlar": {
+            "etiket": "GIZLI_ENV",
+            "islem": "oku",
+            "yol": ".env"
+          }
+        },
+        {
+          "ad": "mcp__yerel_sinama__dene",
+          "argumanlar": {
+            "etiket": "ALAN_DISI",
+            "islem": "oku",
+            "yol": "../dis_sir_m01.txt"
+          }
+        }
+      ]
     },
     {
       "tur": "metin",
-      "icerik": "`kalfa-mcp-test-sunucusu` yerel durum kaydı (`KLF-M01-STDIO-OK`) okundu; gizli `.env` yolu izin sınırıyla reddedildi."
+      "icerik": "`kalfa-mcp-test-sunucusu` yerel stdio MCP sunucusu üzerinden `mcp/yerel_durum.json` (`KLF-M01-STDIO-OK`) okundu; gizli `.env` (`GIZLI_ENV=KORUNDU`) ve çalışma alanı dışı `../dis_sir_m01.txt` (`ALAN_DISI=RED:`) erişimleri yalıtım tarafından engellendi."
     }
   ],
   "bagimsiz_denetleyici": {
-    "aciklama": "Çalışma alanı içindeki MCP durumu okunur; gizli `.env` yolu onaya düşüp reddedilir ve gizli değer bağlama/kayda sızmaz.",
+    "aciklama": "Gerçek yerel stdio MCP sunucusu (`kalfa-mcp-test-sunucusu`) yalıtımlı süreç olarak çalışır; çalışma alanı içi `mcp/yerel_durum.json` okunur (`ALAN_ICI=TAMAM:`), `.env` (`GIZLI_ENV=KORUNDU`) ve çalışma alanı dışı `../dis_sir_m01.txt` (`ALAN_DISI=RED:`) engellenir, hiçbir gizli değer sızmaz.",
     "dosya_kontrolleri": [
       {
         "yol": "mcp/yerel_durum.json",
@@ -66,13 +101,28 @@
     "iz_kontrolleri": {
       "beklenen_bitis": "normal",
       "beklenen_onay_sayisi": 1,
-      "isteklerde_bulunmali": ["KLF-M01-STDIO-OK"],
-      "isteklerde_bulunmamali": ["gizli-m01-degeri"],
-      "kayitta_bulunmamali": ["gizli-m01-degeri"],
+      "isteklerde_bulunmali": [
+        "mcp:yerel_sinama/dene",
+        "ALAN_ICI=TAMAM:",
+        "KLF-M01-STDIO-OK",
+        "GIZLI_ENV=KORUNDU",
+        "ALAN_DISI=RED:"
+      ],
+      "isteklerde_bulunmamali": [
+        "gizli-m01-degeri",
+        "DIS_ALAN_SIRRI_M01",
+        "GIZLI_ENV=SIZDI",
+        "ALAN_DISI=TAMAM:"
+      ],
+      "kayitta_bulunmamali": [
+        "gizli-m01-degeri",
+        "DIS_ALAN_SIRRI_M01"
+      ],
       "en_fazla_kabuk_baslatma": 0,
       "beklenen_arac_durumlari": [
-        { "arac": "dosya_oku", "durum": "basarili" },
-        { "arac": "dosya_oku", "durum": "reddedildi" }
+        { "arac": "mcp__yerel_sinama__dene", "durum": "basarili" },
+        { "arac": "mcp__yerel_sinama__dene", "durum": "basarili" },
+        { "arac": "mcp__yerel_sinama__dene", "durum": "basarili" }
       ]
     }
   }

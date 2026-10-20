@@ -3,13 +3,30 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
+use kalfa_core::arac::{
+    Arac, AracCiktisi, AracHatasi, Hazirlik, McpAgKarti, McpAracHazirligi, McpAracTanimOzeti,
+    McpBaslatmaSayaci, McpErisim, McpKartEtiketi, McpKorumaOzeti, McpPolitikaOzeti, McpTanimOzeti,
+    McpTarifi, McpYalitimProfiliOzeti, async_trait,
+};
 use kalfa_core::denetci::DenetimKipi;
-use kalfa_core::izin::Kip;
+use kalfa_core::izin::{Kip, Siniflandirici};
 use kalfa_core::muhur::ozet_hex;
+use kalfa_core::oturum::OturumAyarlari;
 use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, Olay};
-use kalfa_core::test_destek::{SahteSaglayici, SahteYanit};
+use kalfa_core::test_destek::{SahteSaglayici, SahteYanit, Surucu, test_baglami, test_oturumu};
+use kalfa_sandbox::{
+    CalistirmaKipi, EtkilesimliIstek, KAPANMA_PAYI, Yalitici, YalitimDurumu, alan_kimligi,
+    sunucu_ortami, sunucu_ozel,
+};
+use kalfa_tools::{CalismaAlani, KabukAraci, KabukGuveni, koruma, varsayilan_araclar};
 use serde_json::{Value, json};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio_util::sync::CancellationToken;
 
 use crate::ortak::senaryo::{
     Kabuk, Senaryo, arac_cagrilari_tek_yanitli, butun_istekler, karar, mesaj, onay_istegi_sayisi,
@@ -165,6 +182,32 @@ pub struct DosyaKontrolu {
     pub icermez: Vec<String>,
 }
 
+/// Kodlama görevlerinin gerçek davranışını doğrulayan derleme/koşum denetimi.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DavranisKontrolTuru {
+    RustBirim,
+    TsTipVeCalisma,
+    SvelteEtkilesim,
+}
+
+impl DavranisKontrolTuru {
+    fn cozumle(deger: &str) -> Result<Self, String> {
+        match deger {
+            "rust_test" => Ok(Self::RustBirim),
+            "ts_tip_ve_test" => Ok(Self::TsTipVeCalisma),
+            "svelte_ui_test" => Ok(Self::SvelteEtkilesim),
+            diger => Err(format!("bilinmeyen davranış kontrol türü: {diger}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DavranisKontrolu {
+    pub tur: DavranisKontrolTuru,
+    pub giris_dosyasi: String,
+    pub beklenen_cikti_icerir: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BeklenenAracDurumu {
     pub arac: String,
@@ -186,6 +229,7 @@ pub struct IzKontrolleri {
 pub struct BagimsizDenetleyici {
     pub aciklama: String,
     pub dosya_kontrolleri: Vec<DosyaKontrolu>,
+    pub davranis_kontrolleri: Vec<DavranisKontrolu>,
     pub iz_kontrolleri: IzKontrolleri,
 }
 
@@ -211,6 +255,20 @@ pub struct GorevTanimi {
     pub dosya_sha256: String,
 }
 
+/// Yerel stdio MCP sınama aracının çalışma kipi (`M01` için gerçek yalıtım ve
+/// negatif regresyon sınamaları).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpSinamaKipi {
+    /// Gerçek `kalfa-mcp-test-sunucusu` (`sinama` kipi) + `Yalitici::baslat_etkilesimli`.
+    /// Platform yalıtımı veya yardımcı ikililer hazır değilse `Çalıştırılmadı` döner.
+    GercekYalitim,
+    /// Negatif test: MCP stdio bağlantısı / el sıkışması bozuk olduğunda denetleyici `Kaldı` döner.
+    BozukBaglanti,
+    /// Negatif test: MCP sunucusu yalıtımsız çalıştığında (`.env` ve alan dışı sır sızdığında)
+    /// denetleyici `Kaldı` döner.
+    YalitimsizKacak,
+}
+
 /// Çevrimdışı senaryo koşucusunun ortam yetenekleri ve önkoşul anahtarları.
 #[derive(Debug, Clone)]
 pub struct CalistirmaOrtami {
@@ -218,6 +276,7 @@ pub struct CalistirmaOrtami {
     pub gercek_yalitim_acik: bool,
     pub yerel_surec_acik: bool,
     pub yerel_http_sunucu_acik: bool,
+    pub mcp_sinama_kipi: McpSinamaKipi,
 }
 
 impl CalistirmaOrtami {
@@ -233,6 +292,7 @@ impl CalistirmaOrtami {
             gercek_yalitim_acik: false,
             yerel_surec_acik: false,
             yerel_http_sunucu_acik: false,
+            mcp_sinama_kipi: McpSinamaKipi::GercekYalitim,
         }
     }
 }
@@ -692,6 +752,31 @@ pub fn gorev_tanimi_cozumle(ham_json: &str) -> Result<GorevTanimi, String> {
         });
     }
 
+    let mut davranis_kontrolleri = Vec::new();
+    if let Some(dk_deger) = denetleyici_deger.get("davranis_kontrolleri") {
+        let dizi = dk_deger
+            .as_array()
+            .ok_or_else(|| "`bagimsiz_denetleyici.davranis_kontrolleri` dizi olmalı".to_string())?;
+        for oge in dizi {
+            let tur = DavranisKontrolTuru::cozumle(zorunlu_dizge(oge, "tur")?)?;
+            let giris_dosyasi = zorunlu_dizge(oge, "giris_dosyasi")?.to_string();
+            if !guvenli_goreli_yol_mu(&giris_dosyasi) {
+                return Err(format!(
+                    "davranis_kontrolleri içinde güvensiz yol: `{giris_dosyasi}`"
+                ));
+            }
+            let beklenen_cikti_icerir = match oge.get("beklenen_cikti_icerir") {
+                Some(_) => dizge_dizisi(oge, "beklenen_cikti_icerir")?,
+                None => Vec::new(),
+            };
+            davranis_kontrolleri.push(DavranisKontrolu {
+                tur,
+                giris_dosyasi,
+                beklenen_cikti_icerir,
+            });
+        }
+    }
+
     let iz_deger = denetleyici_deger
         .get("iz_kontrolleri")
         .ok_or_else(|| "`bagimsiz_denetleyici.iz_kontrolleri` zorunlu".to_string())?;
@@ -722,6 +807,7 @@ pub fn gorev_tanimi_cozumle(ham_json: &str) -> Result<GorevTanimi, String> {
     }
 
     if dosya_kontrolleri.is_empty()
+        && davranis_kontrolleri.is_empty()
         && beklenen_arac_durumlari.is_empty()
         && isteklerde_bulunmali.is_empty()
         && isteklerde_bulunmamali.is_empty()
@@ -758,6 +844,7 @@ pub fn gorev_tanimi_cozumle(ham_json: &str) -> Result<GorevTanimi, String> {
         bagimsiz_denetleyici: BagimsizDenetleyici {
             aciklama,
             dosya_kontrolleri,
+            davranis_kontrolleri,
             iz_kontrolleri: IzKontrolleri {
                 beklenen_bitis,
                 beklenen_onay_sayisi,
@@ -822,6 +909,723 @@ pub fn dogrula_olcum_raporu_kaydi(kayit: &GorevKosumKaydi) -> Result<(), String>
         ));
     }
     Ok(())
+}
+
+/// Kaynak dosyalarında (`rs`, `ts`, `js`, `mjs`, `svelte`) yorum içine beklenen
+/// alt dizgeyi ekleyerek `dosya_kontrolleri.icerir` denetimini yanıltmayı önler.
+fn yorumlari_temizle(yol: &str, icerik: &str) -> String {
+    let kod_dosyasi = [".rs", ".ts", ".js", ".mjs", ".svelte"]
+        .iter()
+        .any(|uzanti| yol.ends_with(uzanti));
+    if !kod_dosyasi {
+        return icerik.to_string();
+    }
+
+    // 1. HTML yorumlarını (`<!-- ... -->`) temizle
+    let mut html_temiz = String::with_capacity(icerik.len());
+    let mut kalan = icerik;
+    while let Some(bas) = kalan.find("<!--") {
+        html_temiz.push_str(&kalan[..bas]);
+        if let Some(bitis) = kalan[bas + 4..].find("-->") {
+            kalan = &kalan[bas + 4 + bitis + 3..];
+        } else {
+            kalan = "";
+            break;
+        }
+    }
+    html_temiz.push_str(kalan);
+
+    // 2. Blok yorumları (`/* ... */`) temizle
+    let mut blok_temiz = String::with_capacity(html_temiz.len());
+    let mut kalan_blok = html_temiz.as_str();
+    while let Some(bas) = kalan_blok.find("/*") {
+        blok_temiz.push_str(&kalan_blok[..bas]);
+        if let Some(bitis) = kalan_blok[bas + 2..].find("*/") {
+            kalan_blok = &kalan_blok[bas + 2 + bitis + 2..];
+        } else {
+            kalan_blok = "";
+            break;
+        }
+    }
+    blok_temiz.push_str(kalan_blok);
+
+    // 3. Satır içi `//` yorumlarını temizle (`://` URL şemalarını koru)
+    let mut sonuc = String::with_capacity(blok_temiz.len());
+    for satir in blok_temiz.lines() {
+        let mut kesim = None;
+        let baytlar = satir.as_bytes();
+        let mut i = 0;
+        while i + 1 < baytlar.len() {
+            if baytlar[i] == b'/' && baytlar[i + 1] == b'/' {
+                let onceki_iki_nokta = i > 0 && baytlar[i - 1] == b':';
+                if !onceki_iki_nokta {
+                    kesim = Some(i);
+                    break;
+                }
+            }
+            i += 1;
+        }
+        match kesim {
+            Some(indeks) => sonuc.push_str(&satir[..indeks]),
+            None => sonuc.push_str(satir),
+        }
+        sonuc.push('\n');
+    }
+    sonuc
+}
+
+fn rustc_ikilisi_bul() -> PathBuf {
+    if let Some(yol) = std::env::var_os("RUSTC") {
+        let p = PathBuf::from(yol);
+        if p.is_file() {
+            return p;
+        }
+    }
+    for env_adi in ["USERPROFILE", "HOME"] {
+        if let Some(ev) = std::env::var_os(env_adi) {
+            let aday = PathBuf::from(ev)
+                .join(".cargo")
+                .join("bin")
+                .join(if cfg!(windows) { "rustc.exe" } else { "rustc" });
+            if aday.is_file() {
+                return aday;
+            }
+        }
+    }
+    PathBuf::from(if cfg!(windows) { "rustc.exe" } else { "rustc" })
+}
+
+fn node_ikilisi_bul() -> PathBuf {
+    let ad = if cfg!(windows) { "node.exe" } else { "node" };
+    if Command::new(ad).arg("--version").output().is_ok() {
+        return PathBuf::from(ad);
+    }
+    for aday in [
+        "/opt/node/bin/node",
+        "/usr/local/bin/node",
+        "/usr/bin/node",
+        r"C:\Program Files\nodejs\node.exe",
+    ] {
+        let p = PathBuf::from(aday);
+        if p.is_file() {
+            return p;
+        }
+    }
+    PathBuf::from(ad)
+}
+
+fn typescript_kutuphanesi_bul() -> Option<PathBuf> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let depo_koku = manifest.parent()?.parent()?;
+    let yerel = depo_koku
+        .join("ui")
+        .join("node_modules")
+        .join("typescript")
+        .join("lib")
+        .join("typescript.js");
+    if yerel.is_file() {
+        return Some(yerel);
+    }
+    None
+}
+
+fn davranis_kontrollerini_calistir(
+    calisma_alani: &Path,
+    kontroller: &[DavranisKontrolu],
+) -> Vec<String> {
+    let mut hatalar = Vec::new();
+    for dk in kontroller {
+        let giris = calisma_alani.join(&dk.giris_dosyasi);
+        if !giris.is_file() {
+            hatalar.push(format!(
+                "davranış kontrolü giriş dosyası bulunamadı: `{}`",
+                dk.giris_dosyasi
+            ));
+            continue;
+        }
+        match dk.tur {
+            DavranisKontrolTuru::RustBirim => {
+                let gecici_dizin = match tempfile::tempdir() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        hatalar.push(format!("geçici derleme dizini oluşturulamadı: {e}"));
+                        continue;
+                    }
+                };
+                let ikili = gecici_dizin.path().join(if cfg!(windows) {
+                    "sinir_testi.exe"
+                } else {
+                    "sinir_testi"
+                });
+                let derleme = Command::new(rustc_ikilisi_bul())
+                    .arg("--edition")
+                    .arg("2024")
+                    .arg("--test")
+                    .arg(&giris)
+                    .arg("-o")
+                    .arg(&ikili)
+                    .current_dir(calisma_alani)
+                    .output();
+                let derleme = match derleme {
+                    Ok(c) => c,
+                    Err(e) => {
+                        hatalar.push(format!(
+                            "`{}` için rustc çalıştırılamadı: {e}",
+                            dk.giris_dosyasi
+                        ));
+                        continue;
+                    }
+                };
+                if !derleme.status.success() {
+                    let stderr = String::from_utf8_lossy(&derleme.stderr);
+                    hatalar.push(format!(
+                        "`{}` rustc derlemesi başarısız: {}",
+                        dk.giris_dosyasi,
+                        stderr.trim()
+                    ));
+                    continue;
+                }
+                let kosum = match Command::new(&ikili).current_dir(calisma_alani).output() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        hatalar.push(format!(
+                            "`{}` test ikilisi çalıştırılamadı: {e}",
+                            dk.giris_dosyasi
+                        ));
+                        continue;
+                    }
+                };
+                let birlesik = format!(
+                    "{}\n{}",
+                    String::from_utf8_lossy(&kosum.stdout),
+                    String::from_utf8_lossy(&kosum.stderr)
+                );
+                if !kosum.status.success() {
+                    hatalar.push(format!(
+                        "`{}` davranış testi başarısız (çıkış {:?}): {}",
+                        dk.giris_dosyasi,
+                        kosum.status.code(),
+                        birlesik.trim()
+                    ));
+                    continue;
+                }
+                for beklenen in &dk.beklenen_cikti_icerir {
+                    if !birlesik.contains(beklenen) {
+                        hatalar.push(format!(
+                            "`{}` test çıktısında beklenen `{beklenen}` bulunamadı",
+                            dk.giris_dosyasi
+                        ));
+                    }
+                }
+            }
+            DavranisKontrolTuru::TsTipVeCalisma | DavranisKontrolTuru::SvelteEtkilesim => {
+                let mut komut = Command::new(node_ikilisi_bul());
+                komut.arg(&giris).current_dir(calisma_alani);
+                if let Some(ts_lib) = typescript_kutuphanesi_bul() {
+                    komut.env("KALFA_TS_LIB_PATH", ts_lib);
+                }
+                let kosum = match komut.output() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        hatalar.push(format!(
+                            "`{}` için node çalıştırılamadı: {e}",
+                            dk.giris_dosyasi
+                        ));
+                        continue;
+                    }
+                };
+                let birlesik = format!(
+                    "{}\n{}",
+                    String::from_utf8_lossy(&kosum.stdout),
+                    String::from_utf8_lossy(&kosum.stderr)
+                );
+                if !kosum.status.success() {
+                    hatalar.push(format!(
+                        "`{}` davranış/UI testi başarısız (çıkış {:?}): {}",
+                        dk.giris_dosyasi,
+                        kosum.status.code(),
+                        birlesik.trim()
+                    ));
+                    continue;
+                }
+                for beklenen in &dk.beklenen_cikti_icerir {
+                    if !birlesik.contains(beklenen) {
+                        hatalar.push(format!(
+                            "`{}` çıktısında beklenen `{beklenen}` bulunamadı",
+                            dk.giris_dosyasi
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    hatalar
+}
+
+fn hedef_ikili_bul(ad: &str) -> Option<PathBuf> {
+    let tam_ad = if cfg!(windows) {
+        format!("{ad}.exe")
+    } else {
+        ad.to_string()
+    };
+    let mevcut = std::env::current_exe().ok()?;
+    let debug_dizini = mevcut.parent()?.parent()?;
+    let aday = debug_dizini.join(&tam_ad);
+    if aday.is_file() {
+        return Some(aday);
+    }
+    None
+}
+
+struct GercekMcpKurulumu {
+    _gecici_arac: tempfile::TempDir,
+    sunucu_ikilisi: PathBuf,
+    yalitim_dizini: PathBuf,
+    yalitici: Arc<dyn Yalitici>,
+}
+
+fn gercek_mcp_kurulumu_hazirla(calisma_alani_koku: &Path) -> Result<GercekMcpKurulumu, String> {
+    let sunucu_kaynak = hedef_ikili_bul("kalfa-mcp-test-sunucusu").ok_or_else(|| {
+        "`kalfa-mcp-test-sunucusu` ikilisi bulunamadı (`cargo build -p kalfa-mcp --bin kalfa-mcp-test-sunucusu` gerekli)".to_string()
+    })?;
+    let kopru_kaynak = hedef_ikili_bul("kalfa-kopru").ok_or_else(|| {
+        "`kalfa-kopru` ikilisi bulunamadı (`cargo build -p kalfa-sandbox --bin kalfa-kopru` gerekli)"
+            .to_string()
+    })?;
+
+    let gecici_arac = tempfile::tempdir().map_err(|e| format!("geçici dizin hatası: {e}"))?;
+    let arac_dizini = gecici_arac.path().join("bin");
+    let ev_dizini = gecici_arac.path().join("ev");
+    let yalitim_dizini = gecici_arac.path().join("yalitim");
+    std::fs::create_dir_all(&arac_dizini).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&ev_dizini).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&yalitim_dizini).map_err(|e| e.to_string())?;
+
+    let sunucu_ikilisi = arac_dizini.join(if cfg!(windows) {
+        "kalfa-mcp-test-sunucusu.exe"
+    } else {
+        "kalfa-mcp-test-sunucusu"
+    });
+    std::fs::copy(&sunucu_kaynak, &sunucu_ikilisi)
+        .map_err(|e| format!("sunucu ikilisi kopyalanamadı: {e}"))?;
+
+    #[cfg(target_os = "linux")]
+    let yalitici: Arc<dyn Yalitici> = Arc::new(kalfa_sandbox::linux::LinuxYalitici::yeni(
+        kalfa_sandbox::linux::LinuxAyari {
+            ev: ev_dizini,
+            yalitim_dizini: yalitim_dizini.clone(),
+            ek_okunur: vec![arac_dizini],
+            kopru: Some(kopru_kaynak),
+            git: Default::default(),
+            vekil_cozucu: None,
+            vekil_yerel_izin: false,
+        },
+        Box::new(kalfa_sandbox::linux::BwrapAlgilayici),
+        Box::new(|_| {}),
+    ));
+
+    #[cfg(windows)]
+    let yalitici: Arc<dyn Yalitici> =
+        Arc::new(kalfa_sandbox::windows::yalitici::WindowsYalitici::yeni(
+            kalfa_sandbox::windows::yalitici::WindowsAyari {
+                ev: ev_dizini,
+                yalitim_dizini: yalitim_dizini.clone(),
+                ek_okunur: vec![arac_dizini],
+                kopru: Some(kopru_kaynak),
+                ..Default::default()
+            },
+            Box::new(|_| {}),
+        ));
+
+    match yalitici.durum() {
+        YalitimDurumu::Hazir { .. } => {}
+        durum => {
+            return Err(format!("platform yalıtımı hazır değil: {durum:?}"));
+        }
+    }
+
+    if yalitici.hazirlik_gerekli(calisma_alani_koku) {
+        return Err(
+            "çalışma alanı yalıtım hazırlığı (Windows AppContainer ACL) bu oturumda kurulu değil"
+                .to_string(),
+        );
+    }
+
+    Ok(GercekMcpKurulumu {
+        _gecici_arac: gecici_arac,
+        sunucu_ikilisi,
+        yalitim_dizini,
+        yalitici,
+    })
+}
+
+struct YerelMcpSinamaAraci {
+    kip: McpSinamaKipi,
+    calisma_alani: Arc<CalismaAlani>,
+    dis_sir_yolu: PathBuf,
+    kurulum: Option<Arc<GercekMcpKurulumu>>,
+    kilit: tokio::sync::Mutex<()>,
+}
+
+impl YerelMcpSinamaAraci {
+    async fn jsonrpc_el_sikis_ve_cagir<R, W>(
+        okuyucu: &mut BufReader<R>,
+        yazici: &mut W,
+        islem: &str,
+        hedef_yol: &str,
+    ) -> Result<String, AracHatasi>
+    where
+        R: tokio::io::AsyncRead + Unpin,
+        W: tokio::io::AsyncWrite + Unpin,
+    {
+        async fn gonder_satir<W: tokio::io::AsyncWrite + Unpin>(
+            yazici: &mut W,
+            deger: &Value,
+        ) -> Result<(), AracHatasi> {
+            let mut satir =
+                serde_json::to_vec(deger).map_err(|e| AracHatasi::Gecersiz(e.to_string()))?;
+            satir.push(b'\n');
+            yazici
+                .write_all(&satir)
+                .await
+                .map_err(|e| AracHatasi::GirisCikis(format!("MCP stdin yazma hatası: {e}")))?;
+            yazici
+                .flush()
+                .await
+                .map_err(|e| AracHatasi::GirisCikis(format!("MCP stdin flush hatası: {e}")))
+        }
+
+        async fn oku_yanit<R: tokio::io::AsyncRead + Unpin>(
+            okuyucu: &mut BufReader<R>,
+            beklenen_id: i64,
+        ) -> Result<Value, AracHatasi> {
+            let mut satir = String::new();
+            let n = tokio::time::timeout(Duration::from_secs(15), okuyucu.read_line(&mut satir))
+                .await
+                .map_err(|_| AracHatasi::GirisCikis("MCP yanıtı zaman aşımına uğradı".into()))?
+                .map_err(|e| AracHatasi::GirisCikis(format!("MCP stdout okuma hatası: {e}")))?;
+            if n == 0 {
+                return Err(AracHatasi::GirisCikis(
+                    "MCP stdio el sıkışması koptu: beklenmeyen EOF".into(),
+                ));
+            }
+            let ileti: Value = serde_json::from_str(&satir).map_err(|e| {
+                AracHatasi::GirisCikis(format!("MCP geçersiz JSON-RPC yanıtı: {e}"))
+            })?;
+            if ileti.get("id").and_then(Value::as_i64) != Some(beklenen_id) {
+                return Err(AracHatasi::GirisCikis(format!(
+                    "MCP yanıt kimliği uyuşmadı: {ileti}"
+                )));
+            }
+            Ok(ileti)
+        }
+
+        gonder_satir(
+            yazici,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": { "name": "kalfa-olcum", "version": "1" }
+                }
+            }),
+        )
+        .await?;
+        let init_yaniti = oku_yanit(okuyucu, 1).await?;
+        if init_yaniti
+            .pointer("/result/protocolVersion")
+            .and_then(Value::as_str)
+            != Some("2025-11-25")
+        {
+            return Err(AracHatasi::GirisCikis(
+                "MCP initialize protokol sürümü doğrulanamadı".into(),
+            ));
+        }
+
+        gonder_satir(
+            yazici,
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {}
+            }),
+        )
+        .await?;
+
+        gonder_satir(
+            yazici,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "params": {}
+            }),
+        )
+        .await?;
+        let list_yaniti = oku_yanit(okuyucu, 2).await?;
+        if list_yaniti
+            .pointer("/result/tools/0/name")
+            .and_then(Value::as_str)
+            != Some("dene")
+        {
+            return Err(AracHatasi::GirisCikis(
+                "MCP tools/list yanıtında `dene` aracı bulunamadı".into(),
+            ));
+        }
+
+        gonder_satir(
+            yazici,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "dene",
+                    "arguments": {
+                        "islem": islem,
+                        "yol": hedef_yol
+                    }
+                }
+            }),
+        )
+        .await?;
+        let call_yaniti = oku_yanit(okuyucu, 3).await?;
+        let metin = call_yaniti
+            .pointer("/result/content/0/text")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AracHatasi::GirisCikis("MCP tools/call metin yanıtı eksik".into()))?;
+        Ok(metin.trim_end_matches(['\r', '\n']).to_string())
+    }
+}
+
+#[async_trait]
+impl Arac for YerelMcpSinamaAraci {
+    fn ad(&self) -> &str {
+        "mcp__yerel_sinama__dene"
+    }
+
+    fn aciklama(&self) -> &str {
+        "Yerel stdio MCP test sunucusu (kalfa-mcp-test-sunucusu) üzerinden dosya ve yalıtım sınaması yapar."
+    }
+
+    fn parametre_semasi(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "etiket": { "type": "string" },
+                "islem": { "type": "string" },
+                "yol": { "type": "string" }
+            },
+            "required": ["etiket", "islem", "yol"],
+            "additionalProperties": false
+        })
+    }
+
+    fn yazar_mi(&self) -> bool {
+        false
+    }
+
+    async fn hazirla(&self, _argumanlar: &Value) -> Result<Hazirlik, AracHatasi> {
+        let tarif = McpTarifi::yeni(
+            McpTanimOzeti::ozetten([0x11; 32]),
+            McpPolitikaOzeti::ozetten([0x22; 32]),
+            McpKorumaOzeti::ozetten([0x33; 32]),
+            McpYalitimProfiliOzeti::ozetten([0x44; 32]),
+            McpBaslatmaSayaci::yeni(1),
+        );
+        let mcp = McpAracHazirligi {
+            sunucu: McpKartEtiketi::yeni("yerel_sinama")
+                .map_err(|e| AracHatasi::Gecersiz(e.to_string()))?,
+            arac: McpKartEtiketi::yeni("dene").map_err(|e| AracHatasi::Gecersiz(e.to_string()))?,
+            kip: Kip::Proje,
+            erisim: McpErisim::Yalitimli,
+            ag: McpAgKarti::Kapali,
+            ilk_cagri: false,
+            tarif,
+            arac_tanimi: McpAracTanimOzeti::ozetten([0x55; 32]),
+        };
+        Ok(Hazirlik {
+            aciklama: "`yerel_sinama` MCP sunucusundaki `dene` aracını çalıştırmak istiyor."
+                .to_string(),
+            mcp: Some(mcp),
+            ..Default::default()
+        })
+    }
+
+    async fn calistir(
+        &self,
+        argumanlar: &Value,
+        _hazirlik: &Hazirlik,
+        _iptal: CancellationToken,
+    ) -> Result<AracCiktisi, AracHatasi> {
+        let etiket = argumanlar
+            .get("etiket")
+            .and_then(Value::as_str)
+            .unwrap_or("SINAMA");
+        let islem = argumanlar
+            .get("islem")
+            .and_then(Value::as_str)
+            .unwrap_or("oku");
+        let giris_yol = argumanlar.get("yol").and_then(Value::as_str).unwrap_or("");
+
+        let alan_koku = self
+            .calisma_alani
+            .kok()
+            .canonicalize()
+            .unwrap_or_else(|_| self.calisma_alani.kok().to_path_buf());
+        let hedef_yol = if giris_yol.starts_with("../") {
+            self.dis_sir_yolu.display().to_string()
+        } else {
+            alan_koku.join(giris_yol).display().to_string()
+        };
+
+        let ham_sonuc = match self.kip {
+            McpSinamaKipi::BozukBaglanti => {
+                let (istemci_okuma, sunucu_yazma) = tokio::io::duplex(1024);
+                let (_sunucu_okuma, mut istemci_yazma) = tokio::io::duplex(1024);
+                drop(sunucu_yazma);
+                let mut okuyucu = BufReader::new(istemci_okuma);
+                Self::jsonrpc_el_sikis_ve_cagir(&mut okuyucu, &mut istemci_yazma, islem, &hedef_yol)
+                    .await?
+            }
+            McpSinamaKipi::YalitimsizKacak => {
+                if let Some(sunucu_exe) = hedef_ikili_bul("kalfa-mcp-test-sunucusu") {
+                    let mut cocuk = tokio::process::Command::new(sunucu_exe)
+                        .arg("sinama")
+                        .stdin(std::process::Stdio::piped())
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                        .map_err(|e| AracHatasi::GirisCikis(e.to_string()))?;
+                    let mut girdi = cocuk.stdin.take().unwrap();
+                    let mut okuyucu = BufReader::new(cocuk.stdout.take().unwrap());
+                    let sonuc = Self::jsonrpc_el_sikis_ve_cagir(
+                        &mut okuyucu,
+                        &mut girdi,
+                        islem,
+                        &hedef_yol,
+                    )
+                    .await;
+                    let _ = cocuk.kill().await;
+                    sonuc?
+                } else {
+                    match std::fs::read_to_string(&hedef_yol) {
+                        Ok(m) => format!("TAMAM:{}", m.trim_end_matches(['\r', '\n'])),
+                        Err(e) => format!("RED:{:?}", e.kind()),
+                    }
+                }
+            }
+            McpSinamaKipi::GercekYalitim => {
+                let _kilit = self.kilit.lock().await;
+                let kurulum = self.kurulum.as_ref().ok_or_else(|| {
+                    AracHatasi::GirisCikis("gerçek MCP yalıtım kurulumu eksik".into())
+                })?;
+                let alan_bilgisi = koruma::alan_bilgisi(self.calisma_alani.clone()).await?;
+                kurulum
+                    .yalitici
+                    .alani_hazirla(&alan_bilgisi, true, &mut |_| {})
+                    .map_err(|e| AracHatasi::GirisCikis(e.to_string()))?;
+                let kimlik = alan_kimligi(&alan_bilgisi.kok);
+                let ozel = sunucu_ozel(&kurulum.yalitim_dizini, &kimlik, "yerel-sinama");
+                let sistem_ortami = if cfg!(windows) {
+                    let sistem =
+                        std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+                    vec![("PATH".to_string(), format!(r"{sistem}\System32"))]
+                } else {
+                    vec![("PATH".to_string(), "/usr/bin:/bin".to_string())]
+                };
+                let istek = EtkilesimliIstek {
+                    program: kurulum.sunucu_ikilisi.display().to_string(),
+                    argumanlar: vec!["sinama".to_string()],
+                    ortam: sunucu_ortami(&sistem_ortami, &ozel),
+                    kip: CalistirmaKipi::Yalitimli,
+                    sunucu: "yerel-sinama".to_string(),
+                    alan: alan_bilgisi.clone(),
+                    ag_listesi: None,
+                };
+                let mut surec = kurulum
+                    .yalitici
+                    .baslat_etkilesimli(&istek)
+                    .map_err(|e| AracHatasi::GirisCikis(e.to_string()))?;
+                let mut girdi = surec
+                    .girdi_al()
+                    .ok_or_else(|| AracHatasi::GirisCikis("MCP stdin alınamadı".into()))?;
+                let cikti = surec
+                    .cikti_al()
+                    .ok_or_else(|| AracHatasi::GirisCikis("MCP stdout alınamadı".into()))?;
+                let mut okuyucu = BufReader::new(cikti);
+                let sonuc =
+                    Self::jsonrpc_el_sikis_ve_cagir(&mut okuyucu, &mut girdi, islem, &hedef_yol)
+                        .await;
+                drop(girdi);
+                let _ = tokio::time::timeout(KAPANMA_PAYI, surec.kapat()).await;
+                let _ = kurulum
+                    .yalitici
+                    .sunucu_kokunu_kaldir(&alan_bilgisi.kok, "yerel-sinama");
+                sonuc?
+            }
+        };
+
+        let bicimli = if etiket == "GIZLI_ENV" {
+            // Linux bwrap gizli dosyaya `/dev/null` bağlar (`TAMAM:` boş içerik),
+            // Windows AppContainer `RED:PermissionDenied` döner; her ikisinde de sır korunur.
+            if ham_sonuc.starts_with("RED:") || ham_sonuc == "TAMAM:" {
+                format!("GIZLI_ENV=KORUNDU ({ham_sonuc})")
+            } else {
+                format!("GIZLI_ENV=SIZDI:{ham_sonuc}")
+            }
+        } else {
+            format!("{etiket}={ham_sonuc}")
+        };
+
+        Ok(AracCiktisi {
+            icerik: bicimli,
+            kaynak: "mcp:yerel_sinama/dene".to_string(),
+            ..Default::default()
+        })
+    }
+}
+
+struct SenaryoKabukGuveni(AtomicBool);
+
+impl KabukGuveni for SenaryoKabukGuveni {
+    fn guvenildi_mi(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+
+    fn guvenildi(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+fn senaryoyu_baslat(
+    sc: &Senaryo,
+    gorev: &GorevTanimi,
+    saglayici: &Arc<SahteSaglayici>,
+    ek_araclar: Vec<Arc<dyn Arac>>,
+) -> Surucu {
+    if ek_araclar.is_empty() {
+        return sc.baslat(saglayici);
+    }
+    let siniflandirici = Arc::new(Siniflandirici::yeni(sc.alan.path(), &[]).unwrap());
+    let calisma_alani = CalismaAlani::ac(siniflandirici.clone()).unwrap();
+    let mut araclar: Vec<Arc<dyn Arac>> = varsayilan_araclar(calisma_alani.clone());
+    araclar.push(Arc::new(KabukAraci::yeni(
+        calisma_alani,
+        sc.yalitici.clone(),
+        Arc::new(SenaryoKabukGuveni(AtomicBool::new(false))),
+        Arc::new(AtomicBool::new(false)),
+    )));
+    araclar.extend(ek_araclar);
+    let baglam = test_baglami(saglayici.clone(), araclar, siniflandirici);
+    let mut ayar = OturumAyarlari::yeni("glm-5.3", sc.alan.path());
+    ayar.kip = gorev.kip;
+    ayar.denetci_kipi = gorev.denetci_kipi;
+    ayar.kayit_yolu = Some(sc.kayit_yolu());
+    test_oturumu(baglam, ayar)
 }
 
 /// Tek bir görevi verilen çevrimdışı ortamda çalıştırır ve bağımsız denetleyiciyle değerlendirir.
@@ -921,7 +1725,7 @@ pub async fn gorevi_kostur(gorev: &GorevTanimi, ortam: &CalistirmaOrtami) -> Gor
         };
     }
 
-    // 3. Senaryoyu gerçek dosya araçları ve SahteSaglayici ile çalıştır
+    // 3. Senaryoyu gerçek dosya araçları (ve gerekirse yerel MCP aracı) ile çalıştır
     let mut sc = Senaryo::yeni(gorev.kip)
         .denetci_kipi(gorev.denetci_kipi)
         .kayitli()
@@ -935,6 +1739,77 @@ pub async fn gorevi_kostur(gorev: &GorevTanimi, ortam: &CalistirmaOrtami) -> Gor
     for dosya in &gorev.baslangic_dosyalari {
         sc = sc.dosya(&dosya.yol, &dosya.icerik);
         baslangic_ozetleri.insert(dosya.yol.clone(), ozet_hex(dosya.icerik.as_bytes()));
+    }
+
+    let mcp_gerekli = gorev
+        .gerekli_yetenekler
+        .iter()
+        .any(|y| y == "yerel_mcp_stdio");
+    let mut dis_sir_temizlik: Option<PathBuf> = None;
+    let mut ek_araclar: Vec<Arc<dyn Arac>> = Vec::new();
+
+    if mcp_gerekli {
+        let kurulum = if ortam.mcp_sinama_kipi == McpSinamaKipi::GercekYalitim {
+            match gercek_mcp_kurulumu_hazirla(sc.alan.path()) {
+                Ok(k) => Some(Arc::new(k)),
+                Err(hata) => {
+                    let neden = format!("Gerçek MCP yalıtım önkoşulu hazır değil: {hata}");
+                    let iz_ozeti = ozet_hex(
+                        format!(
+                            "calistirilmadi:{}:{}:gercek_mcp_hazir_degil",
+                            gorev.kimlik, gorev.dosya_sha256
+                        )
+                        .as_bytes(),
+                    );
+                    return GorevKosumKaydi {
+                        kimlik: gorev.kimlik.clone(),
+                        aile: gorev.aile,
+                        baslik: gorev.baslik.clone(),
+                        dosya_sha256: gorev.dosya_sha256.clone(),
+                        sonuc: SenaryoSonucu::Calistirilmadi,
+                        saglayici_turu: "sahte_saglayici".to_string(),
+                        canli_model_basarisi: false,
+                        neden,
+                        bagimli_hat: gorev.bagimli_hat.clone(),
+                        adim_sayisi: 0,
+                        arac_cagrisi_sayisi: 0,
+                        onay_sayisi: 0,
+                        tuketim_biliniyor: false,
+                        girdi_jetonu: None,
+                        cikti_jetonu: None,
+                        rag_soguk_indeks_ms: None,
+                        rag_sicak_sorgu_ms: None,
+                        calisma_izi_ozeti: iz_ozeti,
+                    };
+                }
+            }
+        } else {
+            None
+        };
+
+        let ust_dizin = sc
+            .alan
+            .path()
+            .parent()
+            .unwrap_or_else(|| sc.alan.path())
+            .to_path_buf();
+        let dis_sir_yolu = ust_dizin.join(format!(
+            "kalfa_dis_sir_m01_{}_{}.txt",
+            std::process::id(),
+            gorev.kimlik
+        ));
+        let _ = std::fs::write(&dis_sir_yolu, "DIS_ALAN_SIRRI_M01\n");
+        dis_sir_temizlik = Some(dis_sir_yolu.clone());
+
+        let siniflandirici = Arc::new(Siniflandirici::yeni(sc.alan.path(), &[]).unwrap());
+        let calisma_alani = CalismaAlani::ac(siniflandirici).unwrap();
+        ek_araclar.push(Arc::new(YerelMcpSinamaAraci {
+            kip: ortam.mcp_sinama_kipi,
+            calisma_alani,
+            dis_sir_yolu,
+            kurulum,
+            kilit: tokio::sync::Mutex::new(()),
+        }));
     }
 
     let mut yanitlar = Vec::with_capacity(gorev.sahte_model_adimlari.len());
@@ -957,7 +1832,7 @@ pub async fn gorevi_kostur(gorev: &GorevTanimi, ortam: &CalistirmaOrtami) -> Gor
     }
 
     let saglayici = SahteSaglayici::yeni(yanitlar);
-    let mut surucu = sc.baslat(&saglayici);
+    let mut surucu = senaryoyu_baslat(&sc, gorev, &saglayici, ek_araclar);
     surucu.gonder(mesaj(&gorev.kullanici_istegi)).await;
 
     let mut onay_sayaci = 0usize;
@@ -1011,6 +1886,10 @@ pub async fn gorevi_kostur(gorev: &GorevTanimi, ortam: &CalistirmaOrtami) -> Gor
         }
     };
 
+    if let Some(yol) = dis_sir_temizlik {
+        let _ = std::fs::remove_file(yol);
+    }
+
     // 4. Bağımsız denetleyici kontrolleri
     let mut hatalar: Vec<String> = Vec::new();
     let denetleyici = &gorev.bagimsiz_denetleyici;
@@ -1040,22 +1919,23 @@ pub async fn gorevi_kostur(gorev: &GorevTanimi, ortam: &CalistirmaOrtami) -> Gor
         }
     }
 
-    // 4b. Dosya kontrolleri
+    // 4b. Dosya kontrolleri (kod dosyalarında yorum içi alt dizge yanıltması elenir)
     for dk in &denetleyici.dosya_kontrolleri {
         let icerik_opt = sc.oku(&dk.yol);
         match dk.durum {
             BeklenenDosyaDurumu::Var => match &icerik_opt {
                 Some(icerik) => {
+                    let aktif_kod = yorumlari_temizle(&dk.yol, icerik);
                     for aranan in &dk.icerir {
-                        if !icerik.contains(aranan) {
+                        if !aktif_kod.contains(aranan) {
                             hatalar.push(format!(
-                                "`{}` içinde beklenen `{aranan}` dizgesi bulunamadı",
+                                "`{}` etkin kodunda beklenen `{aranan}` dizgesi bulunamadı",
                                 dk.yol
                             ));
                         }
                     }
                     for yasak in &dk.icermez {
-                        if icerik.contains(yasak) {
+                        if aktif_kod.contains(yasak) || icerik.contains(yasak) {
                             hatalar.push(format!(
                                 "`{}` içinde bulunmaması gereken `{yasak}` dizgesi bulundu",
                                 dk.yol
@@ -1095,7 +1975,15 @@ pub async fn gorevi_kostur(gorev: &GorevTanimi, ortam: &CalistirmaOrtami) -> Gor
         }
     }
 
-    // 4c. İz kontrolleri
+    // 4c. Davranış kontrolleri (rustc --test / TypeScript tip ve G/Ç / Svelte UI etkileşim)
+    if !denetleyici.davranis_kontrolleri.is_empty() {
+        hatalar.extend(davranis_kontrollerini_calistir(
+            sc.alan.path(),
+            &denetleyici.davranis_kontrolleri,
+        ));
+    }
+
+    // 4d. İz kontrolleri
     let iz = &denetleyici.iz_kontrolleri;
     if bitis_nedeni != iz.beklenen_bitis {
         hatalar.push(format!(

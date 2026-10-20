@@ -6,9 +6,9 @@ mod yetenek_senaryolari;
 
 use serde_json::Value;
 use yetenek_senaryolari::{
-    CalistirmaOrtami, GorevAilesi, SahteAdimTanimi, SenaryoSonucu, YIRMI_DORT_KIMLIK,
-    dogrula_gorev_kumesi, dogrula_olcum_raporu_kaydi, gorev_tanimi_cozumle, gorevi_kostur,
-    guvenli_goreli_yol_mu, tum_gorevleri_kostur, yirmi_dort_gorevi_yukle,
+    CalistirmaOrtami, GorevAilesi, McpSinamaKipi, SahteAdimTanimi, SahteCagriTanimi, SenaryoSonucu,
+    YIRMI_DORT_KIMLIK, dogrula_gorev_kumesi, dogrula_olcum_raporu_kaydi, gorev_tanimi_cozumle,
+    gorevi_kostur, guvenli_goreli_yol_mu, tum_gorevleri_kostur, yirmi_dort_gorevi_yukle,
 };
 
 #[test]
@@ -26,9 +26,10 @@ fn denetleyicisi_olmayan_yinelenen_ve_guvensiz_yollu_tanimlar_reddedilir() {
         "beklenmeyen hata: {hata}"
     );
 
-    // 2. Hiçbir dosya/iz kontrolü içermeyen boş denetleyici reddedilmeli
+    // 2. Hiçbir dosya/davranış/iz kontrolü içermeyen boş denetleyici reddedilmeli
     let mut bos_denetleyici: Value = serde_json::from_str(&gecerli_ham).unwrap();
     bos_denetleyici["bagimsiz_denetleyici"]["dosya_kontrolleri"] = serde_json::json!([]);
+    bos_denetleyici["bagimsiz_denetleyici"]["davranis_kontrolleri"] = serde_json::json!([]);
     bos_denetleyici["bagimsiz_denetleyici"]["iz_kontrolleri"]["beklenen_arac_durumlari"] =
         serde_json::json!([]);
     bos_denetleyici["bagimsiz_denetleyici"]["iz_kontrolleri"]["isteklerde_bulunmali"] =
@@ -161,19 +162,6 @@ async fn g0_cevrimdisi_kosucu_iki_kosuda_ayni_sonucu_ve_dort_durumu_uretir() {
         assert_eq!(kayit.saglayici_turu, "sahte_saglayici");
     }
 
-    // M01 yerel süreç ve yalıtım önkoşulu açıldığında çevrimdışı sözleşme kontrolünü geçmeli
-    let m01 = gorevler.iter().find(|g| g.kimlik == "M01").unwrap();
-    let mut m01_ortam = CalistirmaOrtami::g0_cevrimdisi_taban();
-    m01_ortam.gercek_yalitim_acik = true;
-    m01_ortam.yerel_surec_acik = true;
-    let m01_kayit = gorevi_kostur(m01, &m01_ortam).await;
-    assert_eq!(
-        m01_kayit.sonuc,
-        SenaryoSonucu::Gecti,
-        "M01 önkoşul açıkken geçmeli: {}",
-        m01_kayit.neden
-    );
-
     // Bağımsız denetleyici ihlal edildiğinde `Kaldı` (`Kaldi`) durumu üretilmeli
     let mut bozuk_k01 = gorevler[0].clone();
     bozuk_k01.sahte_model_adimlari = vec![SahteAdimTanimi::Metin(
@@ -194,6 +182,203 @@ async fn g0_cevrimdisi_kosucu_iki_kosuda_ayni_sonucu_ve_dort_durumu_uretir() {
     assert!(md_tablo.contains("| `K01` |"));
     assert!(md_tablo.contains("| `W06` |"));
     assert!(md_tablo.contains("Hayır (`sahte_saglayici`)"));
+}
+
+#[tokio::test]
+async fn sp02_yorum_icinde_alt_dizge_ile_yanlis_kod_k01_k02_k03_kabulunu_gecemez() {
+    let gorevler = yirmi_dort_gorevi_yukle().expect("24 görev yüklenmeli");
+    let ortam = CalistirmaOrtami::g0_cevrimdisi_taban();
+
+    // 1. K01: Yanlış kodu koruyup yoruma beklenen düzeltme dizgesini eklemek Kaldi üretmeli
+    let mut sahte_k01 = gorevler.iter().find(|g| g.kimlik == "K01").unwrap().clone();
+    sahte_k01.sahte_model_adimlari = vec![
+        SahteAdimTanimi::Araclar(vec![
+            SahteCagriTanimi {
+                ad: "dosya_oku".to_string(),
+                argumanlar: serde_json::json!({ "yol": "src/dilim.rs" }),
+            },
+            SahteCagriTanimi {
+                ad: "dosya_oku".to_string(),
+                argumanlar: serde_json::json!({ "yol": "tests/sinir_testi.rs" }),
+            },
+        ]),
+        SahteAdimTanimi::Arac(SahteCagriTanimi {
+            ad: "dosya_duzenle".to_string(),
+            argumanlar: serde_json::json!({
+                "yol": "src/dilim.rs",
+                "eski_metin": "    let baslangic = dilim.len() - n - 1;",
+                "yeni_metin": "    let baslangic = dilim.len() - n;\n    // dilim.len().saturating_sub(n)"
+            }),
+        }),
+        SahteAdimTanimi::Metin("Sözde düzeltildi.".to_string()),
+    ];
+    let k01_sonuc = gorevi_kostur(&sahte_k01, &ortam).await;
+    assert_eq!(
+        k01_sonuc.sonuc,
+        SenaryoSonucu::Kaldi,
+        "SP-02 regresyonu: K01 yorum içine eklenen alt dizgeyle veya bozuk sınır hesabıyla geçmemeli: {:?}",
+        k01_sonuc
+    );
+
+    // 2. K02: Yanlış kodu koruyup yoruma beklenen düzeltme dizgesini eklemek Kaldi üretmeli
+    let mut sahte_k02 = gorevler.iter().find(|g| g.kimlik == "K02").unwrap().clone();
+    sahte_k02.sahte_model_adimlari = vec![
+        SahteAdimTanimi::Araclar(vec![
+            SahteCagriTanimi {
+                ad: "dosya_oku".to_string(),
+                argumanlar: serde_json::json!({ "yol": "src/tipler.ts" }),
+            },
+            SahteCagriTanimi {
+                ad: "dosya_oku".to_string(),
+                argumanlar: serde_json::json!({ "yol": "src/donustur.ts" }),
+            },
+        ]),
+        SahteAdimTanimi::Arac(SahteCagriTanimi {
+            ad: "dosya_duzenle".to_string(),
+            argumanlar: serde_json::json!({
+                "yol": "src/donustur.ts",
+                "eski_metin": "  const gecerliler = kayitlar.filter((k) => !k.iptal && k.tutarKurus > 0);\n  const toplam = gecerliler.reduce((acc, k) => acc + k.tutarKurus, 0);\n  return {\n    gecerliSayisi: gecerliler.length,\n    toplamKurus: String(toplam) as unknown as number,\n  };",
+                "yeni_metin": "  const gecerliler = kayitlar.filter((k) => !k.iptal && k.tutarKurus > 0);\n  // !k.iptal && k.tutarKurus >= 0\n  // toplamKurus: toplam\n  const toplam = gecerliler.reduce((acc, k) => acc + k.tutarKurus, 0);\n  return {\n    gecerliSayisi: gecerliler.length,\n    toplamKurus: toplam,\n  };"
+            }),
+        }),
+        SahteAdimTanimi::Metin("Sözde düzeltildi.".to_string()),
+    ];
+    let k02_sonuc = gorevi_kostur(&sahte_k02, &ortam).await;
+    assert_eq!(
+        k02_sonuc.sonuc,
+        SenaryoSonucu::Kaldi,
+        "SP-02 regresyonu: K02 yorum içine eklenen alt dizgeyle ve bozuk sıfır filtresiyle geçmemeli: {:?}",
+        k02_sonuc
+    );
+
+    // 3. K03: Yanlış kodu koruyup yoruma beklenen düzeltme dizgesini eklemek Kaldi üretmeli
+    let mut sahte_k03 = gorevler.iter().find(|g| g.kimlik == "K03").unwrap().clone();
+    sahte_k03.sahte_model_adimlari = vec![
+        SahteAdimTanimi::Arac(SahteCagriTanimi {
+            ad: "dosya_oku".to_string(),
+            argumanlar: serde_json::json!({ "yol": "src/SayacPaneli.svelte" }),
+        }),
+        SahteAdimTanimi::Arac(SahteCagriTanimi {
+            ad: "dosya_duzenle".to_string(),
+            argumanlar: serde_json::json!({
+                "yol": "src/SayacPaneli.svelte",
+                "eski_metin": "  function sifirla() {\n    sayac = 1;\n  }",
+                "yeni_metin": "  function sifirla() {\n    sayac = 0;\n    // seciliEtiket = null;\n  }"
+            }),
+        }),
+        SahteAdimTanimi::Metin("Sözde düzeltildi.".to_string()),
+    ];
+    let k03_sonuc = gorevi_kostur(&sahte_k03, &ortam).await;
+    assert_eq!(
+        k03_sonuc.sonuc,
+        SenaryoSonucu::Kaldi,
+        "SP-02 regresyonu: K03 yorum içine eklenen alt dizgeyle ve eksik durum sıfırlamasıyla geçmemeli: {:?}",
+        k03_sonuc
+    );
+}
+
+#[tokio::test]
+async fn sp01_m01_dosya_oku_taklidi_kabul_edilmez() {
+    let gorevler = yirmi_dort_gorevi_yukle().expect("24 görev yüklenmeli");
+    let m01 = gorevler.iter().find(|g| g.kimlik == "M01").unwrap();
+
+    // 1. M01 adımlarında `dosya_oku` yerine gerçek yerel MCP aracı (`mcp__yerel_sinama__dene`) çağrılmalı
+    let mcp_cagrisi_var = m01.sahte_model_adimlari.iter().any(|adim| match adim {
+        SahteAdimTanimi::Arac(c) => c.ad == "mcp__yerel_sinama__dene",
+        SahteAdimTanimi::Araclar(liste) => liste.iter().any(|c| c.ad == "mcp__yerel_sinama__dene"),
+        SahteAdimTanimi::Metin(_) => false,
+    });
+    assert!(
+        mcp_cagrisi_var,
+        "SP-01 regresyonu: M01 yalnız dosya_oku çağırmamalı, gerçek MCP aracını çağırmalı"
+    );
+
+    // 2. Yetenek desteklenmediğinde `Desteklenmiyor` dönmeli
+    let mut yeteneksiz_ortam = CalistirmaOrtami::g0_cevrimdisi_taban();
+    yeteneksiz_ortam
+        .desteklenen_yetenekler
+        .remove("yerel_mcp_stdio");
+    let yeteneksiz_kayit = gorevi_kostur(m01, &yeteneksiz_ortam).await;
+    assert_eq!(yeteneksiz_kayit.sonuc, SenaryoSonucu::Desteklenmiyor);
+
+    // 3. Önkoşul kapalıyken `Çalıştırılmadı` dönmeli
+    let kapali_ortam = CalistirmaOrtami::g0_cevrimdisi_taban();
+    let kapali_kayit = gorevi_kostur(m01, &kapali_ortam).await;
+    assert_eq!(kapali_kayit.sonuc, SenaryoSonucu::Calistirilmadi);
+
+    // 4. MCP stdio bağlantısı / el sıkışması bozuk olduğunda denetleyici `Kaldı` dönmeli
+    let mut bozuk_baglanti_ortami = CalistirmaOrtami::g0_cevrimdisi_taban();
+    bozuk_baglanti_ortami.gercek_yalitim_acik = true;
+    bozuk_baglanti_ortami.yerel_surec_acik = true;
+    bozuk_baglanti_ortami.mcp_sinama_kipi = McpSinamaKipi::BozukBaglanti;
+    let bozuk_baglanti_kaydi = gorevi_kostur(m01, &bozuk_baglanti_ortami).await;
+    assert_eq!(
+        bozuk_baglanti_kaydi.sonuc,
+        SenaryoSonucu::Kaldi,
+        "SP-01 regresyonu: bozuk MCP bağlantısı Kaldı üretmeli: {:?}",
+        bozuk_baglanti_kaydi
+    );
+
+    // 5. MCP yalıtımı/koruması bozuk olduğunda (`.env` ve alan dışı sır sızdığında) `Kaldı` dönmeli
+    let mut kacak_ortam = CalistirmaOrtami::g0_cevrimdisi_taban();
+    kacak_ortam.gercek_yalitim_acik = true;
+    kacak_ortam.yerel_surec_acik = true;
+    kacak_ortam.mcp_sinama_kipi = McpSinamaKipi::YalitimsizKacak;
+    let kacak_kaydi = gorevi_kostur(m01, &kacak_ortam).await;
+    assert_eq!(
+        kacak_kaydi.sonuc,
+        SenaryoSonucu::Kaldi,
+        "SP-01 regresyonu: yalıtımsız/korumasız MCP sunucusu Kaldı üretmeli: {:?}",
+        kacak_kaydi
+    );
+    assert!(
+        kacak_kaydi.neden.contains("GIZLI_ENV=KORUNDU")
+            || kacak_kaydi.neden.contains("gizli-m01-degeri")
+            || kacak_kaydi.neden.contains("DIS_ALAN_SIRRI_M01"),
+        "sır sızıntısı denetleyici hatasında görünmeli: {}",
+        kacak_kaydi.neden
+    );
+
+    // 6. Eski SP-01 hatasının birebir tekrarı: M01 adımlarını yalnız `dosya_oku` ile taklit etmek
+    // hiçbir kipte `Geçti` döndüremez (`Kaldı` veya ortam kapalıysa `Çalıştırılmadı` döner).
+    let mut taklit_m01 = m01.clone();
+    taklit_m01.sahte_model_adimlari = vec![
+        SahteAdimTanimi::Arac(SahteCagriTanimi {
+            ad: "dosya_oku".to_string(),
+            argumanlar: serde_json::json!({ "yol": "mcp/yerel_durum.json" }),
+        }),
+        SahteAdimTanimi::Metin(
+            "Yerel stdio MCP durumu: KLF-M01-STDIO-OK; .env erişimi reddedildi.".to_string(),
+        ),
+    ];
+    let taklit_kaydi = gorevi_kostur(&taklit_m01, &kacak_ortam).await;
+    assert_eq!(
+        taklit_kaydi.sonuc,
+        SenaryoSonucu::Kaldi,
+        "SP-01 regresyonu: yalnız dosya_oku çağıran taklit M01 senaryosu Kaldı üretmeli: {:?}",
+        taklit_kaydi
+    );
+
+    // 7. Gerçek yalıtım kipi: yalnız iki ortam bayrağını açmak sahte başarı üretmez;
+    // gerçek `kalfa-mcp-test-sunucusu` + `kalfa-kopru` + platform yalıtımı hazırsa `Geçti`,
+    // hazır değilse `Çalıştırılmadı` döner.
+    let mut gercek_ortam = CalistirmaOrtami::g0_cevrimdisi_taban();
+    gercek_ortam.gercek_yalitim_acik = true;
+    gercek_ortam.yerel_surec_acik = true;
+    gercek_ortam.mcp_sinama_kipi = McpSinamaKipi::GercekYalitim;
+    let gercek_kayit = gorevi_kostur(m01, &gercek_ortam).await;
+    println!(
+        "M01 GercekYalitim sonucu: {:?} — {}",
+        gercek_kayit.sonuc, gercek_kayit.neden
+    );
+    assert!(
+        matches!(
+            gercek_kayit.sonuc,
+            SenaryoSonucu::Gecti | SenaryoSonucu::Calistirilmadi
+        ),
+        "beklenmeyen M01 gerçek yalıtım sonucu: {:?}",
+        gercek_kayit
+    );
 }
 
 #[test]

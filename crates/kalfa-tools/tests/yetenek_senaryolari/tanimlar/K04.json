@@ -28,6 +28,10 @@
     {
       "yol": "src/arsiv.rs",
       "icerik": "pub const ARSIV_SURUMU: u32 = 1;\n"
+    },
+    {
+      "yol": "tests/siparis_testi.rs",
+      "icerik": "#[path = \"../src/sozlesme.rs\"]\npub mod sozlesme;\n#[path = \"../src/rapor.rs\"]\npub mod rapor;\n\nuse rapor::satir_uret;\nuse sozlesme::SiparisOzeti;\n\n#[test]\nfn siparis_satiri_iptal_nedenini_dogru_bicimler() {\n    let normal = SiparisOzeti {\n        siparis_no: \"SP-10\".to_string(),\n        toplam_kurus: 450,\n        iptal_nedeni: None,\n    };\n    assert_eq!(satir_uret(&normal), \"SP-10: 450 kurus\");\n\n    let iptalli = SiparisOzeti {\n        siparis_no: \"SP-11\".to_string(),\n        toplam_kurus: 900,\n        iptal_nedeni: Some(\"stok yok\".to_string()),\n    };\n    assert_eq!(satir_uret(&iptalli), \"SP-11: 900 kurus (iptal: stok yok)\");\n}\n"
     }
   ],
   "izinli_degisiklikler": ["src/sozlesme.rs", "src/rapor.rs"],
@@ -83,7 +87,7 @@
     }
   ],
   "bagimsiz_denetleyici": {
-    "aciklama": "Sözleşme (`src/sozlesme.rs`) ve çağıran (`src/rapor.rs`) `iptal_nedeni: Option<String>` ile tutarlıdır; yalnız izinli iki dosya değişir, `src/arsiv.rs` aynı kalır.",
+    "aciklama": "Sözleşme (`src/sozlesme.rs`) ve çağıran (`src/rapor.rs`) `iptal_nedeni: Option<String>` ile derlenip `tests/siparis_testi.rs` testini geçer; yalnız izinli iki dosya değişir, `src/arsiv.rs` aynı kalır.",
     "dosya_kontrolleri": [
       {
         "yol": "src/sozlesme.rs",
@@ -99,6 +103,21 @@
         "yol": "src/arsiv.rs",
         "durum": "degismedi",
         "icerir": ["pub const ARSIV_SURUMU: u32 = 1;"]
+      },
+      {
+        "yol": "tests/siparis_testi.rs",
+        "durum": "degismedi",
+        "icerir": ["siparis_satiri_iptal_nedenini_dogru_bicimler"]
+      }
+    ],
+    "davranis_kontrolleri": [
+      {
+        "tur": "rust_test",
+        "giris_dosyasi": "tests/siparis_testi.rs",
+        "beklenen_cikti_icerir": [
+          "test siparis_satiri_iptal_nedenini_dogru_bicimler ... ok",
+          "test result: ok."
+        ]
       }
     ],
     "iz_kontrolleri": {

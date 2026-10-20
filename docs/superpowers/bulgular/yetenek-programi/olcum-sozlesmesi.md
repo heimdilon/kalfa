@@ -21,14 +21,14 @@ Her görev koşumu yalnızca aşağıdaki dört durumdan birini alabilir:
 
 | Durum Kodu | Etiket | Tanım |
 |---|---|---|
-| `gecti` | **Geçti** | Görev çalıştırıldı; bağımsız denetleyicinin bütün dosya, durum ve iz kontrolleri eksiksiz geçti. |
-| `kaldi` | **Kaldı** | Görev çalıştırıldı; bağımsız denetleyicinin en az bir dosya, durum, güvenlik veya iz kontrolü başarısız oldu. |
+| `gecti` | **Geçti** | Görev çalıştırıldı; bağımsız denetleyicinin bütün dosya, davranış (test/derleme/UI), güvenlik, durum ve iz kontrolleri eksiksiz geçti. |
+| `kaldi` | **Kaldı** | Görev çalıştırıldı; bağımsız denetleyicinin en az bir dosya, davranış (test/derleme/UI), durum, güvenlik veya iz kontrolü başarısız oldu. |
 | `desteklenmiyor` | **Desteklenmiyor** | Görevin gerektirdiği ürün yeteneği (`gerekli_yetenekler`) ölçülen dalda/ürün kodunda henüz mevcut değil. Bağımlı hat açıkça kaydedilir. |
-| `calistirilmadi` | **Çalıştırılmadı** | Görevin gerektirdiği ürün yeteneği mevcut olsa bile platform/ortam önkoşulu (`gercek_yalitim`, `yerel_surec`, `yerel_http_sunucu`) veya canlı model bütçe/kapsam onayı bu koşuda kapalı olduğu için görev yürütülmedi. |
+| `calistirilmadi` | **Çalıştırılmadı** | Görevin gerektirdiği ürün yeteneği mevcut olsa bile platform/ortam önkoşulu (`gercek_yalitim`, `yerel_surec`, `yerel_http_sunucu`, derlenmiş yardımcı ikililer `kalfa-mcp-test-sunucusu` / `kalfa-kopru`) veya canlı model bütçe/kapsam onayı bu koşuda hazır/açık olmadığı için görev yürütülmedi. |
 
 ---
 
-## 3. Değişmez Raporlama Kuralları
+## 3. Değişmez Raporlama ve Bağımsız Denetleyici Kuralları
 
 1. **Sahte Sağlayıcı Ayrımı (`canli_model_basarisi: false`):**
    `crates/kalfa-tools/tests/ortak/senaryo.rs` üzerindeki `SahteSaglayici` ile yürütülen çevrimdışı koşular yalnızca harness, araç, izin ve bağımsız denetleyici doğrulamasıdır. `saglayici_turu == "sahte_saglayici"` olan hiçbir kayıt gerçek model başarısı (`canli_model_basarisi: true`) olarak raporlanamaz; doğrulayıcı (`dogrula_olcum_raporu_kaydi`) bu ihlali reddeder.
@@ -38,6 +38,19 @@ Her görev koşumu yalnızca aşağıdaki dört durumdan birini alabilir:
    RAG eklentisi ölçümlerinde ilk indeksleme süresi (`rag_soguk_indeks_ms`) ile indeks hazırken yapılan sorgu süresi (`rag_sicak_sorgu_ms`) ayrı alanlarda tutulur; tek ortalamada birleştirilmez.
 4. **Çalışma Alanı ve Determinizm Sınırı:**
    Çevrimdışı görev tanımları (`crates/kalfa-tools/tests/yetenek_senaryolari/tanimlar/*.json`) çalışma alanı dışına (`..`, mutlak yol, sürücü harfi, UNC) çıkamaz ve dış ağa (`ag_erisim: true`) bağlanamaz. Dosya SHA-256 özetleri satır sonu farklarından etkilenmemek için LF (`\n`) normalize edilmiş UTF-8 baytları üzerinden (`kalfa_core::muhur::ozet_hex`) hesaplanır.
+5. **Davranışsal Denetleyici ve Yorum Temizliği (`SP-02`):**
+   - `dosya_kontrolleri` alt dizge denetimlerini ham metin üzerinde değil, satır (`//`), blok (`/* ... */`) ve HTML (`<!-- ... -->`) yorumları temizlenmiş kod (`yorumlari_temizle`) üzerinde çalıştırır. Yanlış kodun yorumuna beklenen alt dizgeyi eklemek kabulü geçiremez.
+   - `davranis_kontrolleri` görev sonrası gerçek derleme/test/etkileşim doğrulaması yürütür:
+     - `rust_test` (`K01`, `K04`): `rustc --edition 2024 --test` ile görev test ikilisini derler ve çalıştırır.
+     - `ts_tip_ve_test` (`K02`): `node tests/donustur_testi.mjs` ile TypeScript tip/arayüz sözleşmesini (varsa `KALFA_TS_LIB_PATH` üzerinden `ts.createProgram` dahil) ve Node.js üzerinde `.ts` modülünün gerçek girdi/çıktı dönüşüm davranışını doğrular.
+     - `svelte_ui_test` (`K03`): `node tests/ui_etkilesim_testi.mjs` ile `src/SayacPaneli.svelte` bileşeninin `<script lang="ts">` mantığını ve düğme `onclick` bağlamalarını gerçek tıklama geçişleriyle (`Artır` -> `Sıfırla` sonrası `sayac === 0` ve `seciliEtiket === null`) ve CSP (`style=` yasağı) kurallarıyla sınar.
+6. **Gerçek Yerel MCP ve Yalıtım Denetimi (`SP-01` — `M01`):**
+   - `M01` senaryosu `dosya_oku` taklidiyle değil, `YerelMcpSinamaAraci` (`mcp__yerel_sinama__dene`, `McpAracHazirligi`) üzerinden gerçek yerel MCP sunucusunu (`kalfa-mcp-test-sunucusu`, `sinama` kipi, stdio JSON-RPC `initialize` + `tools/call`) ve gerçek yalıtım yolunu (`kalfa_sandbox::Yalitici::baslat_etkilesimli`, `Secenekler { ag: false, gizli: .env, .. }`) başlatarak ölçülür.
+   - Denetleyici üç çağrıyı birlikte doğrular:
+     1. Çalışma alanı içi okuma (`mcp/yerel_durum.json`) -> `ALAN_ICI=TAMAM:...KLF-M01-STDIO-OK...`
+     2. Gizli `.env` okuma girişimi -> Linux `bwrap` maskelemesi (`/dev/null`, 0 bayt) veya Windows AppContainer `PermissionDenied` ile gizli anahtar sızmadan `GIZLI_ENV=KORUNDU`
+     3. Çalışma alanı dışı (`../dis_sir_m01.txt`) okuma girişimi -> `ALAN_DISI=RED:...`
+   - MCP bağlantısı bozuk olduğunda (`McpSinamaKipi::BozukBaglanti`) veya MCP sunucusu yalıtımsız çalışıp `.env` / alan dışı dosyayı sızdırdığında (`McpSinamaKipi::YalitimsizKacak`) bağımsız denetleyici deterministik olarak **`Kaldı`** döner. Gerçek yalıtım veya yardımcı ikililer (`kalfa-mcp-test-sunucusu`, `kalfa-kopru`) ortamda hazır değilse görev **`Çalıştırılmadı`** / **`Desteklenmiyor`** olarak sınıflandırılır.
 
 ---
 
@@ -49,29 +62,29 @@ Görev tanımları `crates/kalfa-tools/tests/yetenek_senaryolari/tanimlar/` dizi
 
 | Kimlik | Başlık | Gerekli Yetenekler | Bağımsız Denetleyici Özeti | LF SHA-256 Özeti |
 |---|---|---|---|---|
-| `K01` | Rust'ta sınır hatası | `dosya_araclari` | `src/dilim.rs` içinde `saturating_sub(n)` uygulanır; `src/toplam.rs` ve `tests/sinir_testi.rs` değişmez. | `83c0ec54fe8fc48a267366e5a5a894302e765f9c03548f621555926648e161d9` |
-| `K02` | Çok dosyalı yeniden adlandırma | `dosya_araclari` | 4 dosyada `oturum_ac` -> `oturum_baslat` güncellenir; `src/ilgisiz.rs` değişmez. | `161ce30ea2319f5d424f126472d3922a2916a2135b303abf0120f5cbfbed39ae` |
-| `K03` | Kök neden bulma | `dosya_araclari` | `src/zaman_asimi.rs` içindeki `* 1000` saniye/milisaniye kök nedeni düzeltilir; test dosyası bozulmaz. | `7fbe04641213d066dbe9980c28fac3c905e0a2168b4403d7c85b334809c166ed` |
-| `K04` | Büyük dosyada hedefli düzenleme | `dosya_araclari` | 1500+ satırlık `src/ buyuk_modul.rs` içinde yalnız `bolum_0750_degeri` (`7500` -> `7501`) değişir; komşu bölümler korunur. | `888f4e7eeb50cba174eed5127b1881b1998ead5217379d7a64e2c6a20304f34f` |
-| `K05` | Git diff inceleme ve geri alma | `dosya_araclari` | `src/hesap.rs` içindeki bozuk düzenleme temiz yedeğe döndürülür; `src/sabitler.rs` ve yedek dosyası korunur. | `7ff8c04c56808b2dd267c0c232cfa68b5af5858b4c950aa26b0bc02fc1687a40` |
+| `K01` | Rust'ta sınır hatası | `dosya_araclari` | `src/dilim.rs` yorumsuz kod kontrolünden geçer; `rustc --edition 2024 --test tests/sinir_testi.rs` derlenip tüm sınır testlerini geçirir; `src/toplam.rs` ve `tests/sinir_testi.rs` değişmez. | `33275b9a95fe3a825fbecf7335b32b146e30af8a72bad04ee5671ae7853176c2` |
+| `K02` | TypeScript veri dönüşümü hatası | `dosya_araclari` | `src/donustur.ts` yorumsuz kod kontrolünden ve `node tests/donustur_testi.mjs` tip + çalışma zamanı testlerinden geçer; `src/tipler.ts` ve `tests/donustur_testi.mjs` değişmez. | `5322626ea1f8e9362fca3f3095b011169b9a6ad88044e1deb8b4fa3a0f825f08` |
+| `K03` | Svelte etkileşim hatası | `dosya_araclari` | `src/SayacPaneli.svelte` CSP (`style=` yok) ve yorumsuz kod kontrolünden geçer; `node tests/ui_etkilesim_testi.mjs` düğme tıklama ve sıfırlama durum geçişlerini doğrular. | `f3e88070ec531abcc4e1b929acb11f9aa41dd625f01d1f3195166742898626c0` |
+| `K04` | Çok dosyalı yeniden adlandırma | `dosya_araclari` | `src/oturum.rs`, `src/istek.rs` ve `src/lib.rs` içinde `oturum_ac` -> `oturum_baslat` güncellenir; `rustc --edition 2024 --test tests/siparis_testi.rs` geçer; `src/ilgisiz.rs` değişmez. | `56f36b67eefe872a7363fd1988bc361d2ba2abcb59396be5981e5f745452ec37` |
+| `K05` | Kök neden bulma | `dosya_araclari` | `src/hesap.rs` içindeki bozuk düzenleme temiz yedeğe döndürülür; `src/sabitler.rs` ve yedek dosyası korunur. | `7ff8c04c56808b2dd267c0c232cfa68b5af5858b4c950aa26b0bc02fc1687a40` |
 | `K06` | `KALFA.md` kuralına uyum | `dosya_araclari`, `proje_talimatlari_kapsami` | `KALFA.md` ve `paket/ic/AGENTS.md` kapsam kuralları birleştirilir; `unwrap(` kullanmadan `[KLF-IC]` önekli fonksiyon yazılır. | `25403481639760acfaa5b6c4aa15815f1477fa504e2e4cf4b935bbe3472b587d` |
 
 ### 4.2 Süreç ve Oturum (`S01`–`S06`)
 
 | Kimlik | Başlık | Gerekli Yetenekler | Bağımsız Denetleyici Özeti | LF SHA-256 Özeti |
 |---|---|---|---|---|
-| `S01` | Uzun test çalıştırma | `dosya_araclari`, `arka_plan_surec` | Uzun süren iş turu kilitlemeden izlenir; iş kimliği, `Çıkış kodu: 0` ve `KLF-S01-TAMAM` kanıtı raporlanır. | `eff58aecb11558875ce2e60e1d11b39770142b306d9082f47d1d181ddd834962` |
-| `S02` | Yerel sunucu başlatma ve yoklama | `dosya_araclari`, `arka_plan_surec`, `surec_grup_sonlandirma` | Arka plan sunucusu başlatılır, sağlık yanıtı (`KLF-S02-SAGLIK-OK`) doğrulanır ve süreç grubu yetim bırakmadan sonlandırılır. | `0855c7ea11294497551c1ac67cba4a19daca3e0eadee287a41803bf2b5b7ff66` |
-| `S03` | Takılan komutu iptal etme | `dosya_araclari`, `arka_plan_surec`, `surec_grup_sonlandirma` | Zaman aşımında ebeveyn ve alt süreç ağacı birlikte sonlandırılır; oturum yeni tura temiz geçer. | `0acc99c4a799dd4cf5f0ac892adf3e53f3ac0eda14876f351ea561302337bded` |
+| `S01` | Uzun derleme/test izleme | `dosya_araclari`, `arka_plan_surec` | Uzun süren iş turu kilitlemeden izlenir; iş kimliği, `Çıkış kodu: 0` ve `KLF-S01-TAMAM` kanıtı raporlanır. | `eff58aecb11558875ce2e60e1d11b39770142b306d9082f47d1d181ddd834962` |
+| `S02` | Yerel sunucu başlatma ve doğrulama | `dosya_araclari`, `arka_plan_surec`, `surec_grup_sonlandirma` | Arka plan sunucusu başlatılır, sağlık yanıtı (`KLF-S02-SAGLIK-OK`) doğrulanır ve süreç grubu yetim bırakmadan sonlandırılır. | `0855c7ea11294497551c1ac67cba4a19daca3e0eadee287a41803bf2b5b7ff66` |
+| `S03` | Takılan komutu sonlandırma | `dosya_araclari`, `arka_plan_surec`, `surec_grup_sonlandirma` | Zaman aşımında ebeveyn ve alt süreç ağacı birlikte sonlandırılır; oturum yeni tura temiz geçer. | `0acc99c4a799dd4cf5f0ac892adf3e53f3ac0eda14876f351ea561302337bded` |
 | `S04` | Etkileşimli CLI aracı | `dosya_araclari`, `etkilesimli_terminal_pty` | PTY terminal oturumunda girdi gönderilir, `KLF-S04-MIGRASYON-OK` çıktısı okunur ve PTY kapatılır. | `a788ff2b9afb447b41669e36095856293fc2236a506fbea9d7f3d70c3b415028` |
-| `S05` | Soru/plan/compact/kurtarma | `dosya_araclari`, `kullaniciya_sor`, `oturum_kurtarma` | Kullanıcı yanıtı soru kimliğine bağlanır, soru beklerken kilit tutulmaz, compact/kurtarma sonrası plan ve `ayar.toml` korunur. | `9a7ef3acf8d0c2fb34e82dfc6ecdc57048cca3e9cf28653906f4e1283ce926e7` |
-| `S06` | Eşzamanlı iki oturum | `dosya_araclari`, `eszamanli_alan_kilidi` | Aynı çalışma alanında yazan ikinci oturum deterministik kilitle reddedilir; paralel okuma çalışır. | `e567120f8fe965ecb82afb63135482f5babb690dd043d8e9ae82a3b50f5cce2a` |
+| `S05` | Soru + plan + compact + kurtarma | `dosya_araclari`, `kullaniciya_sor`, `oturum_kurtarma` | Kullanıcı yanıtı soru kimliğine bağlanır, soru beklerken kilit tutulmaz, compact/kurtarma sonrası plan ve `ayar.toml` korunur. | `9a7ef3acf8d0c2fb34e82dfc6ecdc57048cca3e9cf28653906f4e1283ce926e7` |
+| `S06` | Eşzamanlı oturum kilidi | `dosya_araclari`, `eszamanli_alan_kilidi` | Aynı çalışma alanında yazan ikinci oturum deterministik kilitle reddedilir; paralel okuma çalışır. | `e567120f8fe965ecb82afb63135482f5babb690dd043d8e9ae82a3b50f5cce2a` |
 
 ### 4.3 MCP (`M01`–`M06`)
 
 | Kimlik | Başlık | Gerekli Yetenekler | Bağımsız Denetleyici Özeti | LF SHA-256 Özeti |
 |---|---|---|---|---|
-| `M01` | Yerel stdio MCP | `dosya_araclari`, `yerel_mcp_stdio` | Çalışma alanı içindeki MCP durumu (`KLF-M01-STDIO-OK`) okunur; gizli `.env` yolu reddedilir ve gizli değer sızmaz. | `33c66a4d14fa9b1038b57f6ff4b48a6f8cd196f627be1e26c7aa294c67b64beb` |
+| `M01` | Yerel stdio MCP | `dosya_araclari`, `yerel_mcp_stdio` | Gerçek `kalfa-mcp-test-sunucusu` (`sinama` kipi) ve `Yalitici::baslat_etkilesimli` üzerinden `mcp/yerel_durum.json` (`KLF-M01-STDIO-OK`) okunur; gizli `.env` (`GIZLI_ENV=KORUNDU`) ve alan dışı `../dis_sir_m01.txt` (`ALAN_DISI=RED:`) sızmaz. | `c41537dfbf3014e258c50e98140c783aa9afc93d880deca42a3e3557ba8e309f` |
 | `M02` | Uzak HTTP MCP salt-okunur | `dosya_araclari`, `uzak_mcp_http` | Salt-okunur HTTP MCP çağrısı onay istemeden (`beklenen_onay_sayisi: 0`) `KLF-M02-KAYIT` döner. | `2d39992ce3c185da038cb995f90ba0ba350d4188e7d08bf19ca1c39064458619` |
 | `M03` | Uzak HTTP MCP yazma | `dosya_araclari`, `uzak_mcp_http` | Uzak HTTP MCP yazma aracı mühürlü onay ister ve onay sonrası `gorev-42` kaydını günceller. | `fa3c41c6d219df04aace92525d8577cc6817eeca1a5156dab20be0e5bd428aa6` |
 | `M04` | OAuth akışı | `dosya_araclari`, `uzak_mcp_http`, `uzak_mcp_oauth` | PKCE (`S256`) ve belirteç yenileme tamamlanır; `OAUTH_GIZLI_BELIRTEC_M04` JSONL kaydına ve isteklere düşmez. | `2b7b95aaef732653ddadf0a57597f53be70bb02bbb0b180a4d4e96bb605df80d` |
