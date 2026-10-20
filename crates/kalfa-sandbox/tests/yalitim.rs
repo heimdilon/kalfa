@@ -1340,4 +1340,149 @@ async fn etkilesimli_agli_sunucu_vekilden_cikar_ve_kapanista_temizlenir() {
         ag.baglantilar
     );
 }
+
+/// G2b/G2c: yalıtımlı arka plan kabuk süreci (borulu ve PTY) sırları göremez,
+/// PTY kipinde boyut değiştirmeyi ve `Ctrl+C` (`\x03`) sinyalini uygular,
+/// kapanışta torun süreç bırakmaz.
+#[tokio::test]
+async fn kabuk_etkilesimli_borulu_ve_pty_yalitim_icinde_calisir_ve_temizlenir() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let k = kurgu();
+    yaz(&k.kok.join(".env"), "SIR=gizli\n");
+    let gizli = tarama::tara(&k.kok, &gizli_mi);
+    let alan = AlanBilgisi {
+        kok: k.kok.clone(),
+        gizli,
+        korumali: korumali(&k.kok),
+        git_dizinleri: Vec::new(),
+    };
+    let isaret_boru = format!("kalfa-boru-torun-{}", std::process::id());
+    let boru_istek = CalistirmaIstegi {
+        komut: KomutBicimi::Betik {
+            metin: format!(
+                "setsid sh -c 'trap \"\" TERM HUP; exec -a {isaret_boru} sleep 300' </dev/null >/dev/null 2>&1 & \
+                 if [ -t 0 ]; then echo KIP:TTY; else echo KIP:BORU; fi; \
+                 grep -q gizli .env 2>/dev/null && echo ENV:ACIK || echo ENV:KAPALI; \
+                 read satir; echo BORU_CEVAP:$satir; \
+                 while :; do sleep 0.1; done"
+            ),
+        },
+        dizin: k.kok.clone(),
+        ortam: kalfa_sandbox::ortam::uret(std::env::vars()),
+        ag: false,
+        ag_listesi: None,
+        alan: Some(alan.clone()),
+    };
+    let mut s_boru = k.y.baslat_kabuk_etkilesimli(&boru_istek, None).unwrap();
+    let mut boru_girdi = s_boru.girdi_al().unwrap();
+    let mut boru_cikti = s_boru.cikti_al().unwrap();
+    boru_girdi.write_all(b"selam\n").await.unwrap();
+    boru_girdi.flush().await.unwrap();
+    let mut boru_biriken = Vec::new();
+    let mut buf = [0u8; 1024];
+    let son = Instant::now() + Duration::from_secs(5);
+    while !String::from_utf8_lossy(&boru_biriken).contains("BORU_CEVAP:selam")
+        && Instant::now() < son
+    {
+        if let Ok(Ok(n)) =
+            tokio::time::timeout(Duration::from_millis(200), boru_cikti.read(&mut buf)).await
+        {
+            if n == 0 {
+                break;
+            }
+            boru_biriken.extend_from_slice(&buf[..n]);
+        }
+    }
+    let boru_metin = String::from_utf8_lossy(&boru_biriken).into_owned();
+    assert!(boru_metin.contains("KIP:BORU"), "{boru_metin}");
+    assert!(boru_metin.contains("ENV:KAPALI"), "{boru_metin}");
+    assert!(boru_metin.contains("BORU_CEVAP:selam"), "{boru_metin}");
+    assert!(!surecler(&isaret_boru).is_empty(), "borulu torun başlamalı");
+    let _ = s_boru.kapat().await.unwrap();
+    assert!(
+        surecler(&isaret_boru).is_empty(),
+        "borulu kapanışta torun kalmamalı"
+    );
+
+    let isaret = format!("kalfa-pty-torun-{}", std::process::id());
+    let betik = format!(
+        "setsid sh -c 'trap \"\" TERM HUP; exec -a {isaret} sleep 300' </dev/null >/dev/null 2>&1 & \
+         trap 'echo SINYAL:SIGINT; exit 42' INT; \
+         if [ -t 0 ]; then echo KIP:TTY; else echo KIP:BORU; fi; \
+         echo TERM:$TERM; \
+         grep -q gizli .env 2>/dev/null && echo ENV:ACIK || echo ENV:KAPALI; \
+         stty size 2>/dev/null | tr ' ' 'x' | sed 's/^/BOYUT:/'; \
+         read satir; \
+         stty size 2>/dev/null | tr ' ' 'x' | sed \"s/^/YENI:${{satir}}:/\"; \
+         while :; do sleep 0.1; done"
+    );
+    let istek = CalistirmaIstegi {
+        komut: KomutBicimi::Betik { metin: betik },
+        dizin: k.kok.clone(),
+        ortam: kalfa_sandbox::ortam::uret(std::env::vars()),
+        ag: false,
+        ag_listesi: None,
+        alan: Some(alan),
+    };
+    let boyut = kalfa_sandbox::TerminalBoyutu::yeni(100, 32).unwrap();
+    let mut s = k
+        .y
+        .baslat_kabuk_etkilesimli(&istek, Some(boyut))
+        .unwrap();
+    let mut girdi = s.girdi_al().unwrap();
+    let mut cikti = s.cikti_al().unwrap();
+    let mut biriken = Vec::new();
+    let son = Instant::now() + Duration::from_secs(5);
+    while !String::from_utf8_lossy(&biriken).contains("BOYUT:") && Instant::now() < son {
+        if let Ok(Ok(n)) =
+            tokio::time::timeout(Duration::from_millis(200), cikti.read(&mut buf)).await
+        {
+            if n == 0 {
+                break;
+            }
+            biriken.extend_from_slice(&buf[..n]);
+        }
+    }
+    let ilk = String::from_utf8_lossy(&biriken).into_owned();
+    assert!(ilk.contains("KIP:TTY"), "{ilk}");
+    assert!(ilk.contains("TERM:xterm-256color"), "{ilk}");
+    assert!(ilk.contains("ENV:KAPALI"), "{ilk}");
+    assert!(ilk.contains("BOYUT:32x100"), "{ilk}");
+
+    s.boyut_degistir(kalfa_sandbox::TerminalBoyutu::yeni(120, 40).unwrap())
+        .unwrap();
+    girdi.write_all(b"merhaba\n").await.unwrap();
+    girdi.flush().await.unwrap();
+    while !String::from_utf8_lossy(&biriken).contains("YENI:merhaba:40x120")
+        && Instant::now() < son
+    {
+        if let Ok(Ok(n)) =
+            tokio::time::timeout(Duration::from_millis(200), cikti.read(&mut buf)).await
+        {
+            if n == 0 {
+                break;
+            }
+            biriken.extend_from_slice(&buf[..n]);
+        }
+    }
+    assert!(!surecler(&isaret).is_empty(), "torun başlamalı");
+
+    // Ctrl+C (\x03) yalnız hedef komutun ön plan grubuna SIGINT gönderir.
+    girdi.write_all(&[0x03]).await.unwrap();
+    girdi.flush().await.unwrap();
+    while !String::from_utf8_lossy(&biriken).contains("SINYAL:SIGINT") && Instant::now() < son {
+        if let Ok(Ok(n)) =
+            tokio::time::timeout(Duration::from_millis(200), cikti.read(&mut buf)).await
+        {
+            if n == 0 {
+                break;
+            }
+            biriken.extend_from_slice(&buf[..n]);
+        }
+    }
+    assert_eq!(s.bitisi_bekle().await, Some(42));
+    let kapanis = s.kapat().await.unwrap();
+    assert_eq!(kapanis.cikis, Some(42));
+    assert!(surecler(&isaret).is_empty(), "kapanışta torun kalmamalı");
+}
 }

@@ -73,6 +73,37 @@ pub(crate) fn baslat_etkilesimli(komut: &mut Command) -> io::Result<(Child, Agac
     baslat(komut)
 }
 
+/// Yalıtımsız PTY kök süreci: `setsid()` ile yeni oturum ve süreç grubu
+/// (`pgid = pid`) açar, standart girdideki PTY slave tanımlayıcısını
+/// denetleyici terminal (`TIOCSCTTY`) yapar. `process_group(0)` ayrıca
+/// çağrılmaz: `setpgid(0, 0)` önce çalışırsa `setsid()` `EPERM` verir.
+#[cfg(unix)]
+pub(crate) fn baslat_etkilesimli_pty(komut: &mut Command) -> io::Result<(Child, Agac)> {
+    // SAFETY: `fork` ile `exec` arasında çocukta yalnızca async-signal-safe
+    // `prctl`, `setsid` ve `ioctl` çağrılır.
+    unsafe {
+        komut.pre_exec(|| {
+            #[cfg(target_os = "linux")]
+            if libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let cocuk = komut.spawn()?;
+    let grup = cocuk
+        .id()
+        .and_then(|p| i32::try_from(p).ok())
+        .ok_or_else(|| io::Error::other("sürecin kimliği okunamadı"))?;
+    Ok((cocuk, Agac { grup }))
+}
+
 impl Agac {
     /// Kalfa'nın kendisinin başlattığı ve işe atadığı ağaç (Windows kabı).
     #[cfg(windows)]
