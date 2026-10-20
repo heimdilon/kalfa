@@ -8,7 +8,9 @@ use kalfa_core::kayit::{KayitOgesi, OturumKaydi};
 use kalfa_core::kimlik::{CagriId, OturumId};
 use kalfa_core::kurtarma::kurtar;
 use kalfa_core::oturum::{OturumAyarlari, OturumHatasi, devam_et};
-use kalfa_core::protokol::{AracDurumu, BitisNedeni, Komut, Olay, SEMA_SURUMU, Zarf};
+use kalfa_core::protokol::{
+    AracDurumu, BitisNedeni, Komut, Olay, OtomatikSonuc, SEMA_SURUMU, Zarf,
+};
 use kalfa_core::test_destek::*;
 use kalfa_evren::tipler::{ChatMessage, FunctionCall, Role, ToolCall};
 
@@ -245,4 +247,61 @@ async fn olmayan_kayittan_devam_edilemez() {
         test_baglami(s, vec![], sanal_siniflandirici()),
     );
     assert!(matches!(sonuc, Err(OturumHatasi::Kayit(_))));
+}
+
+#[test]
+fn otomatik_kip_kurtarmada_siki_acilir_ve_otomatik_karar_mesajlari_degistirmez() {
+    let oturum = OturumId::yeni();
+    let z = |sira, yuk| Zarf {
+        sema: SEMA_SURUMU,
+        oturum,
+        tur: None,
+        sira,
+        yuk,
+    };
+    let kayitlar = vec![
+        z(
+            1,
+            KayitOgesi::OturumAcildi {
+                model: "glm-5.3".into(),
+                kip: Kip::Otomatik,
+                calisma_alani: None,
+            },
+        ),
+        z(
+            2,
+            KayitOgesi::Mesaj {
+                mesaj: ChatMessage::user("merhaba"),
+                kaynak: None,
+            },
+        ),
+        z(
+            3,
+            KayitOgesi::OtomatikKarar {
+                cagri: CagriId::yeni(),
+                arac: "kabuk".into(),
+                aciklama: "cargo test".into(),
+                sonuc: OtomatikSonuc::Izin,
+                risk: Some("yok".into()),
+                olasilik: Some(0.95),
+            },
+        ),
+    ];
+    let durum = kurtar(&kayitlar).unwrap();
+    assert_eq!(durum.kip, Kip::Siki);
+    assert_eq!(durum.mesajlar.len(), 1);
+    assert_eq!(durum.mesajlar[0].content.as_deref(), Some("merhaba"));
+
+    let degisen = vec![
+        z(
+            1,
+            KayitOgesi::OturumAcildi {
+                model: "glm-5.3".into(),
+                kip: Kip::Inceleme,
+                calisma_alani: None,
+            },
+        ),
+        z(2, KayitOgesi::KipDegisti { kip: Kip::Otomatik }),
+    ];
+    assert_eq!(kurtar(&degisen).unwrap().kip, Kip::Siki);
 }
