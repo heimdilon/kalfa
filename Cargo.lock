@@ -2847,9 +2847,13 @@ name = "kalfa-mcp"
 version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
+ "bytes",
+ "futures-util",
  "kalfa-core",
  "kalfa-sandbox",
+ "reqwest",
  "rmcp",
+ "rustls",
  "same-file",
  "serde_json",
  "sha2 0.11.0",
