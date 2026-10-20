@@ -440,6 +440,8 @@ pub fn uzak_arac_sema_bayt_hesapla(sunum: &McpAracSunumu) -> usize {
 
 #[derive(Clone)]
 struct YukluUzakArac {
+    yuklenen_tarif: McpTarifi,
+    yuklenen_d: McpAracTanimOzeti,
     sema_bayt: usize,
     kaynak_araci: KaynakAraci,
 }
@@ -559,6 +561,8 @@ impl UzakAracKaynagi {
             aday_harita.insert(
                 ad.clone(),
                 YukluUzakArac {
+                    yuklenen_tarif: kayit.tarif,
+                    yuklenen_d: kayit.uzak_d,
                     sema_bayt: kayit.sema_bayt,
                     kaynak_araci,
                 },
@@ -623,12 +627,23 @@ impl UzakAracKaynagi {
 
 impl AracKaynagi for UzakAracKaynagi {
     fn hazir_araclar(&self) -> Arc<[KaynakAraci]> {
-        self.durum
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .hazir
-            .clone()
-            .unwrap_or_else(|| Arc::from([]))
+        let mut d = self.durum.lock().unwrap_or_else(|e| e.into_inner());
+        let onceki_uzunluk = d.yuklenenler.len();
+        d.yuklenenler.retain(|ad, yuklu| {
+            self.katalog.kayit_bul(ad).is_some_and(|guncel| {
+                guncel.tarif == yuklu.yuklenen_tarif && guncel.uzak_d == yuklu.yuklenen_d
+            })
+        });
+        if d.yuklenenler.len() != onceki_uzunluk {
+            d.kullanilan_sema_bayt = d.yuklenenler.values().map(|y| y.sema_bayt).sum();
+            let hazir: Vec<KaynakAraci> = d
+                .yuklenenler
+                .values()
+                .map(|y| y.kaynak_araci.clone())
+                .collect();
+            d.hazir = Some(hazir.into());
+        }
+        d.hazir.clone().unwrap_or_else(|| Arc::from([]))
     }
 
     fn denetim_islerini_al(&self, _sahip: AracDenetimSahibi) -> Vec<AracDenetimIsi> {

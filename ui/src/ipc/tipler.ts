@@ -899,3 +899,86 @@ export interface McpIceAktarmaOnizlemesi {
   sunucular: McpIceAktarmaSunucusu[];
   atlanan_url_sunuculari: { ad: string; neden: string }[];
 }
+
+
+// ── Uzak MCP sunucuları (Yetenek-04 Görev 6) ───────────────────────────────
+// Uzak sunucular kullanıcının bilgisayarında süreç başlatmaz; yerel AppContainer
+// veya bubblewrap yalıtımı rozeti taşımaz. Sırlar arayüze asla dönmez.
+
+export type UzakMcpRozeti = 'uzak_streamable_http';
+
+export type UzakMcpDurumEtiketi =
+  | 'bagli_degil'
+  | 'baglaniyor'
+  | 'bagli'
+  | 'kimlik_gerekli'
+  | 'sonucu_belirsiz'
+  | 'hata';
+
+export type UzakMcpYetkiEtiketi = 'yetkisiz' | 'sabit_baslik' | 'oauth';
+
+export interface UzakMcpSunucuOzeti {
+  ad: string;
+  etkin: boolean;
+  uc_url: string;
+  yetki_turu: UzakMcpYetkiEtiketi;
+  kimlik_bagli: boolean;
+}
+
+export interface UzakMcpSunucuSatiri {
+  ozet: UzakMcpSunucuOzeti;
+  rozet: UzakMcpRozeti;
+  durum: UzakMcpDurumEtiketi;
+  protokol_surumu: string | null;
+  arac_sayisi: number;
+  reddedilen_arac_sayisi: number;
+  son_hata: string | null;
+  belirsiz_yazma_uyarisi: string | null;
+}
+
+export type UzakMcpYetkiFormGirdisi =
+  | { tur: 'yetkisiz' }
+  | { tur: 'yeni_sabit_baslik'; baslik_adi: string; deger: string }
+  | { tur: 'korunan_sabit_baslik'; baslik_adi: string; kimlik: string }
+  | {
+      tur: 'oauth';
+      istemci_kimligi?: string | null;
+      kapsamlar?: string[];
+      kaynak_url?: string | null;
+      korunan_yetki_kimligi?: string | null;
+    };
+
+export interface UzakMcpSunucuFormu {
+  ad: string;
+  etkin?: boolean;
+  uc_url: string;
+  yetki: UzakMcpYetkiFormGirdisi;
+  baslatma_zamani_asimi_sn: number;
+  cagri_zamani_asimi_sn: number;
+}
+
+export interface UzakMcpSunucuAyari {
+  ad: string;
+  etkin: boolean;
+  uc_url: string;
+  yetki_turu: UzakMcpYetkiEtiketi;
+  sabit_baslik_adi?: string;
+  gizli_kimlik?: string;
+  oauth_istemci_kimligi?: string;
+  oauth_kapsamlar: string[];
+  oauth_kaynak_url?: string;
+  kimlik_bagli: boolean;
+  baslatma_zamani_asimi_sn: number;
+  cagri_zamani_asimi_sn: number;
+}
+
+export interface UzakMcpSunucuAyrintisi {
+  ayrinti: UzakMcpSunucuAyari;
+  rozet: UzakMcpRozeti;
+  durum: UzakMcpDurumEtiketi;
+  protokol_surumu: string | null;
+  araclar: string[];
+  reddedilenler: string[];
+  son_hata: string | null;
+  belirsiz_yazma_uyarisi: string | null;
+}

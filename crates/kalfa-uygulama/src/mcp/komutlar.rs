@@ -30,6 +30,10 @@ use crate::mcp::denetim::{DenetlenmisMcpAracOzeti, McpTanimDenetleyicisi};
 use crate::mcp::kasa::GizliKimlik;
 use crate::mcp::surec::McpSunucuDurumu;
 use crate::mcp::tanimlar::{IceAktarmaOnizlemeDto, KayitHatasi, SeciliKomutBilgisi, TaslakKimligi};
+pub use crate::mcp::uzak_yonetici::{
+    UzakMcpDurumEtiketi, UzakMcpRozeti, UzakMcpSunucuAyrintisiDto, UzakMcpSunucuFormu,
+    UzakMcpSunucuSatiriDto, UzakMcpYetkiFormGirdisi, UzakMcpYoneticisi,
+};
 use crate::mcp::yonetici::{McpBaslatmaKarti, McpYoneticisi};
 use crate::uygulama::Uygulama;
 
