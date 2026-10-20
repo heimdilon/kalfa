@@ -2770,7 +2770,7 @@ async fn tek_calistir(
     } else {
         Some(tokio::select! {
             k = async {
-                if p.hazirlik.mcp.is_some() {
+                if p.hazirlik.mcp.is_some() || p.hazirlik.kabuk.is_some() {
                     kilitler
                         .sahipli_al(&p.hazirlik.okunan, &yazilan, p.hazirlik.tum_calisma_alani)
                         .await

@@ -1045,7 +1045,6 @@ export interface McpIceAktarmaOnizlemesi {
   atlanan_url_sunuculari: { ad: string; neden: string }[];
 }
 
-
 // ── Uzak MCP sunucuları (Yetenek-04 Görev 6) ───────────────────────────────
 // Uzak sunucular kullanıcının bilgisayarında süreç başlatmaz; yerel AppContainer
 // veya bubblewrap yalıtımı rozeti taşımaz. Sırlar arayüze asla dönmez.
@@ -1126,4 +1125,39 @@ export interface UzakMcpSunucuAyrintisi {
   reddedilenler: string[];
   son_hata: string | null;
   belirsiz_yazma_uyarisi: string | null;
+}
+
+// ── Arka plan süreçleri ve terminaller (Hat 03) ───────────────────────────
+
+export type IsKipi =
+  | { tur: 'borulu' }
+  | { tur: 'terminal'; boyut: { satir: number; sutun: number } };
+
+export type IsDurumu =
+  | { durum: 'calisiyor' }
+  | { durum: 'durduruluyor' }
+  | { durum: 'bitti'; cikis_kodu: number | null; sure_ms: number; zaman_asimi: boolean }
+  | { durum: 'sonucu_bilinmiyor'; neden: string };
+
+export interface IsOzeti {
+  is_id: string;
+  oturum: OturumId;
+  gosterim: string;
+  kip: IsKipi;
+  durum: IsDurumu;
+  toplam_bayt: number;
+  tasti: boolean;
+  uyarilar: string[];
+}
+
+export interface IsOkumaSonucu {
+  is_id: string;
+  gosterim: string;
+  kip: IsKipi;
+  durum: IsDurumu;
+  cikti: string;
+  yeni_imlec: number;
+  toplam_bayt: number;
+  tasti: boolean;
+  uyarilar: string[];
 }

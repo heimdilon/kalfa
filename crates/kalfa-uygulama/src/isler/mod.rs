@@ -295,6 +295,10 @@ impl SonDenetimKancasi for BosSonDenetim {
 pub struct IsBaslatma {
     pub oturum: OturumId,
     pub gosterim: String,
+    pub dizin: String,
+    pub ag: bool,
+    pub ag_hostlari: Vec<String>,
+    pub yalitimli: bool,
     pub kip: IsKipi,
     pub kilit: KilitSeti,
     pub son_denetim: Arc<dyn SonDenetimKancasi>,
@@ -312,6 +316,10 @@ impl IsBaslatma {
         Self {
             oturum,
             gosterim: gosterim.into(),
+            dizin: ".".to_string(),
+            ag: false,
+            ag_hostlari: Vec::new(),
+            yalitimli: false,
             kip,
             kilit,
             son_denetim,
@@ -466,7 +474,9 @@ impl IsKaydi {
 /// Uygulama genelindeki arka plan işleri ve etkileşimli terminallerin yöneticisi.
 pub struct IsYoneticisi {
     kayitlar: Mutex<HashMap<IsId, Arc<IsKaydi>>>,
+    kurtarilanlar: Mutex<HashMap<IsId, IsOzeti>>,
     kapanan_oturumlar: Mutex<HashSet<OturumId>>,
+    kayit_dizini: Option<std::path::PathBuf>,
     cikti_siniri: usize,
     girdi_yazma_suresi: Duration,
 }
@@ -481,7 +491,22 @@ impl IsYoneticisi {
     pub fn yeni() -> Self {
         Self {
             kayitlar: Mutex::new(HashMap::new()),
+            kurtarilanlar: Mutex::new(HashMap::new()),
             kapanan_oturumlar: Mutex::new(HashSet::new()),
+            kayit_dizini: None,
+            cikti_siniri: AZAMI_IS_CIKTISI_BAYT,
+            girdi_yazma_suresi: GIRDI_YAZMA_SURESI,
+        }
+    }
+
+    /// Oturum iş olaylarını (`<oturum>.isler.jsonl`) diske kaydeden ve
+    /// yeniden açılışta çökme kurtarması yapan yönetici.
+    pub fn yeni_kayitli(kayit_dizini: std::path::PathBuf) -> Self {
+        Self {
+            kayitlar: Mutex::new(HashMap::new()),
+            kurtarilanlar: Mutex::new(HashMap::new()),
+            kapanan_oturumlar: Mutex::new(HashSet::new()),
+            kayit_dizini: Some(kayit_dizini),
             cikti_siniri: AZAMI_IS_CIKTISI_BAYT,
             girdi_yazma_suresi: GIRDI_YAZMA_SURESI,
         }
@@ -491,9 +516,84 @@ impl IsYoneticisi {
     fn yeni_sinirli(cikti_siniri: usize, girdi_yazma_suresi: Duration) -> Self {
         Self {
             kayitlar: Mutex::new(HashMap::new()),
+            kurtarilanlar: Mutex::new(HashMap::new()),
             kapanan_oturumlar: Mutex::new(HashSet::new()),
+            kayit_dizini: None,
             cikti_siniri,
             girdi_yazma_suresi,
+        }
+    }
+
+    fn is_kayit_yolu(dizin: &std::path::Path, oturum: OturumId) -> std::path::PathBuf {
+        dizin.join(format!("{oturum}.isler.jsonl"))
+    }
+
+    fn diske_kayit_olayi_yaz(dizin: &std::path::Path, oturum: OturumId, olay: &IsKayitOlayi) {
+        use std::io::Write;
+        let _ = std::fs::create_dir_all(dizin);
+        let yol = Self::is_kayit_yolu(dizin, oturum);
+        if let Ok(mut satir) = serde_json::to_vec(olay) {
+            satir.push(b'\n');
+            if let Ok(mut dosya) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(yol)
+            {
+                let _ = dosya.write_all(&satir);
+                let _ = dosya.flush();
+            }
+        }
+    }
+
+    /// Oturum yeniden açıldığında kapanmış oturum işaretini kaldırır.
+    pub fn oturumu_etkinlestir(&self, oturum: OturumId) {
+        self.kapanan_oturumlar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .remove(&oturum);
+    }
+
+    /// Oturumun diskteki `<oturum>.isler.jsonl` kaydından geçmiş iş özetlerini
+    /// kurtarır (`isler_kayittan_kurtar`). Kapanmamış işler eski PID'lere sinyal
+    /// göndermeden `SonucuBilinmiyor` durumuna çekilir.
+    pub fn oturumu_kurtar(&self, oturum: OturumId) -> Vec<IsOzeti> {
+        let Some(dizin) = &self.kayit_dizini else {
+            return Vec::new();
+        };
+        let yol = Self::is_kayit_yolu(dizin, oturum);
+        let Ok(icerik) = std::fs::read_to_string(&yol) else {
+            return Vec::new();
+        };
+        let satirlar: Vec<&str> = icerik.lines().collect();
+        let kurtarilan = isler_kayittan_kurtar(oturum, satirlar);
+        let etkin_kayitlar: HashSet<IsId> = self
+            .kayitlar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .keys()
+            .cloned()
+            .collect();
+        let mut tablo = self.kurtarilanlar.lock().unwrap_or_else(|z| z.into_inner());
+        for ozet in &kurtarilan {
+            if !etkin_kayitlar.contains(&ozet.is_id) {
+                tablo.insert(ozet.is_id.clone(), ozet.clone());
+            }
+        }
+        kurtarilan
+    }
+
+    /// Oturum silindiğinde iş kayıt dosyasını ve kurtarılmış özetleri temizler.
+    pub fn oturum_kaydini_sil(&self, oturum: OturumId) {
+        self.kayitlar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .retain(|_, k| k.oturum != oturum);
+        self.kurtarilanlar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .retain(|_, o| o.oturum != oturum);
+        if let Some(dizin) = &self.kayit_dizini {
+            let _ = std::fs::remove_file(Self::is_kayit_yolu(dizin, oturum));
         }
     }
 
@@ -527,6 +627,16 @@ impl IsYoneticisi {
         let terminal = surec.terminal_denetimi();
         let cikti_tamponu = Arc::new(Mutex::new(CiktiTamponu::yeni(self.cikti_siniri)));
 
+        let baslat_olayi = IsKayitOlayi::IsBasladi {
+            is_id: is_id.clone(),
+            oturum: baslatma.oturum,
+            komut: baslatma.gosterim.clone(),
+            dizin: baslatma.dizin,
+            ag: baslatma.ag,
+            ag_hostlari: baslatma.ag_hostlari,
+            yalitimli: baslatma.yalitimli,
+            kip: baslatma.kip,
+        };
         let kayit = Arc::new(IsKaydi {
             is_id: is_id.clone(),
             oturum: baslatma.oturum,
@@ -576,6 +686,10 @@ impl IsYoneticisi {
             tablo.insert(is_id.clone(), kayit.clone());
         }
 
+        if let Some(dizin) = &self.kayit_dizini {
+            Self::diske_kayit_olayi_yaz(dizin, baslatma.oturum, &baslat_olayi);
+        }
+
         let cikti_gorevi = Self::cikti_okuma_baslat(cikti_okuyucu, hata_okuyucu, cikti_tamponu);
         Self::yasam_gorevi_baslat(
             kayit,
@@ -583,6 +697,7 @@ impl IsYoneticisi {
             cikti_gorevi,
             baslatma.son_denetim,
             baslatma.omur,
+            self.kayit_dizini.clone(),
         );
         Ok(is_id)
     }
@@ -661,14 +776,15 @@ impl IsYoneticisi {
         mut cikti_gorevi: tokio::task::JoinHandle<()>,
         son_denetim: Arc<dyn SonDenetimKancasi>,
         omur: Duration,
+        kayit_dizini: Option<std::path::PathBuf>,
     ) {
         tokio::spawn(async move {
             let baslangic = Instant::now();
             let son_an = tokio::time::Instant::now() + omur;
-            let zaman_asimi = tokio::select! {
-                _ = surec.bitisi_bekle() => false,
-                _ = kayit.durdur_bildirimi.notified() => false,
-                _ = tokio::time::sleep_until(son_an) => true,
+            let (zaman_asimi, durduruldu) = tokio::select! {
+                _ = surec.bitisi_bekle() => (false, false),
+                _ = kayit.durdur_bildirimi.notified() => (false, true),
+                _ = tokio::time::sleep_until(son_an) => (true, false),
             };
 
             {
@@ -708,7 +824,7 @@ impl IsYoneticisi {
             }
 
             let sure_ms = u64::try_from(baslangic.elapsed().as_millis()).unwrap_or(u64::MAX);
-            match kapat_sonucu {
+            let kayit_olayi = match kapat_sonucu {
                 Ok(kapanis) => match son_denetim.denetle_ve_bitir().await {
                     Ok(denetim) if denetim.tarama_tam && !denetim.karantina_basarisiz => {
                         let mut d = kayit.durum_verisi.lock().unwrap_or_else(|z| z.into_inner());
@@ -721,6 +837,19 @@ impl IsYoneticisi {
                         // Yalnız ağaç doğrulandıktan ve son denetim temiz bittikten sonra
                         // çalışma alanı kilidi serbest bırakılır!
                         let _ = d.kilit.take();
+                        if durduruldu && kapanis.cikis.is_none() {
+                            IsKayitOlayi::IsIptalEdildi {
+                                is_id: kayit.is_id.clone(),
+                                sure_ms,
+                            }
+                        } else {
+                            IsKayitOlayi::IsBitti {
+                                is_id: kayit.is_id.clone(),
+                                cikis_kodu: kapanis.cikis,
+                                sure_ms,
+                                zaman_asimi,
+                            }
+                        }
                     }
                     Ok(denetim) => {
                         let mut d = kayit.durum_verisi.lock().unwrap_or_else(|z| z.into_inner());
@@ -731,21 +860,42 @@ impl IsYoneticisi {
                         } else {
                             denetim.uyarilar.join("; ")
                         };
-                        d.durum = IsDurumu::SonucuBilinmiyor { neden };
+                        d.durum = IsDurumu::SonucuBilinmiyor {
+                            neden: neden.clone(),
+                        };
                         // Karantina başarısızsa veya tarama eksikse kilit karantinada kalır.
+                        IsKayitOlayi::IsSonucuBilinmiyor {
+                            is_id: kayit.is_id.clone(),
+                            neden,
+                        }
                     }
                     Err(hata) => {
                         let mut d = kayit.durum_verisi.lock().unwrap_or_else(|z| z.into_inner());
-                        d.durum = IsDurumu::SonucuBilinmiyor { neden: hata };
+                        d.durum = IsDurumu::SonucuBilinmiyor {
+                            neden: hata.clone(),
+                        };
+                        IsKayitOlayi::IsSonucuBilinmiyor {
+                            is_id: kayit.is_id.clone(),
+                            neden: hata,
+                        }
                     }
                 },
                 Err(hata) => {
                     // Süreç ağacı doğrulamayla kapanmadıysa KilitSeti serbest bırakılmaz!
+                    let neden = format!("Süreç ağacı kapatılamadı: {hata}");
                     let mut d = kayit.durum_verisi.lock().unwrap_or_else(|z| z.into_inner());
                     d.durum = IsDurumu::SonucuBilinmiyor {
-                        neden: format!("Süreç ağacı kapatılamadı: {hata}"),
+                        neden: neden.clone(),
                     };
+                    IsKayitOlayi::IsSonucuBilinmiyor {
+                        is_id: kayit.is_id.clone(),
+                        neden,
+                    }
                 }
+            };
+
+            if let Some(dizin) = &kayit_dizini {
+                Self::diske_kayit_olayi_yaz(dizin, kayit.oturum, &kayit_olayi);
             }
 
             kayit.bitis_bildirimi.notify_waiters();
@@ -754,17 +904,30 @@ impl IsYoneticisi {
 
     fn yetkili_kayit(&self, oturum: OturumId, is_id_metin: &str) -> Result<Arc<IsKaydi>, IsHatasi> {
         let is_id = IsId::coz(is_id_metin)?;
-        let kayit = self
+        if let Some(kayit) = self
             .kayitlar
             .lock()
             .unwrap_or_else(|z| z.into_inner())
             .get(&is_id)
             .cloned()
-            .ok_or(IsHatasi::IsBulunamadi(is_id))?;
-        if kayit.oturum != oturum {
-            return Err(IsHatasi::YetkisizOturum);
+        {
+            if kayit.oturum != oturum {
+                return Err(IsHatasi::YetkisizOturum);
+            }
+            return Ok(kayit);
         }
-        Ok(kayit)
+        if let Some(kurtarilan) = self
+            .kurtarilanlar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .get(&is_id)
+        {
+            if kurtarilan.oturum != oturum {
+                return Err(IsHatasi::YetkisizOturum);
+            }
+            return Err(IsHatasi::IsKapandi);
+        }
+        Err(IsHatasi::IsBulunamadi(is_id))
     }
 
     /// İmleçten itibaren yeni çıktıyı ve güncel iş durumunu okur.
@@ -775,8 +938,42 @@ impl IsYoneticisi {
         is_id_metin: &str,
         imlec: usize,
     ) -> Result<IsOkumaSonucu, IsHatasi> {
-        let kayit = self.yetkili_kayit(oturum, is_id_metin)?;
-        Ok(kayit.oku(imlec))
+        let is_id = IsId::coz(is_id_metin)?;
+        if let Some(kayit) = self
+            .kayitlar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .get(&is_id)
+            .cloned()
+        {
+            if kayit.oturum != oturum {
+                return Err(IsHatasi::YetkisizOturum);
+            }
+            return Ok(kayit.oku(imlec));
+        }
+        if let Some(ozet) = self
+            .kurtarilanlar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .get(&is_id)
+            .cloned()
+        {
+            if ozet.oturum != oturum {
+                return Err(IsHatasi::YetkisizOturum);
+            }
+            return Ok(IsOkumaSonucu {
+                is_id: ozet.is_id,
+                gosterim: ozet.gosterim,
+                kip: ozet.kip,
+                durum: ozet.durum,
+                cikti: String::new(),
+                yeni_imlec: 0,
+                toplam_bayt: ozet.toplam_bayt,
+                tasti: ozet.tasti,
+                uyarilar: ozet.uyarilar,
+            });
+        }
+        Err(IsHatasi::IsBulunamadi(is_id))
     }
 
     /// İşin standart girdisine veri yazar ve isteğe bağlı olarak EOF (`stdin` kapanışı)
@@ -870,8 +1067,37 @@ impl IsYoneticisi {
     /// İşi ve bütün süreç ağacını durdurur, son dosya denetimini bekler ve
     /// güncel durumu döner. Çift çağrılar tek kapanışı paylaşır.
     pub async fn durdur(&self, oturum: OturumId, is_id_metin: &str) -> Result<IsOzeti, IsHatasi> {
-        let kayit = self.yetkili_kayit(oturum, is_id_metin)?;
-        Self::kaydi_durdur_ve_bekle(&kayit).await
+        let is_id = IsId::coz(is_id_metin)?;
+        let kayit = self
+            .kayitlar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .get(&is_id)
+            .cloned();
+        if let Some(kayit) = kayit {
+            if kayit.oturum != oturum {
+                return Err(IsHatasi::YetkisizOturum);
+            }
+            return Self::kaydi_durdur_ve_bekle(&kayit).await;
+        }
+        let kurtarilan = self
+            .kurtarilanlar
+            .lock()
+            .unwrap_or_else(|z| z.into_inner())
+            .get(&is_id)
+            .cloned();
+        if let Some(ozet) = kurtarilan {
+            if ozet.oturum != oturum {
+                return Err(IsHatasi::YetkisizOturum);
+            }
+            return match &ozet.durum {
+                IsDurumu::SonucuBilinmiyor { neden } => {
+                    Err(IsHatasi::KapanisBelirsiz(neden.clone()))
+                }
+                _ => Ok(ozet),
+            };
+        }
+        Err(IsHatasi::IsBulunamadi(is_id))
     }
 
     async fn kaydi_durdur_ve_bekle(kayit: &Arc<IsKaydi>) -> Result<IsOzeti, IsHatasi> {
@@ -942,6 +1168,12 @@ impl IsYoneticisi {
             .filter(|k| k.oturum == oturum)
             .map(|k| k.ozet())
             .collect();
+        let kurtarilanlar = self.kurtarilanlar.lock().unwrap_or_else(|z| z.into_inner());
+        for (id, ozet) in kurtarilanlar.iter() {
+            if ozet.oturum == oturum && !tablo.contains_key(id) {
+                liste.push(ozet.clone());
+            }
+        }
         liste.sort_by(|a, b| a.is_id.cmp(&b.is_id));
         liste
     }
@@ -1164,6 +1396,10 @@ impl kalfa_tools::kabuk::isler::ArkaPlanIsBaglantisi for OturumIsBaglantisi {
             kilit,
             son_denetim.clone(),
         );
+        baslatma.dizin = meta.dizin.clone();
+        baslatma.ag = meta.ag;
+        baslatma.ag_hostlari = meta.ag_hostlari.clone();
+        baslatma.yalitimli = meta.yalitimli;
         baslatma.omur = meta.sure.min(AZAMI_IS_OMRU);
         match self
             .yonetici
@@ -1209,11 +1445,27 @@ impl kalfa_tools::kabuk::isler::ArkaPlanIsBaglantisi for OturumIsBaglantisi {
         &self,
         is_id: &str,
     ) -> Result<kalfa_tools::kabuk::isler::ArkaPlanIsBilgisi, kalfa_core::arac::AracHatasi> {
-        let kayit = self
-            .yonetici
-            .yetkili_kayit(self.oturum, is_id)
-            .map_err(is_hatasini_arac_hatasina_cevir)?;
-        let ozet = kayit.ozet();
+        let ozet = match self.yonetici.yetkili_kayit(self.oturum, is_id) {
+            Ok(kayit) => kayit.ozet(),
+            Err(IsHatasi::IsBulunamadi(kimlik)) => {
+                let kurtarilan = self
+                    .yonetici
+                    .kurtarilanlar
+                    .lock()
+                    .unwrap_or_else(|z| z.into_inner())
+                    .get(&kimlik)
+                    .cloned();
+                match kurtarilan {
+                    Some(ozet) if ozet.oturum == self.oturum => ozet,
+                    _ => {
+                        return Err(is_hatasini_arac_hatasina_cevir(IsHatasi::IsBulunamadi(
+                            kimlik,
+                        )));
+                    }
+                }
+            }
+            Err(hata) => return Err(is_hatasini_arac_hatasina_cevir(hata)),
+        };
         let tarif = self
             .tarifler
             .lock()

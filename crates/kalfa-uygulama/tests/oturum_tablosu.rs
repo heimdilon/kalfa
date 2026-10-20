@@ -1393,3 +1393,149 @@ async fn hat04_uzak_mcp_arac_ara_ve_web_getir_kaynakli_yanit_sozlesmesi() {
     assert!(web_ham.icerik.contains("Başlık: Tokio MPSC Kanal Kılavuzu"));
     assert!(web_ham.icerik.contains("Sınırlı kanal geri basınç sağlar."));
 }
+
+#[tokio::test]
+async fn uygulamada_arka_plan_isi_baslar_okunur_girdi_alir_durdurulur_ve_kurtarilir() {
+    use kalfa_core::protokol::OnayKarari;
+    use kalfa_uygulama::isler::{IsDurumu, IsId, IsKayitOlayi, IsKipi};
+    use kalfa_uygulama::sozlesme::OnayGirdisi;
+
+    #[cfg(windows)]
+    let kabuk_arg = serde_json::json!({
+        "program": "powershell.exe",
+        "argumanlar": [
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            "[Console]::Out.WriteLine('HAZIR'); [Console]::Out.Flush(); $satir = [Console]::In.ReadLine(); [Console]::Out.WriteLine(\"GIRDI:$satir\"); [Console]::Out.Flush(); Start-Sleep -Seconds 30"
+        ],
+        "arka_plan": true
+    });
+    #[cfg(unix)]
+    let kabuk_arg = serde_json::json!({
+        "program": "sh",
+        "argumanlar": [
+            "-c",
+            "echo HAZIR; IFS= read -r satir; echo \"GIRDI:$satir\"; sleep 30"
+        ],
+        "arka_plan": true
+    });
+
+    let o = ortam(vec![
+        SahteYanit::arac("kabuk", kabuk_arg),
+        SahteYanit::metin("Arka plan işi başlatıldı."),
+    ])
+    .await;
+
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .mesaj_gonder(oturum, "arka planda başlat".into())
+        .await
+        .unwrap();
+
+    // OnayGerekiyor olayını bekle ve onayla:
+    let mut bekleyen_onay = None;
+    while bekleyen_onay.is_none() {
+        let msg = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("onay olayı 5 saniyede gelmedi")
+            .expect("kanal kapandı");
+        if let KanalMesaji::Olaylar { no, zarflar } = msg {
+            o.t.uygulama.paketi_isledim(oturum, no).unwrap();
+            for z in zarflar {
+                if let Olay::OnayGerekiyor { ogeler, .. } = z.yuk {
+                    bekleyen_onay = Some(ogeler);
+                }
+            }
+        }
+    }
+    let ogeler = bekleyen_onay.unwrap();
+    o.t.iletisim.onay_ver(true);
+    let kararlar: Vec<OnayGirdisi> = ogeler
+        .iter()
+        .map(|oge| OnayGirdisi {
+            cagri: oge.cagri,
+            karar: OnayKarari::Onayla,
+            muhur: oge.muhur.clone(),
+            kisayol: false,
+        })
+        .collect();
+    o.t.uygulama.arac_onayi(oturum, kararlar).await.unwrap();
+
+    olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+
+    let isler = o.t.uygulama.oturum_isleri(oturum).unwrap();
+    assert_eq!(isler.len(), 1);
+    let is_id = isler[0].is_id.as_str().to_string();
+    assert!(matches!(isler[0].durum, IsDurumu::Calisiyor));
+
+    // HAZIR çıktısını bekle:
+    let mut cikti = String::new();
+    let mut imlec = 0;
+    for _ in 0..50 {
+        let okuma = o.t.uygulama.is_oku(oturum, is_id.clone(), imlec).unwrap();
+        cikti.push_str(&okuma.cikti);
+        imlec = okuma.yeni_imlec;
+        if cikti.contains("HAZIR") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(cikti.contains("HAZIR"), "çıktı: {cikti}");
+
+    // Kullanıcı girdisi gönder ve GIRDI:merhaba çıktısını doğrula:
+    o.t.uygulama
+        .is_girdi(oturum, is_id.clone(), "merhaba\n".into(), false)
+        .await
+        .unwrap();
+
+    for _ in 0..50 {
+        let okuma = o.t.uygulama.is_oku(oturum, is_id.clone(), imlec).unwrap();
+        cikti.push_str(&okuma.cikti);
+        imlec = okuma.yeni_imlec;
+        if cikti.contains("GIRDI:merhaba") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(cikti.contains("GIRDI:merhaba"), "çıktı: {cikti}");
+
+    // İşi durdur ve Bitti durumuna geçtiğini doğrula:
+    let durdurulan = o.t.uygulama.is_durdur(oturum, is_id.clone()).await.unwrap();
+    assert!(matches!(durdurulan.durum, IsDurumu::Bitti { .. }));
+
+    // Çökme sonrası yarım kalan bir iş kaydını (.isler.jsonl) simüle et,
+    // yeni Uygulama örneğiyle oturumu yeniden aç ve SonucuBilinmiyor olarak kurtarıldığını doğrula:
+    o.t.uygulama.oturumu_kapat(oturum).await.unwrap();
+    let yarim_id = IsId::yeni();
+    let yarim_olay = serde_json::to_string(&IsKayitOlayi::IsBasladi {
+        is_id: yarim_id.clone(),
+        oturum,
+        komut: "sleep 99".into(),
+        dizin: ".".into(),
+        ag: false,
+        ag_hostlari: Vec::new(),
+        yalitimli: false,
+        kip: IsKipi::Borulu,
+    })
+    .unwrap();
+    let is_kayit_dosyasi = oturum_dizini(o.veri.path()).join(format!("{oturum}.isler.jsonl"));
+    let mut mevcut = std::fs::read_to_string(&is_kayit_dosyasi).unwrap_or_default();
+    mevcut.push_str(&yarim_olay);
+    mevcut.push('\n');
+    std::fs::write(&is_kayit_dosyasi, mevcut).unwrap();
+
+    let yeni_saglayici = SahteSaglayici::yeni(Vec::new());
+    yeni_saglayici.sart_kabul(1).await.unwrap();
+    let yeni_t = test_uygulamasi(o.veri.path(), yeni_saglayici, Some("evren_llm_a"));
+    yeni_t.uygulama.baslat().await;
+    yeni_t.uygulama.oturum_ac(oturum).await.unwrap();
+
+    let kurtarilan_isler = yeni_t.uygulama.oturum_isleri(oturum).unwrap();
+    let yarim = kurtarilan_isler
+        .iter()
+        .find(|i| i.is_id == yarim_id)
+        .expect("yarım kalan iş kurtarılmalı");
+    assert!(matches!(yarim.durum, IsDurumu::SonucuBilinmiyor { .. }));
+}

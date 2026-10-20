@@ -4,7 +4,7 @@
 // denetler).
 
 /// Ana pencerenin komutları.
-pub const ANA_PENCERE_KOMUTLARI: [&str; 93] = [
+pub const ANA_PENCERE_KOMUTLARI: [&str; 98] = [
     "uygulama_durumu",
     "modelleri_yenile",
     "oturumlari_listele",
@@ -98,6 +98,11 @@ pub const ANA_PENCERE_KOMUTLARI: [&str; 93] = [
     "calisma_alani_ozeti",
     "calisma_alani_dizini",
     "calisma_alani_dosyasi",
+    "oturum_isleri",
+    "is_oku",
+    "is_girdi",
+    "is_durdur",
+    "is_boyutlandir",
 ];
 
 /// Şart penceresinin komutları. Şart kabulüne giden tek yol buradaki

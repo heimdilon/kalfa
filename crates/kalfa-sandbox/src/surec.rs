@@ -783,16 +783,17 @@ pub(crate) fn terminal_ortami_ekle(ortam: &mut Vec<(String, String)>) {
 }
 
 #[cfg(unix)]
-fn kokten_ayir(
-    kok: agac::EtkilesimliKok,
-) -> std::io::Result<(
+type KokAyrimi = (
     Option<Yazici>,
     Option<Okuyucu>,
     Option<Okuyucu>,
     Bitisi,
     Option<KokBitisi>,
     Agac,
-)> {
+);
+
+#[cfg(unix)]
+fn kokten_ayir(kok: agac::EtkilesimliKok) -> std::io::Result<KokAyrimi> {
     let mut cocuk = kok.cocuk;
     let girdi = cocuk.stdin.take().map(|g| Box::new(g) as Yazici);
     #[cfg(target_os = "linux")]
