@@ -243,6 +243,11 @@ impl UzakHttpSecenekleri {
         self
     }
 
+    pub fn ek_maskeler_ile(mut self, maskeler: Vec<GizliDeger>) -> Self {
+        self.ek_maskeler = maskeler;
+        self
+    }
+
     pub(crate) fn tum_maskeler(&self) -> Vec<GizliDeger> {
         let mut sonuc = self.ek_maskeler.clone();
         if let Some(ref b) = self.gizli_baslik {
