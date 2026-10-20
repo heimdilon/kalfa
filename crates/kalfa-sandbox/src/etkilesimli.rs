@@ -12,6 +12,54 @@ use crate::{BaslatmaHatasi, vekil};
 /// süre (§4.1).
 pub const KAPANMA_PAYI: Duration = Duration::from_secs(2);
 
+/// Etkileşimli terminalin (PTY / ConPTY) karakter ızgara boyutu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TerminalBoyutu {
+    pub sutun: u16,
+    pub satir: u16,
+}
+
+impl TerminalBoyutu {
+    pub const VARSAYILAN_SUTUN: u16 = 80;
+    pub const VARSAYILAN_SATIR: u16 = 24;
+    pub const EN_AZ_SUTUN: u16 = 1;
+    pub const EN_COK_SUTUN: u16 = 500;
+    pub const EN_AZ_SATIR: u16 = 1;
+    pub const EN_COK_SATIR: u16 = 200;
+
+    pub fn yeni(sutun: u16, satir: u16) -> Result<Self, BaslatmaHatasi> {
+        let boyut = Self { sutun, satir };
+        boyut.dogrula()?;
+        Ok(boyut)
+    }
+
+    pub fn dogrula(&self) -> Result<(), BaslatmaHatasi> {
+        if !(Self::EN_AZ_SUTUN..=Self::EN_COK_SUTUN).contains(&self.sutun)
+            || !(Self::EN_AZ_SATIR..=Self::EN_COK_SATIR).contains(&self.satir)
+        {
+            return Err(BaslatmaHatasi::Yalitim(format!(
+                "geçersiz terminal boyutu: {}x{} (izin verilen: {}..={} sütun, {}..={} satır)",
+                self.sutun,
+                self.satir,
+                Self::EN_AZ_SUTUN,
+                Self::EN_COK_SUTUN,
+                Self::EN_AZ_SATIR,
+                Self::EN_COK_SATIR
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl Default for TerminalBoyutu {
+    fn default() -> Self {
+        Self {
+            sutun: Self::VARSAYILAN_SUTUN,
+            satir: Self::VARSAYILAN_SATIR,
+        }
+    }
+}
+
 /// Sunucunun açıkça seçilmiş çalışma kipi (§4.1). Kabuktaki yalıtımsız
 /// çalışma bir geri düşme yoludur; burada tam erişim kullanıcının seçimidir.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,5 +240,22 @@ mod tests {
             mcp_kip_uyusmasi(CalistirmaKipi::Yalitimli, false),
             Err(BaslatmaHatasi::Yalitim(_))
         ));
+    }
+
+    #[test]
+    fn terminal_boyutu_sinirlari_dogrular() {
+        assert_eq!(
+            TerminalBoyutu::default(),
+            TerminalBoyutu {
+                sutun: 80,
+                satir: 24
+            }
+        );
+        assert!(TerminalBoyutu::yeni(1, 1).is_ok());
+        assert!(TerminalBoyutu::yeni(500, 200).is_ok());
+        assert!(TerminalBoyutu::yeni(0, 24).is_err());
+        assert!(TerminalBoyutu::yeni(80, 0).is_err());
+        assert!(TerminalBoyutu::yeni(501, 24).is_err());
+        assert!(TerminalBoyutu::yeni(80, 201).is_err());
     }
 }

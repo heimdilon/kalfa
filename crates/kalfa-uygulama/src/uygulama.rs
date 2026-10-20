@@ -90,6 +90,8 @@ pub struct Uygulama {
     pub(crate) mcp_kanali: Arc<crate::mcp::komutlar::McpArayuzKanali>,
     /// Uzak MCP sunucu, OAuth ve araç keşfi yöneticisi (Yetenek-04, SP-08).
     pub uzak_mcp: Arc<crate::mcp::uzak_yonetici::UzakMcpYoneticisi>,
+    /// Oturum bazlı arka plan süreç ve terminal yöneticisi (Hat 03).
+    pub(crate) isler: Arc<crate::isler::IsYoneticisi>,
     ic: Mutex<IcDurum>,
 }
 
@@ -180,8 +182,12 @@ impl Uygulama {
             b.iletisim.clone(),
             b.acici.clone(),
         );
+        let oturum_dizini = dizin::oturum_dizini(&b.veri_dizini);
+        let isler = Arc::new(crate::isler::IsYoneticisi::yeni_kayitli(
+            oturum_dizini.clone(),
+        ));
         Arc::new(Self {
-            oturum_dizini: dizin::oturum_dizini(&b.veri_dizini),
+            oturum_dizini,
             kasa: b.kasa,
             uretici: b.uretici,
             evren,
@@ -206,6 +212,7 @@ impl Uygulama {
             mcp_kayit,
             mcp_kanali,
             uzak_mcp,
+            isler,
             veri_dizini: b.veri_dizini,
             ev_dizini: b.ev_dizini,
             geri_alma_dizini: b.geri_alma_dizini,
@@ -243,6 +250,11 @@ impl Uygulama {
     /// Uygulama genelindeki MCP sır kasası.
     pub fn mcp_kasasi(&self) -> &Arc<dyn crate::mcp::kasa::GizliKasa> {
         &self.mcp_kasa
+    }
+
+    /// Uygulama genelindeki arka plan iş ve terminal yöneticisi.
+    pub fn is_yoneticisi(&self) -> &Arc<crate::isler::IsYoneticisi> {
+        &self.isler
     }
 
     /// Açık oturum sayısı (testler ve tanılama için).

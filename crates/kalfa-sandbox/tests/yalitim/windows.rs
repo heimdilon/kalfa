@@ -3,7 +3,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use kalfa_sandbox::profil::{GitKimligi, OzelDizinler, alan_kimligi};
 use kalfa_sandbox::windows::guvenlik::{
@@ -2647,5 +2647,85 @@ async fn etkilesimli_agli_sunucu_vekilden_cikar_ve_kapanista_temizlenir() {
         "{:?}",
         ag.baglantilar
     );
+    k.temizle(&[alan]);
+}
+
+/// G2b/G2c: yalıtımlı arka plan kabuk süreci borulu ve ConPTY kipiyle AppContainer
+/// ve Job Object içinde çalışır, gizli dosyayı okuyamaz, boyut değiştirmeyi uygular
+/// ve kapanışta temizlenir.
+#[tokio::test]
+async fn kabuk_etkilesimli_conpty_yalitim_icinde_calisir_ve_temizlenir() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let k = kurgu();
+    std::fs::write(k.kok.join(".env"), "SIR=gizli").unwrap();
+    let alan = k.alan(&k.kok);
+    let mut istek = k.istek(&alan, false, "");
+    istek.komut = KomutBicimi::Program {
+        program: windows_koku().join(r"System32\cmd.exe").display().to_string(),
+        argumanlar: vec![
+            "/v:on".into(),
+            "/d".into(),
+            "/c".into(),
+            "type .env >nul 2>nul && echo GIZLI:ACIK || echo GIZLI:ENGEL & echo TERM:!TERM! & set /p SATIR= & echo CEVAP:!SATIR!".into(),
+        ],
+    };
+
+    // 1. Borulu etkileşimli kabuk
+    let mut s_boru = k.y.baslat_kabuk_etkilesimli(&istek, None).unwrap();
+    let mut boru_girdi = s_boru.girdi_al().unwrap();
+    let mut boru_cikti = s_boru.cikti_al().unwrap();
+    boru_girdi.write_all(b"borulu_veri\r\n").await.unwrap();
+    boru_girdi.flush().await.unwrap();
+    let _ = s_boru.bitisi_bekle().await;
+    let _ = s_boru
+        .kapat_kadar(tokio::time::Instant::now())
+        .await
+        .unwrap();
+    let mut boru_metin = String::new();
+    let _ = boru_cikti.read_to_string(&mut boru_metin).await;
+    assert!(boru_metin.contains("GIZLI:ENGEL"), "{boru_metin}");
+    assert!(boru_metin.contains("CEVAP:borulu_veri"), "{boru_metin}");
+
+    // 2. ConPTY etkileşimli kabuk
+    let boyut = kalfa_sandbox::TerminalBoyutu::yeni(100, 32).unwrap();
+    let mut s = k.y.baslat_kabuk_etkilesimli(&istek, Some(boyut)).unwrap();
+    let mut girdi = s.girdi_al().unwrap();
+    let mut cikti = s.cikti_al().unwrap();
+    let mut biriken = Vec::new();
+    let mut buf = [0u8; 1024];
+    let son = Instant::now() + Duration::from_secs(10);
+    while !String::from_utf8_lossy(&biriken).contains("TERM:xterm-256color") && Instant::now() < son
+    {
+        if let Ok(Ok(n)) =
+            tokio::time::timeout(Duration::from_millis(200), cikti.read(&mut buf)).await
+        {
+            if n == 0 {
+                break;
+            }
+            biriken.extend_from_slice(&buf[..n]);
+        }
+    }
+    let ilk = String::from_utf8_lossy(&biriken).into_owned();
+    assert!(ilk.contains("GIZLI:ENGEL"), "{ilk}");
+    assert!(ilk.contains("TERM:xterm-256color"), "{ilk}");
+
+    s.boyut_degistir(kalfa_sandbox::TerminalBoyutu::yeni(120, 40).unwrap())
+        .unwrap();
+    girdi.write_all(b"merhaba\r\n").await.unwrap();
+    girdi.flush().await.unwrap();
+    while !String::from_utf8_lossy(&biriken).contains("CEVAP:merhaba") && Instant::now() < son {
+        if let Ok(Ok(n)) =
+            tokio::time::timeout(Duration::from_millis(200), cikti.read(&mut buf)).await
+        {
+            if n == 0 {
+                break;
+            }
+            biriken.extend_from_slice(&buf[..n]);
+        }
+    }
+    let son_metin = String::from_utf8_lossy(&biriken).into_owned();
+    assert!(son_metin.contains("CEVAP:merhaba"), "{son_metin}");
+
+    let _ = s.kapat_kadar(tokio::time::Instant::now()).await.unwrap();
     k.temizle(&[alan]);
 }

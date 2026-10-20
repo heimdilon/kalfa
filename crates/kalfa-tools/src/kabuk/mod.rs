@@ -6,6 +6,7 @@
 //! `KabukTarifi`'nden üretilir.
 
 pub mod cikti;
+pub mod isler;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,14 +14,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, CiktiGonderici, Hazirlik};
+use kalfa_core::arac::{Arac, AracCiktisi, AracHatasi, AracOrtami, CiktiGonderici, Hazirlik};
 use kalfa_core::kabuk::{KabukBicimi, KabukTarifi, YalitimOzeti};
+use kalfa_core::kilit::KilitSeti;
 use kalfa_core::protokol::VeriCikisi;
 use kalfa_core::yol::CalismaYolu;
 use kalfa_sandbox::tarama::AdliGirdiler;
 use kalfa_sandbox::{
-    AlanBilgisi, BaslatmaHatasi, Bitis, CalistirmaIstegi, KomutBicimi, Yalitici, YalitimDurumu,
-    ortam, program,
+    AlanBilgisi, BaslatmaHatasi, Bitis, CalistirmaIstegi, KomutBicimi, TerminalBoyutu, Yalitici,
+    YalitimDurumu, ortam, program,
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -28,6 +30,7 @@ use tokio_util::sync::CancellationToken;
 use crate::calisma_alani::CalismaAlani;
 use crate::koruma::{self, SonDenetimSonucu};
 use cikti::{BasSonTampon, CANLI_SINIR, CanliAkis};
+use isler::{ArkaPlanBaslatmaMeta, ArkaPlanIsBaglantisi};
 
 pub const VARSAYILAN_SURE_SN: u64 = 120;
 pub const AZAMI_SURE_SN: u64 = 1800;
@@ -62,6 +65,7 @@ pub struct KabukAraci {
     guven: Arc<dyn KabukGuveni>,
     izin: Arc<dyn YalitimsizIzni>,
     kullanici_ag: Arc<std::sync::RwLock<Vec<kalfa_sandbox::vekil::HostKurali>>>,
+    arka_plan: Option<Arc<dyn ArkaPlanIsBaglantisi>>,
 }
 
 impl KabukAraci {
@@ -77,6 +81,7 @@ impl KabukAraci {
             guven,
             izin,
             kullanici_ag: Arc::default(),
+            arka_plan: None,
         }
     }
 
@@ -88,6 +93,13 @@ impl KabukAraci {
         liste: Arc<std::sync::RwLock<Vec<kalfa_sandbox::vekil::HostKurali>>>,
     ) -> Self {
         self.kullanici_ag = liste;
+        self
+    }
+
+    /// Arka plan işleri ve etkileşimli terminal (`G2b` / `G2c`) için oturum-bağlı
+    /// iş yöneticisi bağlantısı.
+    pub fn arka_plan_baglantisi(mut self, baglanti: Arc<dyn ArkaPlanIsBaglantisi>) -> Self {
+        self.arka_plan = Some(baglanti);
         self
     }
 
@@ -117,6 +129,8 @@ struct Istek {
     sure: Duration,
     /// Sonucun kaynak etiketi: `kabuk:<program>`.
     kaynak: String,
+    arka_plan: bool,
+    terminal: Option<TerminalBoyutu>,
 }
 
 fn metin<'a>(a: &'a Value, ad: &str) -> Option<&'a str> {
@@ -175,6 +189,44 @@ impl KabukAraci {
             .and_then(Value::as_u64)
             .unwrap_or(VARSAYILAN_SURE_SN)
             .clamp(1, AZAMI_SURE_SN);
+        let arka_plan = a.get("arka_plan").and_then(Value::as_bool).unwrap_or(false);
+        if arka_plan && self.arka_plan.is_none() {
+            return Err(gecersiz("Bu oturumda arka plan kabuk işleri etkin değil."));
+        }
+        let terminal = match a.get("terminal") {
+            None | Some(Value::Bool(false)) => None,
+            Some(Value::Bool(true)) => {
+                if !arka_plan {
+                    return Err(gecersiz(
+                        "`terminal` yalnızca `arka_plan: true` ile kullanılabilir.",
+                    ));
+                }
+                Some(TerminalBoyutu::default())
+            }
+            Some(Value::Object(obj)) => {
+                if !arka_plan {
+                    return Err(gecersiz(
+                        "`terminal` yalnızca `arka_plan: true` ile kullanılabilir.",
+                    ));
+                }
+                let sutun = obj
+                    .get("sutun")
+                    .and_then(Value::as_u64)
+                    .and_then(|n| u16::try_from(n).ok())
+                    .unwrap_or(TerminalBoyutu::VARSAYILAN_SUTUN);
+                let satir = obj
+                    .get("satir")
+                    .and_then(Value::as_u64)
+                    .and_then(|n| u16::try_from(n).ok())
+                    .unwrap_or(TerminalBoyutu::VARSAYILAN_SATIR);
+                Some(TerminalBoyutu::yeni(sutun, satir).map_err(|e| gecersiz(e.to_string()))?)
+            }
+            Some(_) => {
+                return Err(gecersiz(
+                    "`terminal` mantıksal değer veya `{sutun, satir}` nesnesi olmalı.",
+                ));
+            }
+        };
         let (komut, gosterim, kaynak) = match (metin(a, "program"), metin(a, "betik")) {
             (Some(p), None) => {
                 let argumanlar: Vec<String> = match a.get("argumanlar") {
@@ -235,6 +287,8 @@ impl KabukAraci {
             ag_hostlari,
             sure: Duration::from_secs(sure_sn),
             kaynak,
+            arka_plan,
+            terminal,
         })
     }
 
@@ -347,7 +401,7 @@ impl Arac for KabukAraci {
     }
 
     fn parametre_semasi(&self) -> Value {
-        json!({
+        let mut semasi = json!({
             "type": "object",
             "properties": {
                 "program": {"type": "string", "description": "Çıplak program adı (PATH'te aranır) ya da çalışma alanına göre yol"},
@@ -364,7 +418,37 @@ impl Arac for KabukAraci {
             },
             "oneOf": [{"required": ["program"]}, {"required": ["betik"]}],
             "additionalProperties": false
-        })
+        });
+        if self.arka_plan.is_some()
+            && let Some(props) = semasi.get_mut("properties").and_then(Value::as_object_mut)
+        {
+            props.insert(
+                "arka_plan".to_string(),
+                json!({
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Komutu oturuma bağlı arka plan işi olarak başlatır ve `is_id` döner"
+                }),
+            );
+            props.insert(
+                "terminal".to_string(),
+                json!({
+                    "description": "Yalnızca `arka_plan: true` ile sözde terminal (PTY/ConPTY) açar; mantıksal değer veya `{sutun, satir}`",
+                    "oneOf": [
+                        {"type": "boolean"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "sutun": {"type": "integer", "minimum": TerminalBoyutu::EN_AZ_SUTUN, "maximum": TerminalBoyutu::EN_COK_SUTUN, "default": TerminalBoyutu::VARSAYILAN_SUTUN},
+                                "satir": {"type": "integer", "minimum": TerminalBoyutu::EN_AZ_SATIR, "maximum": TerminalBoyutu::EN_COK_SATIR, "default": TerminalBoyutu::VARSAYILAN_SATIR}
+                            },
+                            "additionalProperties": false
+                        }
+                    ]
+                }),
+            );
+        }
+        semasi
     }
 
     fn yazar_mi(&self) -> bool {
@@ -379,7 +463,12 @@ impl Arac for KabukAraci {
     async fn hazirla(&self, a: &Value) -> Result<Hazirlik, AracHatasi> {
         let istek = self.coz(a)?;
         let (bicim, program_adi) = match &istek.komut {
-            KomutBicimi::Program { program, .. } => (KabukBicimi::Program, Some(program.clone())),
+            // Arka plan işlerinde `program: None` bırakılır ki tek seferlik program kısayolu
+            // (`KisayolTeklifi::Kabuk`) uzun süreli veya etkileşimli işlere devredilmesin.
+            KomutBicimi::Program { program, .. } => (
+                KabukBicimi::Program,
+                (!istek.arka_plan).then(|| program.clone()),
+            ),
             KomutBicimi::Betik { .. } => (
                 KabukBicimi::Betik {
                     yorumlayici: program::yorumlayici_adi().to_string(),
@@ -397,12 +486,27 @@ impl Arac for KabukAraci {
         // Windows'ta çalışma alanı ilk yalıtımlı çağrıda hazırlanır (§9.4).
         let alan_hazirligi =
             yalitim.yalitimli_mi() && self.yalitici.hazirlik_gerekli(self.alan.kok());
+        let gosterim = match (istek.arka_plan, istek.terminal) {
+            (false, _) => istek.gosterim.clone(),
+            (true, None) => format!("[arka_plan] {}", istek.gosterim),
+            (true, Some(boyut)) => format!(
+                "[arka_plan:terminal:{}x{}] {}",
+                boyut.sutun, boyut.satir, istek.gosterim
+            ),
+        };
         Ok(Hazirlik {
-            aciklama: format!("`{}` komutunu çalıştırmak istiyor.", kisa(&istek.gosterim)),
+            aciklama: if istek.arka_plan {
+                format!(
+                    "`{}` komutunu arka plan işi olarak başlatmak istiyor.",
+                    kisa(&istek.gosterim)
+                )
+            } else {
+                format!("`{}` komutunu çalıştırmak istiyor.", kisa(&istek.gosterim))
+            },
             tum_calisma_alani: true,
             veri_cikisi: Some(VeriCikisi::KomutCiktisi),
             kabuk: Some(KabukTarifi {
-                komut: istek.gosterim,
+                komut: gosterim,
                 bicim,
                 program: program_adi,
                 dizin: istek
@@ -412,7 +516,8 @@ impl Arac for KabukAraci {
                 ag: istek.ag,
                 ag_hostlari: istek.ag_hostlari,
                 yalitim,
-                ilk_cagri: !self.guven.guvenildi_mi(),
+                // Arka plan işleri her zaman açık onay gerektirir.
+                ilk_cagri: istek.arka_plan || !self.guven.guvenildi_mi(),
                 alan_hazirligi,
             }),
             ..Default::default()
@@ -435,6 +540,30 @@ impl Arac for KabukAraci {
         h: &Hazirlik,
         iptal: CancellationToken,
         gonderici: CiktiGonderici,
+    ) -> Result<AracCiktisi, AracHatasi> {
+        self.calistir_ic(a, h, iptal, gonderici, None).await
+    }
+
+    async fn calistir_kilitli(
+        &self,
+        a: &Value,
+        h: &Hazirlik,
+        iptal: CancellationToken,
+        ortam: AracOrtami,
+        kilit: Option<KilitSeti>,
+    ) -> Result<AracCiktisi, AracHatasi> {
+        self.calistir_ic(a, h, iptal, ortam.cikti(), kilit).await
+    }
+}
+
+impl KabukAraci {
+    async fn calistir_ic(
+        &self,
+        a: &Value,
+        h: &Hazirlik,
+        iptal: CancellationToken,
+        gonderici: CiktiGonderici,
+        kilit: Option<KilitSeti>,
     ) -> Result<AracCiktisi, AracHatasi> {
         if iptal.is_cancelled() {
             return Err(AracHatasi::Iptal);
@@ -487,6 +616,51 @@ impl Arac for KabukAraci {
             ag_listesi,
             alan,
         };
+        if istek.arka_plan {
+            let Some(baglanti) = &self.arka_plan else {
+                return Err(gecersiz("Bu oturumda arka plan kabuk işleri etkin değil."));
+            };
+            let Some(kilit) = kilit else {
+                return Err(gecersiz(
+                    "Arka plan kabuk işi çalışma alanı yazma kilidi olmadan başlatılamaz.",
+                ));
+            };
+            let meta = ArkaPlanBaslatmaMeta {
+                gosterim: istek.gosterim,
+                dizin: istek
+                    .dizin
+                    .as_ref()
+                    .map_or_else(|| ".".to_string(), |d| d.as_str().to_string()),
+                ag: istek.ag,
+                ag_hostlari: istek.ag_hostlari,
+                yalitimli,
+                terminal: istek.terminal,
+                sure: istek.sure,
+            };
+            let is_id = baglanti
+                .is_baslat(
+                    self.yalitici.as_ref(),
+                    &calistirma,
+                    meta,
+                    kilit,
+                    self.alan.clone(),
+                    onceki,
+                )
+                .await?;
+            self.guven.guvenildi();
+            let kip_etiketi = match istek.terminal {
+                Some(b) => format!("terminal ({}x{})", b.sutun, b.satir),
+                None => "borulu".to_string(),
+            };
+            return Ok(AracCiktisi {
+                icerik: format!(
+                    "Arka plan işi başlatıldı.\nİş: {is_id}\nKip: {kip_etiketi}\nDurum: çalışıyor"
+                ),
+                kaynak: istek.kaynak,
+                kalfa_uretimi: true,
+                ..Default::default()
+            });
+        }
         struct KabukYazmaBitisKoruma<'a>(&'a CalismaAlani);
         impl Drop for KabukYazmaBitisKoruma<'_> {
             fn drop(&mut self) {

@@ -14,6 +14,7 @@ pub mod eklentiler;
 pub mod evren;
 pub mod guvenlik;
 pub mod hata;
+pub mod isler;
 pub mod modeller;
 pub mod proje_talimatlari;
 pub mod sozlesme;
