@@ -947,8 +947,20 @@ impl Uygulama {
             )
             .planlayici(),
         );
-        let araclar =
-            Arc::new(AracKayitDefteri::yeni_kaynakli(araclar, mcp_kaynagi).map_err(ic_hata)?);
+        // Uzak MCP araçları oturuma özel dinamik kaynaktan gelir; ertelenen
+        // şemalar `arac_ara` ile bu oturumda etkinleştirilir (Yetenek-04 G3b, SP-08).
+        let uzak_kaynak = self.uzak_mcp.oturum_arac_kaynagi();
+        if adlar.insert(kalfa_mcp::uzak::ARAC_ARA_ADI.to_string()) {
+            araclar.push(kalfa_mcp::uzak::AracAraAraci::yeni(
+                Arc::clone(self.uzak_mcp.katalog()),
+                uzak_kaynak.clone(),
+            ));
+        }
+        let birlesik_mcp_kaynagi =
+            crate::mcp::kaynak::BirlesikMcpAracKaynagi::yeni(mcp_kaynagi, uzak_kaynak);
+        let araclar = Arc::new(
+            AracKayitDefteri::yeni_kaynakli(araclar, birlesik_mcp_kaynagi).map_err(ic_hata)?,
+        );
         Ok((
             OturumBaglami {
                 saglayici: self.evren.clone(),

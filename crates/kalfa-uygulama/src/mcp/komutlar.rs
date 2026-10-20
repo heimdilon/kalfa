@@ -591,4 +591,80 @@ impl Uygulama {
         self.mcp_kanali.yay();
         sonuc.map_err(yonetici_hatasi)
     }
+
+    // --- Uzak Streamable HTTP MCP uçları (Yetenek-04 Görev 5–6, SP-08) ---
+
+    fn uzak_mcp_varsayilan_alani(&self) -> String {
+        let ic = self.ic();
+        ic.son_oturum
+            .and_then(|o| ic.oturumlar.get(&o))
+            .map(|a| a.calisma_alani_kimligi.clone())
+            .unwrap_or_else(|| "varsayilan".to_owned())
+    }
+
+    pub fn uzak_mcp_sunuculari(&self) -> Vec<UzakMcpSunucuSatiriDto> {
+        self.uzak_mcp.durum_listesi()
+    }
+
+    pub fn uzak_mcp_sunucu_ayrintisi(
+        &self,
+        ad: &str,
+    ) -> Result<UzakMcpSunucuAyrintisiDto, KomutHatasi> {
+        self.uzak_mcp.sunucu_ayrintisi(ad)
+    }
+
+    pub async fn uzak_mcp_kaydet(
+        &self,
+        eski_ad: Option<String>,
+        form: UzakMcpSunucuFormu,
+    ) -> Result<bool, KomutHatasi> {
+        self.uzak_mcp
+            .sunucu_kaydet(eski_ad, form, self.uzak_mcp.test_loopback_etkin_mi())
+            .await
+    }
+
+    pub async fn uzak_mcp_sil(&self, ad: String) -> Result<bool, KomutHatasi> {
+        self.uzak_mcp.sunucu_sil(&ad).await
+    }
+
+    pub fn uzak_mcp_etkin_ayarla(&self, ad: String, etkin: bool) -> Result<(), KomutHatasi> {
+        self.uzak_mcp.etkin_ayarla(&ad, etkin)
+    }
+
+    pub async fn uzak_mcp_baglan(&self, ad: String) -> Result<UzakMcpSunucuSatiriDto, KomutHatasi> {
+        let alan_kimligi = self.uzak_mcp_varsayilan_alani();
+        let gizli_kaynak = self.ayarlar.gizli_ayarlari();
+        let gizli = kalfa_core::izin::GizliAyarlari::yeni(
+            &gizli_kaynak.ek_kaliplar(),
+            &gizli_kaynak.istisnalar(),
+        )
+        .unwrap_or_default();
+        self.uzak_mcp
+            .baglan(
+                &ad,
+                &alan_kimligi,
+                gizli,
+                self.uzak_mcp.test_loopback_etkin_mi(),
+                false,
+            )
+            .await
+    }
+
+    pub async fn uzak_mcp_oauth_bagla(
+        &self,
+        ad: String,
+    ) -> Result<UzakMcpSunucuSatiriDto, KomutHatasi> {
+        self.uzak_mcp
+            .kullanici_oauth_bagla_ve_tamamla(
+                &ad,
+                None,
+                self.uzak_mcp.test_loopback_etkin_mi(),
+                false,
+            )
+            .await
+    }
+
+    pub async fn uzak_mcp_kimlik_kaldir(&self, ad: String) -> Result<bool, KomutHatasi> {
+        self.uzak_mcp.kimlik_kaldir(&ad).await
+    }
 }

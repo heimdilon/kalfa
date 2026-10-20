@@ -165,6 +165,28 @@ impl UzakOAuthYoneticisi {
         self.saat.simdi_ms() / 1000
     }
 
+    pub fn korunmus_kaynak_well_known_url(kaynak_url: &str) -> Result<String, UzakOAuthHatasi> {
+        let parsed = url::Url::parse(kaynak_url).map_err(|_| {
+            UzakOAuthHatasi::Protokol(OAuthHatasi::MetadataGecersiz("hedef kaynak URL geçersiz"))
+        })?;
+        let origin = parsed.origin().ascii_serialization();
+        Ok(format!("{origin}/.well-known/oauth-protected-resource"))
+    }
+
+    pub fn yetki_sunucusu_well_known_url(issuer: &str) -> Result<String, UzakOAuthHatasi> {
+        let mut parsed = url::Url::parse(issuer).map_err(|_| {
+            UzakOAuthHatasi::Protokol(OAuthHatasi::MetadataGecersiz("issuer URL geçersiz"))
+        })?;
+        let mevcut_yol = parsed.path().trim_end_matches('/');
+        let yeni_yol = if mevcut_yol.is_empty() {
+            "/.well-known/oauth-authorization-server".to_owned()
+        } else {
+            format!("{mevcut_yol}/.well-known/oauth-authorization-server")
+        };
+        parsed.set_path(&yeni_yol);
+        Ok(parsed.to_string())
+    }
+
     /// Kullanıcının başlattığı OAuth yetkilendirme akışını hazırlar, metadata
     /// uçlarını doğrular, yerel onay alır ve sistem tarayıcısını açar.
     #[allow(clippy::too_many_arguments)]
@@ -212,8 +234,13 @@ impl UzakOAuthYoneticisi {
             )
         };
 
+        let kaynak_meta_url = if korunmus_kaynak_metadata_url.trim().is_empty() {
+            Self::korunmus_kaynak_well_known_url(&beklenen_kaynak_url)?
+        } else {
+            korunmus_kaynak_metadata_url.to_owned()
+        };
         let kaynak_meta = korunmus_kaynak_metadatasini_getir(
-            korunmus_kaynak_metadata_url,
+            &kaynak_meta_url,
             &beklenen_kaynak_url,
             test_fiksturu_loopback,
             ozel_ag_izinli,
@@ -231,8 +258,13 @@ impl UzakOAuthYoneticisi {
                     "authorization_servers boş",
                 )))?;
 
+        let yetki_meta_url = if yetki_sunucusu_metadata_url.trim().is_empty() {
+            Self::yetki_sunucusu_well_known_url(&beklenen_issuer)?
+        } else {
+            yetki_sunucusu_metadata_url.to_owned()
+        };
         let yetki_meta = yetki_sunucusu_metadatasini_getir(
-            yetki_sunucusu_metadata_url,
+            &yetki_meta_url,
             &beklenen_issuer,
             test_fiksturu_loopback,
             ozel_ag_izinli,
