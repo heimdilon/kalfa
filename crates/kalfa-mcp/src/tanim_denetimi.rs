@@ -31,6 +31,7 @@ pub struct DenetlenmisAracTanimi {
     d: McpAracTanimOzeti,
     girdi_semasi: Arc<McpJsonSemasi>,
     cikti_semasi: Option<Arc<McpJsonSemasi>>,
+    cikti_semasi_degeri: Option<Value>,
     denetim_metni: String,
     sirlar: Vec<GizliDeger>,
 }
@@ -58,6 +59,10 @@ impl DenetlenmisAracTanimi {
 
     pub fn girdi_semasi(&self) -> Arc<McpJsonSemasi> {
         Arc::clone(&self.girdi_semasi)
+    }
+
+    pub fn cikti_semasi_degeri(&self) -> Option<&Value> {
+        self.cikti_semasi_degeri.as_ref()
     }
 
     pub fn argumanlar_uygun_mu(&self, argumanlar: &Value) -> bool {
@@ -192,6 +197,7 @@ pub(crate) fn tanimi_denetle(
         d,
         girdi_semasi: derlenmis_girdi,
         cikti_semasi: derlenmis_cikti,
+        cikti_semasi_degeri: cikti_semasi.cloned(),
         denetim_metni,
         sirlar: sirlar.to_vec(),
     })
