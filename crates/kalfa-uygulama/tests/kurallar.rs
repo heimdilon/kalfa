@@ -14,7 +14,9 @@ use kalfa_uygulama::dizin::{
     oturum_geri_alma_dizini, veri_dizini, yalitim_dizini,
 };
 use kalfa_uygulama::evren::DegisirSaglayici;
-use kalfa_uygulama::guvenlik::{acilabilir_adres, gezinme_izinli, yukseltme_mi};
+use kalfa_uygulama::guvenlik::{
+    acilabilir_adres, gezinme_izinli, kip_adi, yukseltme_aciklamasi, yukseltme_mi,
+};
 use kalfa_uygulama::modeller::{VARSAYILAN_MODEL, bilinen_model_mi, modeller};
 use kalfa_uygulama::sozlesme::{DepoTuru, ModelProfili};
 use url::Url;
@@ -101,9 +103,15 @@ fn saga_gecis_yukseltmedir() {
     assert!(yukseltme_mi(Inceleme, Siki));
     assert!(yukseltme_mi(Siki, Proje));
     assert!(yukseltme_mi(Siki, Serbest));
+    assert!(yukseltme_mi(Serbest, Otomatik));
+    assert!(!yukseltme_mi(Otomatik, Serbest));
     assert!(!yukseltme_mi(Serbest, Siki));
     assert!(!yukseltme_mi(Proje, Inceleme));
     assert!(!yukseltme_mi(Siki, Siki));
+    assert_eq!(kip_adi(Otomatik), "Otomatik");
+    let metin = yukseltme_aciklamasi(Otomatik);
+    assert!(!metin.is_empty());
+    assert!(metin.contains("Göndermeden önce göster açıkken otomatik kip çalışmaz"));
 }
 
 /// Kalfa'nın araç zinciri yalnızca Program Files'taki kurulumdan gelir;
