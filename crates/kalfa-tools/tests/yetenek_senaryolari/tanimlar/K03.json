@@ -1,0 +1,84 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "K03",
+  "aile": "yerel_kodlama",
+  "baslik": "Svelte etkileşim hatası",
+  "kullanici_istegi": "`src/SayacPaneli.svelte` bileşeninde `Sıfırla` düğmesi `sayac` durumunu `0` yerine `1` yapıyor ve `seciliEtiket` durumunu temizlemiyor. Sabit `style` özniteliği eklemeden durumu doğru sıfırlayacak şekilde düzeltin.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari"],
+  "bagimli_hat": null,
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "src/SayacPaneli.svelte",
+      "icerik": "<script lang=\"ts\">\n  let sayac = $state(0);\n  let seciliEtiket = $state<string | null>(null);\n\n  function artir(etiket: string) {\n    sayac += 1;\n    seciliEtiket = etiket;\n  }\n\n  function sifirla() {\n    sayac = 1;\n  }\n</script>\n\n<div class=\"sayac-paneli\">\n  <span data-testid=\"sayac-degeri\">{sayac}</span>\n  <span data-testid=\"secili-etiket\">{seciliEtiket ?? 'Yok'}</span>\n  <button type=\"button\" onclick={() => artir('önemli')}>Artır</button>\n  <button type=\"button\" onclick={sifirla}>Sıfırla</button>\n</div>\n"
+    },
+    {
+      "yol": "src/App.svelte",
+      "icerik": "<script lang=\"ts\">\n  import SayacPaneli from './SayacPaneli.svelte';\n</script>\n\n<main>\n  <SayacPaneli />\n</main>\n"
+    }
+  ],
+  "izinli_degisiklikler": ["src/SayacPaneli.svelte"],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_oku",
+      "argumanlar": { "yol": "src/SayacPaneli.svelte" }
+    },
+    {
+      "tur": "arac",
+      "ad": "dosya_duzenle",
+      "argumanlar": {
+        "yol": "src/SayacPaneli.svelte",
+        "eski_metin": "  function sifirla() {\n    sayac = 1;\n  }",
+        "yeni_metin": "  function sifirla() {\n    sayac = 0;\n    seciliEtiket = null;\n  }"
+      }
+    },
+    {
+      "tur": "metin",
+      "icerik": "`src/SayacPaneli.svelte` içindeki `sifirla` fonksiyonu `sayac = 0` ve `seciliEtiket = null` atayacak şekilde düzeltildi."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Svelte 5 bileşeninde `sifirla` hem `sayac = 0` hem `seciliEtiket = null` durumunu üretir, CSP kuralı gereği sabit `style=` içermez ve `src/App.svelte` değişmez.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "src/SayacPaneli.svelte",
+        "durum": "var",
+        "icerir": ["sayac = 0;", "seciliEtiket = null;"],
+        "icermez": ["sayac = 1;", "style="]
+      },
+      {
+        "yol": "src/App.svelte",
+        "durum": "degismedi",
+        "icerir": ["<SayacPaneli />"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["dosya:src/SayacPaneli.svelte"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_oku", "durum": "basarili" },
+        { "arac": "dosya_duzenle", "durum": "basarili" }
+      ]
+    }
+  }
+}

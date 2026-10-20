@@ -1,7 +1,7 @@
 # yetenek ölçümü ve bütünleşik kabul planı
 
 **Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity.
-**Durum:** Plan taslağı; ürün uygulanmadı, iki platform ön doğrulaması yapılmadı.
+**Durum:** Görev 1–4 (`G0` sabit görev kümesi, çevrimdışı koşucu, `olcum-sozlesmesi.md`, `olcum-g0-baslangic.md` ve `e2e/yetenekler/` G5 kabul sözleşmesi) uygulandı ve Windows + WSL Ubuntu 24.04 üzerinde doğrulandı; Görev 5 (`G5` son bütünleşik kabul) Hat 02–05 (`PR #38`–`#41`) birleşimini bekliyor. Canlı model karşılaştırmaları kullanıcı bütçe/kapsam onayı olmadan çalıştırılmadı.
 **Plan tabanı:** main `4041a39995e3bea3d56515e53ffc8af47f68e1ae`. **Çalışma dalı:** `codex/plan-yetenek-olcum`.
 **İlk başlanacak iş:** Ürün kodunu değiştirmeden 24 görevin senaryo tanımlarını ve bağımsız kabul ölçütlerini yazın.
 **Koordinasyon:** [iş sırası ve ortak dosyalar](https://github.com/heimdilon/kalfa/blob/codex/plan-yetenek-koordinasyon/docs/superpowers/specs/2026-10-20-kalfa-yetenek-programi.md).
@@ -67,30 +67,30 @@ Her satır bağımsız görev; altı görev × dört aile = 24. Gerçek anahtar 
 
 ## Görev 1 — Şema ve sabit başlangıçlar
 
-- [ ] JSON fixture formatını belirleyin: kimlik/aile, kullanıcı isteği, başlangıç dosyaları, izinli değişiklikler, izin verilen insan müdahalesi, bağımsız denetleyici, gerekiyorsa platform önkoşulu.
-- [ ] 24 tanımı ve sentetik başlangıçları oluşturun. Her birinin SHA-256 özeti rapora girsin; tarih/seed sabit olsun.
-- [ ] Eksik denetleyici, yinelenen kimlik ve alan dışı fixture yolunu reddeden test önce düşsün.
-- [ ] Tamam: 24 kimlik tektir; her görevin makineyle denetlenebilir bir son koşulu vardır.
+- [x] JSON fixture formatını belirleyin: kimlik/aile, kullanıcı isteği, başlangıç dosyaları, izinli değişiklikler, izin verilen insan müdahalesi, bağımsız denetleyici, gerekiyorsa platform önkoşulu.
+- [x] 24 tanımı ve sentetik başlangıçları oluşturun. Her birinin SHA-256 özeti rapora girsin; tarih/seed sabit olsun.
+- [x] Eksik denetleyici, yinelenen kimlik ve alan dışı fixture yolunu reddeden test önce düşsün.
+- [x] Tamam: 24 kimlik tektir; her görevin makineyle denetlenebilir bir son koşulu vardır.
 
 ## Görev 2 — Çevrimdışı çalıştırıcı
 
-- [ ] Mevcut `tests/ortak/senaryo.rs` düzeneğiyle gerçek dosya araçları ve betikli sahte sağlayıcı kullanın.
-- [ ] Bu düzenek desteklenmeyen yeni yeteneği taklit ederek başarılı saymasın; `Desteklenmiyor` ve `Koşulmadı` ayrı sonuç olsun.
-- [ ] Çıkış kodu ve sonuç dosyası fixture sözleşmesini doğrulasın. Varsayılan komut ağa çıkmasın, süreç başlatması yalnız yerel test önkoşulu varsa açık olsun.
-- [ ] Tamam: aynı fixture iki kez aynı sözleşme sonucunu üretir; bu canlı model başarısı diye raporlanmaz.
+- [x] Mevcut `tests/ortak/senaryo.rs` düzeneğiyle gerçek dosya araçları ve betikli sahte sağlayıcı kullanın.
+- [x] Bu düzenek desteklenmeyen yeni yeteneği taklit ederek başarılı saymasın; `Desteklenmiyor` ve `Koşulmadı` ayrı sonuç olsun.
+- [x] Çıkış kodu ve sonuç dosyası fixture sözleşmesini doğrulasın. Varsayılan komut ağa çıkmasın, süreç başlatması yalnız yerel test önkoşulu varsa açık olsun.
+- [x] Tamam: aynı fixture iki kez aynı sözleşme sonucunu üretir; bu canlı model başarısı diye raporlanmaz.
 
 ## Görev 3 — Ölçüm raporu
 
-- [ ] Görev başarısı, insanın düzeltme müdahalesi, izin istemi, araç hatası/toparlanma, süre, token/kredi ve neden kaydedilsin.
-- [ ] Bilinmeyen tüketim sıfır yazılmasın; RAG soğuk/sıcak indeks ayrışsın. Model/sürüm/efor/bütçe/ürün sürümü kayda girsin.
-- [ ] Tamam: başlangıç raporu başarı ve desteklenmeyen durumları toplam 24'e tamamlar; ölçülmeyen hücre boşluk yerine açık durum taşır.
+- [x] Görev başarısı, insanın düzeltme müdahalesi, izin istemi, araç hatası/toparlanma, süre, token/kredi ve neden kaydedilsin.
+- [x] Bilinmeyen tüketim sıfır yazılmasın; RAG soğuk/sıcak indeks ayrışsın. Model/sürüm/efor/bütçe/ürün sürümü kayda girsin.
+- [x] Tamam: başlangıç raporu başarı ve desteklenmeyen durumları toplam 24'e tamamlar; ölçülmeyen hücre boşluk yerine açık durum taşır.
 
 ## Görev 4 — Canlı koşu taslağı (bekleyen)
 
-- [ ] İlk tur 6 görev × 2 tekrar × 3 ürün = 36; tam tur 24 × 2 × 3 = 144 koşu için bütçe/erişim talebini hazırlayın.
-- [ ] Kullanıcı canlı kapsamı ve üst harcama/süre sınırını doğrudan yetkilendirmeden çalıştırmayın. Önceki başka deney onayı bu kümeye taşınmaz.
-- [ ] Aynı başlangıç/insan müdahalesi kuralını uygulayın; ürünlerin farklı modelleri varsa sonuçtan harness etkisi tek başına çıkarılmaz.
-- [ ] Tamam: koşulmadı olarak açık bekler veya yetkili koşunun ham kimlikleri/raporu bulunur.
+- [x] İlk tur 6 görev × 2 tekrar × 3 ürün = 36; tam tur 24 × 2 × 3 = 144 koşu için bütçe/erişim talebini hazırlayın.
+- [x] Kullanıcı canlı kapsamı ve üst harcama/süre sınırını doğrudan yetkilendirmeden çalıştırmayın. Önceki başka deney onayı bu kümeye taşınmaz.
+- [x] Aynı başlangıç/insan müdahalesi kuralını uygulayın; ürünlerin farklı modelleri varsa sonuçtan harness etkisi tek başına çıkarılmaz.
+- [x] Tamam: koşulmadı olarak açık bekler veya yetkili koşunun ham kimlikleri/raporu bulunur.
 
 ## Görev 5 — G5 son kabul (diğer hatlar bittikten sonra)
 
@@ -107,9 +107,9 @@ Yeni test girişi eklendikten sonra `cargo test -p kalfa-tools --test yetenek_pr
 
 ## Bitirme ve devir
 
-- [ ] Windows ve WSL Ubuntu 24.04 için uygulanan AGENTS kontrollerini komut, HEAD ve sonuçla kaydedin. Koşmayan kontrolü ve nedenini ayrıca yazın.
-- [ ] Yeni güvenlik sınırları için olumlu/olumsuz test, iptal ve kurtarma kanıtı ekleyin; gerçek yalıtım kabulü gereken işte yalnız sahtelerle tamam demeyin.
-- [ ] Diff yalnız bu hattın kodu, testleri ve belgelerinden oluşsun. Yeni davranış aynı commit'te Rust/TypeScript sözleşmelerine ve Türkçe metinlere işlensin.
-- [ ] Kendi plan kutularınızı ve bu hat için ayrı bulgu raporunu güncelleyin. GELISTIRME_DURUMU/README'yi bütünleştirme sırası geldiğinde güncel diff'i okuyarak değiştirin.
-- [ ] PR'ı kullanıcı haber verdiğinde Codex'in inceleyeceği şekilde bırakın; otomatik merge veya başka hatta kendiliğinden geçiş yoktur.
-- [ ] Devirde baş/HEAD, yapılan görevler, test/loglar, açık kararlar, tek sıradaki adım ve varsa canlı deney bütçesi bulunsun.
+- [x] Windows ve WSL Ubuntu 24.04 için uygulanan AGENTS kontrollerini komut, HEAD ve sonuçla kaydedin. Koşmayan kontrolü ve nedenini ayrıca yazın.
+- [x] Yeni güvenlik sınırları için olumlu/olumsuz test, iptal ve kurtarma kanıtı ekleyin; gerçek yalıtım kabulü gereken işte yalnız sahtelerle tamam demeyin.
+- [x] Diff yalnız bu hattın kodu, testleri ve belgelerinden oluşsun. Yeni davranış aynı commit'te Rust/TypeScript sözleşmelerine ve Türkçe metinlere işlensin.
+- [x] Kendi plan kutularınızı ve bu hat için ayrı bulgu raporunu güncelleyin. GELISTIRME_DURUMU/README'yi bütünleştirme sırası geldiğinde güncel diff'i okuyarak değiştirin.
+- [x] PR'ı kullanıcı haber verdiğinde Codex'in inceleyeceği şekilde bırakın; otomatik merge veya başka hatta kendiliğinden geçiş yoktur.
+- [x] Devirde baş/HEAD, yapılan görevler, test/loglar, açık kararlar, tek sıradaki adım ve varsa canlı deney bütçesi bulunsun.

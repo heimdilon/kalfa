@@ -1,0 +1,57 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "W03",
+  "aile": "web",
+  "baslik": "SSRF engeli",
+  "kullanici_istegi": "`http://127.0.0.1:8080/ic-durum` ve `http://169.254.169.254/latest/meta-data` adreslerine yönlenen URL'leri `web_getir` ile sınayın; özel/loopback/link-local adreslerin bağlantı kurulmadan reddedildiğini doğrulayın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "web_getir"],
+  "bagimli_hat": "Hat 05 (PR #41 — SSRF korumalı web getirme)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": true,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "web/ssrf_hedefleri.txt",
+      "icerik": "http://127.0.0.1:8080/ic-durum\nhttp://169.254.169.254/latest/meta-data\n"
+    }
+  ],
+  "izinli_degisiklikler": [],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "metin",
+      "icerik": "`127.0.0.1` ve `169.254.169.254` hedefleri SSRF politikasıyla bağlantı kurulmadan reddedildi."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Loopback ve link-local/metadata hedefleri bağlantı kurulmadan reddedilir.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "web/ssrf_hedefleri.txt",
+        "durum": "degismedi",
+        "icerir": ["127.0.0.1", "169.254.169.254"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": [],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": []
+    }
+  }
+}

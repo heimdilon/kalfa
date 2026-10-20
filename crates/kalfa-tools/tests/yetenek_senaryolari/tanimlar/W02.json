@@ -1,0 +1,68 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "W02",
+  "aile": "web",
+  "baslik": "Arama + getirme",
+  "kullanici_istegi": "Sahte arama sonuçlarından Kalfa eklenti manifest sınırlarını anlatan doğru URL'yi (`https://belge.kalfa.yerel/eklenti/manifest-sinirlari`) seçip içeriğini okuyun ve kaynak URL ile raporlayın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "web_arama_mcp", "web_getir"],
+  "bagimli_hat": "Hat 05 (PR #41 — web arama ve getirme)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": true,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "web/arama_sonuclari.json",
+      "icerik": "{\"sonuclar\":[{\"baslik\":\"Eklenti Manifest Sınırları\",\"url\":\"https://belge.kalfa.yerel/eklenti/manifest-sinirlari\"},{\"baslik\":\"Eski Sürüm Notu\",\"url\":\"https://belge.kalfa.yerel/arsiv/0-1\"}]}\n"
+    }
+  ],
+  "izinli_degisiklikler": ["web/secilen_kaynak.md"],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_yaz",
+      "argumanlar": {
+        "yol": "web/secilen_kaynak.md",
+        "icerik": "Kaynak: https://belge.kalfa.yerel/eklenti/manifest-sinirlari\nÖzet: Manifest azami bellek ve süre sınırlarını tanımlar.\n"
+      }
+    },
+    {
+      "tur": "metin",
+      "icerik": "Doğru kaynak (`https://belge.kalfa.yerel/eklenti/manifest-sinirlari`) seçilerek özetlendi."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Doğru kaynak URL (`https://belge.kalfa.yerel/eklenti/manifest-sinirlari`) raporda yer alır.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "web/secilen_kaynak.md",
+        "durum": "var",
+        "icerir": ["https://belge.kalfa.yerel/eklenti/manifest-sinirlari"],
+        "icermez": ["https://belge.kalfa.yerel/arsiv/0-1"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": [],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_yaz", "durum": "basarili" }
+      ]
+    }
+  }
+}

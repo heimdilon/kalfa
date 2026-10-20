@@ -1,0 +1,93 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "K02",
+  "aile": "yerel_kodlama",
+  "baslik": "TypeScript veri dönüşümü hatası",
+  "kullanici_istegi": "`src/donustur.ts` içindeki `faturaOzetle` fonksiyonu sıfır tutarlı geçerli faturaları eliyor ve `toplamKurus` alanını metin olarak döndürüyor. `src/tipler.ts` sözleşmesine uyacak şekilde düzeltin.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari"],
+  "bagimli_hat": null,
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "src/tipler.ts",
+      "icerik": "export interface FaturaKaydi {\n  kimlik: string;\n  tutarKurus: number;\n  iptal: boolean;\n}\n\nexport interface FaturaOzeti {\n  gecerliSayisi: number;\n  toplamKurus: number;\n}\n"
+    },
+    {
+      "yol": "src/donustur.ts",
+      "icerik": "import type { FaturaKaydi, FaturaOzeti } from './tipler';\n\nexport function faturaOzetle(kayitlar: readonly FaturaKaydi[]): FaturaOzeti {\n  const gecerliler = kayitlar.filter((k) => !k.iptal && k.tutarKurus > 0);\n  const toplam = gecerliler.reduce((acc, k) => acc + k.tutarKurus, 0);\n  return {\n    gecerliSayisi: gecerliler.length,\n    toplamKurus: String(toplam) as unknown as number,\n  };\n}\n"
+    }
+  ],
+  "izinli_degisiklikler": ["src/donustur.ts"],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "araclar",
+      "cagrilar": [
+        {
+          "ad": "dosya_oku",
+          "argumanlar": { "yol": "src/tipler.ts" }
+        },
+        {
+          "ad": "dosya_oku",
+          "argumanlar": { "yol": "src/donustur.ts" }
+        }
+      ]
+    },
+    {
+      "tur": "arac",
+      "ad": "dosya_duzenle",
+      "argumanlar": {
+        "yol": "src/donustur.ts",
+        "eski_metin": "  const gecerliler = kayitlar.filter((k) => !k.iptal && k.tutarKurus > 0);\n  const toplam = gecerliler.reduce((acc, k) => acc + k.tutarKurus, 0);\n  return {\n    gecerliSayisi: gecerliler.length,\n    toplamKurus: String(toplam) as unknown as number,\n  };",
+        "yeni_metin": "  const gecerliler = kayitlar.filter((k) => !k.iptal && k.tutarKurus >= 0);\n  const toplam = gecerliler.reduce((acc, k) => acc + k.tutarKurus, 0);\n  return {\n    gecerliSayisi: gecerliler.length,\n    toplamKurus: toplam,\n  };"
+      }
+    },
+    {
+      "tur": "metin",
+      "icerik": "`src/donustur.ts` içinde sıfır tutarlı geçerli kayıtlar korundu (`tutarKurus >= 0`) ve `toplamKurus` doğrudan `number` olarak döndürüldü."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Girdi/çıktı dönüşümü sıfır tutarlı kayıtları korur ve `toplamKurus` tip zorlaması olmadan `number` döner; `src/tipler.ts` değişmez.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "src/donustur.ts",
+        "durum": "var",
+        "icerir": ["!k.iptal && k.tutarKurus >= 0", "toplamKurus: toplam"],
+        "icermez": ["String(toplam)", "as unknown as number"]
+      },
+      {
+        "yol": "src/tipler.ts",
+        "durum": "degismedi",
+        "icerir": ["export interface FaturaOzeti"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["dosya:src/donustur.ts"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_oku", "durum": "basarili" },
+        { "arac": "dosya_oku", "durum": "basarili" },
+        { "arac": "dosya_duzenle", "durum": "basarili" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "M05",
+  "aile": "mcp",
+  "baslik": "Çok sunuculu araç seçimi",
+  "kullanici_istegi": "32 araçlı MCP kataloğundan yalnızca `surum_notu_ara` ve `surum_etiketi_dogrula` araçlarını seçip çağırın; ilgisiz 30 aracın tam şemasını bağlama yüklemeyin.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "mcp_arac_kesfi"],
+  "bagimli_hat": "Hat 04 (PR #40 — dinamik MCP araç keşfi)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": true,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "mcp/katalog_ozeti.json",
+      "icerik": "{\"toplam_arac\":32,\"hedef_araclar\":[\"surum_notu_ara\",\"surum_etiketi_dogrula\"],\"ilgisiz_sema_isareti\":\"ILGISIZ_30_ARAC_SEMASI_M05\"}\n"
+    }
+  ],
+  "izinli_degisiklikler": [],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "metin",
+      "icerik": "`surum_notu_ara` ve `surum_etiketi_dogrula` araçları seçilerek doğrulandı; ilgisiz araç şemaları bağlama basılmadı."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "30+ araçlı katalogdan doğru 2 araç seçilir; ilgisiz araç şemaları (`ILGISIZ_30_ARAC_SEMASI_M05`) bağlama basılmaz.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "mcp/katalog_ozeti.json",
+        "durum": "degismedi",
+        "icerir": ["\"toplam_arac\":32"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": [],
+      "isteklerde_bulunmamali": ["ILGISIZ_30_ARAC_SEMASI_M05"],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": []
+    }
+  }
+}

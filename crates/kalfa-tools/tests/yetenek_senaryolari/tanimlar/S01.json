@@ -1,0 +1,70 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "S01",
+  "aile": "surec_ve_oturum",
+  "baslik": "Uzun test çalıştırma",
+  "kullanici_istegi": "`betikler/uzun_test.sh` test takımını arka plan işi olarak başlatın, iş kimliğini izleyin ve tamamlandığında gerçek çıkış kodunu (`0`) ve özet satırını raporlayın.",
+  "kip": "siki",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "arka_plan_surec"],
+  "bagimli_hat": "Hat 03 (PR #39 — arka plan süreçleri ve terminal)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": true,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "betikler/uzun_test.sh",
+      "icerik": "#!/bin/sh\necho \"Adim 1/2: hazirlik\"\necho \"Adim 2/2: 14 test gecti (KLF-S01-TAMAM)\"\nexit 0\n"
+    }
+  ],
+  "izinli_degisiklikler": [],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [
+      {
+        "arac": "kabuk",
+        "hedef": "betikler/uzun_test.sh",
+        "karar": "onayla"
+      }
+    ],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_oku",
+      "argumanlar": { "yol": "betikler/uzun_test.sh" }
+    },
+    {
+      "tur": "metin",
+      "icerik": "Arka plan işi (`is-s01-01`) tamamlandı; Çıkış kodu: 0 ve özet satırı `KLF-S01-TAMAM` doğrulandı."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Uzun süren iş turu kilitlemeden izlenir; iş kimliği ve `Çıkış kodu: 0` ile `KLF-S01-TAMAM` kanıtı raporlanır.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "betikler/uzun_test.sh",
+        "durum": "degismedi",
+        "icerir": ["KLF-S01-TAMAM"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["KLF-S01-TAMAM"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_oku", "durum": "basarili" }
+      ]
+    }
+  }
+}

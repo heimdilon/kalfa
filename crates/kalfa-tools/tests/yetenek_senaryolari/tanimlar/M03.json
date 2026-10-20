@@ -1,0 +1,73 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "M03",
+  "aile": "mcp",
+  "baslik": "Uzak HTTP MCP yazma",
+  "kullanici_istegi": "Yerel test HTTP MCP sunucusunda `kayit_guncelle` yazma aracını çağırarak `gorev-42` durumunu `tamamlandi` yapın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "uzak_mcp_http"],
+  "bagimli_hat": "Hat 04 (PR #40 — uzak MCP istemcisi)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": true,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "mcp/yazma_istegi.json",
+      "icerik": "{\"arac\":\"kayit_guncelle\",\"etki\":\"dis_yazma\",\"kayit\":\"gorev-42\",\"yeni_durum\":\"tamamlandi\"}\n"
+    }
+  ],
+  "izinli_degisiklikler": ["mcp/yazma_sonucu.json"],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [
+      {
+        "arac": "mcp:uzak:kayit_guncelle",
+        "hedef": "gorev-42",
+        "karar": "onayla"
+      }
+    ],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_yaz",
+      "argumanlar": {
+        "yol": "mcp/yazma_sonucu.json",
+        "icerik": "{\"kayit\":\"gorev-42\",\"durum\":\"tamamlandi\",\"onay\":\"muhurlu\"}\n"
+      }
+    },
+    {
+      "tur": "metin",
+      "icerik": "Mühürlü onay sonrasında `gorev-42` kaydı güncellendi."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Uzak HTTP MCP yazma aracı mühürlü onay ister ve onay sonrası kaydı günceller.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "mcp/yazma_sonucu.json",
+        "durum": "var",
+        "icerir": ["\"gorev-42\"", "\"tamamlandi\""]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": [],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_yaz", "durum": "basarili" }
+      ]
+    }
+  }
+}

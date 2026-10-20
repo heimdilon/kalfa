@@ -1,0 +1,70 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "W06",
+  "aile": "web",
+  "baslik": "Kaynak gösterimi",
+  "kullanici_istegi": "İki ayrı yerel belge sayfasındaki (`https://belge.kalfa.yerel/seccomp` ve `https://belge.kalfa.yerel/appcontainer`) yalıtım bilgilerini birleştirip `web/karsilastirma.md` dosyasına her iddiayı kendi kaynak URL'siyle eşleştirerek yazın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "web_getir"],
+  "bagimli_hat": "Hat 05 (PR #41 — kaynak atıflı web getirme)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": true,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "web/kaynaklar.json",
+      "icerik": "{\"sayfalar\":[\"https://belge.kalfa.yerel/seccomp\",\"https://belge.kalfa.yerel/appcontainer\"]}\n"
+    }
+  ],
+  "izinli_degisiklikler": ["web/karsilastirma.md"],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_yaz",
+      "argumanlar": {
+        "yol": "web/karsilastirma.md",
+        "icerik": "- Linux seccomp soket izin listesi uygular (Kaynak: https://belge.kalfa.yerel/seccomp)\n- Windows AppContainer çalışma alanı paket SID'i kullanır (Kaynak: https://belge.kalfa.yerel/appcontainer)\n"
+      }
+    },
+    {
+      "tur": "metin",
+      "icerik": "İki sayfadaki bilgiler kaynak URL'leriyle eşleştirilerek `web/karsilastirma.md` dosyasına yazıldı."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Yanıtta ve üretilen karşılaştırma dosyasında her iki iddia da kendi kaynak URL'siyle eşleşir.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "web/karsilastirma.md",
+        "durum": "var",
+        "icerir": [
+          "https://belge.kalfa.yerel/seccomp",
+          "https://belge.kalfa.yerel/appcontainer"
+        ]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": [],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_yaz", "durum": "basarili" }
+      ]
+    }
+  }
+}
