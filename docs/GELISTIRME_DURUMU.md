@@ -3,11 +3,10 @@
 Güncelleme: 2026-10-14; Windows sürüm akışı ve PR #8 arayüzü birleşti, depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
 
-**Otomatik izin kipi (19 Ekim, PR A tamam):** Kalfa'ya Claude Code'unkine
-benzer beşinci bir kip, Otomatik, eklenecek. Bu kipte onay isteyen yalıtımlı
-komutları ve MCP çağrılarını bir hakem model değerlendirir. Hakem `clef`'tir
-ve EVREN'in `/v1/systemone` ucunda çalışır. Kullanıcı tasarımı onayladı. İş
-iki PR'a bölündü:
+**Otomatik izin kipi (19–20 Ekim, tamamlandı):** Kalfa'nın beşinci izin
+kipi Otomatik'tir ve Claude Code'unkine benzer. Bu kipte onay isteyen
+yalıtımlı komutları ve MCP çağrılarını bir hakem model değerlendirir. Hakem
+`clef`'tir ve EVREN'in `/v1/systemone` ucunda çalışır. İş iki PR'la girdi:
 
 - **PR A, hakem ve ölçüm** ([#34](https://github.com/heimdilon/kalfa/pull/34)):
   Birleşti (`4041a39`).
@@ -17,7 +16,8 @@ iki PR'a bölündü:
     p95 gecikme 0,70 sn.
   - **Eşikler:** izin 0,80, ret 0,40.
 - **PR B, kip ve arayüz** ([#35](https://github.com/heimdilon/kalfa/pull/35)):
-  `otomatik-kip/b-kip` dalında uygulandı (Görev 1–8).
+  Birleşti (`5260ed3`). Antigravity uyguladı; Claude inceledi ve Windows ile
+  WSL'de baştan doğruladı.
   - **Bileşenler:** `Kip::Otomatik` ve `hakeme_uygun` izin listesi (`izin.rs`),
     araç aşaması hakem kapısı, bağlı grup ve geri düşme sayaçları
     (`arac_asamasi.rs`), `KayitOgesi::OtomatikKarar` / `Olay::OtomatikKarar` /
@@ -26,11 +26,18 @@ iki PR'a bölündü:
     beşli kip menüsü ve konuşmada tek satırlık karar notları.
   - **Sınır testleri:** `crates/kalfa-core/tests/otomatik_kip.rs` içinde tasarım
     §9'daki bütün sınırlar (mühür testi dahil 18 oturum testi) doğrulandı.
+  - **Canlı deneme:** Çekirdek düzeyinde, gerçek `glm-5.3` ve `clef` ile
+    yapıldı (`tests/otomatik_kip_canli.rs`, `#[ignore]`). İki komut da
+    hakemden izin aldı (P 0,92 ve 0,84); kart çıkmadı.
 
-**Sıradaki iş:** PR B (#35) incelemesi ve WSL doğrulaması.
+**Açık kalanlar:**
 
-- **Dal:** `otomatik-kip/b-kip`.
-- **Uygulayıcı:** Claude (inceleme ve birleştirme).
+- **Arayüzlü canlı deneme:** Kip yükseltme ve alan hazırlığı yerel Windows
+  pencereleriyle onaylandığı için otomatikleştirilemedi.
+- **WebDriver `e2e/` takımı:** Bu iş için koşturulmadı.
+
+İkisi de kullanıcının kendi denemesinde ya da ayrı bir işte yapılabilir. Bu
+işte açık kod işi yoktur.
 
 - [Tasarım](superpowers/specs/2026-10-19-kalfa-otomatik-kip-design.md)
 - [PR A planı](superpowers/plans/2026-10-19-kalfa-otomatik-kip-a-hakem.md)
