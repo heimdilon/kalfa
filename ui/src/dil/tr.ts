@@ -13,6 +13,9 @@ import type {
   McpDurumEtiketi,
   McpKipi,
   ModelProfili,
+  UzakMcpDurumEtiketi,
+  UzakMcpRozeti,
+  UzakMcpYetkiEtiketi,
   YalitimYoklukNedeni,
 } from '../ipc/tipler';
 
@@ -831,6 +834,52 @@ export const tr = {
   'ayar.etkin_pencere_kaydedildi': 'Kaydedildi. Yeni oturumlar bu pencereyle başlar.',
   'ayar.etkin_pencere_hata':
     'Etkin bağlam penceresi en az 32000 olan bir tam sayı olmalı.',
+  // Uzak MCP sunucuları (Yetenek-04 Görev 6). Yerel süreç veya yalıtım içermez.
+  'uzak_mcp.baslik': 'Uzak MCP sunucuları',
+  'uzak_mcp.aciklama':
+    'HTTPS üzerinden bağlanan uzak MCP sunucularıdır. Bilgisayarınızda süreç başlatmazlar ve yerel yalıtım kullanmazlar.',
+  'uzak_mcp.ekle': 'Uzak sunucu ekle',
+  'uzak_mcp.bos': 'Kayıtlı uzak MCP sunucusu yok.',
+  'uzak_mcp.liste': 'Kayıtlı uzak MCP sunucuları',
+  'uzak_mcp.rozet.uzak_streamable_http': 'Uzak HTTP sunucusu (yerel yalıtım yok)',
+  'uzak_mcp.rozet_aciklama.uzak_streamable_http':
+    'Bu sunucu ağ üzerinden uzak bir adreste çalışır; bilgisayarınızda yerel yalıtımlı süreç başlatılmaz. Çağrı verileri onayınızla uzak sunucuya gönderilir.',
+  'uzak_mcp.durum.bagli_degil': 'Bağlı değil',
+  'uzak_mcp.durum.baglaniyor': 'Bağlanıyor',
+  'uzak_mcp.durum.bagli': 'Bağlı',
+  'uzak_mcp.durum.kimlik_gerekli': 'Hesap bağlantısı gerekli',
+  'uzak_mcp.durum.sonucu_belirsiz': 'Son işlem sonucu belirsiz',
+  'uzak_mcp.durum.hata': 'Bağlantı hatası',
+  'uzak_mcp.yetki.yetkisiz': 'Kimliksiz (açık uç)',
+  'uzak_mcp.yetki.sabit_baslik': 'Sabit gizli başlık (kasada)',
+  'uzak_mcp.yetki.oauth': 'OAuth 2.0 (PKCE)',
+  'uzak_mcp.kimlik_bagli': 'Hesap bağlı (kasada)',
+  'uzak_mcp.kimlik_bagli_degil': 'Hesap bağlı değil',
+  'uzak_mcp.baglan': 'Bağlan ve araçları keşfet',
+  'uzak_mcp.oauth_bagla': 'Hesabı bağla (OAuth)',
+  'uzak_mcp.kimlik_kaldir': 'Kimliği kaldır',
+  'uzak_mcp.protokol': 'Protokol {surum}',
+  'uzak_mcp.reddedilen_sayisi': '{sayi} araç güvenlik denetiminde kapatıldı',
+  'uzak_mcp.belirsiz_uyari_baslik': 'Belirsiz yazma uyarısı:',
+  'uzak_mcp.form.baslik_yeni': 'Yeni uzak MCP sunucusu',
+  'uzak_mcp.form.baslik_duzenle': '{ad} uzak sunucusunu düzenle',
+  'uzak_mcp.form.ad': 'Sunucu adı',
+  'uzak_mcp.form.uc_url': 'HTTPS uç adresi (URL)',
+  'uzak_mcp.form.uc_url_ipucu': 'Yalnızca https:// adresleri kabul edilir.',
+  'uzak_mcp.form.yetki': 'Yetkilendirme türü',
+  'uzak_mcp.form.baslik_adi': 'Gizli başlık adı',
+  'uzak_mcp.form.baslik_degeri': 'Gizli başlık değeri',
+  'uzak_mcp.form.korunan_baslik': 'Kayıtlı gizli başlık kasada korunuyor (değer gösterilmez)',
+  'uzak_mcp.form.baslik_degistir': 'Gizli değeri değiştir',
+  'uzak_mcp.form.oauth_istemci': 'OAuth istemci kimliği (isteğe bağlı)',
+  'uzak_mcp.form.oauth_kapsamlar': 'OAuth kapsamları (boşluk veya virgülle ayrılmış)',
+  'uzak_mcp.form.oauth_kaynak': 'OAuth kaynak adresi (resource URL, isteğe bağlı)',
+  'uzak_mcp.form.yerel_onay':
+    'Kaydet dediğinizde Kalfa uzak uç adresini ve yetkilendirme türünü yerel bir pencerede gösterir ve onayınızı ister.',
+  'uzak_mcp.form.hata.ad': 'Sunucu adı yalnız küçük harf, rakam ve tire içermeli.',
+  'uzak_mcp.form.hata.url': 'Geçerli bir https:// uç adresi yazın.',
+  'uzak_mcp.form.hata.baslik': 'Gizli başlık adı ve değeri boş bırakılamaz.',
+  'uzak_mcp.form.hata.zaman': 'Zaman aşımları sıfırdan büyük tam sayı olmalı.',
 } as const;
 
 export type MetinAnahtari = keyof typeof tr;
@@ -982,3 +1031,27 @@ export function kisayolCumlesi(t: KisayolTeklifi): string {
     ? m('kisayol.dosya_kok', { arac: t.arac })
     : m('kisayol.dosya', { dizin: t.dizin, arac: t.arac });
 }
+
+
+export const UZAK_MCP_DURUMU_ADI: Record<UzakMcpDurumEtiketi, MetinAnahtari> = {
+  bagli_degil: 'uzak_mcp.durum.bagli_degil',
+  baglaniyor: 'uzak_mcp.durum.baglaniyor',
+  bagli: 'uzak_mcp.durum.bagli',
+  kimlik_gerekli: 'uzak_mcp.durum.kimlik_gerekli',
+  sonucu_belirsiz: 'uzak_mcp.durum.sonucu_belirsiz',
+  hata: 'uzak_mcp.durum.hata',
+};
+
+export const UZAK_MCP_ROZETI: Record<UzakMcpRozeti, MetinAnahtari> = {
+  uzak_streamable_http: 'uzak_mcp.rozet.uzak_streamable_http',
+};
+
+export const UZAK_MCP_ROZET_ACIKLAMASI: Record<UzakMcpRozeti, MetinAnahtari> = {
+  uzak_streamable_http: 'uzak_mcp.rozet_aciklama.uzak_streamable_http',
+};
+
+export const UZAK_MCP_YETKI_ADI: Record<UzakMcpYetkiEtiketi, MetinAnahtari> = {
+  yetkisiz: 'uzak_mcp.yetki.yetkisiz',
+  sabit_baslik: 'uzak_mcp.yetki.sabit_baslik',
+  oauth: 'uzak_mcp.yetki.oauth',
+};
