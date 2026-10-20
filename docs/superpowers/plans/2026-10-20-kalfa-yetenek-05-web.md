@@ -8,6 +8,8 @@
 
 ## Global Constraints
 
+- **21 Ekim rol devri:** Kullanıcının “sen halletsene” talimatıyla kalan inceleme düzeltmelerini ve çevrimdışı kabulü Codex üstlenir. Önceki Antigravity uygulama rolü bu dar kapsamda devredildi; kurulum, canlı deney ve merge sınırları değişmedi.
+
 - Kullanıcının 20 Ekim talimatı: Codex plan ve PR hazırlar; Antigravity uygular; kullanıcı haber verince Codex inceler. Bu belge ürün kodu veya derlenmiş örnek içermez; ön doğrulama yapılmış gibi sunulamaz.
 - İlk teslimat yerel kodlama + web + MCP, Windows ve Linux'tur. EVREN, Türkçe ad/metin, bağlı onay, yalıtım, sır koruması, bütçe ve JSONL kurtarma korunur.
 - Başlamadan güncel AGENTS.md, GELISTIRME_DURUMU, Jira sahipliği ve PR başını okuyun. Her hat ayrı worktree'dedir; aynı klasöre iki uygulayıcı girmez.

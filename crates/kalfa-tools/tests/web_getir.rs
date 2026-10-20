@@ -1617,3 +1617,57 @@ async fn gorev3_r2_sp01_gunluk_dto_olay_ve_hata_yollarinda_hassas_url_parametres
     assert!(tum_jsonl.contains("token=[MASKELENDI]"));
     assert!(tum_jsonl.contains("api_key=[MASKELENDI]"));
 }
+
+#[test]
+fn bozuk_json_url_kimlik_bilgisi_kayda_sizamaz() {
+    let ham = r#"{"url":"https://kullanici:CANARY_PAROLA@belge.ornek.test/"#;
+    assert!(serde_json::from_str::<serde_json::Value>(ham).is_err());
+    let maskeli = kalfa_tools::web::arac_argumanlarini_maskele(ham);
+    assert!(
+        !maskeli.contains("CANARY_PAROLA"),
+        "Bozuk araç JSON'u URL parolasını korudu: {maskeli}"
+    );
+}
+
+#[tokio::test]
+async fn bozuk_json_url_parolasi_tam_oturum_kaydina_sizamaz() {
+    use kalfa_core::izin::{Kip, Siniflandirici};
+    use kalfa_core::oturum::OturumAyarlari;
+    use kalfa_core::protokol::{BitisNedeni, Komut};
+    use kalfa_core::test_destek::{SahteSaglayici, SahteYanit, test_baglami, test_oturumu};
+    use kalfa_evren::AkisOlayi;
+    use kalfa_tools::{CalismaAlani, varsayilan_araclar};
+    use std::sync::Arc;
+
+    let alan = tempfile::tempdir().unwrap();
+    let kayit = tempfile::tempdir().unwrap();
+    let kayit_yolu = kayit.path().join("bozuk-json.jsonl");
+    let siniflandirici = Arc::new(Siniflandirici::yeni(alan.path(), &[]).unwrap());
+    let araclar = varsayilan_araclar(CalismaAlani::ac(siniflandirici.clone()).unwrap());
+    let mut yanit = SahteYanit::arac("web_getir", serde_json::json!({}));
+    if let SahteYanit::Akis(olaylar) = &mut yanit {
+        for olay in olaylar {
+            if let Ok(AkisOlayi::AracCagrilari(cagrilar)) = olay {
+                cagrilar[0].function.arguments =
+                    r#"{"url":"https://kullanici:CANARY_PAROLA@belge.ornek.test/"#.into();
+            }
+        }
+    }
+    let saglayici =
+        SahteSaglayici::yeni(vec![yanit, SahteYanit::metin("Geçersiz çağrı reddedildi.")]);
+    let mut ayarlar = OturumAyarlari::yeni("glm-5.3", alan.path());
+    ayarlar.kip = Kip::Serbest;
+    ayarlar.kayit_yolu = Some(kayit_yolu.clone());
+    let mut surucu = test_oturumu(test_baglami(saglayici, araclar, siniflandirici), ayarlar);
+    surucu
+        .gonder(Komut::KullaniciMesaji {
+            metin: "Belgeyi okuyun.".into(),
+        })
+        .await;
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
+    let jsonl = std::fs::read_to_string(kayit_yolu).unwrap();
+    assert!(
+        !jsonl.contains("CANARY_PAROLA"),
+        "Bozuk araç JSON'undaki parola tam JSONL kaydına sızdı"
+    );
+}

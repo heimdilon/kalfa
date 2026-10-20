@@ -171,20 +171,9 @@ pub fn arac_argumanlarini_maskele(ham_argumanlar: &str) -> String {
             return serilestirilmis;
         }
     }
-    // Geçersiz/bozuk JSON durumunda `?` sonrası sorgu dizgelerini koruyucu biçimde maskele.
-    let mut sonuc = String::with_capacity(ham_argumanlar.len());
-    let mut kalan = ham_argumanlar;
-    while let Some(soru_indeksi) = kalan.find('?') {
-        sonuc.push_str(&kalan[..=soru_indeksi]);
-        sonuc.push_str("[MASKELENDI]");
-        let sonrasi = &kalan[soru_indeksi + 1..];
-        let bitis = sonrasi
-            .find(['"', '\'', ' ', '\t', '\r', '\n', '}', ']'])
-            .unwrap_or(sonrasi.len());
-        kalan = &sonrasi[bitis..];
-    }
-    sonuc.push_str(kalan);
-    sonuc
+    // Ayrıştırılamayan metinde URL sınırları güvenilir değildir. Şema doğrulaması
+    // çağrıyı reddetse bile model mesajı daha önce kaydedilir; ham metni saklama.
+    "[MASKELENDI]".to_string()
 }
 
 /// Okunan bir web sayfasının kaynak ve durum özeti.
