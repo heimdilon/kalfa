@@ -13,7 +13,7 @@
 //!   durumunda belirsiz sonuç uyarısı saklanır.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use kalfa_core::arac::{McpAracTanimOzeti, McpBaslatmaSayaci, McpTarifi, async_trait};
@@ -222,6 +222,7 @@ pub struct UzakMcpYoneticisi {
     canli: Mutex<BTreeMap<String, CanliUzakSunucuDurumu>>,
     baglanti_sayaci: AtomicU64,
     arac_revizyonu_sayaci: AtomicU64,
+    test_loopback_etkin: AtomicBool,
 }
 
 impl UzakMcpYoneticisi {
@@ -265,11 +266,27 @@ impl UzakMcpYoneticisi {
             canli: Mutex::new(BTreeMap::new()),
             baglanti_sayaci: AtomicU64::new(0),
             arac_revizyonu_sayaci: AtomicU64::new(0),
+            test_loopback_etkin: AtomicBool::new(false),
         })
+    }
+
+    pub fn test_loopback_izni_ayarla(&self, etkin: bool) {
+        self.test_loopback_etkin.store(etkin, Ordering::SeqCst);
+    }
+
+    pub fn test_loopback_etkin_mi(&self) -> bool {
+        self.test_loopback_etkin.load(Ordering::SeqCst)
     }
 
     pub fn katalog(&self) -> &Arc<UzakAracKatalogu> {
         &self.katalog
+    }
+
+    pub fn oturum_arac_kaynagi(self: &Arc<Self>) -> Arc<kalfa_mcp::uzak::UzakAracKaynagi> {
+        kalfa_mcp::uzak::UzakAracKaynagi::yeni(
+            Arc::clone(&self.katalog),
+            Arc::clone(self) as Arc<dyn UzakMcpCagriYurutucusu>,
+        )
     }
 
     pub fn oauth(&self) -> &Arc<UzakOAuthYoneticisi> {
@@ -547,6 +564,124 @@ impl UzakMcpYoneticisi {
             .map_err(|e| KomutHatasi::gecersiz(e.to_string()))
     }
 
+    /// Arayüzden veya IPC üzerinden başlatılan OAuth 2.0 kullanıcı bağlama akışı.
+    ///
+    /// Metadata uçları verilmemişse RFC 9728 / RFC 8414 `.well-known` adreslerinden
+    /// türetilir; `redirect_uri` verilmemişse yerel `127.0.0.1:0` loopback geri çağrım
+    /// dinleyicisi açılır ve tarayıcı yönlendirmesi geldiğinde token takası tamamlanır.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn kullanici_oauth_bagla(
+        self: &Arc<Self>,
+        ad: &str,
+        oturum_kimligi: Option<String>,
+        korunmus_kaynak_metadata_url: Option<&str>,
+        yetki_sunucusu_metadata_url: Option<&str>,
+        redirect_uri: Option<&str>,
+        test_fiksturu_loopback: bool,
+        ozel_ag_izinli: bool,
+    ) -> Result<OAuthBaslatmaSonucuDto, KomutHatasi> {
+        let kaynak_meta = korunmus_kaynak_metadata_url.unwrap_or("");
+        let yetki_meta = yetki_sunucusu_metadata_url.unwrap_or("");
+        if let Some(acik_redirect) = redirect_uri.map(str::trim).filter(|s| !s.is_empty()) {
+            return self
+                .oauth_bagla_baslat(
+                    ad,
+                    oturum_kimligi,
+                    kaynak_meta,
+                    yetki_meta,
+                    acik_redirect,
+                    test_fiksturu_loopback,
+                    ozel_ag_izinli,
+                )
+                .await;
+        }
+
+        let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|_| {
+                KomutHatasi::gecersiz("Yerel OAuth geri çağrım dinleyicisi başlatılamadı.")
+            })?;
+        let yerel_adres = dinleyici
+            .local_addr()
+            .map_err(|_| KomutHatasi::gecersiz("Yerel OAuth geri çağrım adresi okunamadı."))?;
+        let otomatik_redirect = format!("http://{yerel_adres}/oauth/callback");
+
+        let baslatma = self
+            .oauth_bagla_baslat(
+                ad,
+                oturum_kimligi.clone(),
+                kaynak_meta,
+                yetki_meta,
+                &otomatik_redirect,
+                test_fiksturu_loopback,
+                ozel_ag_izinli,
+            )
+            .await?;
+
+        let yonetici = Arc::clone(self);
+        let sunucu_adi = ad.to_owned();
+        tokio::spawn(async move {
+            let _ = loopback_oauth_geri_cagrimini_bekle(
+                dinleyici,
+                yonetici,
+                sunucu_adi,
+                oturum_kimligi,
+            )
+            .await;
+        });
+
+        Ok(baslatma)
+    }
+
+    /// Arayüzden "Hesabı bağla (OAuth)" düğmesiyle başlatılan ve loopback geri çağrımında
+    /// token takası tamamlanana kadar bekleyip güncel sunucu satırını döndüren akış.
+    pub async fn kullanici_oauth_bagla_ve_tamamla(
+        self: &Arc<Self>,
+        ad: &str,
+        oturum_kimligi: Option<String>,
+        test_fiksturu_loopback: bool,
+        ozel_ag_izinli: bool,
+    ) -> Result<UzakMcpSunucuSatiriDto, KomutHatasi> {
+        let dinleyici = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|_| {
+                KomutHatasi::gecersiz("Yerel OAuth geri çağrım dinleyicisi başlatılamadı.")
+            })?;
+        let yerel_adres = dinleyici
+            .local_addr()
+            .map_err(|_| KomutHatasi::gecersiz("Yerel OAuth geri çağrım adresi okunamadı."))?;
+        let otomatik_redirect = format!("http://{yerel_adres}/oauth/callback");
+
+        let _baslatma = self
+            .oauth_bagla_baslat(
+                ad,
+                oturum_kimligi.clone(),
+                "",
+                "",
+                &otomatik_redirect,
+                test_fiksturu_loopback,
+                ozel_ag_izinli,
+            )
+            .await?;
+
+        loopback_oauth_geri_cagrimini_bekle(
+            dinleyici,
+            Arc::clone(self),
+            ad.to_owned(),
+            oturum_kimligi,
+        )
+        .await?;
+
+        let guncel = self
+            .mcp_depo
+            .mcp_ayarlarini_oku()
+            .0
+            .uzak_sunucu(ad)
+            .cloned()
+            .ok_or_else(|| KomutHatasi::gecersiz("Bu adla bir uzak MCP sunucusu yok."))?;
+        Ok(self.satir_uret(&guncel))
+    }
+
     /// OAuth 2.0 geri çağrımını (callback) tamamlar ve token paketini kasaya bağlar.
     pub async fn oauth_bagla_tamamla(
         &self,
@@ -787,6 +922,94 @@ impl UzakMcpYoneticisi {
         girdi.son_hata = Some(maskeli);
         girdi.istemci = None;
     }
+}
+
+async fn loopback_oauth_geri_cagrimini_bekle(
+    dinleyici: tokio::net::TcpListener,
+    yonetici: Arc<UzakMcpYoneticisi>,
+    sunucu_adi: String,
+    oturum_kimligi: Option<String>,
+) -> Result<(), KomutHatasi> {
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let Ok(Ok((mut soket, _))) =
+        tokio::time::timeout(Duration::from_secs(300), dinleyici.accept()).await
+    else {
+        return Err(KomutHatasi::gecersiz(
+            "OAuth geri çağrımı zaman aşımına uğradı.",
+        ));
+    };
+
+    let mut tampon = [0u8; 4096];
+    let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(5), soket.read(&mut tampon)).await
+    else {
+        return Err(KomutHatasi::gecersiz("OAuth geri çağrım isteği okunamadı."));
+    };
+    if n == 0 {
+        return Err(KomutHatasi::gecersiz("OAuth geri çağrım isteği boş geldi."));
+    }
+
+    let istek_metni = String::from_utf8_lossy(&tampon[..n]);
+    let ilk_satir = istek_metni.lines().next().unwrap_or_default();
+    let yol_ve_sorgu = ilk_satir.split_whitespace().nth(1).unwrap_or("/");
+    let tam_url = format!("http://127.0.0.1{yol_ve_sorgu}");
+    let Ok(parsed) = url::Url::parse(&tam_url) else {
+        return Err(KomutHatasi::gecersiz(
+            "OAuth geri çağrım adresi ayrıştırılamadı.",
+        ));
+    };
+
+    let mut state: Option<String> = None;
+    let mut code: Option<String> = None;
+    let mut iss: Option<String> = None;
+    let mut error: Option<String> = None;
+    for (anahtar, deger) in parsed.query_pairs() {
+        match anahtar.as_ref() {
+            "state" => state = Some(deger.into_owned()),
+            "code" => code = Some(deger.into_owned()),
+            "iss" => iss = Some(deger.into_owned()),
+            "error" => error = Some(deger.into_owned()),
+            _ => {}
+        }
+    }
+
+    let sonuc = yonetici
+        .oauth_bagla_tamamla(
+            &sunucu_adi,
+            state.as_deref().unwrap_or(""),
+            oturum_kimligi.as_deref(),
+            iss.as_deref(),
+            code.as_deref(),
+            error.as_deref(),
+        )
+        .await;
+
+    let (durum_satiri, govde) = match &sonuc {
+        Ok(_) => (
+            "200 OK",
+            "Kalfa OAuth yetkilendirmesi tamamlandı; bu sekmeyi kapatabilirsiniz.",
+        ),
+        Err(hata) => {
+            yonetici.hata_kaydet(
+                &sunucu_adi,
+                UzakMcpDurumEtiketi::KimlikGerekli,
+                hata.mesaj.clone(),
+                &[],
+            );
+            (
+                "400 Bad Request",
+                "Kalfa OAuth yetkilendirmesi tamamlanamadı; uygulama ekranını kontrol edin.",
+            )
+        }
+    };
+    let yanit = format!(
+        "HTTP/1.1 {durum_satiri}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{govde}",
+        govde.len()
+    );
+    let _ = soket.write_all(yanit.as_bytes()).await;
+    let _ = soket.flush().await;
+    sonuc.map(|_| ())
 }
 
 #[async_trait]

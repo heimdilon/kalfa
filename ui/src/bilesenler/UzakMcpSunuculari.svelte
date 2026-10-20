@@ -203,7 +203,10 @@
 
             <button
               type="button"
-              onclick={() => {
+              onclick={async () => {
+                if (onAyrintiYukle && !ayrintilar[ad]) {
+                  await onAyrintiYukle(ad);
+                }
                 duzenlenenAd = ad;
                 yeniFormAcik = false;
               }}

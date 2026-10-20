@@ -88,6 +88,8 @@ pub struct Uygulama {
     /// Yerel onaylı MCP kayıt defteri ve ana pencerenin MCP kanalı (Görev 10).
     pub(crate) mcp_kayit: crate::mcp::tanimlar::McpKayitDefteri,
     pub(crate) mcp_kanali: Arc<crate::mcp::komutlar::McpArayuzKanali>,
+    /// Uzak MCP sunucu, OAuth ve araç keşfi yöneticisi (Yetenek-04, SP-08).
+    pub uzak_mcp: Arc<crate::mcp::uzak_yonetici::UzakMcpYoneticisi>,
     ic: Mutex<IcDurum>,
 }
 
@@ -172,6 +174,12 @@ impl Uygulama {
             mcp_denetleyici.clone(),
             ayarlar.clone(),
         );
+        let uzak_mcp = crate::mcp::uzak_yonetici::UzakMcpYoneticisi::yeni(
+            ayarlar.clone(),
+            mcp_kasa.clone(),
+            b.iletisim.clone(),
+            b.acici.clone(),
+        );
         Arc::new(Self {
             oturum_dizini: dizin::oturum_dizini(&b.veri_dizini),
             kasa: b.kasa,
@@ -197,6 +205,7 @@ impl Uygulama {
             mcp_denetleyici,
             mcp_kayit,
             mcp_kanali,
+            uzak_mcp,
             veri_dizini: b.veri_dizini,
             ev_dizini: b.ev_dizini,
             geri_alma_dizini: b.geri_alma_dizini,

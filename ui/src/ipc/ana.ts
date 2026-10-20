@@ -37,6 +37,9 @@ import type {
   OturumSatiri,
   TurId,
   UygulamaDurumu,
+  UzakMcpSunucuAyrintisi,
+  UzakMcpSunucuFormu,
+  UzakMcpSunucuSatiri,
   YalitimCalismaAlani,
   YalitimDurumu,
 } from './tipler';
@@ -340,6 +343,32 @@ export const mcpBaslatmaKartiYanitla = (istekKimligi: string, kabul: boolean) =>
 
 export const mcpBaslatmaIzniGeriAl = (alanKimligi: string, ad: string) =>
   invoke<void>('mcp_baslatma_izni_geri_al', { alan_kimligi: alanKimligi, ad });
+
+// ── Uzak MCP sunucuları (Yetenek-04 Görev 6, SP-08) ─────────────────────────
+
+export const uzakMcpSunuculari = () => invoke<UzakMcpSunucuSatiri[]>('uzak_mcp_sunuculari');
+
+export const uzakMcpSunucuAyrintisi = (ad: string) =>
+  invoke<UzakMcpSunucuAyrintisi>('uzak_mcp_sunucu_ayrintisi', { ad });
+
+/** Yerel pencerede onaylanır; vazgeçilirse `false`. */
+export const uzakMcpKaydet = (eskiAd: string | null, form: UzakMcpSunucuFormu) =>
+  invoke<boolean>('uzak_mcp_kaydet', { eski_ad: eskiAd, form });
+
+/** Yerel pencerede onaylanır; vazgeçilirse `false`. */
+export const uzakMcpSil = (ad: string) => invoke<boolean>('uzak_mcp_sil', { ad });
+
+export const uzakMcpEtkinAyarla = (ad: string, etkin: boolean) =>
+  invoke<void>('uzak_mcp_etkin_ayarla', { ad, etkin });
+
+export const uzakMcpBaglan = (ad: string) =>
+  invoke<UzakMcpSunucuSatiri>('uzak_mcp_baglan', { ad });
+
+export const uzakMcpOauthBagla = (ad: string) =>
+  invoke<UzakMcpSunucuSatiri>('uzak_mcp_oauth_bagla', { ad });
+
+export const uzakMcpKimlikKaldir = (ad: string) =>
+  invoke<boolean>('uzak_mcp_kimlik_kaldir', { ad });
 
 // Başlık çubuğu (masaüstü arayüzü tasarımı §5.2): yalnız çağıran pencereye uygulanır.
 export const pencereKucult = () => invoke<void>('pencere_kucult');

@@ -4,7 +4,7 @@
 // denetler).
 
 /// Ana pencerenin komutları.
-pub const ANA_PENCERE_KOMUTLARI: [&str; 85] = [
+pub const ANA_PENCERE_KOMUTLARI: [&str; 93] = [
     "uygulama_durumu",
     "modelleri_yenile",
     "oturumlari_listele",
@@ -83,6 +83,14 @@ pub const ANA_PENCERE_KOMUTLARI: [&str; 85] = [
     "mcp_yeniden_baslat",
     "mcp_baslatma_karti_yanitla",
     "mcp_baslatma_izni_geri_al",
+    "uzak_mcp_sunuculari",
+    "uzak_mcp_sunucu_ayrintisi",
+    "uzak_mcp_kaydet",
+    "uzak_mcp_sil",
+    "uzak_mcp_etkin_ayarla",
+    "uzak_mcp_baglan",
+    "uzak_mcp_oauth_bagla",
+    "uzak_mcp_kimlik_kaldir",
     "pencere_kucult",
     "pencere_buyut_degistir",
     "pencere_kapat",

@@ -42,6 +42,9 @@ import type {
   SartPenceresiDurumu,
   TurId,
   UygulamaDurumu,
+  UzakMcpSunucuAyrintisi,
+  UzakMcpSunucuFormu,
+  UzakMcpSunucuSatiri,
   YalitimCalismaAlani,
   YalitimDurumu,
 } from '../ipc/tipler';
@@ -279,6 +282,11 @@ export class SahteArka {
   mcpIceAktarma: McpIceAktarmaOnizlemesi | null = null;
   #mcpKanali: Channel<McpDurumu> | null = null;
   #mcpTaslaklari = new Map<string, { eskiAd: string | null; form: McpSunucuFormu }>();
+
+  /** Uzak MCP sunucuları (Yetenek-04 Görev 6, SP-08). */
+  uzakMcpSunuculari: UzakMcpSunucuSatiri[] = [];
+  uzakMcpAyrintilari = new Map<string, UzakMcpSunucuAyrintisi>();
+  uzakMcpOnayi = true;
 
   #oturumlar = new Map<OturumId, SahteOturum>();
   #kanallar = new Map<OturumId, Channel<KanalMesaji>>();
@@ -790,6 +798,82 @@ export class SahteArka {
         if (alan) alan.izin = null;
         this.mcpDurumuYaz();
         return null;
+      }
+      case 'uzak_mcp_sunuculari':
+        return structuredClone(this.uzakMcpSunuculari);
+      case 'uzak_mcp_sunucu_ayrintisi': {
+        const ayrinti = this.uzakMcpAyrintilari.get(a.ad as string);
+        if (!ayrinti) throw { kod: 'GecersizGirdi', mesaj: 'Uzak MCP sunucusu bulunamadı.' };
+        return structuredClone(ayrinti);
+      }
+      case 'uzak_mcp_kaydet': {
+        if (!this.uzakMcpOnayi) return false;
+        const eskiAd = (a.eski_ad as string | null) ?? null;
+        const form = a.form as UzakMcpSunucuFormu;
+        const hamTur = form.yetki?.tur ?? 'yetkisiz';
+        const yetkiTuru =
+          hamTur === 'yeni_sabit_baslik' || hamTur === 'korunan_sabit_baslik'
+            ? 'sabit_baslik'
+            : hamTur;
+        const satir: UzakMcpSunucuSatiri = {
+          ozet: {
+            ad: form.ad,
+            etkin: form.etkin ?? true,
+            uc_url: form.uc_url,
+            yetki_turu: yetkiTuru,
+            kimlik_bagli: yetkiTuru === 'sabit_baslik',
+          },
+          rozet: 'uzak_streamable_http',
+          durum: 'bagli_degil',
+          protokol_surumu: null,
+          arac_sayisi: 0,
+          reddedilen_arac_sayisi: 0,
+          son_hata: null,
+          belirsiz_yazma_uyarisi: null,
+        };
+        const digerleri = this.uzakMcpSunuculari.filter(
+          (s) => s.ozet.ad !== eskiAd && s.ozet.ad !== form.ad,
+        );
+        this.uzakMcpSunuculari = [...digerleri, satir];
+        return true;
+      }
+      case 'uzak_mcp_sil': {
+        if (!this.uzakMcpOnayi) return false;
+        this.uzakMcpSunuculari = this.uzakMcpSunuculari.filter((s) => s.ozet.ad !== a.ad);
+        this.uzakMcpAyrintilari.delete(a.ad as string);
+        return true;
+      }
+      case 'uzak_mcp_etkin_ayarla': {
+        const s = this.uzakMcpSunuculari.find((x) => x.ozet.ad === a.ad);
+        if (s) s.ozet.etkin = Boolean(a.etkin);
+        return null;
+      }
+      case 'uzak_mcp_baglan': {
+        const s = this.uzakMcpSunuculari.find((x) => x.ozet.ad === a.ad);
+        if (!s) throw { kod: 'GecersizGirdi', mesaj: 'Uzak MCP sunucusu bulunamadı.' };
+        s.durum = 'bagli';
+        s.protokol_surumu = '2025-11-25';
+        s.arac_sayisi = 2;
+        return structuredClone(s);
+      }
+      case 'uzak_mcp_oauth_bagla': {
+        const s = this.uzakMcpSunuculari.find((x) => x.ozet.ad === a.ad);
+        if (!s) throw { kod: 'GecersizGirdi', mesaj: 'Uzak MCP sunucusu bulunamadı.' };
+        s.ozet.kimlik_bagli = true;
+        s.durum = 'bagli';
+        s.protokol_surumu = '2025-11-25';
+        s.arac_sayisi = 2;
+        return structuredClone(s);
+      }
+      case 'uzak_mcp_kimlik_kaldir': {
+        if (!this.uzakMcpOnayi) return false;
+        const s = this.uzakMcpSunuculari.find((x) => x.ozet.ad === a.ad);
+        if (s) {
+          s.ozet.kimlik_bagli = false;
+          s.durum = 'bagli_degil';
+          s.arac_sayisi = 0;
+        }
+        return true;
       }
       case 'calisma_alani_ozeti':
         return this.alanOzeti;
