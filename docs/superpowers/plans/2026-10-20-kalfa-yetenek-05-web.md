@@ -1,7 +1,7 @@
 # kaynaklı web getirme ve MCP arama planı
 
 **Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity (`Antigravity-Hat-05`).
-**Durum:** G4a (`web_getir`, ağ/izin/mühür, HTML/metin çıkarımı, sızıntı önleme, UI kartı) ve G4b yerel fixture doğrulaması (`W01`–`W06`) Windows + WSL Ubuntu 24.04 üzerinde tamamlandı; canlı arama sağlayıcısı seçimi kullanıcı kararını ve `#40` (G3b) birleşmesini bekliyor.
+**Durum:** G4a (`web_getir`, açık `WebTarifi`/`VeriCikisi::WebSayfasi` onay/mühür/kayıt sözleşmesi [SP-05], kayıpsız UTF-8 bayt ofsetli devam imleci [SP-07], HTML/metin çıkarımı, sızıntı önleme, UI kaynak kartı ve `varsayilan_araclar`/oturum/IPC entegrasyonu [SP-08]) ile G4b yerel/Uzak MCP (`Hat04` `arac_ara` + `UzakAracKaynagi`) arama-kaynak-yanıt sözleşmesi (`W01`–`W06`) Windows + WSL Ubuntu 24.04 üzerinde tamamlandı; canlı dış arama sağlayıcısı denemesi kullanıcı sağlayıcı/hesap/anahtar kararını bekliyor.
 **Plan tabanı:** main `4041a39995e3bea3d56515e53ffc8af47f68e1ae`. **Çalışma dalı:** `codex/plan-yetenek-web`.
 **İlk başlanacak iş:** Önce ağ/izin sözleşmesini ve yerel HTTP fixture'larını hazırlayın. Arama sağlayıcısı kararı sayfa getirme çalışmalarını bekletmez.
 **Koordinasyon:** [iş sırası ve ortak dosyalar](https://github.com/heimdilon/kalfa/blob/codex/plan-yetenek-koordinasyon/docs/superpowers/specs/2026-10-20-kalfa-yetenek-programi.md).

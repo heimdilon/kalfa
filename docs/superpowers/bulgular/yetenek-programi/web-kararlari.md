@@ -3,7 +3,7 @@
 - **Tarih:** 2026-10-20
 - **Hat / Ajan:** Yetenek 05 (`Antigravity-Hat-05`)
 - **Dal / PR:** `codex/plan-yetenek-web` ([PR #41](https://github.com/heimdilon/kalfa/pull/41))
-- **Kapsam:** `G4a` (Ağ/izin sözleşmesi, yerel HTTP/HTTPS test sunucuları, sınırlı `web_getir` aracı, kaynak/güven zarflaması, sızıntı önleme ve arayüz kaynak kartı) + `G4b`'nin yerel/fixture doğrulama katmanı (`W01`–`W06`).
+- **Kapsam:** `G4a` (Ağ/izin sözleşmesi, açık `WebTarifi`/`VeriCikisi::WebSayfasi` onay/mühür/kayıt yüzeyi [SP-05], kayıpsız UTF-8 bayt ofsetli devam imleci [SP-07], yerel HTTP/HTTPS test sunucuları, sınırlı `web_getir` aracı, kaynak/güven zarflaması, sızıntı önleme ve arayüz/oturum/IPC ürün bağlantısı [SP-08]) + `G4b`'nin yerel/Uzak MCP (`Hat04`) doğrulama katmanı (`W01`–`W06`).
 
 ---
 
@@ -34,10 +34,11 @@ Kalfa'nın kabuk yalıtımı (`kalfa-sandbox`: Linux'ta `bubblewrap` + `seccomp`
   - Şema (`http`/`https`) ve URL içi kimlik bilgisi (`kullanici:parola@`) denetlenir.
   - `https` kaynağından `http` hedefine düşüş (`HttpsHttpDususu`) koşulsuz reddedilir.
   - Varsayılan `YonlendirmeIzni::AyniHost` politikasıyla farklı host'a yönlendirme (`FarkliHostYonlendirmesi`) reddedilir.
-- **İzin ve Mühür Sözleşmesi (`crates/kalfa-tools/src/web/izin.rs`):**
+- **İzin ve Mühür Sözleşmesi (`crates/kalfa-tools/src/web/izin.rs` ve `crates/kalfa-core/src/protokol.rs` — SP-05):**
   - `Kip::Inceleme` kipinde `web_getir` yasaktır ve araç listesinde modele sunulmaz (`yazar_mi() == true`).
-  - `Kip::Siki`, `Kip::Proje` ve `Kip::Serbest` kiplerinde daha önce onaylanmamış her `(host, port)` hedefi `Karar::YerelOnayli` döndürür (`Serbest` kip ilk dış host erişimini otomatik onaylamaz).
-  - `web_muhur_ozeti(&WebTarifi)` (`SHA-256`), kanonik URL, host, port ve yönlendirme iznini mühürler. `Hazirlik.eklenti` üzerinden `kalfa_core::onay::muhur_hesapla` içine bağlanır; onaydan sonra URL değiştirilirse `AracHatasi::OnayEskidi` döner.
+  - `Kip::Siki`, `Kip::Proje` ve `Kip::Serbest` kiplerinde daha önce onaylanmamış her `(host, port)` hedefi, şifresiz `http://` istekleri ve farklı host yönlendirmesine izin veren çağrılar `Karar::YerelOnayli` döndürür (`Serbest` kip ilk dış host erişimini otomatik onaylamaz; `Otomatik` kip hakemi dış ağa çıkan `WebTarifi`'ni otomatik onaylamaz).
+  - `WebGetirAraci::hazirla`, `EklentiTarifi` (`evren_uclari` / `ilk_gonderim`) **kullanmaz**; açık `kalfa_core::protokol::WebTarifi` (`maskeli_url`, `sema`, `host`, `port`, `yontem`, `yonlendirme_izni`, `ilk_host_erisimi`, `muhur_ozeti`) ve `VeriCikisi::WebSayfasi` üretir.
+  - `Hazirlik.web` ve `OnayOgesi.web` üzerinden `kalfa_core::onay::muhur_hesapla` doğrudan `WebTarifi` alanlarını mühürler; onaydan sonra URL veya yönlendirme kapsamı değiştirilirse `AracHatasi::OnayEskidi` döner.
 
 ---
 
@@ -58,7 +59,7 @@ Planda HTML ayrıştırması için regex kullanılmaması ve yeni bağımlılık
 
 - **Toplam Zaman Aşımı:** 30 saniye (`TOPLAM_ZAMAN_ASIMI`), bağlantı zaman aşımı 10 saniye (`BAGLANTI_ZAMAN_ASIMI`). Yavaş/sonsuz akışlar `WebGetirHatasi::ZamanAsimi` ile kesilir (`W05`).
 - **Açılmış Gövde Sınırı:** 4 MiB (`AZAMI_ACILMIS_GOVDE_BAYT = 4 * 1024 * 1024`). Gzip/deflate akışı açılırken sınır aşılırsa tüm gövde belleğe alınmadan `SikistirmaHatasi::AcilmisBoyutAsildi` ile durdurulur (`W05`).
-- **Çıktı Sınırı ve Anlık Görüntü İmleci:** Modele verilen metin varsayılan olarak en çok 64 KiB (`AZAMI_CIKTI_BAYT = 65_536`) yer kaplar ve UTF-8 karakter/satır sınırında kırpılır. Kırpıldığında `web1:<sha256_16>:<satir_indisi>` biçiminde devam imleci üretilir. Sayfa içeriği sonraki çağrıda değişmişse özet uyuşmazlığı yakalanır ve `MetinCikarimHatasi::ImlecSayfaDegisti` döner (`W02`).
+- **Çıktı Sınırı ve Kayıpsız Anlık Görüntü İmleci (`SP-07`):** Modele verilen metin varsayılan olarak en çok 64 KiB (`AZAMI_CIKTI_BAYT = 65_536`) yer kaplar ve UTF-8 karakter sınırında (`floor_char_boundary`) kırpılır. Kırpıldığında `web1:<sha256_16>:<bayt_ofseti>` biçiminde anlık görüntü özetine bağlı **UTF-8 bayt ofsetli** devam imleci üretilir. Böylece çok baytlı UTF-8 içeren tek uzun satırlarda (ortada veya sonda) hiçbir içerik kaybolmaz ve ardışık imleç çağrılarının çıktıları birleştirildiğinde tam metin yinelenmeden ve eksiksiz elde edilir. Sayfa içeriği sonraki çağrıda değişmişse özet uyuşmazlığı yakalanır ve `MetinCikarimHatasi::ImlecSayfaDegisti` döner (`W02`).
 - **İkili İçerik Reddi:** Yalnızca metin tabanlı `Content-Type` değerleri kabul edilir; ayrıca PDF (`%PDF-`), PNG, JPEG, GIF, ZIP, WASM, ELF, PE (`MZ`) sihirli baytları ve NUL bayt / yüksek kontrol karakteri oranı `MetinCikarimHatasi::IkiliIcerikSaptandi` ile reddedilir (`W04`).
 
 ---
@@ -73,8 +74,10 @@ Planda HTML ayrıştırması için regex kullanılmaması ve yeni bağımlılık
   - Kaynak URL, yönlendirme sonrası son URL, sayfa başlığı, çıktı/kaynak bayt boyutu, kırpılma durumu ve devam imlecini gösterir.
   - Ham HTML (`{@html}`) ve sabit `style="…"` özniteliği kullanmaz (CSP uyumu).
   - Harici bağlantıyı otomatik açmaz; yalnızca `http:` / `https:` şemalı ve kimlik bilgisiz URL'lerde iki adımlı kullanıcı onayı (`Harici bağlantıyı aç` → `Tarayıcıda aç` / `Vazgeç`) sonrasında geri çağırımı tetikler.
-- **Ortak Çekirdek / IPC Birleşme Sırası Notu:**
-  - Koordinasyon planındaki `#38 → #39 → #40` birleşme sırasına uyularak `kalfa-core`, `kalfa-uygulama`, `crates/kalfa`, `ui/src/ipc/tipler.ts` ve `ui/src/dil/tr.ts` dosyaları bu PR'da değiştirilmemiştir. `#40` birleştikten sonra `WebGetirAraci` tek satırla `varsayilan_araclar` listesine eklenecektir.
+- **Ortak Çekirdek / IPC / Arayüz Ürün Entegrasyonu (`SP-08`):**
+  - `Hat02 (#38) → Hat03 (#39) → Hat04 (#40)` düzeltilmiş ortak sözleşme commit'leri `codex/plan-yetenek-web` dalına alındı (`merge` ön koşulu aranmadan).
+  - `WebGetirAraci::yeni()`, `crates/kalfa-tools/src/lib.rs` içindeki `varsayilan_araclar` listesine bağlandı.
+  - `kalfa-core` (`protokol.rs`, `izin.rs`, `onay/muhur.rs`, `kayit.rs`, `oturum/onay_asamasi.rs`), `kalfa-uygulama` (`oturumlar.rs` `yerel_onay_sorusu`) ve `ui/` (`OnaySayfasi.svelte`, `BekleyenOnay.svelte`, `KonusmaOgesi.svelte`, `SourceTag.svelte`, `bicim.ts`, `tr.ts`, `tipler.ts`) üzerinde `WebTarifi`, `VeriCikisi::WebSayfasi`, `SourceTag` (`web:` rozeti) ve `WebKaynakKarti` uçtan uca bağlandı.
 
 ---
 
@@ -93,11 +96,30 @@ Plan kuralları gereği kullanıcı onayı olmadan dış serviste hesap açılma
 ### Öneri ve Beklenen Karar
 
 1. **Öneri:** Bağımsız arama indeksi, aylık yinelenen ücretsiz kotası (2.000 sorgu/ay) ve yalnızca başlık/URL/özet döndürüp sayfa okumayı Kalfa'nın `web_getir` güvenlik katmanına bırakması nedeniyle **Brave Search MCP** (veya doğrudan uzak HTTP MCP uç noktası tercih edilirse **Exa MCP**) önerilir.
-2. **Açık Bağımlılıklar:**
-   - **Hat 04 (`#40`, G3b):** Uzak HTTP MCP istemci ve kimlik doğrulama desteğinin birleşmesi.
-   - **Kullanıcı Kararı:** Brave Search MCP mi yoksa Exa MCP mi kullanılacağının ve API anahtarının kullanıcı tarafından sağlanmasının onayı.
+2. **Açık Bağımlılıklar (Kullanıcı Kararı Bekleyen Canlı Deney):**
+   - **Hat 04 (`#40`, G3b) Sözleşme Entegrasyonu:** `Hat04`'ün `arac_ara` ve `UzakAracKaynagi` sözleşmesi bu dala alınmış ve `crates/kalfa-uygulama/tests/oturum_tablosu.rs::hat04_uzak_mcp_arac_ara_ve_web_getir_kaynakli_yanit_sozlesmesi` testiyle (Brave JSON, Tavily JSON ve Exa düz metin biçimleri + `web_getir` sayfa okuma) doğrulanmıştır.
+   - **Kullanıcı Kararı:** Gerçek dış sağlayıcı/hesap/API anahtarı seçimi ve canlı arama deneyi onayı kullanıcıya aittir; yerel fixture kabulü ile canlı arama deneyi açıkça ayrılmıştır.
 3. **Hazır Katman (`crates/kalfa-tools/src/web/arama.rs`):**
-   - MCP arama aracından dönen JSON yanıtlarını (`results` / `web.results`) ayrıştıran `mcp_arama_json_coz`,
+   - MCP arama aracından dönen JSON (`results` / `web.results`) ve Exa düz metin (`Title:` / `URL:` / `Text:`) ya da `CallToolResult` (`content[].text`, `structuredContent`, `isError`, `"mcp__<sunucu>__<arac>"` ve `"mcp:<sunucu>/<arac>"` kaynak etiketleri) yanıtlarını ayrıştıran `mcp_arama_json_coz`, `mcp_arama_metin_coz` ve `mcp_arac_sonucunu_coz`,
    - Hata durumlarını (`IptalEdildi`, `HizSiniri`, `YetersizBakiyeVeyaKimlik`, `BosSonuc`, `GecersizSonucUrl`) sınıflandıran `arama_sonuclarini_dogrula`,
    - Seçilen sonuçları `WebIstemci` + `yaniti_metne_donustur` ile okuyan `arama_kaynaklarini_oku`,
-   - Yanıttaki iddiaların gerçekten okunan sayfalardaki alıntılara dayandığını ve karşılaştırma sorularında en az 2 farklı kaynağa (`W03`) atıf yapıldığını doğrulayan `kaynakli_yanit_dogrula` fonksiyonları tamamlanmış ve yerel HTTPS fixture'larıyla doğrulanmıştır.
+   - Yanıttaki iddiaların gerçekten okunan sayfalardaki alıntılara dayandığını ve karşılaştırma sorularında en az 2 farklı kaynağa (`W03`) atıf yapıldığını doğrulayan `kaynakli_yanit_dogrula` fonksiyonları tamamlanmış ve yerel HTTPS/HTTP fixture'larıyla doğrulanmıştır.
+
+---
+
+## 5. Codex İncelemesi (`INCELEME.md`) Düzeltme Turu Kanıtları (`SP-05`, `SP-07`, `SP-08`)
+
+- **SP-05 (`[P2] #41: Web onayı EVREN eklenti gönderimi gibi hazırlanıyor`):**
+  - **Önce düşen kanıt:** `crates/kalfa-tools/tests/web_getir.rs::gorev3_sp05_web_onayi_eklenti_ilk_gonderim_degil_acik_web_tarifi_ve_veri_cikisi_tasir` (`Hazirlik.eklenti` dolu olduğu ve `VeriCikisi::WebSayfasi` / `Hazirlik.web` bulunmadığı için `crates\kalfa-tools\tests\web_getir.rs:1070:5` satırında düştü).
+  - **Düzeltme ve geçen kanıt:** `WebTarifi`, `YonlendirmeIzni`, `VeriCikisi::WebSayfasi`, `Hazirlik.web` ve `OnayOgesi.web` eklendi; `WebGetirAraci::hazirla` artık `EklentiTarifi` üretmiyor. `OnaySayfasi.svelte` ve `BekleyenOnay.svelte` `IlkGonderimKarti` yerine hedef origin (`sema://host:port`), maskeli adres, HTTP yöntemi (`GET`), veri çıkışı (`VeriCikisi::WebSayfasi`) ve yönlendirme kapsamını gösteriyor (`ui/src/bilesenler/webKaynakKarti.test.ts` ve `crates/kalfa-uygulama/tests/oturum_tablosu.rs::uygulama_oturumu_web_getir_aracini_varsayilan_kayitta_sunar_ve_yerel_onay_penceresini_baglar`).
+- **SP-07 (`[P2] #41: Tek uzun satırın kalanına devam imleciyle ulaşılamıyor`):**
+  - **Önce düşen kanıt:** `517` baytlık tek satırda `azami_cikti_bayt: Some(256)` ile `yaniti_metne_donustur` çağrıldığında `devam_imleci: None` döndü ve kalan 261 bayt kayboldu (`crates\kalfa-tools\tests\web_getir.rs:782:9`).
+  - **Düzeltme ve geçen kanıt (`14c52a4`):** `crates/kalfa-tools/src/web/metin.rs` içinde devam imleci satır indisi yerine UTF-8 bayt ofsetiyle (`web1:<sha256_16>:<bayt_ofseti>`) çalışacak şekilde düzeltildi. Tek uzun satır, ortadaki uzun satır, sondaki uzun satır, çok baytlı UTF-8 (`ğüşiöçĞÜŞİÖÇ`), ardışık devam çağrıları ve içerik değiştiğinde imleç reddi `gorev2_sp07_uzun_satir_ortada_ve_sonda_cok_baytli_utf8_ve_ardisik_imlec_kayipsiz_birlestirilir` testiyle doğrulandı.
+- **SP-08 (`[P2] #39–#41: Ortak ürün entegrasyonu tamamlanmamış`):**
+  - **Önce düşen kanıtlar:**
+    1. `crates/kalfa-tools/tests/veri_cikisi.rs::sp08_varsayilan_araclar_web_getir_aracini_ve_web_sayfasi_veri_cikisini_icerir` (`varsayilan_araclar` içinde `web_getir` bulunmadığı için düştü).
+    2. `crates/kalfa-tools/tests/web_getir.rs::gorev5_sp08_mcp_arama_saglayici_bicimleri_ve_oturum_web_getir_kayit_akisi` (Exa düz metin biçimi ayrıştırılamadığı için düştü).
+    3. `crates/kalfa-uygulama/tests/oturum_tablosu.rs::hat04_uzak_mcp_arac_ara_ve_web_getir_kaynakli_yanit_sozlesmesi` (`kalfa-mcp` `"mcp__<sunucu>__<arac>"` kaynak etiketi ürettiği için düştü).
+  - **Düzeltme ve geçen kanıtlar (`daca462`, `0ecca05`, `a26f3e3`):** `Hat02 → Hat03 → Hat04` ortak sözleşme commit'leri dala alındı; `WebGetirAraci` `varsayilan_araclar`'a eklendi; `KonusmaOgesi.svelte` + `SourceTag.svelte` + `WebKaynakKarti.svelte` bağlandı; `mcp_arac_sonucunu_coz` hem `"mcp__"` hem `"mcp:"` kaynak etiketleriyle `Hat04` `arac_ara` + `UzakAracKaynagi` akışına bağlandı.
+- **Taban `cargo audit` (Wasmtime) Notu:**
+  - `main` tabanından gelen `wasmtime` `43.0.0` RustSec duyuruları (`RUSTSEC-2026-0085`..`0089`, `0091`..`0096`) `web` hattıyla ilgisizdir; talimat gereği bu hatta rastgele bağımlılık yükseltmesi yapılmamıştır ve ayrıca raporlanmıştır.
