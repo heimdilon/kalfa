@@ -32,4 +32,5 @@ pub mod test_destek;
 
 pub use uygulama::{Bilesenler, Uygulama};
 
+pub mod isler;
 pub mod mcp;
