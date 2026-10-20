@@ -1,8 +1,8 @@
 # Kalfa — Otomatik izin kipi: Tasarım
 
 **Tarih:** 2026-10-19.
-**Durum:** Kullanıcı onayladı (19 Ekim). PR A (#34) birleşti ve ölçüm
-kapısı geçti. PR B (#35) uygulandı.
+**Durum:** Uygulandı (20 Ekim). PR A (#34, `4041a39`) ölçüm kapısını geçti.
+PR B (#35, `5260ed3`) birleşti.
 **Taban:** `main`, `6f55c5b` (sürüm 0.1.1).
 **Planlar:** [PR A — hakem ve ölçüm](../plans/2026-10-19-kalfa-otomatik-kip-a-hakem.md),
 [PR B — kip, hakem kapısı ve arayüz](../plans/2026-10-20-kalfa-otomatik-kip-b-kip.md).
