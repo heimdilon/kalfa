@@ -25,8 +25,8 @@ use crate::geri_alma::{DIFF_SINIRI, DosyaYedegi, GeriAlinamazNedeni, OncekiHal, 
 use crate::gonderim::{EklentiIstekOzeti, GunlukToken, IstekSonucu};
 use crate::gorunum::{GORUNMEZ_UYARISI, gorunmez_var_mi};
 use crate::izin::{
-    AYNI_ADIM_UYARISI, GERI_ALINAMAZ_UYARISI, Islem, Karar, Kip, Siniflandirici,
-    TopluSiniflandirici, YolSinifi, derleme_dosyasi_mi, kabuk_karari, karar_ver,
+    AYNI_ADIM_UYARISI, GERI_ALINAMAZ_UYARISI, Islem, Karar, Kip, MCP_TAZE_ONAY_UYARISI,
+    Siniflandirici, TopluSiniflandirici, YolSinifi, derleme_dosyasi_mi, kabuk_karari, karar_ver,
 };
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, IslemId};
@@ -216,9 +216,6 @@ struct YurutmeSonucu {
     yeniden_onay: Vec<ToolCall>,
     tamamlanan_model_cagrilari: HashSet<String>,
 }
-
-const MCP_TAZE_ONAY_UYARISI: &str =
-    "MCP hazırlığı onaydan sonra değişti; güncel kartı yeniden onaylayın.";
 
 fn tekrar_anahtari(tc: &ToolCall) -> String {
     format!("{}\u{0}{}", tc.function.name, tc.function.arguments)

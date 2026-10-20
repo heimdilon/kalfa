@@ -34,6 +34,30 @@ Kalfa'nın yalıtımı dışında kendiliğinden çalıştırabilir.";
 
 pub const AYNI_ADIM_UYARISI: &str = "Bu dosya aynı adımda bir komutla birlikte yazılıyor; \
 komut bu değişikliği çalıştırabilir.";
+pub const MCP_TAZE_ONAY_UYARISI: &str =
+    "MCP hazırlığı onaydan sonra değişti; güncel kartı yeniden onaylayın.";
+
+pub const HAKEME_UYGUN_UYARILAR: &[&str] = &[
+    ILK_KABUK_UYARISI,
+    AGLI_KABUK_UYARISI,
+    AYNI_ADIM_UYARISI,
+    MCP_ILK_CAGRI_UYARISI,
+    MCP_AG_UYARISI,
+    MCP_TAZE_ONAY_UYARISI,
+];
+
+pub fn hakeme_uygun(uyarilar: &[String], yerel: bool) -> bool {
+    !yerel
+        && uyarilar
+            .iter()
+            .all(|u| HAKEME_UYGUN_UYARILAR.contains(&u.as_str()))
+}
+
+pub const OTOMATIK_EMIN_DEGIL_UYARISI: &str = "Otomatik kip bu işlemden emin olamadı; karar sizin.";
+
+pub fn otomatik_riskli_uyarisi(risk_aciklamasi: &str) -> String {
+    format!("Otomatik kip bu işlemi riskli buldu: {risk_aciklamasi}. Karar sizin.")
+}
 
 /// Komutların kod olarak çalıştırdığı derleme ve betik dosyaları (güvenlik
 /// analizi Bulgu 3). Dosya adına göre, büyük-küçük harf duyarsız eşleşir.
@@ -167,6 +191,7 @@ pub enum Kip {
     Siki,
     Proje,
     Serbest,
+    Otomatik,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -266,7 +291,7 @@ pub fn kabuk_karari(kip: Kip, tarif: &KabukTarifi) -> Karar {
                 uyarilar.push(ALAN_HAZIRLIGI_UYARISI.to_string());
                 return Karar::YerelOnayli { uyarilar };
             }
-            if kip == Kip::Serbest && uyarilar.is_empty() {
+            if matches!(kip, Kip::Serbest | Kip::Otomatik) && uyarilar.is_empty() {
                 Karar::Serbest
             } else {
                 Karar::Onayli { uyarilar }
@@ -377,7 +402,7 @@ pub fn mcp_karari(kip: Kip, erisim: McpErisim, ilk_cagri: bool, ag: &McpAgKarti)
         (Kip::Siki | Kip::Proje, McpErisim::Yalitimli) => Karar::Onayli {
             uyarilar: Vec::new(),
         },
-        (Kip::Serbest, McpErisim::Yalitimli) => {
+        (Kip::Serbest | Kip::Otomatik, McpErisim::Yalitimli) => {
             let mut uyarilar = Vec::new();
             if ilk_cagri {
                 uyarilar.push(MCP_ILK_CAGRI_UYARISI.to_string());

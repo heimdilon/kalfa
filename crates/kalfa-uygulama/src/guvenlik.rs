@@ -33,6 +33,7 @@ fn sira(kip: Kip) -> u8 {
         Kip::Siki => 1,
         Kip::Proje => 2,
         Kip::Serbest => 3,
+        Kip::Otomatik => 3,
     }
 }
 
@@ -48,6 +49,7 @@ pub fn kip_adi(kip: Kip) -> &'static str {
         Kip::Siki => "Sıkı",
         Kip::Proje => "Proje",
         Kip::Serbest => "Serbest",
+        Kip::Otomatik => "Otomatik",
     }
 }
 
@@ -55,7 +57,7 @@ pub fn kip_adi(kip: Kip) -> &'static str {
 /// tasarımı §5.1). Yalıtımsız komut her kipte yerel pencerede onay ister.
 pub fn yukseltme_aciklamasi(yeni: Kip) -> &'static str {
     match yeni {
-        Kip::Inceleme => "",
+        Kip::Inceleme | Kip::Otomatik => "",
         Kip::Siki => {
             "Kalfa dosya yazmayı, düzenlemeyi ve komut çalıştırmayı önerebilecek; her biri onayınıza \
              sunulur."
