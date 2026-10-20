@@ -2,6 +2,7 @@
 //! OAuth 2.0 protokol yardımcıları ve DNS/IP/yönlendirme ağ politikası (`1.1b`).
 
 pub mod http;
+pub mod kesif;
 pub mod oauth;
 pub mod oturum;
 pub mod sse;
@@ -9,6 +10,11 @@ pub mod sse;
 pub use http::{
     AZAMI_YONLENDIRME, SabitDnsCozucu, SinirliHttpTasima, SistemDnsCozucu, UzakDnsCozucu,
     UzakGizliBaslik, UzakHttpSecenekleri, dogrulanmis_istemci_ve_url_hazirla,
+};
+pub use kesif::{
+    ARAC_ARA_ADI, AracAraAraci, AracAraSonucu, UzakAracAdayi, UzakAracKatalogu, UzakAracKaynagi,
+    UzakCagriHatasi, UzakKesifHatasi, UzakMcpArac, UzakMcpCagriYurutucusu,
+    UzakSunucuKatalogGirdisi, UzakYuklemeOzeti, uzak_arac_sema_bayt_hesapla,
 };
 pub use oauth::{
     AZAMI_OAUTH_YANIT_BAYTI, OAuthDurumBaglami, OAuthGeriCagrimGirdisi, OAuthHatasi,
