@@ -75,6 +75,59 @@ describe('güvenlik uyarısı', () => {
   });
 });
 
+describe('otomatik karar', () => {
+  it('canlı olaydan ve geçmişten konuşma öğesi olur', () => {
+    const d = acilis({
+      ogeler: [
+        {
+          tip: 'OtomatikKarar',
+          sira: 3,
+          tur: 't0',
+          cagri: 'c-0',
+          arac: 'kabuk',
+          aciklama: '`cargo test` çalıştır',
+          sonuc: 'Izin',
+          risk: null,
+          olasilik: 0.12,
+        },
+      ],
+      daha_eski_var: false,
+    });
+    expect(d.ogeler).toMatchObject([
+      {
+        tip: 'OtomatikKarar',
+        cagri: 'c-0',
+        arac: 'kabuk',
+        aciklama: '`cargo test` çalıştır',
+        sonuc: 'Izin',
+        risk: null,
+        olasilik: 0.12,
+      },
+    ]);
+    const sonra = uygula(d, {
+      tip: 'Kanal',
+      mesaj: paket(1, {
+        tip: 'OtomatikKarar',
+        cagri: 'c-1',
+        arac: 'kabuk',
+        aciklama: '`rm -rf` çalıştır',
+        sonuc: 'Ret',
+        risk: 'yikici',
+        olasilik: 0.91,
+      }),
+    });
+    expect(sonra.ogeler.at(-1)).toMatchObject({
+      tip: 'OtomatikKarar',
+      cagri: 'c-1',
+      arac: 'kabuk',
+      aciklama: '`rm -rf` çalıştır',
+      sonuc: 'Ret',
+      risk: 'yikici',
+      olasilik: 0.91,
+    });
+  });
+});
+
 describe('kanal mesajı → oturum durumu (1c tasarımı §8.4)', () => {
   it('mesaj, tur ve bitişik metin parçaları tek yanıtta birleşir', () => {
     let d = uygula(acilis(), { tip: 'MesajGonderildi', metin: 'selam' });

@@ -759,6 +759,7 @@ Kabuk bu bölümün kapsamı dışındadır; onun sınırı §7.7'dir.
 | **Sıkı** (varsayılan) | Serbest | Onaylı | Onaylı |
 | **Proje** | Serbest | Çalışma alanı içinde serbest | Onaylı |
 | **Serbest** | Serbest | Çalışma alanı içinde serbest | Yalıtımlı ve ağsız olan otomatik |
+| **Otomatik** | Serbest | Çalışma alanı içinde serbest | Yalıtımlı ve ağsız olan otomatik; yalıtımlı onaylı işlemler ve MCP çağrıları hakeme gider |
 
 Her kipte geçerli olanlar: çalışma alanı dışı yol onay ister (§7.3) · korumalı
 yola ve kendiliğinden çalışan yapılandırmaya yazmak onay ister (§7.3) · gizli
@@ -775,6 +776,10 @@ oturumda son kural uygulanmaz.
   yerine önermemek hem daha dürüst hem daha ucuzdur.
 - **Serbest** yalnızca oturum boyunca geçerlidir, diske yazılmaz ve oturum
   kurtarıldığında geri gelmez (§6.6).
+- **Otomatik** de yalnızca oturum boyunca geçerlidir ve oturum kurtarıldığında
+  Sıkı açılır; onay isteyen yalıtımlı komutları ve MCP çağrılarını hakem modele
+  (`clef`, `/v1/systemone`) değerlendirtir
+  ([otomatik kip tasarımı](2026-10-19-kalfa-otomatik-kip-design.md)).
 - Kalıcı "her şeye izin ver" ayarı **bilerek yoktur.** Unutulmuş bir onay,
   alınmamış bir onaydan tehlikelidir.
 
