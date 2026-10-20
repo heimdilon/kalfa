@@ -6,8 +6,8 @@ use std::time::Duration;
 use kalfa_core::butce::{ButceIslemId, ButceMesaji, ButceTalepci};
 use kalfa_core::gonderim::{GunlukToken, IstekSonucu};
 use kalfa_core::hakem::{
-    AZAMI_HAKEM_OGESI, HAKEM_BUTCE_AMACI, HAKEM_MODELI, HakemGirdisi, HakemOgesi, HakemSonucu,
-    RISKLER, degerlendir,
+    ARDISIK_RET_SINIRI, AZAMI_HAKEM_OGESI, HAKEM_BUTCE_AMACI, HAKEM_MODELI, HakemGirdisi,
+    HakemOgesi, HakemSonucu, RISKLER, TOPLAM_RET_SINIRI, degerlendir, risk_aciklamasi,
 };
 use kalfa_core::test_destek::{SahteSaglayici, reddeden_butce_talepci, sinirsiz_butce_talepci};
 use kalfa_evren::EvrenError;
@@ -703,5 +703,23 @@ async fn gecersiz_veya_cakisan_kimlikte_istek_atilmaz_hepsi_belirsiz_olur() {
             y2.sonuclar[kimlik],
             HakemSonucu::Belirsiz { olasilik: None, .. }
         ));
+    }
+}
+
+#[test]
+fn risk_aciklamasi_tablosu_ve_ret_sinirlari() {
+    assert_eq!(ARDISIK_RET_SINIRI, 3);
+    assert_eq!(TOPLAM_RET_SINIRI, 20);
+    for (risk, beklenen) in [
+        ("yikici", "yıkıcı bir işlem"),
+        ("veri_sizdirma", "veri sızdırma riski"),
+        ("kapsam_disi", "isteğin kapsamı dışında"),
+        ("guvenlik_zayiflatma", "güvenliği zayıflatıyor"),
+        ("supheli_kaynak", "doğrulanmamış kaynaktan kod çalıştırıyor"),
+        ("yok", "belirsiz risk"),
+        ("bilinmeyen", "belirsiz risk"),
+        ("", "belirsiz risk"),
+    ] {
+        assert_eq!(risk_aciklamasi(risk), beklenen, "risk: {risk}");
     }
 }

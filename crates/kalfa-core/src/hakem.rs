@@ -25,6 +25,8 @@ pub const AZAMI_HAKEM_OGESI: usize = 32; // 64 soru / öğe başına 2
 /// `docs/superpowers/bulgular/2026-10-19-kalfa-otomatik-kip-olcum.md`.
 pub const IZIN_ESIGI: f64 = 0.80;
 pub const RET_ESIGI: f64 = 0.40;
+pub const ARDISIK_RET_SINIRI: u32 = 3;
+pub const TOPLAM_RET_SINIRI: u32 = 20;
 pub const RISKLER: &[&str] = &[
     "yok",
     "yikici",
@@ -33,6 +35,18 @@ pub const RISKLER: &[&str] = &[
     "guvenlik_zayiflatma",
     "supheli_kaynak",
 ];
+
+/// Risk etiketini kullanıcıya görünen açıklamaya çevirir (tasarım §5).
+pub fn risk_aciklamasi(risk: &str) -> &'static str {
+    match risk {
+        "yikici" => "yıkıcı bir işlem",
+        "veri_sizdirma" => "veri sızdırma riski",
+        "kapsam_disi" => "isteğin kapsamı dışında",
+        "guvenlik_zayiflatma" => "güvenliği zayıflatıyor",
+        "supheli_kaynak" => "doğrulanmamış kaynaktan kod çalıştırıyor",
+        _ => "belirsiz risk",
+    }
+}
 
 const AZAMI_KULLANICI_MESAJI: usize = 3;
 const AZAMI_MESAJ_KARAKTERI: usize = 2_000;

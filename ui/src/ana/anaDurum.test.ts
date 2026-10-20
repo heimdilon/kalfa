@@ -152,11 +152,26 @@ describe('komutlar', () => {
   });
 
   it('kip yükseltmesi yerel kutuda reddedilirse eski kip kalır', async () => {
-    const { durum } = await acilmis((a) => (a.yukseltmeOnayi = false));
+    const { arka, durum } = await acilmis((a) => (a.yukseltmeOnayi = false));
     await durum.kipSec('Serbest');
     expect(durum.aktif?.ozet.kip).toBe('Siki');
     await durum.kipSec('Inceleme');
     expect(durum.aktif?.ozet.kip).toBe('Inceleme');
+
+    // Otomatik kip en üst sıradadır: Serbest'ten Otomatik'e geçiş yükseltmedir,
+    // Otomatik'ten Serbest'e geçiş ise düşürmedir.
+    arka.yukseltmeOnayi = true;
+    await durum.kipSec('Serbest');
+    expect(durum.aktif?.ozet.kip).toBe('Serbest');
+    arka.yukseltmeOnayi = false;
+    await durum.kipSec('Otomatik');
+    expect(durum.aktif?.ozet.kip).toBe('Serbest');
+    arka.yukseltmeOnayi = true;
+    await durum.kipSec('Otomatik');
+    expect(durum.aktif?.ozet.kip).toBe('Otomatik');
+    arka.yukseltmeOnayi = false;
+    await durum.kipSec('Serbest');
+    expect(durum.aktif?.ozet.kip).toBe('Serbest');
   });
 
   it('yeni oturum: klasör seçilmezse hiçbir şey başlatılmaz', async () => {

@@ -24,9 +24,14 @@ use crate::denetci::{DenetimGirdisi, DenetimKipi, DenetimSonucu};
 use crate::geri_alma::{DIFF_SINIRI, DosyaYedegi, GeriAlinamazNedeni, OncekiHal, diff_sayilari};
 use crate::gonderim::{EklentiIstekOzeti, GunlukToken, IstekSonucu};
 use crate::gorunum::{GORUNMEZ_UYARISI, gorunmez_var_mi};
+use crate::hakem::{
+    ARDISIK_RET_SINIRI, AZAMI_HAKEM_OGESI, HAKEM_BUTCE_AMACI, HAKEM_MODELI, HakemGirdisi,
+    HakemOgesi, HakemSonucu, TOPLAM_RET_SINIRI, degerlendir, risk_aciklamasi,
+};
 use crate::izin::{
-    AYNI_ADIM_UYARISI, GERI_ALINAMAZ_UYARISI, Islem, Karar, Kip, Siniflandirici,
-    TopluSiniflandirici, YolSinifi, derleme_dosyasi_mi, kabuk_karari, karar_ver,
+    AYNI_ADIM_UYARISI, GERI_ALINAMAZ_UYARISI, Islem, Karar, Kip, MCP_TAZE_ONAY_UYARISI,
+    OTOMATIK_EMIN_DEGIL_UYARISI, Siniflandirici, TopluSiniflandirici, YolSinifi,
+    derleme_dosyasi_mi, hakeme_uygun, kabuk_karari, karar_ver, otomatik_riskli_uyarisi,
 };
 use crate::kayit::KayitOgesi;
 use crate::kimlik::{CagriId, IslemId};
@@ -34,7 +39,7 @@ use crate::kisayol::{Kisayol, KisayolTeklifi, teklif};
 use crate::muhur::{OnayMuhru, muhur_hesapla};
 use crate::protokol::{
     AracDurumu, BitisNedeni, Komut, McpOnayKarti, Olay, OnayKarari, OnayOgesi,
-    OnaysizDegisiklikler, OnizlemeNedeni, OnizlemeOgesi,
+    OnaysizDegisiklikler, OnizlemeNedeni, OnizlemeOgesi, OtomatikSonuc,
 };
 use crate::tur_ozeti::{DosyaDegisikligi, GeriAlinabilirlik, KomutOzeti, YazilanDosya};
 use crate::yol::CalismaYolu;
@@ -83,6 +88,8 @@ struct Planlanan {
     /// Kararı onaylıdan serbeste çeviren kısayol (aşama 3 tasarımı §9.1).
     /// Yürütme, kısayolun hâlâ listede olduğunu denetler.
     kisayol: Option<u64>,
+    /// Otomatik kip hakemi tarafından izin verilen çağrı.
+    hakem_onayi: bool,
 }
 
 struct CagriSonucu {
@@ -216,9 +223,6 @@ struct YurutmeSonucu {
     yeniden_onay: Vec<ToolCall>,
     tamamlanan_model_cagrilari: HashSet<String>,
 }
-
-const MCP_TAZE_ONAY_UYARISI: &str =
-    "MCP hazırlığı onaydan sonra değişti; güncel kartı yeniden onaylayın.";
 
 fn tekrar_anahtari(tc: &ToolCall) -> String {
     format!("{}\u{0}{}", tc.function.name, tc.function.arguments)
@@ -406,6 +410,23 @@ impl Oturum {
                 .await;
             }
 
+            if self.ayarlar.kip == Kip::Otomatik
+                && !self.onizleme_acik
+                && !onayli.is_empty()
+                && let Some(sonuc) = self
+                    .hakem_kapisi(
+                        politika,
+                        &siniflandirici,
+                        &mut serbest,
+                        &mut onayli,
+                        hata_sayaci,
+                        &mut bekleyen_sonuclar,
+                    )
+                    .await
+            {
+                return sonuc;
+            }
+
             if !onayli.is_empty() {
                 let toplama = self.onay_topla(onayli).await;
                 for s in toplama.reddedilen {
@@ -564,6 +585,7 @@ impl Oturum {
             geri_alma,
             karar: karar.clone(),
             kisayol,
+            hakem_onayi: false,
         };
         Ok((plan, karar))
     }
@@ -646,6 +668,334 @@ impl Oturum {
             });
         }
         karar
+    }
+
+    async fn hakem_kapisi(
+        &mut self,
+        politika: u64,
+        siniflandirici: &Siniflandirici,
+        serbest: &mut Vec<Planlanan>,
+        onayli: &mut Vec<(Planlanan, Vec<String>, bool)>,
+        hata_sayaci: &mut HashMap<String, u32>,
+        bekleyen_sonuclar: &mut Vec<BekleyenSonuc>,
+    ) -> Option<AsamaSonucu> {
+        let bagli_mi = |p: &Planlanan, uyarilar: &[String]| {
+            p.hazirlik.kabuk.is_some() || uyarilar.iter().any(|u| u == AYNI_ADIM_UYARISI)
+        };
+        let grup_uygun = onayli
+            .iter()
+            .filter(|(p, u, _)| bagli_mi(p, u))
+            .all(|(_, u, yerel)| hakeme_uygun(u, *yerel));
+
+        let mut aday_indeksleri = Vec::new();
+        for (idx, (p, uyarilar, yerel)) in onayli.iter().enumerate() {
+            if aday_indeksleri.len() >= AZAMI_HAKEM_OGESI {
+                break;
+            }
+            if hakeme_uygun(uyarilar, *yerel) && (!bagli_mi(p, uyarilar) || grup_uygun) {
+                aday_indeksleri.push(idx);
+            }
+        }
+        let tum_grup_aday = onayli
+            .iter()
+            .enumerate()
+            .filter(|(_, (p, u, _))| bagli_mi(p, u))
+            .all(|(idx, _)| aday_indeksleri.contains(&idx));
+        if !tum_grup_aday {
+            aday_indeksleri.retain(|&idx| {
+                let (p, u, _) = &onayli[idx];
+                !bagli_mi(p, u)
+            });
+        }
+        if aday_indeksleri.is_empty() {
+            return None;
+        }
+
+        let mut kimlik_haritasi: HashMap<usize, String> =
+            HashMap::with_capacity(aday_indeksleri.len());
+        let mut hakem_ogeleri = Vec::with_capacity(aday_indeksleri.len());
+        for (sira, &idx) in aday_indeksleri.iter().enumerate() {
+            let (p, uyarilar, _) = &onayli[idx];
+            let kimlik = format!("i{}", sira + 1);
+            kimlik_haritasi.insert(idx, kimlik.clone());
+            let gizli_hedef = p.hazirlik.okunan.iter().any(|y| siniflandirici.gizli_mi(y))
+                || p.hazirlik
+                    .yazilan
+                    .iter()
+                    .any(|h| siniflandirici.gizli_mi(&h.yol));
+            let (komut, dizin, yalitim, ag) = match &p.hazirlik.kabuk {
+                Some(k) => (
+                    Some(k.komut.clone()),
+                    Some(k.dizin.clone()),
+                    Some(if k.yalitim.yalitimli_mi() {
+                        "yalıtımlı".to_string()
+                    } else {
+                        "yalıtımsız".to_string()
+                    }),
+                    k.ag_hostlari.clone(),
+                ),
+                None => (None, None, None, Vec::new()),
+            };
+            let mcp = p
+                .hazirlik
+                .mcp
+                .as_ref()
+                .map(McpOnayKarti::yeni)
+                .and_then(|k| serde_json::to_value(k).ok());
+            hakem_ogeleri.push(HakemOgesi {
+                kimlik,
+                arac: p.arac.ad().to_string(),
+                aciklama: p.hazirlik.aciklama.clone(),
+                komut,
+                dizin,
+                yalitim,
+                ag,
+                hedefler: hedefler(&p.hazirlik),
+                diff: p.hazirlik.diff.clone(),
+                gizli_hedef,
+                uyarilar: uyarilar.clone(),
+                mcp,
+            });
+        }
+        let calisma_alani = self
+            .ayarlar
+            .calisma_alani
+            .as_deref()
+            .and_then(|p| p.file_name())
+            .map(|ad| ad.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let girdi = HakemGirdisi {
+            kullanici_istegi: self.son_kullanici_istekleri.iter().cloned().collect(),
+            calisma_alani,
+            ogeler: hakem_ogeleri,
+        };
+
+        let saglayici = self.baglam.saglayici.clone();
+        let butce = self.butce_talepci();
+        let yanit = match self
+            .iptal_edilebilir(degerlendir(saglayici.as_ref(), &butce, &girdi))
+            .await
+        {
+            Ok(yanit) => yanit,
+            Err(neden) => {
+                for p in serbest.iter().chain(onayli.iter().map(|(p, _, _)| p)) {
+                    self.sonuc_isle(
+                        CagriSonucu::plandan(
+                            p,
+                            AracDurumu::IptalEdildi,
+                            "[çalıştırılmadı: tur iptal edildi]".into(),
+                        ),
+                        hata_sayaci,
+                        bekleyen_sonuclar,
+                    )
+                    .await;
+                }
+                return Some(AsamaSonucu::Bitir(neden));
+            }
+        };
+        while let Ok(talep) = self.butce_talep_alici.try_recv() {
+            self.butce_talebi_geldi(talep).await;
+        }
+
+        let yeni = vec![crate::gonderim::GonderilenOge {
+            kaynak: HAKEM_BUTCE_AMACI.to_string(),
+            sira: None,
+            bayt: yanit.gonderilen_bayt,
+        }];
+        let model = Some(HAKEM_MODELI.to_string());
+        for deneme in &yanit.denemeler {
+            match (&deneme.meta, &deneme.sonuc) {
+                (Some(meta), _) => {
+                    self.istek_kaydet(
+                        HAKEM_BUTCE_AMACI,
+                        meta,
+                        model.clone(),
+                        yeni.clone(),
+                        0,
+                        deneme.sonuc.clone(),
+                        Some(deneme.islem),
+                    )
+                    .await;
+                }
+                (None, IstekSonucu::Hata { asama, mesaj }) => {
+                    self.istek_kaydet_hata(
+                        HAKEM_BUTCE_AMACI,
+                        model.clone(),
+                        yeni.clone(),
+                        0,
+                        *asama,
+                        mesaj.clone(),
+                        Some(deneme.islem),
+                    )
+                    .await;
+                }
+                (None, _) => {}
+            }
+        }
+
+        if self.politika.load(Ordering::SeqCst) != politika {
+            self.hata(
+                "İzin kipi değişti; bekleyen onaylar geçersiz sayıldı ve bu adımdaki işlemler yapılmadı.",
+            )
+            .await;
+            for p in serbest.iter().chain(onayli.iter().map(|(p, _, _)| p)) {
+                let icerik =
+                    "[çalıştırılmadı: izin kipi değişti; gerekirse yeniden dene]".to_string();
+                let s = CagriSonucu::plandan(p, AracDurumu::IptalEdildi, icerik);
+                self.sonuc_isle(s, hata_sayaci, bekleyen_sonuclar).await;
+            }
+            return Some(AsamaSonucu::Devam);
+        }
+
+        let ham_sonuc = |idx: usize| -> HakemSonucu {
+            kimlik_haritasi
+                .get(&idx)
+                .and_then(|k| yanit.sonuclar.get(k))
+                .cloned()
+                .unwrap_or(HakemSonucu::Belirsiz {
+                    olasilik: None,
+                    neden: "sonuç eksik".into(),
+                })
+        };
+
+        let mut grup_belirsiz: Option<HakemSonucu> = None;
+        let mut grup_ret: Option<HakemSonucu> = None;
+        for &idx in &aday_indeksleri {
+            let (p, u, _) = &onayli[idx];
+            if bagli_mi(p, u) {
+                match ham_sonuc(idx) {
+                    b @ HakemSonucu::Belirsiz { .. } if grup_belirsiz.is_none() => {
+                        grup_belirsiz = Some(b);
+                    }
+                    r @ HakemSonucu::Ret { .. } if grup_ret.is_none() => {
+                        grup_ret = Some(r);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let grup_geri_duser = self.hakem_ret_ardisik >= ARDISIK_RET_SINIRI
+            || self.hakem_ret_toplam >= TOPLAM_RET_SINIRI;
+
+        let mevcut = std::mem::take(onayli);
+        let mut kalan_onayli = Vec::with_capacity(mevcut.len());
+        for (idx, (mut p, mut uyarilar, yerel)) in mevcut.into_iter().enumerate() {
+            if !kimlik_haritasi.contains_key(&idx) {
+                kalan_onayli.push((p, uyarilar, yerel));
+                continue;
+            }
+            let bagli = bagli_mi(&p, &uyarilar);
+            let kendi = ham_sonuc(idx);
+            let etkin = if bagli {
+                if let Some(belirsiz) = &grup_belirsiz {
+                    match kendi {
+                        HakemSonucu::Belirsiz { .. } => kendi,
+                        _ => belirsiz.clone(),
+                    }
+                } else if let Some(ret) = &grup_ret {
+                    match kendi {
+                        HakemSonucu::Ret { .. } => kendi,
+                        _ => ret.clone(),
+                    }
+                } else {
+                    kendi
+                }
+            } else {
+                kendi
+            };
+
+            match etkin {
+                HakemSonucu::Izin { olasilik } => {
+                    self.otomatik_karar_isle(&p, OtomatikSonuc::Izin, None, Some(olasilik))
+                        .await;
+                    p.hakem_onayi = true;
+                    self.hakem_ret_ardisik = 0;
+                    serbest.push(p);
+                }
+                HakemSonucu::Ret { olasilik, risk } => {
+                    let geri_duser = if bagli {
+                        grup_geri_duser
+                    } else {
+                        self.hakem_ret_ardisik >= ARDISIK_RET_SINIRI
+                            || self.hakem_ret_toplam >= TOPLAM_RET_SINIRI
+                    };
+                    let aciklama = risk_aciklamasi(&risk);
+                    if !geri_duser {
+                        self.otomatik_karar_isle(
+                            &p,
+                            OtomatikSonuc::Ret,
+                            Some(risk.clone()),
+                            Some(olasilik),
+                        )
+                        .await;
+                        self.hakem_ret_ardisik = self.hakem_ret_ardisik.saturating_add(1);
+                        self.hakem_ret_toplam = self.hakem_ret_toplam.saturating_add(1);
+                        let icerik = format!(
+                            "[otomatik kip reddetti] {aciklama}. Bu işlemi yapmayın; başka bir yol deneyin ya da gerekiyorsa kullanıcıdan isteyin."
+                        );
+                        self.sonuc_isle(
+                            CagriSonucu::plandan(&p, AracDurumu::Reddedildi, icerik),
+                            hata_sayaci,
+                            bekleyen_sonuclar,
+                        )
+                        .await;
+                    } else {
+                        self.otomatik_karar_isle(
+                            &p,
+                            OtomatikSonuc::Kullaniciya,
+                            Some(risk.clone()),
+                            Some(olasilik),
+                        )
+                        .await;
+                        let uyari = otomatik_riskli_uyarisi(aciklama);
+                        if !uyarilar.contains(&uyari) {
+                            uyarilar.push(uyari);
+                        }
+                        kalan_onayli.push((p, uyarilar, yerel));
+                    }
+                }
+                HakemSonucu::Belirsiz { olasilik, .. } => {
+                    self.otomatik_karar_isle(&p, OtomatikSonuc::Kullaniciya, None, olasilik)
+                        .await;
+                    let uyari = OTOMATIK_EMIN_DEGIL_UYARISI.to_string();
+                    if !uyarilar.contains(&uyari) {
+                        uyarilar.push(uyari);
+                    }
+                    kalan_onayli.push((p, uyarilar, yerel));
+                }
+            }
+        }
+        *onayli = kalan_onayli;
+        None
+    }
+
+    async fn otomatik_karar_isle(
+        &mut self,
+        p: &Planlanan,
+        sonuc: OtomatikSonuc,
+        risk: Option<String>,
+        olasilik: Option<f64>,
+    ) {
+        let arac = p.arac.ad().to_string();
+        let aciklama = p.hazirlik.aciklama.clone();
+        self.kaydet(KayitOgesi::OtomatikKarar {
+            cagri: p.cagri,
+            arac: arac.clone(),
+            aciklama: aciklama.clone(),
+            sonuc,
+            risk: risk.clone(),
+            olasilik,
+        })
+        .await;
+        self.yay(Olay::OtomatikKarar {
+            cagri: p.cagri,
+            arac,
+            aciklama,
+            sonuc,
+            risk,
+            olasilik,
+        })
+        .await;
     }
 
     async fn onay_topla(&mut self, bekleyen: Vec<(Planlanan, Vec<String>, bool)>) -> OnayToplama {
@@ -752,6 +1102,7 @@ impl Oturum {
                                     if kisayol && let Some(oneri) = teklifler.get(&cagri) {
                                         self.kisayol_ekle(oneri.clone()).await;
                                     }
+                                    self.hakem_ret_ardisik = 0;
                                     self.kabuk_onaylandi(&p);
                                     t.onaylanan.push(p);
                                 }
@@ -785,6 +1136,7 @@ impl Oturum {
                         }
                         Some(true) => {
                             if let Some(p) = kalan.remove(&cagri) {
+                                self.hakem_ret_ardisik = 0;
                                 self.kabuk_onaylandi(&p);
                                 t.onaylanan.push(p);
                             }
@@ -857,7 +1209,7 @@ impl Oturum {
     /// değiştirdiği dosyalar tam biliniyorsa onlar listelenir; bilinmiyorsa
     /// "onaysız bir komut çalıştı" notu kalır (aşama 3 tasarımı §5.4).
     fn onaysiz_isle(&mut self, p: &Planlanan, degisiklikler: Option<&DosyaDegisiklikleri>) {
-        if p.karar != Karar::Serbest {
+        if p.karar != Karar::Serbest && !p.hakem_onayi {
             return;
         }
         if p.hazirlik.kabuk.is_some() {
