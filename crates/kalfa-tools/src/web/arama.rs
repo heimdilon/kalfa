@@ -339,17 +339,21 @@ fn hata_metnini_sinifla(icerik: &str) -> Option<AramaSaglayiciYaniti> {
     None
 }
 
-/// `kalfa-mcp` araç yürütücüsünün (`McpArac` / `sonucu_donustur`) ürettiği
-/// `Result<AracCiktisi, AracHatasi>` sözleşmesini [`AramaSaglayiciYaniti`]'na
+fn mcp_kaynak_etiketi_mi(kaynak: &str) -> bool {
+    kaynak.starts_with("mcp__") || kaynak.starts_with("mcp:")
+}
+
+/// `kalfa-mcp` araç yürütücüsünün (`McpArac` / `UzakMcpArac` / `sonucu_donustur`)
+/// ürettiği `Result<AracCiktisi, AracHatasi>` sözleşmesini [`AramaSaglayiciYaniti`]'na
 /// dönüştürür.
 pub fn mcp_arac_sonucunu_coz(
     sonuc: &Result<AracCiktisi, AracHatasi>,
 ) -> Result<AramaSaglayiciYaniti, AramaHatasi> {
     match sonuc {
         Ok(cikti) => {
-            if !cikti.kaynak.starts_with("mcp:") {
+            if !mcp_kaynak_etiketi_mi(&cikti.kaynak) {
                 return Err(AramaHatasi::CiktiAyristirma(format!(
-                    "beklenen `mcp:` kaynak etiketi, gelen: `{}`",
+                    "beklenen `mcp__` veya `mcp:` kaynak etiketi, gelen: `{}`",
                     cikti.kaynak
                 )));
             }
@@ -366,9 +370,9 @@ pub fn mcp_arac_sonucunu_coz(
         }
         Err(AracHatasi::Iptal) => Err(AramaHatasi::IptalEdildi),
         Err(AracHatasi::Basarisiz(cikti)) => {
-            if !cikti.kaynak.is_empty() && !cikti.kaynak.starts_with("mcp:") {
+            if !cikti.kaynak.is_empty() && !mcp_kaynak_etiketi_mi(&cikti.kaynak) {
                 return Err(AramaHatasi::CiktiAyristirma(format!(
-                    "beklenen `mcp:` kaynak etiketi, gelen: `{}`",
+                    "beklenen `mcp__` veya `mcp:` kaynak etiketi, gelen: `{}`",
                     cikti.kaynak
                 )));
             }

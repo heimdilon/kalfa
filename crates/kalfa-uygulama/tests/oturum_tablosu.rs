@@ -1114,3 +1114,282 @@ async fn uygulama_oturumu_web_getir_aracini_varsayilan_kayitta_sunar_ve_yerel_on
         } if arac == "web_getir"
     )));
 }
+
+#[tokio::test]
+async fn hat04_uzak_mcp_arac_ara_ve_web_getir_kaynakli_yanit_sozlesmesi() {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
+
+    use kalfa_core::arac::{
+        Arac, AracKayitDefteri, McpAracTanimOzeti, McpBaslatmaSayaci, McpErisim, McpTarifi,
+        async_trait,
+    };
+    use kalfa_core::izin::GizliAyarlari;
+    use kalfa_core::protokol::VeriCikisi;
+    use kalfa_mcp::maske::GizliDeger;
+    use kalfa_mcp::tanim::{UzakMcpTanim, UzakYetkiTuru};
+    use kalfa_mcp::uzak::{
+        AracAraAraci, AracAraSonucu, UzakAracKatalogu, UzakAracKaynagi, UzakCagriHatasi,
+        UzakMcpCagriYurutucusu, UzakSunucuKatalogGirdisi,
+    };
+    use kalfa_mcp::{CallToolResult, Tool};
+    use kalfa_sandbox::tarama::CancellationToken;
+    use kalfa_tools::web::{
+        AramaSaglayiciYaniti, Cozucu, TestFixtureIzni, WebGetirAraci, WebIstemci, WebIzinDefteri,
+        arama_sonuclarini_dogrula, mcp_arac_sonucunu_coz,
+    };
+    use serde_json::{Map, Value, json};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    // 1. Yerel HTTP fixture sayfası (MCP aramasından dönen URL'i `web_getir` ile açmak için):
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let web_port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        if let Ok((mut stream, _)) = listener.accept().await {
+            let mut buf = [0u8; 2048];
+            let _ = stream.read(&mut buf).await;
+            let body = "<html><head><title>Tokio MPSC Kanal Kılavuzu</title></head><body><h1>Tokio MPSC</h1><p>Sınırlı kanal geri basınç sağlar.</p></body></html>";
+            let yanit = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(yanit.as_bytes()).await;
+        }
+    });
+
+    struct AramaUzakYurutucu {
+        katalog: Arc<UzakAracKatalogu>,
+        web_port: u16,
+    }
+
+    #[async_trait]
+    impl UzakMcpCagriYurutucusu for AramaUzakYurutucu {
+        async fn uzak_arac_cagir(
+            &self,
+            sunucu_adi: &str,
+            uzak_arac_adi: &str,
+            _argumanlar: Map<String, Value>,
+            onayli_tarif: McpTarifi,
+            _onayli_d: McpAracTanimOzeti,
+            _iptal: CancellationToken,
+        ) -> Result<(CallToolResult, bool), UzakCagriHatasi> {
+            let Some(guncel_tarif) = self.katalog.sunucu_tarifi(sunucu_adi) else {
+                return Err(UzakCagriHatasi::OnayEskidi);
+            };
+            if guncel_tarif != onayli_tarif {
+                return Err(UzakCagriHatasi::OnayEskidi);
+            }
+
+            let hedef_url = format!(
+                "http://belge.ornek.test:{}/tokio-mpsc?api_key=gizli-arama-anahtari",
+                self.web_port
+            );
+            let metin = match uzak_arac_adi {
+                "brave_web_search" => json!({
+                    "web": {
+                        "results": [{
+                            "title": "Tokio MPSC Kanal Kılavuzu (Brave)",
+                            "url": hedef_url,
+                            "description": "Sınırlı kanal geri basınç sağlar."
+                        }]
+                    }
+                })
+                .to_string(),
+                "tavily_search" => json!({
+                    "results": [{
+                        "title": "Tokio MPSC Kanal Kılavuzu (Tavily)",
+                        "url": hedef_url,
+                        "content": "Tavily içerik özeti: sınırlı mpsc kanalı."
+                    }]
+                })
+                .to_string(),
+                "web_search_exa" => format!(
+                    "Title: Tokio MPSC Kanal Kılavuzu (Exa)\nURL: {hedef_url}\nText: Exa düz metin arama çıktısı.\n"
+                ),
+                _ => return Err(UzakCagriHatasi::Iletisim("bilinmeyen arama aracı".into())),
+            };
+
+            let sonuc: CallToolResult = serde_json::from_value(json!({
+                "content": [{ "type": "text", "text": metin }]
+            }))
+            .unwrap();
+            Ok((sonuc, true))
+        }
+    }
+
+    let katalog = Arc::new(UzakAracKatalogu::default());
+    let yurutucu = Arc::new(AramaUzakYurutucu {
+        katalog: Arc::clone(&katalog),
+        web_port,
+    });
+    let kaynak = UzakAracKaynagi::yeni(Arc::clone(&katalog), yurutucu);
+    let arac_ara = AracAraAraci::yeni(Arc::clone(&katalog), Arc::clone(&kaynak));
+
+    let sema = json!({
+        "type": "object",
+        "properties": { "query": { "type": "string" } },
+        "required": ["query"]
+    })
+    .as_object()
+    .cloned()
+    .unwrap();
+
+    for (sunucu, port, arac_adi, aciklama) in [
+        (
+            "brave",
+            19201u16,
+            "brave_web_search",
+            "Brave web arama sağlayıcısı",
+        ),
+        (
+            "tavily",
+            19202u16,
+            "tavily_search",
+            "Tavily web arama sağlayıcısı",
+        ),
+        (
+            "exa",
+            19203u16,
+            "web_search_exa",
+            "Exa web arama sağlayıcısı",
+        ),
+    ] {
+        let tanim = UzakMcpTanim::varsayilan_sinirlarla(
+            sunucu.to_owned(),
+            &format!("http://127.0.0.1:{port}/mcp"),
+            true,
+            UzakYetkiTuru::Yetkisiz,
+        )
+        .unwrap();
+        let kabul = katalog.sunucu_katalogunu_guncelle(UzakSunucuKatalogGirdisi {
+            tanim,
+            alan_kimligi: "alan-web-mcp".to_owned(),
+            gizli_ayarlari: GizliAyarlari::default(),
+            tanim_revizyonu: 1,
+            kimlik_revizyonu: 1,
+            arac_revizyonu: 1,
+            protokol_surumu: "2025-06-18".to_owned(),
+            baglanti_sayaci: McpBaslatmaSayaci::yeni(1),
+            ham_araclar: vec![Tool::new(
+                arac_adi.to_owned(),
+                aciklama.to_owned(),
+                Arc::new(sema.clone()),
+            )],
+            sirlar: Vec::<GizliDeger>::new(),
+        });
+        assert!(kabul.is_empty());
+    }
+
+    let defter = AracKayitDefteri::yeni_kaynakli(vec![arac_ara.clone()], kaynak.clone()).unwrap();
+
+    // İlk tur anlık görüntüsünde yalnız `arac_ara` vardır; uzak arama araçları henüz yüklenmemiştir.
+    let tur1 = defter.anlik_goruntu(Kip::Proje);
+    assert!(tur1.bul("arac_ara").is_some());
+    assert!(tur1.bul("mcp__brave__brave_web_search").is_none());
+
+    // `arac_ara` ile 3 sağlayıcı aracını keşfet ve yükle:
+    let ara_arg = json!({
+        "sorgu": "web arama",
+        "yukle": [
+            "mcp__brave__brave_web_search",
+            "mcp__tavily__tavily_search",
+            "mcp__exa__web_search_exa"
+        ]
+    });
+    let ara_hazirlik = arac_ara.hazirla(&ara_arg).await.unwrap();
+    let ara_cikti = arac_ara
+        .calistir(&ara_arg, &ara_hazirlik, CancellationToken::new())
+        .await
+        .unwrap();
+    let ara_sonuc: AracAraSonucu = serde_json::from_str(&ara_cikti.icerik).unwrap();
+    assert_eq!(ara_sonuc.adaylar.len(), 3);
+    assert_eq!(ara_sonuc.yuklenenler.len(), 3);
+
+    // İkinci tur anlık görüntüsünde Hat04 `UzakAracKaynagi` üzerinden 3 arama aracı etkinleşir:
+    let tur2 = defter.anlik_goruntu(Kip::Proje);
+    for birlesik_ad in [
+        "mcp__brave__brave_web_search",
+        "mcp__tavily__tavily_search",
+        "mcp__exa__web_search_exa",
+    ] {
+        let uzak_arac = tur2
+            .bul(birlesik_ad)
+            .expect("yüklenen uzak arama aracı sonraki turda bulunmalı");
+        let cagri_arg = json!({ "query": "tokio mpsc" });
+        let hazirlik = uzak_arac.hazirla(&cagri_arg).await.unwrap();
+        assert_eq!(hazirlik.veri_cikisi, Some(VeriCikisi::UzakMcpCagrisi));
+        assert_eq!(
+            hazirlik.mcp.as_ref().map(|m| m.erisim),
+            Some(McpErisim::UzakStreamableHttp)
+        );
+
+        let ham_sonuc = uzak_arac
+            .calistir(&cagri_arg, &hazirlik, CancellationToken::new())
+            .await;
+        let cozulmus = mcp_arac_sonucunu_coz(&ham_sonuc)
+            .expect("Hat04 uzak MCP çıktısı sağlayıcıya özgü ayrıştırıcıyla çözülmeli");
+        assert!(matches!(cozulmus, AramaSaglayiciYaniti::Basarili(_)));
+        let dogrulanmis =
+            arama_sonuclarini_dogrula("tokio mpsc", cozulmus, &CancellationToken::new())
+                .expect("arama sonuç URL'i doğrulanıp maskelenmeli");
+        assert_eq!(dogrulanmis.len(), 1);
+        assert_eq!(
+            dogrulanmis[0].maskeli_url,
+            format!("http://belge.ornek.test:{web_port}/tokio-mpsc?api_key=[MASKELENDI]")
+        );
+    }
+
+    // 2. Keşfedilen URL'i `WebGetirAraci` ile aç ve kaynaklı yanıtı doğrula:
+    struct TestCozucu {
+        adres: SocketAddr,
+    }
+    impl Cozucu for TestCozucu {
+        fn coz<'a>(
+            &'a self,
+            _host: &'a str,
+            _port: u16,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<Vec<SocketAddr>, std::io::Error>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            let adres = self.adres;
+            Box::pin(async move { Ok(vec![adres]) })
+        }
+    }
+
+    let yerel_adres = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), web_port);
+    let mut fixture_izni = TestFixtureIzni::yeni();
+    fixture_izni.hedef_ekle("belge.ornek.test", yerel_adres);
+    fixture_izni.http_etkinlestir();
+    let istemci = Arc::new(WebIstemci::ozel_cozuculu(
+        Arc::new(TestCozucu { adres: yerel_adres }),
+        Some(fixture_izni),
+    ));
+    let web_araci = WebGetirAraci::ozel(istemci, Arc::new(WebIzinDefteri::yeni()));
+    let web_arg = json!({
+        "url": format!("http://belge.ornek.test:{web_port}/tokio-mpsc?api_key=gizli-arama-anahtari")
+    });
+    let web_hazirlik = web_araci.hazirla(&web_arg).await.unwrap();
+    assert_eq!(web_hazirlik.veri_cikisi, Some(VeriCikisi::WebSayfasi));
+    assert!(web_hazirlik.eklenti.is_none());
+    let web_ham = web_araci
+        .calistir(&web_arg, &web_hazirlik, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        web_ham.kaynak,
+        format!("web:http://belge.ornek.test:{web_port}/tokio-mpsc?api_key=[MASKELENDI]")
+    );
+    assert!(
+        web_ham
+            .icerik
+            .contains("[DIŞ WEB İÇERİĞİ — GÜVENİLMEZ KAYNAK:")
+    );
+    assert!(web_ham.icerik.contains("Başlık: Tokio MPSC Kanal Kılavuzu"));
+    assert!(web_ham.icerik.contains("Sınırlı kanal geri basınç sağlar."));
+}
