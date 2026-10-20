@@ -1,8 +1,8 @@
 # proje talimatları, plan ve kullanıcı sorusu planı
 
 **Tarih:** 2026-10-20. **Planlayan/inceleyen:** Codex. **Uygulayıcı:** Antigravity (`Antigravity-Hat-02`).
-**Durum:** Uygulandı; Windows ve WSL Ubuntu 24.04 doğrulamaları tamamlanıyor.
-**Plan tabanı:** main `4041a39995e3bea3d56515e53ffc8af47f68e1ae`. **Çalışma dalı:** `codex/plan-yetenek-proje-akisi`.
+**Durum:** Uygulandı ve Codex inceleme düzeltme turu (`ST-03`, `SP-03`) tamamlandı; Windows ve WSL Ubuntu 24.04 doğrulamaları %100 yeşil.
+**Plan tabanı:** main `4041a39995e3bea3d56515e53ffc8af47f68e1ae` (`#35` birleşimi sonrası `ad7fd8ee5bf2d265865d61557a1c1765f1bf24ba`). **Çalışma dalı:** `codex/plan-yetenek-proje-akisi`. **Ortak sözleşme commit'i:** `bca07f6e38a60c0b8edb1872f28ae44cc19f46e4`.
 **İlk başlanacak iş:** Önce kök/alt AGENTS kapsamı ve kaynak güveni için davranış testlerini yazın; soru ve plan araçları aynı hattın ikinci adımıdır.
 **Koordinasyon:** [iş sırası ve ortak dosyalar](https://github.com/heimdilon/kalfa/blob/codex/plan-yetenek-koordinasyon/docs/superpowers/specs/2026-10-20-kalfa-yetenek-programi.md).
 
