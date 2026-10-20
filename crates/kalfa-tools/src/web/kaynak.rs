@@ -107,16 +107,84 @@ fn sorgu_bileseni_kodla(girdi: &str) -> String {
 }
 
 /// Ham URL dizgesini ayrıştırarak hassas sorgu parametrelerini maskeler.
-/// Ayrıştırılamayan dizgelerde `?` sonrası hassas anahtarları koruyucu biçimde
-/// temizler.
+/// Ayrıştırılamayan dizgelerde `?` sonrası hassas anahtarları ve kimlik
+/// bilgilerini koruyucu biçimde temizler.
 pub fn url_maskele(ham: &str) -> String {
-    if let Ok(url) = Url::parse(ham.trim()) {
+    let temiz = ham.trim();
+    if let Ok(url) = Url::parse(temiz) {
         return url_nesnesi_maskele(&url);
     }
-    if let Some((taban, _sorgu)) = ham.split_once('?') {
-        return format!("{taban}?[MASKELENDI]");
+    let (fragmentsiz, _) = temiz.split_once('#').unwrap_or((temiz, ""));
+    let (taban, sorgu_var) = match fragmentsiz.split_once('?') {
+        Some((t, _)) => (t, true),
+        None => (fragmentsiz, false),
+    };
+    let maskeli_taban = if let Some((sema, kalan)) = taban.split_once("://") {
+        let yol_baslangici = kalan.find('/').unwrap_or(kalan.len());
+        let yetki = &kalan[..yol_baslangici];
+        let yol = &kalan[yol_baslangici..];
+        if let Some((_, host_kismi)) = yetki.rsplit_once('@') {
+            format!("{sema}://{host_kismi}{yol}")
+        } else {
+            taban.to_string()
+        }
+    } else if let Some((anahtar, _)) = taban.split_once('=') {
+        return format!("{anahtar}=[MASKELENDI]");
+    } else {
+        taban.to_string()
+    };
+    if sorgu_var {
+        format!("{maskeli_taban}?[MASKELENDI]")
+    } else {
+        maskeli_taban
     }
-    ham.to_string()
+}
+
+fn json_degerinde_url_maskele(deger: &mut serde_json::Value, url_alani: bool) {
+    match deger {
+        serde_json::Value::String(metin) => {
+            if url_alani || metin.contains("://") || metin.contains('?') || metin.contains('=') {
+                *metin = url_maskele(metin);
+            }
+        }
+        serde_json::Value::Array(dizi) => {
+            for oge in dizi {
+                json_degerinde_url_maskele(oge, url_alani);
+            }
+        }
+        serde_json::Value::Object(harita) => {
+            for (anahtar, alt_deger) in harita.iter_mut() {
+                let alan_url_mi = url_alani || anahtar.eq_ignore_ascii_case("url");
+                json_degerinde_url_maskele(alt_deger, alan_url_mi);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// `web_getir` aracının ham JSON argüman metnindeki URL ve sorgu parametrelerini
+/// günlük (JSONL), geçmiş görünümü ve şema doğrulama hataları için maskeler.
+pub fn arac_argumanlarini_maskele(ham_argumanlar: &str) -> String {
+    if let Ok(mut deger) = serde_json::from_str::<serde_json::Value>(ham_argumanlar) {
+        json_degerinde_url_maskele(&mut deger, false);
+        if let Ok(serilestirilmis) = serde_json::to_string(&deger) {
+            return serilestirilmis;
+        }
+    }
+    // Geçersiz/bozuk JSON durumunda `?` sonrası sorgu dizgelerini koruyucu biçimde maskele.
+    let mut sonuc = String::with_capacity(ham_argumanlar.len());
+    let mut kalan = ham_argumanlar;
+    while let Some(soru_indeksi) = kalan.find('?') {
+        sonuc.push_str(&kalan[..=soru_indeksi]);
+        sonuc.push_str("[MASKELENDI]");
+        let sonrasi = &kalan[soru_indeksi + 1..];
+        let bitis = sonrasi
+            .find(['"', '\'', ' ', '\t', '\r', '\n', '}', ']'])
+            .unwrap_or(sonrasi.len());
+        kalan = &sonrasi[bitis..];
+    }
+    sonuc.push_str(kalan);
+    sonuc
 }
 
 /// Okunan bir web sayfasının kaynak ve durum özeti.

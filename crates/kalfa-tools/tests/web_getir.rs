@@ -1359,6 +1359,11 @@ async fn gorev5_sp08_mcp_arama_saglayici_bicimleri_ve_oturum_web_getir_kayit_aki
     assert!(kayit_icerigi.contains("[DIŞ WEB İÇERİĞİ — GÜVENİLMEZ KAYNAK:"));
     assert!(kayit_icerigi.contains("Oturum üzerinden web_getir doğrulandı."));
     assert!(!kayit_icerigi.contains("gizli-99"));
+    let tum_jsonl = std::fs::read_to_string(&kayit_yolu).expect("tüm JSONL okunmalı");
+    assert!(
+        !tum_jsonl.contains("gizli-99"),
+        "R2-SP-01: Web URL token canary'si ham model araç argümanları üzerinden JSONL'e sızdı"
+    );
 
     let kurtarilan = kurtar(&kayitlar).expect("kayıt kurtarılabilmeli");
     assert_eq!(kurtarilan.kip, Kip::Siki);
@@ -1367,4 +1372,248 @@ async fn gorev5_sp08_mcp_arama_saglayici_bicimleri_ve_oturum_web_getir_kayit_aki
             .as_deref()
             .is_some_and(|c| c.contains("Oturum üzerinden web_getir doğrulandı."))
     }));
+}
+
+#[tokio::test]
+async fn gorev3_r2_sp01_gunluk_dto_olay_ve_hata_yollarinda_hassas_url_parametresi_maskelenir_gercek_istek_ve_muhur_korunur()
+ {
+    use kalfa_core::arac::AracHatasi;
+    use kalfa_core::gecmis::gorunum_uret;
+    use kalfa_core::kayit::OturumKaydi;
+    use kalfa_core::kimlik::CagriId;
+    use kalfa_core::kurtarma::kurtar;
+    use kalfa_core::muhur::muhur_hesapla;
+    use kalfa_core::oturum::OturumAyarlari;
+    use kalfa_core::protokol::{BitisNedeni, Komut, Olay};
+    use kalfa_core::test_destek::{SahteSaglayici, SahteYanit, test_baglami, test_oturumu};
+    use kalfa_tools::{CalismaAlani, varsayilan_araclar};
+
+    let sunucu = YerelWebSunucusu::https_baslat().await;
+    let sahte_tls_sunucu = YerelWebSunucusu::guvenilmeyen_https_baslat().await;
+    let port = sunucu.adres().port();
+    let sahte_port = sahte_tls_sunucu.adres().port();
+
+    sunucu.rota_ekle(
+        "/oturum-belge",
+        SunucuYaniti::html(
+            "<html><head><title>R2-SP-01</title></head><body><h2>Kurulum</h2><p>Gerçek istek doğru hedefe ulaştı.</p></body></html>",
+        ),
+    );
+    let (istemci, _cozucu) = https_istemci_kur(&[
+        ("belge.ornek.test", &sunucu),
+        ("sahte.ornek.test", &sahte_tls_sunucu),
+    ]);
+
+    // 1. Mühür ve iç yürütme doğrulaması:
+    //    Yalnızca maskelenen sorgu parametresinin değeri değişse bile (`maskeli_url` aynı kalsa da)
+    //    eski hazırlık/mühür ile yürütme `AracHatasi::OnayEskidi` ile reddedilmelidir.
+    let arac_dogrudan = Arc::new(WebGetirAraci::ozel(
+        istemci.clone(),
+        Arc::new(WebIzinDefteri::yeni()),
+    ));
+    let ilk_arg = json!({
+        "url": format!("https://belge.ornek.test:{port}/oturum-belge?token=gizli-canary-111&sayfa=1")
+    });
+    let degismis_token_arg = json!({
+        "url": format!("https://belge.ornek.test:{port}/oturum-belge?token=gizli-canary-222&sayfa=1")
+    });
+    let hazirlik_1 = arac_dogrudan.hazirla(&ilk_arg).await.expect("ilk hazırlık");
+    let hazirlik_2 = arac_dogrudan
+        .hazirla(&degismis_token_arg)
+        .await
+        .expect("ikinci hazırlık");
+    assert_eq!(
+        hazirlik_1.web.as_ref().unwrap().maskeli_url,
+        hazirlik_2.web.as_ref().unwrap().maskeli_url,
+        "her iki çağrının maskeli URL sunumu aynı olmalı"
+    );
+    let cagri_id = CagriId::yeni();
+    assert_ne!(
+        muhur_hesapla(cagri_id, WEB_ARAC_ADI, &ilk_arg, &hazirlik_1),
+        muhur_hesapla(cagri_id, WEB_ARAC_ADI, &degismis_token_arg, &hazirlik_2),
+        "maskeli URL aynı kalsa bile ham hedef değiştiğinde onay mührü değişmeli"
+    );
+    let eski_muhur_hatasi = arac_dogrudan
+        .calistir(&degismis_token_arg, &hazirlik_1, CancellationToken::new())
+        .await
+        .expect_err("değiştirilmiş token eski hazırlıkla çalışmamalı");
+    assert_eq!(eski_muhur_hatasi, AracHatasi::OnayEskidi);
+    assert_eq!(
+        sunucu.istek_sayisi(),
+        0,
+        "reddedilen çağrıda sunucuya istek gitmemeli"
+    );
+
+    // 2. Oturum üzerinden başarılı çağrı + hata yolları (geçersiz URL, şema hatası,
+    //    yasaklı adres, TLS bağlantı hatası):
+    //    Hiçbir JSONL satırında, onay/IPC DTO'sunda, olay akışında veya geçmiş
+    //    görünümünde sentetik sırlar yer almamalı; gerçek HTTP isteği ise
+    //    maskelenmemiş parametreyi sunucuya ulaştırmalıdır.
+    let alan_dir = tempfile::tempdir().unwrap();
+    let kayit_dir = tempfile::tempdir().unwrap();
+    let siniflandirici =
+        Arc::new(kalfa_core::izin::Siniflandirici::yeni(alan_dir.path(), &[]).unwrap());
+    let calisma_alani = CalismaAlani::ac(siniflandirici.clone()).unwrap();
+    let mut araclar = varsayilan_araclar(calisma_alani);
+    araclar.retain(|a| a.ad() != WEB_ARAC_ADI);
+    araclar.push(Arc::new(WebGetirAraci::ozel(
+        istemci,
+        Arc::new(WebIzinDefteri::yeni()),
+    )));
+
+    let basarili_url = format!(
+        "https://belge.ornek.test:{port}/oturum-belge?token=gizli-canary-99&api_key=sir-canary-42&sayfa=1#kurulum"
+    );
+    let gecersiz_url = "http://[gecersiz-host/yol?token=gizli-hata-url-1";
+    let sema_hatali_url =
+        format!("https://belge.ornek.test:{port}/oturum-belge?secret=gizli-hata-sema-2");
+    let yasakli_ip_url = "https://127.0.0.1/gizli?api_key=gizli-hata-ip-3";
+    let tls_hatali_url =
+        format!("https://sahte.ornek.test:{sahte_port}/yol?token=gizli-hata-tls-4");
+
+    let sahte_saglayici = SahteSaglayici::yeni(vec![
+        SahteYanit::arac(
+            WEB_ARAC_ADI,
+            json!({
+                "url": basarili_url,
+                "bolum": "Kurulum"
+            }),
+        ),
+        SahteYanit::arac(
+            WEB_ARAC_ADI,
+            json!({
+                "url": gecersiz_url
+            }),
+        ),
+        SahteYanit::arac(
+            WEB_ARAC_ADI,
+            json!({
+                "url": [sema_hatali_url]
+            }),
+        ),
+        SahteYanit::arac(
+            WEB_ARAC_ADI,
+            json!({
+                "url": yasakli_ip_url
+            }),
+        ),
+        SahteYanit::arac(
+            WEB_ARAC_ADI,
+            json!({
+                "url": tls_hatali_url
+            }),
+        ),
+        SahteYanit::metin("Tüm web kontrolleri tamamlandı."),
+    ]);
+
+    let kayit_yolu = kayit_dir.path().join("oturum-r2-sp01.jsonl");
+    let mut ayarlar = OturumAyarlari::yeni("glm-5.3", alan_dir.path());
+    ayarlar.kip = Kip::Serbest;
+    ayarlar.kayit_yolu = Some(kayit_yolu.clone());
+
+    let mut surucu = test_oturumu(
+        test_baglami(sahte_saglayici, araclar, siniflandirici),
+        ayarlar,
+    );
+    surucu
+        .gonder(Komut::KullaniciMesaji {
+            metin: "R2-SP-01 senaryolarını çalıştır".into(),
+        })
+        .await;
+
+    let tum_olay_jsonlari = std::sync::Mutex::new(Vec::new());
+    // İlk çağrı (`belge.ornek.test`) ve beşinci çağrı (`sahte.ornek.test`) yerel onay ister.
+    for _ in 0..2 {
+        let zarf = surucu
+            .bekle(|o| {
+                if let Ok(j) = serde_json::to_string(o) {
+                    tum_olay_jsonlari.lock().unwrap().push(j);
+                }
+                matches!(o, Olay::OnayGerekiyor { .. })
+            })
+            .await;
+        if let Olay::OnayGerekiyor { ogeler, .. } = zarf.yuk {
+            for oge in &ogeler {
+                let oge_json = serde_json::to_value(oge).expect("OnayOgesi JSON");
+                assert!(
+                    oge_json["web"].get("kanonik_url").is_none(),
+                    "R2-SP-01: OnayOgesi.web ham kanonik_url serileştirmemeli: {oge_json}"
+                );
+                let oge_metin = serde_json::to_string(oge).expect("OnayOgesi string");
+                let oge_debug = format!("{oge:?}");
+                for gizli in [
+                    "gizli-canary-99",
+                    "sir-canary-42",
+                    "gizli-hata-url-1",
+                    "gizli-hata-sema-2",
+                    "gizli-hata-ip-3",
+                    "gizli-hata-tls-4",
+                ] {
+                    assert!(
+                        !oge_metin.contains(gizli),
+                        "OnayOgesi JSON içinde `{gizli}` sızmamalı: {oge_metin}"
+                    );
+                    assert!(
+                        !oge_debug.contains(gizli),
+                        "OnayOgesi Debug içinde `{gizli}` sızmamalı: {oge_debug}"
+                    );
+                }
+                surucu
+                    .gonder(Komut::YerelOnay {
+                        cagri: oge.cagri,
+                        muhur: oge.muhur.clone(),
+                    })
+                    .await;
+            }
+        }
+    }
+
+    assert_eq!(surucu.tur_sonu().await, BitisNedeni::Normal);
+
+    // Gerçek HTTP isteği maskelenmemiş sorgu parametreleriyle sunucuya ulaşmış olmalı:
+    assert_eq!(
+        sunucu.istek_yollari(),
+        vec!["/oturum-belge?token=gizli-canary-99&api_key=sir-canary-42&sayfa=1".to_string()]
+    );
+
+    // Tüm JSONL satırlarında, kurtarılan mesajlarda ve geçmiş görünümünde hiçbir canary bulunmamalı:
+    let tum_jsonl = std::fs::read_to_string(&kayit_yolu).expect("JSONL okunmalı");
+    let kayitlar = OturumKaydi::oku(&kayit_yolu).expect("kayıtlar ayrıştırılmalı");
+    let gorunum_json =
+        serde_json::to_string(&gorunum_uret(&kayitlar)).expect("görünüm serileştirilmeli");
+    let kurtarilan = kurtar(&kayitlar).expect("oturum kurtarılmalı");
+    let kurtarilan_json =
+        serde_json::to_string(&kurtarilan.mesajlar).expect("kurtarılan mesajlar JSON");
+    let olaylar_birlesik = tum_olay_jsonlari.lock().unwrap().join("\n");
+
+    for gizli in [
+        "gizli-canary-99",
+        "sir-canary-42",
+        "gizli-hata-url-1",
+        "gizli-hata-sema-2",
+        "gizli-hata-ip-3",
+        "gizli-hata-tls-4",
+    ] {
+        for (satir_no, satir) in tum_jsonl.lines().enumerate() {
+            assert!(
+                !satir.contains(gizli),
+                "R2-SP-01: JSONL satır {} içinde `{gizli}` sızdı: {satir}",
+                satir_no + 1
+            );
+        }
+        assert!(
+            !gorunum_json.contains(gizli),
+            "R2-SP-01: gorunum_uret içinde `{gizli}` sızdı: {gorunum_json}"
+        );
+        assert!(
+            !kurtarilan_json.contains(gizli),
+            "R2-SP-01: kurtarılan mesajlarda `{gizli}` sızdı: {kurtarilan_json}"
+        );
+        assert!(
+            !olaylar_birlesik.contains(gizli),
+            "R2-SP-01: yayılan olaylarda `{gizli}` sızdı"
+        );
+    }
+    assert!(tum_jsonl.contains("token=[MASKELENDI]"));
+    assert!(tum_jsonl.contains("api_key=[MASKELENDI]"));
 }

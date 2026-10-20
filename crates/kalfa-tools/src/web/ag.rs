@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 use url::{Host, Url};
 
 use crate::web::izin::YonlendirmeIzni;
-use crate::web::kaynak::url_nesnesi_maskele;
+use crate::web::kaynak::{url_maskele, url_nesnesi_maskele};
 use crate::web::sikistirma::{
     AZAMI_ACILMIS_GOVDE_BAYT, AkisAcici, SikistirmaHatasi, sikistirma_bicimi_bul,
 };
@@ -292,7 +292,7 @@ pub fn url_dogrula(ham_url: &str) -> Result<(Url, String, u16), WebGetirHatasi> 
     }
 
     let mut url = Url::parse(temiz).map_err(|hata| WebGetirHatasi::GecersizUrl {
-        url: temiz.to_string(),
+        url: url_maskele(temiz),
         neden: hata.to_string(),
     })?;
 
@@ -719,7 +719,9 @@ impl WebIstemci {
                             if hata.is_timeout() {
                                 return Err(WebGetirHatasi::ZamanAsimi { saniye: zaman_asimi_sn });
                             }
-                            return Err(WebGetirHatasi::TlsVeyaBaglantiHatasi(hata.to_string()));
+                            return Err(WebGetirHatasi::TlsVeyaBaglantiHatasi(
+                                hata.without_url().to_string(),
+                            ));
                         }
                         Err(_) => return Err(WebGetirHatasi::ZamanAsimi { saniye: zaman_asimi_sn }),
                     }
@@ -762,7 +764,7 @@ impl WebIstemci {
                     kanonik_url
                         .join(konum_metni)
                         .map_err(|h| WebGetirHatasi::GecersizUrl {
-                            url: konum_metni.to_string(),
+                            url: url_maskele(konum_metni),
                             neden: h.to_string(),
                         })?;
 
@@ -854,8 +856,9 @@ impl WebIstemci {
                         });
                     }
                     Err(h) => {
+                        let temiz_hata = h.without_url();
                         return Err(WebGetirHatasi::EksikGovde(format!(
-                            "akış okuma hatası: {h}"
+                            "akış okuma hatası: {temiz_hata}"
                         )));
                     }
                 };

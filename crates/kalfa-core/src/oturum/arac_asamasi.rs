@@ -1191,7 +1191,11 @@ impl Oturum {
                 kisayol: teklifler.get(&p.cagri).cloned(),
                 eklenti: p.hazirlik.eklenti.clone(),
                 mcp: p.hazirlik.mcp.as_ref().map(McpOnayKarti::yeni),
-                web: p.hazirlik.web.clone(),
+                web: p
+                    .hazirlik
+                    .web
+                    .as_ref()
+                    .map(crate::arac::WebTarifi::onay_karti_icin),
             })
             .collect();
         // Yerel iletişim kutusu komutu çekirdekten okur, webview'dan değil

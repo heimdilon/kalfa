@@ -96,7 +96,6 @@ export type YonlendirmeIzni =
 
 /** Web getirme (`web_getir`) aracının onay kartında gösterilen tarifi. */
 export interface WebTarifi {
-  kanonik_url: string;
   maskeli_url: string;
   host: string;
   port: number;

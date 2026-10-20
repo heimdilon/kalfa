@@ -13,8 +13,10 @@ use url::Host;
 
 use crate::arguman;
 use crate::web::ag::{WebGetirHatasi, WebIstemci, adres_denetle, url_dogrula};
-use crate::web::izin::{WebIzinDefteri, WebTarifi, YonlendirmeIzni, web_muhur_ozeti};
-use crate::web::kaynak::{dis_icerik_zarfla, url_nesnesi_maskele};
+use crate::web::izin::{
+    WebIzinDefteri, WebTarifi, YonlendirmeIzni, web_hedef_ozeti, web_muhur_ozeti,
+};
+use crate::web::kaynak::{arac_argumanlarini_maskele, dis_icerik_zarfla, url_nesnesi_maskele};
 use crate::web::metin::yaniti_metne_donustur;
 
 /// Yerleşik web getirme aracının sabit adı.
@@ -25,6 +27,7 @@ const WEB_ARAC_ACIKLAMASI: &str = "Verilen http veya https adresindeki metin/HTM
 /// Ayrıştırılmış `web_getir` çağrısı argümanları.
 #[derive(Debug, Clone)]
 struct WebArgumanlari {
+    kanonik_url: String,
     tarif: WebTarifi,
     bolum: Option<String>,
     imlec: Option<String>,
@@ -164,12 +167,13 @@ impl WebGetirAraci {
             _ => {}
         }
 
+        let kanonik_url_dizgesi = kanonik_url.to_string();
+        let hedef_ozeti = web_hedef_ozeti(&kanonik_url_dizgesi);
         let maskeli_url = url_nesnesi_maskele(&kanonik_url);
         let sema = kanonik_url.scheme().to_ascii_lowercase();
         let oturumda_ilk_host = !self.izin_defteri.host_onayli_mi(&host, port);
 
         let tarif = WebTarifi {
-            kanonik_url: kanonik_url.to_string(),
             maskeli_url,
             host,
             port,
@@ -177,9 +181,11 @@ impl WebGetirAraci {
             yontem: "GET".into(),
             yonlendirme_izni,
             oturumda_ilk_host,
+            hedef_ozeti,
         };
 
         Ok(WebArgumanlari {
+            kanonik_url: kanonik_url_dizgesi,
             tarif,
             bolum,
             imlec,
@@ -261,6 +267,10 @@ impl Arac for WebGetirAraci {
         true
     }
 
+    fn kayit_argumanlarini_maskele(&self, argumanlar: &str) -> String {
+        arac_argumanlarini_maskele(argumanlar)
+    }
+
     async fn hazirla(&self, argumanlar: &Value) -> Result<Hazirlik, AracHatasi> {
         let cozulmus = self.argumanlari_coz(argumanlar)?;
         let aciklama = format!(
@@ -297,7 +307,7 @@ impl Arac for WebGetirAraci {
         let ham_yanit = match self
             .istemci
             .getir(
-                &cozulmus.tarif.kanonik_url,
+                &cozulmus.kanonik_url,
                 &cozulmus.tarif.yonlendirme_izni,
                 iptal,
             )

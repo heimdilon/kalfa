@@ -135,7 +135,6 @@ describe('WebKaynakKarti', () => {
         'Başlangıç hostu dışındaki izinli hostlara yönlendirmeye izin veriliyor.',
       ],
       web: {
-        kanonik_url: 'https://docs.rs/tokio?token=1',
         maskeli_url: 'https://docs.rs/tokio?token=[MASKELENDI]',
         host: 'docs.rs',
         port: 443,
@@ -200,7 +199,6 @@ describe('WebKaynakKarti', () => {
       hedefler: [],
       veri_cikisi: 'WebSayfasi',
       web: {
-        kanonik_url: 'https://docs.rs/tokio',
         maskeli_url: 'https://docs.rs/tokio',
         host: 'docs.rs',
         port: 443,

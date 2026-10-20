@@ -356,30 +356,25 @@ fn kur(
     let acici = Arc::new(SahteAcici::default());
     let pencereler = Arc::new(SahtePencereler::default());
     let yukseltici = Arc::new(SahteYukseltici::default());
-    let mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa> =
-        Arc::new(crate::mcp::kasa::test_destek::SahteGizliKasa::yeni());
-    let uygulama = Uygulama::yeni_ozel_mcp_kasali(
-        Bilesenler {
-            veri_dizini: dizin.to_path_buf(),
-            kasa: AnahtarKasasi::yeni(Some(Box::new(PaylasilanDepo(depo.clone())))),
-            uretici: Arc::new(SahteUretici {
-                saglayici: saglayici.clone(),
-            }),
-            iletisim: iletisim.clone(),
-            acici: acici.clone(),
-            pencereler: pencereler.clone(),
-            yukseltici: yukseltici.clone(),
-            aktarim: AktarimAyarlari::default(),
-            yalitim_dizini: dizin.join("yalitim"),
-            geri_alma_dizini: dizin.join("geri-alma"),
-            eklenti_verisi_dizini: dizin.join("eklenti-verisi"),
-            yerlesik_eklentiler,
-            kalfa_araclari: Vec::new(),
-            ev_dizini: dizin.join("ev"),
-            yalitim,
-        },
-        mcp_kasa,
-    );
+    let uygulama = Uygulama::yeni(Bilesenler {
+        veri_dizini: dizin.to_path_buf(),
+        kasa: AnahtarKasasi::yeni(Some(Box::new(PaylasilanDepo(depo.clone())))),
+        uretici: Arc::new(SahteUretici {
+            saglayici: saglayici.clone(),
+        }),
+        iletisim: iletisim.clone(),
+        acici: acici.clone(),
+        pencereler: pencereler.clone(),
+        yukseltici: yukseltici.clone(),
+        aktarim: AktarimAyarlari::default(),
+        yalitim_dizini: dizin.join("yalitim"),
+        geri_alma_dizini: dizin.join("geri-alma"),
+        eklenti_verisi_dizini: dizin.join("eklenti-verisi"),
+        yerlesik_eklentiler,
+        kalfa_araclari: Vec::new(),
+        ev_dizini: dizin.join("ev"),
+        yalitim,
+    });
     // MCP tanımı PATH'in her dizinini çözer; CI'da testleri koşan kullanıcı
     // yöneticinin PATH'ini taşır ve erişemediği dizin tanımı kapatır.
     uygulama.mcp.sistem_ortamini_degistir(vec![(

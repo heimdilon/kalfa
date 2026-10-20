@@ -11,7 +11,7 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
 
-pub use kalfa_core::arac::{WebTarifi, YonlendirmeIzni, web_muhur_ozeti};
+pub use kalfa_core::arac::{WebTarifi, YonlendirmeIzni, web_hedef_ozeti, web_muhur_ozeti};
 #[cfg(test)]
 use kalfa_core::izin::{Karar, Kip};
 pub use kalfa_core::izin::{
@@ -62,7 +62,6 @@ mod testler {
 
     fn ornek_tarif() -> WebTarifi {
         WebTarifi {
-            kanonik_url: "https://belge.ornek.test/kullanim".into(),
             maskeli_url: "https://belge.ornek.test/kullanim".into(),
             host: "belge.ornek.test".into(),
             port: 443,
@@ -70,6 +69,7 @@ mod testler {
             yontem: "GET".into(),
             yonlendirme_izni: YonlendirmeIzni::AyniHost,
             oturumda_ilk_host: true,
+            hedef_ozeti: web_hedef_ozeti("https://belge.ornek.test/kullanim"),
         }
     }
 
@@ -94,7 +94,7 @@ mod testler {
     fn muhur_ozeti_host_port_url_ve_yonlendirme_degisince_farklilasir() {
         let t1 = ornek_tarif();
         let mut t2 = t1.clone();
-        t2.kanonik_url = "https://belge.ornek.test/baska".into();
+        t2.hedef_ozeti = web_hedef_ozeti("https://belge.ornek.test/baska");
         assert_ne!(web_muhur_ozeti(&t1), web_muhur_ozeti(&t2));
 
         let mut t3 = t1.clone();

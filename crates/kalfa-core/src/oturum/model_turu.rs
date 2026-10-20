@@ -147,8 +147,9 @@ impl Oturum {
 
         match sonuc {
             Ok(()) => {
+                let kayit_cagrilari = goruntu.kayit_cagrilarini_maskele(&cagrilar);
                 let mut mesaj =
-                    ChatMessage::assistant((!metin.is_empty()).then_some(metin), cagrilar.clone());
+                    ChatMessage::assistant((!metin.is_empty()).then_some(metin), kayit_cagrilari);
                 mesaj.reasoning = (!dusunce.is_empty()).then_some(dusunce);
                 self.mesaj_ekle(mesaj, Some("model".to_string())).await;
                 Ok(ModelCevabi { cagrilar, goruntu })

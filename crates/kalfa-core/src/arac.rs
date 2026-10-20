@@ -132,10 +132,10 @@ impl YonlendirmeIzni {
 }
 
 /// Bir `web_getir` çağrısının onay ve mühürlemeye esas tarifi.
+/// Ham sorgu parametrelerini veya sırları serileştirmez; yalnız maskelenmiş URL
+/// sunumunu ve doğrulanmış hedef bilgilerini taşır.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WebTarifi {
-    /// Fragment (`#...`) arındırılmış kanonik istek URL'si.
-    pub kanonik_url: String,
     /// Günlük ve onay penceresi için hassas sorgu parametreleri maskelenmiş URL.
     pub maskeli_url: String,
     /// Küçük harfe normalize edilmiş hedef host adı.
@@ -151,6 +151,34 @@ pub struct WebTarifi {
     /// Bu `(host, port)` çiftine mevcut oturumda ilk kez mi çıkılıyor?
     #[serde(default)]
     pub oturumda_ilk_host: bool,
+    /// Ham kanonik URL'nin tek yönlü SHA-256 özeti.
+    /// Ham sorgu sırrını taşımadan mührü tam hedefe bağlar; onay DTO'sunda
+    /// serileştirilmez.
+    #[serde(skip)]
+    pub hedef_ozeti: [u8; 32],
+}
+
+impl WebTarifi {
+    /// Onay kartı / IPC DTO'su için iç mühür özetini sıfırlayarak güvenli kopya üretir.
+    pub fn onay_karti_icin(&self) -> Self {
+        Self {
+            hedef_ozeti: [0; 32],
+            ..self.clone()
+        }
+    }
+}
+
+/// Ham kanonik URL için alan sınırları ayrılmış SHA-256 hedef özeti üretir.
+pub fn web_hedef_ozeti(kanonik_url: &str) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+
+    let mut ozetleyici = Sha256::new();
+    let etiket = b"kalfa-web-hedef-url-v1";
+    ozetleyici.update((etiket.len() as u64).to_le_bytes());
+    ozetleyici.update(etiket);
+    ozetleyici.update((kanonik_url.len() as u64).to_le_bytes());
+    ozetleyici.update(kanonik_url.as_bytes());
+    ozetleyici.finalize().into()
 }
 
 /// [`WebTarifi`] için tek yönlü, alan sınırları ayrılmış SHA-256 mühür özeti üretir.
@@ -168,7 +196,8 @@ pub fn web_muhur_ozeti(tarif: &WebTarifi) -> [u8; 32] {
     uzunluklu_yaz(&mut ozetleyici, tarif.sema.as_bytes());
     uzunluklu_yaz(&mut ozetleyici, tarif.host.as_bytes());
     ozetleyici.update(tarif.port.to_le_bytes());
-    uzunluklu_yaz(&mut ozetleyici, tarif.kanonik_url.as_bytes());
+    uzunluklu_yaz(&mut ozetleyici, tarif.maskeli_url.as_bytes());
+    uzunluklu_yaz(&mut ozetleyici, &tarif.hedef_ozeti);
     match &tarif.yonlendirme_izni {
         YonlendirmeIzni::AyniHost => {
             uzunluklu_yaz(&mut ozetleyici, b"ayni-host");
@@ -811,6 +840,14 @@ pub trait Arac: Send + Sync {
         self.sonuc_isleme_iptal(cagri);
         Err(AracHatasi::SonucIsleme)
     }
+
+    /// Günlük (JSONL), geçmiş görünümü, bağlam kaydı ve şema doğrulama hataları
+    /// için ham JSON argüman metnindeki hassas alanları (ör. `web_getir` URL
+    /// sorgu parametreleri) maskeler. İç hazırlık, mühür ve yürütme ham
+    /// argümanları kullanmaya devam eder.
+    fn kayit_argumanlarini_maskele(&self, argumanlar: &str) -> String {
+        argumanlar.to_string()
+    }
 }
 
 /// Core'un sonuç işlemesi bitene kadar yönetici çağrı kaydını açık tutar.
@@ -935,7 +972,24 @@ impl AracKayitDefteri {
     /// Argüman metnini JSON olarak çözer ve aracın şemasına karşı doğrular.
     /// Hata metni modele gider; model argümanı düzeltip yeniden deneyebilir.
     pub fn dogrula(&self, ad: &str, argumanlar: &str) -> Result<Value, String> {
-        semaya_gore_dogrula(ad, self.semalar.get(ad).map(Arc::as_ref), argumanlar)
+        match semaya_gore_dogrula(ad, self.semalar.get(ad).map(Arc::as_ref), argumanlar) {
+            Ok(deger) => Ok(deger),
+            Err(hata) => {
+                if let Some(arac) = self.bul(ad) {
+                    let maskeli = arac.kayit_argumanlarini_maskele(argumanlar);
+                    if maskeli != argumanlar {
+                        return Err(semaya_gore_dogrula(
+                            ad,
+                            self.semalar.get(ad).map(Arc::as_ref),
+                            &maskeli,
+                        )
+                        .err()
+                        .unwrap_or(hata));
+                    }
+                }
+                Err(hata)
+            }
+        }
     }
 
     /// Bir model turunun tek araç görüntüsü. Kaynak yalnız bir kez ve
@@ -1013,11 +1067,40 @@ impl AracAnlikGoruntusu {
     }
 
     pub fn dogrula(&self, ad: &str, argumanlar: &str) -> Result<Value, String> {
-        semaya_gore_dogrula(
-            ad,
-            self.araclar.get(ad).map(|(_, sema)| sema.as_ref()),
-            argumanlar,
-        )
+        let sema = self.araclar.get(ad).map(|(_, sema)| sema.as_ref());
+        match semaya_gore_dogrula(ad, sema, argumanlar) {
+            Ok(deger) => Ok(deger),
+            Err(hata) => {
+                if let Some(arac) = self.bul(ad) {
+                    let maskeli = arac.kayit_argumanlarini_maskele(argumanlar);
+                    if maskeli != argumanlar {
+                        return Err(semaya_gore_dogrula(ad, sema, &maskeli)
+                            .err()
+                            .unwrap_or(hata));
+                    }
+                }
+                Err(hata)
+            }
+        }
+    }
+
+    /// Modelin ürettiği araç çağrılarının kayıt/geçmiş kopyasında hassas
+    /// argümanları maskeler; yürütmeye giden ham `ToolCall` listesini değiştirmez.
+    pub fn kayit_cagrilarini_maskele(
+        &self,
+        cagrilar: &[kalfa_evren::tipler::ToolCall],
+    ) -> Vec<kalfa_evren::tipler::ToolCall> {
+        cagrilar
+            .iter()
+            .map(|tc| {
+                let mut kopya = tc.clone();
+                if let Some(arac) = self.bul(&tc.function.name) {
+                    kopya.function.arguments =
+                        arac.kayit_argumanlarini_maskele(&tc.function.arguments);
+                }
+                kopya
+            })
+            .collect()
     }
 }
 

@@ -256,7 +256,6 @@ fn web_onay_ogesi_json_bicimi() {
     oge.kabuk = None;
     oge.veri_cikisi = Some(VeriCikisi::WebSayfasi);
     oge.web = Some(WebTarifi {
-        kanonik_url: "https://docs.rs/tokio".into(),
         maskeli_url: "https://docs.rs/tokio".into(),
         host: "docs.rs".into(),
         port: 443,
@@ -264,6 +263,7 @@ fn web_onay_ogesi_json_bicimi() {
         yontem: "GET".into(),
         yonlendirme_izni: YonlendirmeIzni::IzinliHostlar(vec!["cdn.docs.rs".into()]),
         oturumda_ilk_host: true,
+        hedef_ozeti: [0; 32],
     });
 
     let j = serde_json::to_value(&oge).unwrap();
@@ -271,7 +271,6 @@ fn web_onay_ogesi_json_bicimi() {
     assert_eq!(
         j["web"],
         json!({
-            "kanonik_url": "https://docs.rs/tokio",
             "maskeli_url": "https://docs.rs/tokio",
             "host": "docs.rs",
             "port": 443,

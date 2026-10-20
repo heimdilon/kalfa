@@ -1086,6 +1086,11 @@ async fn uygulama_oturumu_web_getir_aracini_varsayilan_kayitta_sunar_ve_yerel_on
         web.yonlendirme_izni,
         YonlendirmeIzni::IzinliHostlar(vec!["cdn.docs.rs".into()])
     );
+    let oge_json = serde_json::to_string(oge).unwrap();
+    assert!(
+        !oge_json.contains("gizli-anahtar-1") && !oge_json.contains("kanonik_url"),
+        "R2-SP-01: OnayOgesi JSON serileştirmesi hassas parametreyi veya ham kanonik_url alanını taşımamalı: {oge_json}"
+    );
 
     // 3. Uygulama üzerinden onay gönderildiğinde yerel iletişim kutusu (`yerel_onay_sorusu`)
     //    hedef/yöntem/veri çıkışı/yönlendirme kapsamıyla açılır; kullanıcı yerel pencerede
@@ -1113,6 +1118,22 @@ async fn uygulama_oturumu_web_getir_aracini_varsayilan_kayitta_sunar_ve_yerel_on
             ..
         } if arac == "web_getir"
     )));
+    for olay in &bitis_olaylari {
+        let olay_json = serde_json::to_string(olay).unwrap();
+        assert!(
+            !olay_json.contains("gizli-anahtar-1"),
+            "R2-SP-01: Olay akışı hassas parametreyi sızdırmamalı: {olay_json}"
+        );
+    }
+    let kayit_dosyasi = oturum_dizini(o.veri.path()).join(format!("{oturum}.jsonl"));
+    let kayit_metni = std::fs::read_to_string(&kayit_dosyasi).unwrap();
+    for (satir_no, satir) in kayit_metni.lines().enumerate() {
+        assert!(
+            !satir.contains("gizli-anahtar-1"),
+            "R2-SP-01: Uygulama oturum JSONL satırı #{} hassas parametreyi sızdırdı: {satir}",
+            satir_no + 1
+        );
+    }
 }
 
 #[tokio::test]

@@ -27,9 +27,11 @@ pub use html::{
 };
 pub use izin::{
     WEB_AG_UYARISI, WEB_ILK_HOST_UYARISI, WEB_SIFRESIZ_HTTP_UYARISI, WEB_YONLENDIRME_UYARISI,
-    WebIzinDefteri, WebTarifi, YonlendirmeIzni, web_karari, web_muhur_ozeti,
+    WebIzinDefteri, WebTarifi, YonlendirmeIzni, web_hedef_ozeti, web_karari, web_muhur_ozeti,
 };
-pub use kaynak::{WebSayfaOzeti, dis_icerik_zarfla, url_maskele, url_nesnesi_maskele};
+pub use kaynak::{
+    WebSayfaOzeti, arac_argumanlarini_maskele, dis_icerik_zarfla, url_maskele, url_nesnesi_maskele,
+};
 pub use metin::{
     AZAMI_CIKTI_BAYT, EN_AZ_CIKTI_BAYT, IcerikBicimi, ImlecDurumu, IslenmisWebIcerigi,
     baytlari_metne_coz, icerik_ozeti_hesapla, icerik_turu_kabul_edilir_mi, ikili_mi, imlec_coz,

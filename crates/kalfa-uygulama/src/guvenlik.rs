@@ -470,7 +470,6 @@ mod tests {
             eklenti: None,
             mcp: None,
             web: Some(kalfa_core::arac::WebTarifi {
-                kanonik_url: "https://belge.ornek.test:8443/kullanim?token=gizli".into(),
                 maskeli_url: "https://belge.ornek.test:8443/kullanim?token=[MASKELENDI]".into(),
                 host: "belge.ornek.test".into(),
                 port: 8443,
@@ -478,6 +477,7 @@ mod tests {
                 yontem: "GET".into(),
                 yonlendirme_izni: YonlendirmeIzni::IzinliHostlar(vec!["cdn.ornek.test".into()]),
                 oturumda_ilk_host: true,
+                hedef_ozeti: [0; 32],
             }),
         };
 
