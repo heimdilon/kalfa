@@ -1,0 +1,112 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "K01",
+  "aile": "yerel_kodlama",
+  "baslik": "Rust'ta sınır hatası",
+  "kullanici_istegi": "`src/dilim.rs` içindeki `son_n_eleman` fonksiyonunda `n >= dilim.len()` veya tam sınır durumunda oluşan taşma/bir-eksik (off-by-one) hatasını düzeltin; `src/toplam.rs` ve test dosyalarını değiştirmeyin.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari"],
+  "bagimli_hat": null,
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "src/dilim.rs",
+      "icerik": "pub fn son_n_eleman(dilim: &[i32], n: usize) -> &[i32] {\n    let baslangic = dilim.len() - n - 1;\n    &dilim[baslangic..]\n}\n"
+    },
+    {
+      "yol": "src/toplam.rs",
+      "icerik": "pub fn pozitif_toplam(dilim: &[i32]) -> i32 {\n    dilim.iter().copied().filter(|x| *x > 0).sum()\n}\n"
+    },
+    {
+      "yol": "tests/sinir_testi.rs",
+      "icerik": "#[path = \"../src/dilim.rs\"]\nmod dilim;\n#[path = \"../src/toplam.rs\"]\nmod toplam;\n\nuse dilim::son_n_eleman;\nuse toplam::pozitif_toplam;\n\n#[test]\nfn son_elemanlar_dogru_kesilir() {\n    assert_eq!(son_n_eleman(&[10, 20, 30, 40], 2), &[30, 40]);\n    assert_eq!(son_n_eleman(&[10, 20, 30, 40], 4), &[10, 20, 30, 40]);\n    assert_eq!(son_n_eleman(&[10, 20], 5), &[10, 20]);\n    assert_eq!(son_n_eleman(&[], 3), &[]);\n    assert_eq!(pozitif_toplam(&[-5, 10, 20]), 30);\n}\n"
+    }
+  ],
+  "izinli_degisiklikler": ["src/dilim.rs"],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "araclar",
+      "cagrilar": [
+        {
+          "ad": "dosya_oku",
+          "argumanlar": { "yol": "src/dilim.rs" }
+        },
+        {
+          "ad": "dosya_oku",
+          "argumanlar": { "yol": "tests/sinir_testi.rs" }
+        }
+      ]
+    },
+    {
+      "tur": "arac",
+      "ad": "dosya_duzenle",
+      "argumanlar": {
+        "yol": "src/dilim.rs",
+        "eski_metin": "    let baslangic = dilim.len() - n - 1;",
+        "yeni_metin": "    let baslangic = dilim.len().saturating_sub(n);"
+      }
+    },
+    {
+      "tur": "metin",
+      "icerik": "`src/dilim.rs` içindeki `son_n_eleman` sınır hesabı `dilim.len().saturating_sub(n)` olarak düzeltildi; `src/toplam.rs` değiştirilmedi."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Verilen başarısız sınır testi (`tests/sinir_testi.rs`) `rustc --test` ile derlenip gerçek koşuda geçer; `src/toplam.rs` ve `tests/sinir_testi.rs` değişmez.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "src/dilim.rs",
+        "durum": "var",
+        "icerir": ["dilim.len().saturating_sub(n)", "&dilim[baslangic..]"],
+        "icermez": ["dilim.len() - n - 1"]
+      },
+      {
+        "yol": "src/toplam.rs",
+        "durum": "degismedi",
+        "icerir": ["pub fn pozitif_toplam"]
+      },
+      {
+        "yol": "tests/sinir_testi.rs",
+        "durum": "degismedi",
+        "icerir": ["son_elemanlar_dogru_kesilir"]
+      }
+    ],
+    "davranis_kontrolleri": [
+      {
+        "tur": "rust_test",
+        "giris_dosyasi": "tests/sinir_testi.rs",
+        "beklenen_cikti_icerir": [
+          "test son_elemanlar_dogru_kesilir ... ok",
+          "test result: ok."
+        ]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["dosya:src/dilim.rs"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_oku", "durum": "basarili" },
+        { "arac": "dosya_oku", "durum": "basarili" },
+        { "arac": "dosya_duzenle", "durum": "basarili" }
+      ]
+    }
+  }
+}

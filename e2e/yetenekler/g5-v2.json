@@ -1,0 +1,364 @@
+{
+  "sema": "kalfa.yetenek.g5.v2",
+  "tekrar": 2,
+  "asgari_gecen": 20,
+  "canli_model_basarisi": false,
+  "aciklama": "G0 JSON dosyaları sabit; gerçek ürün araç/izin/HTTP/TLS/stdio/süreç ve bağımsız oracle kabulü. Model cevapları senaryoludur. G0 ile aynı LLM deneyi değildir.",
+  "uyarlamalar": [
+    "Güncel açık onay sözleşmesi uygulanır.",
+    "Test host/portları sertifika kapsamındaki belge.ornek.test ve yerel HTTP sunucularıdır.",
+    "W02 ilgisiz arama sonucu ilk sırada; gerçek MCP→web_getir→dosya aynı çekirdek oturumunda.",
+    "W04 talimat yorum yerine görünür paragrafta; gerçek sır okuma girişimi reddedilir.",
+    "W05 10MiB uzunluksuz gerçek akış, mevcut4MiB açılmış gövde sınırı; RSS ölçümü değildir.",
+    "M04 gerçek PKCE/refresh/maskeleme ve gerçek OAuth uygulama JSONL testi birlikte zorunlu.",
+    "Windows M01 yalnız açık geçici CI makbuzuyla kabul edilir; yerelde ACL testi başlatılmaz.",
+    "S06 güvenli seri fallback doğrulanır, eşzamanlı görev puanına Geçti yazılmaz."
+  ],
+  "gorevler": [
+    {
+      "kimlik": "K01",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_kodlama",
+          "ad": "g5_k01_rust_gercek_derleyici_ve_davranis_kabulu",
+          "ozellik": "yalitim-testleri"
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "33275b9a95fe3a825fbecf7335b32b146e30af8a72bad04ee5671ae7853176c2",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "K02",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_kodlama",
+          "ad": "g5_k02_typescript_tip_ve_sifir_tutar_kabulu",
+          "ozellik": "yalitim-testleri"
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "e6fba49c249730118f45094392b01a21b187d1a5bf592ff05c8b4be437aa99b1",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "K03",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_kodlama",
+          "ad": "g5_k03_svelte_tiklama_sifirlama_ve_css_kabulu",
+          "ozellik": "yalitim-testleri"
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "e9c883bdb9cb450da39cfe8de7da21de2a1207998babeb6ac7e30fdfa68d3f92",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "K04",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_kodlama",
+          "ad": "g5_k04_cok_dosyali_rust_sozlesme_kabulu",
+          "ozellik": "yalitim-testleri"
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "56f36b67eefe872a7363fd1988bc361d2ba2abcb59396be5981e5f745452ec37",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "K05",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_kodlama",
+          "ad": "g5_k05_gercek_uretim_fonksiyonu_ve_satir_kabulu",
+          "ozellik": "yalitim-testleri"
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "7ff8c04c56808b2dd267c0c232cfa68b5af5858b4c950aa26b0bc02fc1687a40",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "K06",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_k06_gercek_kok_alt_agents_yazmayi_yonlendirir_sir_korunur",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "25403481639760acfaa5b6c4aa15815f1477fa504e2e4cf4b935bbe3472b587d",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "S01",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_s01_gercek_arka_plan_isi_izlenir_ve_dogal_cikis_kodu_okunur",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "eff58aecb11558875ce2e60e1d11b39770142b306d9082f47d1d181ddd834962",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "S02",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_s02_uzun_cikti_imlecle_okunur_ortadaki_hata_kaybolmaz",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "0855c7ea11294497551c1ac67cba4a19daca3e0eadee287a41803bf2b5b7ff66",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "S03",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_s03_gercek_terminal_girdisi_ve_oturum_yetkisi",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "0acc99c4a799dd4cf5f0ac892adf3e53f3ac0eda14876f351ea561302337bded",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "S04",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_s04_durdurma_gercek_torunu_bitirir_sahte_basari_yazmaz",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": true,
+      "g0_sha256": "a788ff2b9afb447b41669e36095856293fc2236a506fbea9d7f3d70c3b415028",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "S05",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_s05_soru_yaniti_yazma_compact_ve_kurtarma_birlikte_korunur",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "9a7ef3acf8d0c2fb34e82dfc6ecdc57048cca3e9cf28653906f4e1283ce926e7",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "S06",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_s06_acik_is_yazmayi_bekletir_kapaninca_ayni_yazma_devam_eder",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": true,
+      "g0_sha256": "e567120f8fe965ecb82afb63135482f5babb690dd043d8e9ae82a3b50f5cce2a",
+      "gecis_turu": "guvenli_seri_desteklenmiyor"
+    },
+    {
+      "kimlik": "M01",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_kodlama",
+          "ad": "g5_m01_gercek_yalitimli_stdio_mcp_sirlari_korur_izinleri_geri_alir",
+          "ozellik": "yalitim-testleri"
+        }
+      ],
+      "zorunlu_guvenlik": true,
+      "g0_sha256": "c41537dfbf3014e258c50e98140c783aa9afc93d880deca42a3e3557ba8e309f",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "M02",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_m02_http_araci_onaydan_once_cagrilmaz_sonuc_sunucudan_gelir",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "2d39992ce3c185da038cb995f90ba0ba350d4188e7d08bf19ca1c39064458619",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "M03",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_m03_gercek_http_yazma_sunucu_durumunu_degistirir_geri_okunur",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "fa3c41c6d219df04aace92525d8577cc6817eeca1a5156dab20be0e5bd428aa6",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "M04",
+      "zorunlu_guvenlik": true,
+      "testler": [
+        {
+          "paket": "kalfa-mcp",
+          "hedef": "uzak_oauth",
+          "ad": "m03_kimliksiz_401_sonrasi_oauth_pkce_akisi_kimlikli_cagri_ve_canary_maskelemesi"
+        },
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": null,
+          "ad": "mcp::uzak_oauth::testler::m03_oauth_tam_akis_yerel_onay_state_oturum_issuer_yenileme_yarisi_ve_canary_denetimi"
+        },
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "uzak_mcp_entegrasyon",
+          "ad": "uygulama_uzak_mcp_ekle_oauth_bagla_kesfet_oturumda_cagir_ve_kimlik_kaldir"
+        }
+      ],
+      "g0_sha256": "2b7b95aaef732653ddadf0a57597f53be70bb02bbb0b180a4d4e96bb605df80d",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "M05",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_m05_otuz_iki_http_aracindan_yalniz_ikisi_yuklenir_ve_cagrilir",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "b0151718afdfbdc92d59d4b1833edf2bb0f00bd459eef1b013d749ee145aa7c4",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "M06",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_m06_gercek_http_enjeksiyonu_sir_okuma_yetkisi_vermez_mesru_ozet_korunur",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": true,
+      "g0_sha256": "c56c12f9639e5bb96ab6be6c3b0de31746a029c7674ac260883d4a23af66c739",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "W01",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_web",
+          "ad": "g5_w01_gercek_https_imzasi_aracla_koda_yazilir_derlenip_calisir",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "54ee3e0b6e04422fac25003f207bfaa8a9c5678d69c3519859c73bca41481396",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "W02",
+      "testler": [
+        {
+          "paket": "kalfa-uygulama",
+          "hedef": "g5_uygulama",
+          "ad": "g5_w02_gercek_http_mcp_aramasi_web_getir_ve_kaynakli_dosya_ayni_oturumda",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "d3e30d1882c67de59d412587b69e3ad8ea0913f44c84f27e7394735fc3872739",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "W03",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_web",
+          "ad": "g5_w03_yonlendirmede_loopback_ve_metadata_ag_baglantisindan_once_reddedilir",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": true,
+      "g0_sha256": "316baaf557e369e1fd7b2ebaf3c1a191f4b9a932eb40808837c3bc8e05ad25f3",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "W04",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_web",
+          "ad": "g5_w04_gercek_https_enjeksiyonu_sir_yetkisi_vermez_mesru_metin_korunur",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": true,
+      "g0_sha256": "491cc39890c4ba6f964b42b2812ff6ecfc5f51628e98f49ebcf6cc4837b75491",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "W05",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_web",
+          "ad": "g5_w05_on_megabayt_uzunluksuz_akis_boyut_sinirinda_baglantiyi_keser",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": true,
+      "g0_sha256": "bc33a1ee1a5844702061db5939b06b39d73c68b99b0282f6ac128955bc13b66c",
+      "gecis_turu": "gercek_kabul"
+    },
+    {
+      "kimlik": "W06",
+      "testler": [
+        {
+          "paket": "kalfa-tools",
+          "hedef": "g5_web",
+          "ad": "g5_w06_iki_gercek_https_sayfasi_iddialari_dogru_kaynakla_dosyaya_yazilir",
+          "ozellik": null
+        }
+      ],
+      "zorunlu_guvenlik": false,
+      "g0_sha256": "794b066145366221e3659e712da33e8fbb871b3da79127708f5e6573fbbdf2d6",
+      "gecis_turu": "gercek_kabul"
+    }
+  ]
+}

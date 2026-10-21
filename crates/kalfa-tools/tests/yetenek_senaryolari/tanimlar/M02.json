@@ -1,0 +1,64 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "M02",
+  "aile": "mcp",
+  "baslik": "Uzak HTTP MCP salt-okunur",
+  "kullanici_istegi": "Yerel test HTTP MCP sunucusundaki salt-okunur `kayit_getir` aracını çağırarak `KLF-M02-KAYIT` özetini onay istemeden getirin.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "uzak_mcp_http"],
+  "bagimli_hat": "Hat 04 (PR #40 — uzak MCP istemcisi)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": true,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "mcp/http_sunucu_adayi.json",
+      "icerik": "{\"arac\":\"kayit_getir\",\"etki\":\"salt_okunur\",\"beklenen_kod\":\"KLF-M02-KAYIT\"}\n"
+    }
+  ],
+  "izinli_degisiklikler": [],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_oku",
+      "argumanlar": { "yol": "mcp/http_sunucu_adayi.json" }
+    },
+    {
+      "tur": "metin",
+      "icerik": "Salt-okunur HTTP MCP aracından `KLF-M02-KAYIT` kaydı onay istemeden alındı."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Salt-okunur HTTP MCP çağrısı onay istemeden (`beklenen_onay_sayisi: 0`) `KLF-M02-KAYIT` sonucunu döner.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "mcp/http_sunucu_adayi.json",
+        "durum": "degismedi",
+        "icerir": ["KLF-M02-KAYIT"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["KLF-M02-KAYIT"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_oku", "durum": "basarili" }
+      ]
+    }
+  }
+}

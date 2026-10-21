@@ -1,0 +1,68 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "S02",
+  "aile": "surec_ve_oturum",
+  "baslik": "Uzun çıktıdaki hatayı bulma",
+  "kullanici_istegi": "Uzun derleme/test çıktısında kırpılan orta bölümdeki gerçek hata kodunu (`HATA-S02-ORTA-409`) imleçli çıktı okumayla bulun ve raporlayın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "arka_plan_surec"],
+  "bagimli_hat": "Hat 03 (PR #39 — arka plan süreçleri ve terminal)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": true,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "gunlukler/derleme_ozeti.log",
+      "icerik": "[0001] Derleme basladi\n[0250] HATA-S02-ORTA-409: paket imzasi uyusmadi (crates/imza/src/lib.rs:42)\n[0500] Derleme basarisiz bitti\n"
+    }
+  ],
+  "izinli_degisiklikler": [],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_oku",
+      "argumanlar": {
+        "yol": "gunlukler/derleme_ozeti.log",
+        "baslangic_satiri": 1,
+        "satir_sayisi": 10
+      }
+    },
+    {
+      "tur": "metin",
+      "icerik": "Kırpılan çıktı imleçle okundu; hata `HATA-S02-ORTA-409` (`crates/imza/src/lib.rs:42`) olarak bulundu."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Kırpılma bilgisi görünür kalır ve imleçli okumayla ortadaki `HATA-S02-ORTA-409` kanıtı çıkarılır.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "gunlukler/derleme_ozeti.log",
+        "durum": "degismedi",
+        "icerir": ["HATA-S02-ORTA-409"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["HATA-S02-ORTA-409", "crates/imza/src/lib.rs:42"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_oku", "durum": "basarili" }
+      ]
+    }
+  }
+}

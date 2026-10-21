@@ -20,6 +20,15 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      g5_m01:
+        description: "Kurulum içinde gerçek M01'i standart CI kullanıcısıyla iki kez doğrula"
+        type: boolean
+        default: false
+      g5_masaustu:
+        description: "Gerçek terminal/MCP/web masaüstü kabulünü geçici CI kullanıcısında çalıştır"
+        type: boolean
+        default: false
 
 concurrency:
   group: surum-${{ github.ref }}
@@ -164,6 +173,46 @@ jobs:
       # özet tutmazsa derleme durur.
       - name: Kurucuyu derle
         run: node crates/kalfa/kurucu/derle.mjs
+      - name: Gerçek M01 kabul ikililerini derle
+        if: inputs.g5_m01 == true
+        shell: pwsh
+        run: |
+          cargo build -p kalfa-mcp --bin kalfa-mcp-test-sunucusu -p kalfa-sandbox --bin kalfa-kopru --release --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p kalfa-tools --features yalitim-testleri --test g5_kodlama --release --locked --no-run --message-format=json > target/g5-m01-derleme.jsonl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $ikili = @(Get-Content target/g5-m01-derleme.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'g5_kodlama' -and $_.profile.test -and $_.executable })
+          if ($ikili.Count -ne 1) { throw 'Tek G5 M01 test ikilisi bekleniyordu.' }
+          New-Item -ItemType Directory -Force kabul/deps | Out-Null
+          Copy-Item -LiteralPath $ikili[0].executable -Destination kabul/deps/g5-m01.exe
+          Copy-Item target/release/kalfa-mcp-test-sunucusu.exe, target/release/kalfa-kopru.exe kabul/
+      - uses: actions/upload-artifact@v4
+        if: inputs.g5_m01 == true
+        with:
+          name: windows-g5-m01
+          path: kabul/
+          if-no-files-found: error
+      - name: Gerçek masaüstü kabul ikililerini derle
+        if: inputs.g5_masaustu == true
+        shell: pwsh
+        run: |
+          Push-Location ui
+          npm run build:e2e
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          $env:TAURI_CONFIG = '{"identifier":"dev.kalfa.e2e","build":{"frontendDist":"../../ui/dist-e2e"}}'
+          cargo build -p kalfa -p kalfa-sandbox -p kalfa-mcp --bin kalfa --bin kalfa-kopru --bin kalfa-mcp-test-sunucusu --release --features e2e,tauri/custom-protocol --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo install tauri-driver --version 2.0.6 --locked --root target/g5-araclar
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force masaustu | Out-Null
+          Copy-Item target/release/kalfa.exe, target/release/kalfa-kopru.exe, target/release/kalfa-mcp-test-sunucusu.exe, target/g5-araclar/bin/tauri-driver.exe masaustu/
+      - uses: actions/upload-artifact@v4
+        if: inputs.g5_masaustu == true
+        with:
+          name: windows-g5-masaustu
+          path: masaustu/
+          if-no-files-found: error
       - name: Kurucuyu topla
         shell: pwsh
         run: |
@@ -180,18 +229,59 @@ jobs:
     name: Kur ve kaldır (Windows)
     needs: derle-windows
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v5
         with:
           name: windows-kurucusu
           path: kurucu
+      - uses: actions/download-artifact@v5
+        if: inputs.g5_m01 == true
+        with:
+          name: windows-g5-m01
+          path: kabul
+      - uses: actions/download-artifact@v5
+        if: inputs.g5_masaustu == true
+        with:
+          name: windows-g5-masaustu
+          path: kabul
+      - uses: actions/setup-node@v5
+        if: inputs.g5_masaustu == true
+        with:
+          node-version: "24"
+      - name: Masaüstü test bağımlılıklarını hazırla
+        if: inputs.g5_masaustu == true
+        shell: pwsh
+        run: |
+          Push-Location e2e
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          $webview = @(Get-ChildItem 'C:/Program Files (x86)/Microsoft/EdgeWebView/Application' -Directory | Where-Object Name -match '^\d+\.\d+\.\d+\.\d+$' | Sort-Object { [version]$_.Name } -Descending)[0].Name
+          if (-not $webview) { throw 'Kurulu WebView2 sürümü bulunamadı.' }
+          New-Item -ItemType Directory -Force kabul/suruculer | Out-Null
+          Invoke-WebRequest "https://msedgedriver.microsoft.com/$webview/edgedriver_win64.zip" -OutFile kabul/suruculer/driver.zip
+          Expand-Archive -LiteralPath kabul/suruculer/driver.zip -DestinationPath kabul/suruculer
+          $imza = Get-AuthenticodeSignature kabul/suruculer/msedgedriver.exe
+          if ($imza.Status -ne 'Valid' -or $imza.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'EdgeDriver Microsoft imzası geçersiz.' }
+          $surum = & kabul/suruculer/msedgedriver.exe --version
+          if ($LASTEXITCODE -ne 0 -or $surum -notmatch [regex]::Escape($webview)) { throw 'EdgeDriver/WebView2 sürümleri eşleşmiyor.' }
       - name: Sessiz kur, denetle, kaldır
         shell: pwsh
         run: |
           $kurucu = (Get-ChildItem kurucu/*-setup.exe | Select-Object -First 1).FullName
-          .github/scripts/windows-kurucu-sinama.ps1 -KurucuYolu $kurucu
+          .github/scripts/windows-kurucu-sinama.ps1 -KurucuYolu $kurucu -G5M01:('${{ inputs.g5_m01 }}' -eq 'true') -G5Masaustu:('${{ inputs.g5_masaustu }}' -eq 'true')
+      - uses: actions/upload-artifact@v4
+        if: always() && (inputs.g5_m01 == true || inputs.g5_masaustu == true)
+        with:
+          name: windows-g5-m01-sonuc
+          path: |
+            ${{ runner.temp }}/kalfatest/testler.log
+            ${{ runner.temp }}/kalfatest/m01-*.log
+            ${{ runner.temp }}/kalfatest/sonuc.txt
+            C:/kalfatest-tmp/g5-masaustu.log
+          if-no-files-found: error
 
   yayimla:
     name: Taslak sürüm

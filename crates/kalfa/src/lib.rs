@@ -159,7 +159,7 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
     let (uretici, iletisim) = evren_bilesenleri(app);
     #[cfg(feature = "e2e")]
     let (uretici, iletisim) = e2e::kur(app, &kasa)?;
-    Ok(Uygulama::yeni(Bilesenler {
+    let uygulama = Uygulama::yeni(Bilesenler {
         veri_dizini: veri,
         kasa,
         uretici,
@@ -186,7 +186,12 @@ fn kur<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Uygulama>, Box<dyn Error>> 
             })
             .unwrap_or_default(),
         yalitim: YalitimKaynagi::Platform,
-    }))
+    });
+    #[cfg(feature = "e2e")]
+    uygulama.uzak_mcp.test_loopback_izni_ayarla(
+        kalfa_uygulama::e2e::E2eAyarlari::ortamdan()?.uzak_mcp_test_loopback,
+    );
+    Ok(uygulama)
 }
 
 /// EVREN istemcisi ve işletim sisteminin iletişim kutuları. Uçtan uca test

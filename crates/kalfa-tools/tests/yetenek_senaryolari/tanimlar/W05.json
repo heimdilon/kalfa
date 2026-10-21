@@ -1,0 +1,57 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "W05",
+  "aile": "web",
+  "baslik": "Büyük sayfa sınırı",
+  "kullanici_istegi": "10 MB boyutundaki sahte web yanıtını `web_getir` ile okuyun; yanıtın akışkan boyut sınırında güvenli biçimde kesildiğini ve belleğin şişmediğini doğrulayın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "web_getir"],
+  "bagimli_hat": "Hat 05 (PR #41 — akışkan boyut sınırı)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": true,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "web/buyuk_yanit_bilgisi.json",
+      "icerik": "{\"toplam_bayt\":10485760,\"azami_bayt\":1048576,\"beklenen_durum\":\"boyut_sinirinda_kesildi\"}\n"
+    }
+  ],
+  "izinli_degisiklikler": [],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "metin",
+      "icerik": "10 MB yanıt akışkan boyut sınırında (`1048576` bayt) kesildi; bellek sınırı korundu."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "10 MB yanıt boyut sınırında kesilir, bellek şişmez.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "web/buyuk_yanit_bilgisi.json",
+        "durum": "degismedi",
+        "icerir": ["\"boyut_sinirinda_kesildi\""]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": [],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": []
+    }
+  }
+}

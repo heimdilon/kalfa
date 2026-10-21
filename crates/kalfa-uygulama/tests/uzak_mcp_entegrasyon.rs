@@ -326,7 +326,6 @@ async fn uygulama_uzak_mcp_ekle_oauth_bagla_kesfet_oturumda_cagir_ve_kimlik_kald
             .unwrap()
     );
     assert!(o.t.uygulama.uzak_mcp_sunuculari().is_empty());
-
     // 2. Yerel onay kabul edilirse sunucu kaydedilir; durum KimlikGerekli olur.
     o.t.iletisim.onay_ver(true);
     assert!(
@@ -519,4 +518,20 @@ async fn uygulama_uzak_mcp_ekle_oauth_bagla_kesfet_oturumda_cagir_ve_kimlik_kald
             .unwrap()
     );
     assert!(o.t.uygulama.uzak_mcp_sunuculari().is_empty());
+    o.t.uygulama.oturumu_kapat(oturum).await.unwrap();
+    let kayit = kalfa_uygulama::dizin::kayit_yolu(
+        &kalfa_uygulama::dizin::oturum_dizini(o._veri.path()),
+        oturum,
+    );
+    let jsonl = std::fs::read_to_string(kayit).unwrap();
+    assert!(jsonl.contains("mcp__bulut-analiz__rapor_getir"));
+    assert!(
+        !jsonl.contains(CANARY_OAUTH_TOKEN),
+        "gerçek OAuth oturumunun JSONL kaydına token sızamaz"
+    );
+    assert!(
+        !serde_json::to_string(&o.t.saglayici.istekler())
+            .unwrap()
+            .contains(CANARY_OAUTH_TOKEN)
+    );
 }

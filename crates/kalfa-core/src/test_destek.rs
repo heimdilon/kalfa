@@ -37,6 +37,9 @@ static MODEL_CAGRI_SAYACI: AtomicU64 = AtomicU64::new(0);
 
 /// Sahte sağlayıcının bir `akis()` çağrısına vereceği yanıt.
 pub enum SahteYanit {
+    /// Bir önceki gerçek araç sonucunu taşıyan güncel model isteğine göre
+    /// sonraki yanıtı üretir (ör. süreç kimliği ve devam imleci).
+    IstegeGore(fn(&ChatRequest) -> SahteYanit),
     /// Olayları sırayla verir, sonra biter.
     Akis(Vec<Result<AkisOlayi, EvrenError>>),
     /// Olayları verir, sonra hiç bitmez (iptal testleri için).
@@ -117,6 +120,8 @@ impl SahteYanit {
 /// bildirmez ve 5b bütçesinde bilinmeyen tüketimdir.
 #[derive(Debug, Clone)]
 pub enum SahteSohbet {
+    /// Gerçek özetleme isteğini okuyarak sabit test modelinin yanıtını kurar.
+    IstegeGore(fn(&ChatRequest) -> String),
     Json(Value),
     Metin(String),
     KullanimsizMetin(String),
@@ -288,7 +293,7 @@ impl Saglayici for SahteSaglayici {
         let model = istek.model.clone();
         let sira = {
             let mut istekler = self.istekler.lock().unwrap();
-            istekler.push(istek);
+            istekler.push(istek.clone());
             istekler.len()
         };
         let mut yanit = self
@@ -297,9 +302,15 @@ impl Saglayici for SahteSaglayici {
             .unwrap()
             .pop_front()
             .expect("sahte senaryoda yanıt kalmadı");
-        while let SahteYanit::Gecikmeli(sure, ic) = yanit {
-            tokio::time::sleep(sure).await;
-            yanit = *ic;
+        loop {
+            match yanit {
+                SahteYanit::Gecikmeli(sure, ic) => {
+                    tokio::time::sleep(sure).await;
+                    yanit = *ic;
+                }
+                SahteYanit::IstegeGore(uret) => yanit = uret(&istek),
+                _ => break,
+            }
         }
         let meta = YanitMeta {
             istek_id: Some(format!("sahte-{sira}")),
@@ -307,7 +318,9 @@ impl Saglayici for SahteSaglayici {
             ..Default::default()
         };
         match yanit {
-            SahteYanit::Gecikmeli(..) => unreachable!("gecikme yukarıda açıldı"),
+            SahteYanit::Gecikmeli(..) | SahteYanit::IstegeGore(..) => {
+                unreachable!("yanıt yukarıda açıldı")
+            }
             SahteYanit::Akis(olaylar) => Ok(SaglayiciAkisi {
                 meta,
                 olaylar: Box::pin(stream::iter(olaylar)),
@@ -326,7 +339,7 @@ impl Saglayici for SahteSaglayici {
         let model = istek.model.clone();
         let sira = {
             let mut istekler = self.sohbet_istekleri.lock().unwrap();
-            istekler.push(istek);
+            istekler.push(istek.clone());
             istekler.len()
         };
         let yanit = self
@@ -345,6 +358,13 @@ impl Saglayici for SahteSaglayici {
             ..Default::default()
         };
         match yanit {
+            SahteSohbet::IstegeGore(uret) => Ok(sohbet_yaniti(
+                sira,
+                model,
+                uret(&istek),
+                sohbet_kullanimi(),
+                meta,
+            )),
             SahteSohbet::Json(deger) => Ok(sohbet_yaniti(
                 sira,
                 model,

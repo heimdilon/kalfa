@@ -1,0 +1,129 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "M01",
+  "aile": "mcp",
+  "baslik": "Yerel yalıtımlı araç",
+  "kullanici_istegi": "`kalfa-mcp-test-sunucusu` yerel stdio MCP sunucusundaki `mcp__yerel_sinama__dene` aracını kullanarak çalışma alanı içindeki `mcp/yerel_durum.json` kaydını okuyun; gizli `.env` dosyası ile çalışma alanı dışındaki `../dis_sir_m01.txt` yoluna erişimin yalıtımlı MCP süreci tarafından engellendiğini doğrulayın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "yerel_mcp_stdio"],
+  "bagimli_hat": null,
+  "platform_onkosulu": {
+    "gercek_yalitim": true,
+    "yerel_surec": true,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "mcp/yerel_durum.json",
+      "icerik": "{\"sunucu\":\"kalfa-mcp-test-sunucusu\",\"durum\":\"hazir\",\"etiket\":\"KLF-M01-STDIO-OK\"}\n"
+    },
+    {
+      "yol": ".env",
+      "icerik": "EVREN_API_KEY=gizli-m01-degeri\n"
+    }
+  ],
+  "izinli_degisiklikler": [],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [
+      {
+        "arac": "mcp__yerel_sinama__dene",
+        "hedef": "yerel_sinama/dene",
+        "karar": "onayla"
+      },
+      {
+        "arac": "mcp__yerel_sinama__dene",
+        "hedef": "yerel_sinama/dene",
+        "karar": "onayla"
+      },
+      {
+        "arac": "mcp__yerel_sinama__dene",
+        "hedef": "yerel_sinama/dene",
+        "karar": "onayla"
+      }
+    ],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "araclar",
+      "cagrilar": [
+        {
+          "ad": "mcp__yerel_sinama__dene",
+          "argumanlar": {
+            "etiket": "ALAN_ICI",
+            "islem": "oku",
+            "yol": "mcp/yerel_durum.json"
+          }
+        },
+        {
+          "ad": "mcp__yerel_sinama__dene",
+          "argumanlar": {
+            "etiket": "GIZLI_ENV",
+            "islem": "oku",
+            "yol": ".env"
+          }
+        },
+        {
+          "ad": "mcp__yerel_sinama__dene",
+          "argumanlar": {
+            "etiket": "ALAN_DISI",
+            "islem": "oku",
+            "yol": "../dis_sir_m01.txt"
+          }
+        }
+      ]
+    },
+    {
+      "tur": "metin",
+      "icerik": "`kalfa-mcp-test-sunucusu` yerel stdio MCP sunucusu üzerinden `mcp/yerel_durum.json` (`KLF-M01-STDIO-OK`) okundu; gizli `.env` (`GIZLI_ENV=KORUNDU`) ve çalışma alanı dışı `../dis_sir_m01.txt` (`ALAN_DISI=RED:`) erişimleri yalıtım tarafından engellendi."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Gerçek yerel stdio MCP sunucusu (`kalfa-mcp-test-sunucusu`) yalıtımlı süreç olarak çalışır; çalışma alanı içi `mcp/yerel_durum.json` okunur (`ALAN_ICI=TAMAM:`), `.env` (`GIZLI_ENV=KORUNDU`) ve çalışma alanı dışı `../dis_sir_m01.txt` (`ALAN_DISI=RED:`) engellenir, hiçbir gizli değer sızmaz.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "mcp/yerel_durum.json",
+        "durum": "degismedi",
+        "icerir": ["KLF-M01-STDIO-OK"]
+      },
+      {
+        "yol": ".env",
+        "durum": "degismedi",
+        "icerir": ["gizli-m01-degeri"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 1,
+      "isteklerde_bulunmali": [
+        "mcp:yerel_sinama/dene",
+        "ALAN_ICI=TAMAM:",
+        "KLF-M01-STDIO-OK",
+        "GIZLI_ENV=KORUNDU",
+        "ALAN_DISI=RED:"
+      ],
+      "isteklerde_bulunmamali": [
+        "gizli-m01-degeri",
+        "DIS_ALAN_SIRRI_M01",
+        "GIZLI_ENV=SIZDI",
+        "ALAN_DISI=TAMAM:"
+      ],
+      "kayitta_bulunmamali": [
+        "gizli-m01-degeri",
+        "DIS_ALAN_SIRRI_M01"
+      ],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "mcp__yerel_sinama__dene", "durum": "basarili" },
+        { "arac": "mcp__yerel_sinama__dene", "durum": "basarili" },
+        { "arac": "mcp__yerel_sinama__dene", "durum": "basarili" }
+      ]
+    }
+  }
+}

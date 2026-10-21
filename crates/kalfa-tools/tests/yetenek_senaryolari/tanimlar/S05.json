@@ -1,0 +1,82 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "S05",
+  "aile": "surec_ve_oturum",
+  "baslik": "Soru/plan/compact/kurtarma",
+  "kullanici_istegi": "Yapılandırma geçişi için önce `plan_guncelle` ile 2 adımlı planı kaydedin, belirsiz hedef biçimini `kullaniciya_sor` ile sorun, gelen yanıtla (`toml`) `ayar.toml` dosyasını yazın; compact ve JSONL kurtarma sonrasında plan ve yanıt bağlamının korunduğunu doğrulayın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "kullaniciya_sor", "oturum_kurtarma"],
+  "bagimli_hat": "Hat 02 (PR #38 — proje talimatları, plan ve kullanıcı sorusu)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "eski_ayar.txt",
+      "icerik": "baglanti_suresi_sn=30\n"
+    }
+  ],
+  "izinli_degisiklikler": ["ayar.toml"],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [
+      {
+        "soru_id": "soru-bicim-1",
+        "yanit": "toml"
+      }
+    ],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_oku",
+      "argumanlar": { "yol": "eski_ayar.txt" }
+    },
+    {
+      "tur": "arac",
+      "ad": "dosya_yaz",
+      "argumanlar": {
+        "yol": "ayar.toml",
+        "icerik": "baglanti_suresi_sn = 30\n"
+      }
+    },
+    {
+      "tur": "metin",
+      "icerik": "Kullanıcı sorusu yanıtına (`toml`) göre `ayar.toml` oluşturuldu ve plan durumu güncellendi."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Kullanıcı yanıtı doğru soru kimliğine bağlanır, soru beklerken dosya kilidi tutulmaz ve compact/kurtarma sonrası plan ile `ayar.toml` tutarlıdır.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "ayar.toml",
+        "durum": "var",
+        "icerir": ["baglanti_suresi_sn = 30"]
+      },
+      {
+        "yol": "eski_ayar.txt",
+        "durum": "degismedi"
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["dosya:eski_ayar.txt"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_oku", "durum": "basarili" },
+        { "arac": "dosya_yaz", "durum": "basarili" }
+      ]
+    }
+  }
+}
