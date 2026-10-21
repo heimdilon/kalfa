@@ -286,7 +286,8 @@ fn varsayilan_araclar_kaydedilebilir() {
             "dosya_listele",
             "icerik_ara",
             "dosya_yaz",
-            "dosya_duzenle"
+            "dosya_duzenle",
+            "web_getir"
         ]
     );
     let yazanlar: Vec<&str> = araclar
@@ -294,7 +295,7 @@ fn varsayilan_araclar_kaydedilebilir() {
         .filter(|x| x.yazar_mi())
         .map(|x| x.ad())
         .collect();
-    assert_eq!(yazanlar, vec!["dosya_yaz", "dosya_duzenle"]);
+    assert_eq!(yazanlar, vec!["dosya_yaz", "dosya_duzenle", "web_getir"]);
     AracKayitDefteri::yeni(araclar).expect("bütün şemalar geçerli olmalı");
 }
 

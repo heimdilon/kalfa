@@ -79,6 +79,11 @@ impl fmt::Debug for RpcHatasi {
 
 impl McpHatasi {
     /// Uzak RPC metnini denetçiye verir; Debug ve Display bu alanı yazmaz.
+    pub const fn belirsiz_cagri_sonucu_mu(&self) -> bool {
+        matches!(self, Self::Tasima(TasimaHatasi::BelirsizCagriSonucu))
+    }
+
+    /// Uzak RPC metnini denetçiye verir; Debug ve Display bu alanı yazmaz.
     pub fn uzak_rpc(&self) -> Option<(i32, &str, Option<&serde_json::Value>)> {
         match self {
             Self::UzakRpc(hata) => Some(hata.parcalari()),
@@ -137,6 +142,7 @@ pub struct McpIstemcisi {
     kapat: watch::Sender<bool>,
     is_parcacigi: Option<thread::JoinHandle<()>>,
     birlestirme: Option<tokio::task::JoinHandle<thread::Result<()>>>,
+    uzak_oturum: Option<crate::uzak::UzakOturumDurumu>,
     tasima_kontrol: TasimaKontrol,
     yenileme: Arc<YenilemeDurumu>,
 }
@@ -191,6 +197,7 @@ impl McpIstemcisi {
             birlestirme: None,
             tasima_kontrol,
             yenileme,
+            uzak_oturum: None,
         };
         // Başlatma süresini sunucu tanımı belirler; çağıran bu geleceği
         // o süreyle sınırlar. İkinci bir sabit tavan geçerli tanımı daraltmaz.
@@ -253,6 +260,73 @@ impl McpIstemcisi {
         }
     }
 
+    /// Uzak Streamable HTTP taşımasıyla (`SinirliHttpTasima`) sınırlı MCP istemcisi başlatır.
+    pub async fn yeni_uzak(
+        tasima: crate::uzak::SinirliHttpTasima,
+        hata: watch::Receiver<Option<TasimaHatasi>>,
+    ) -> Result<Self, McpHatasi> {
+        let yenileme = tasima.yenileme.clone();
+        let tasima_kontrol = tasima.kontrol();
+        let uzak_oturum = Some(tasima.oturum_durumu());
+        let is_parcacigi_yenileme = yenileme.clone();
+        let (komut_gonder, komut_al) = mpsc::channel(KUYRUK);
+        let (kapat_gonder, kapat_al) = watch::channel(false);
+        let (hazir_gonder, hazir_al) = oneshot::channel();
+        let is_parcacigi = thread::Builder::new()
+            .name("kalfa-mcp-uzak-sdk".to_owned())
+            .spawn(move || {
+                tracing::subscriber::with_default(
+                    tracing::subscriber::NoSubscriber::default(),
+                    || {
+                        let calisma_zamani = match tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                        {
+                            Ok(calisma_zamani) => calisma_zamani,
+                            Err(_) => {
+                                let _ = hazir_gonder.send(Err(McpHatasi::Baglanti));
+                                return;
+                            }
+                        };
+                        calisma_zamani.block_on(istemci_is_parcacigi(
+                            tasima,
+                            hata,
+                            komut_al,
+                            kapat_al,
+                            hazir_gonder,
+                            is_parcacigi_yenileme,
+                        ));
+                        drop(calisma_zamani);
+                    },
+                );
+            })
+            .map_err(|_| McpHatasi::Baglanti)?;
+        let mut istemci = Self {
+            komutlar: komut_gonder,
+            kapat: kapat_gonder,
+            is_parcacigi: Some(is_parcacigi),
+            birlestirme: None,
+            tasima_kontrol,
+            yenileme,
+            uzak_oturum,
+        };
+        let hazir = match hazir_al.await {
+            Ok(hazir) => hazir,
+            Err(_) => Err(McpHatasi::Baglanti),
+        };
+        match hazir {
+            Ok(()) => Ok(istemci),
+            Err(hata) => {
+                istemci.kapat().await;
+                Err(hata)
+            }
+        }
+    }
+
+    pub fn uzak_oturum_durumu(&self) -> Option<&crate::uzak::UzakOturumDurumu> {
+        self.uzak_oturum.as_ref()
+    }
+
     pub fn yenileme_durumu(&self) -> Arc<YenilemeDurumu> {
         self.yenileme.clone()
     }
@@ -284,8 +358,8 @@ impl Drop for McpIstemcisi {
     }
 }
 
-async fn istemci_is_parcacigi(
-    tasima: SinirliTasima,
+async fn istemci_is_parcacigi<T: rmcp::transport::Transport<RoleClient> + Send + 'static>(
+    tasima: T,
     mut hata: watch::Receiver<Option<TasimaHatasi>>,
     mut komutlar: mpsc::Receiver<Komut>,
     mut kapat: watch::Receiver<bool>,
@@ -529,8 +603,20 @@ async fn arac_cagir(
         sonuc = &mut istek.rx => match sonuc {
             Ok(Ok(ServerResult::CallToolResult(sonuc))) => ic_isareti_tuket(sonuc),
             Ok(Ok(_)) => Err(McpHatasi::DesteklenmeyenCevap),
-            Ok(Err(hata)) => Err(uzak_hata(hata)),
-            Err(_) => Err(McpHatasi::Baglanti),
+            Ok(Err(service_hatasi)) => Err(
+                hata.borrow()
+                    .as_ref()
+                    .copied()
+                    .map(McpHatasi::Tasima)
+                    .unwrap_or_else(|| uzak_hata(service_hatasi)),
+            ),
+            Err(_) => Err(
+                hata.borrow()
+                    .as_ref()
+                    .copied()
+                    .map(McpHatasi::Tasima)
+                    .unwrap_or(McpHatasi::Baglanti),
+            ),
         }
     }
 }
@@ -734,6 +820,7 @@ mod tests {
             tasima_kontrol: tasima.kontrol(),
             is_parcacigi: Some(is_parcacigi),
             yenileme: tasima.yenileme.clone(),
+            uzak_oturum: None,
         };
         let mut bekledi = Vec::new();
         for _ in 0..3 {

@@ -6,8 +6,10 @@
   import CodeBlock from '../bilesenler/CodeBlock.svelte';
   import type { IkonAdi } from '../bilesenler/ikonlar';
   import Message from '../bilesenler/Message.svelte';
+  import SoruKarti from '../bilesenler/SoruKarti.svelte';
   import ThoughtPanel from '../bilesenler/ThoughtPanel.svelte';
   import ToolCallCard from '../bilesenler/ToolCallCard.svelte';
+  import WebKaynakKarti from '../bilesenler/WebKaynakKarti.svelte';
   import {
     AKTARIM_DURMA_METNI,
     MCP_ROZET_ACIKLAMASI,
@@ -30,6 +32,7 @@
     kabukOzeti,
     sayi,
     sonucGovdesi,
+    webKaynagiCozumle,
   } from './bicim';
   import { geriAlmaSonucMetni } from './geriAlma';
   import AracDiffi from './AracDiffi.svelte';
@@ -49,6 +52,9 @@
     dosya_yaz: 'file-pen',
     dosya_duzenle: 'file-pen',
     kabuk: 'square-terminal',
+    plan_guncelle: 'list',
+    kullaniciya_sor: 'info',
+    web_getir: 'external-link',
   };
 
   function turSonu(neden: BitisNedeni): string {
@@ -93,6 +99,7 @@
 {:else if oge.tip === 'AracCagrisi'}
   {@const d = aracKartDurumu(oge.durum)}
   {@const mcp = durum.mcpSunucusu(oge.arac)}
+  {@const webKaynak = oge.arac === 'web_getir' && oge.sonuc ? webKaynagiCozumle(oge.sonuc) : null}
   <ToolCallCard
     tool={mcp
       ? `${mcp.ozet.ad} · ${oge.arac.slice(`mcp__${mcp.ozet.ad}__`.length)}`
@@ -102,7 +109,7 @@
     status={d.status}
     statusLabel={d.etiket}
     icon={ARAC_IKONU[oge.arac] ?? 'box'}
-    acikBaslar={oge.degisiklikler.some((g) => g.diff)}
+    acikBaslar={oge.degisiklikler.some((g) => g.diff) || webKaynak !== null}
   >
     {#snippet rozet()}
       {#if mcp}
@@ -142,6 +149,19 @@
       {/if}
     {:else if oge.terminal}
       <TerminalGorunumu terminal={oge.terminal} />
+    {:else if webKaynak}
+      <WebKaynakKarti
+        istenenUrl={webKaynak.istenenUrl}
+        sonUrl={webKaynak.sonUrl}
+        baslik={webKaynak.baslik}
+        icerikTuru={webKaynak.icerikTuru}
+        acilmisBayt={webKaynak.acilmisBayt}
+        ciktiBayt={webKaynak.ciktiBayt}
+        kirpildi={webKaynak.kirpildi}
+        devamImleci={webKaynak.devamImleci}
+        govdeOnizleme={webKaynak.govdeOnizleme}
+        onBaglantiAc={durum.baglantiAc}
+      />
     {:else if oge.sonuc}
       {@const o = ciktiOnizlemesi(sonucGovdesi(oge.sonuc))}
       <CodeBlock code={o.kod} truncated={o.kirpildi} maxHeight="320px" />
@@ -149,6 +169,13 @@
   </ToolCallCard>
 {:else if oge.tip === 'OnayIstegi'}
   <OnayKarti {oge} />
+{:else if oge.tip === 'KullaniciSorusu'}
+  <SoruKarti
+    {oge}
+    disabled={Boolean(durum.aktif?.salt_okunur)}
+    onyanitla={(tur, soruKimligi, yanit) => durum.soruYanitla(oturum, tur, soruKimligi, yanit)}
+    oniptal={() => durum.iptal()}
+  />
 {:else if oge.tip === 'GonderimOnizlemesi'}
   <OnizlemeKarti
     {oge}

@@ -522,6 +522,33 @@ impl Yalitici for WindowsYalitici {
         }
     }
 
+    fn baslat_kabuk_etkilesimli(
+        &self,
+        istek: &CalistirmaIstegi,
+        terminal: Option<crate::TerminalBoyutu>,
+    ) -> Result<crate::EtkilesimliSurec, BaslatmaHatasi> {
+        crate::kip_uyusmasi(istek.alan.is_some(), self.durum().hazir_mi())?;
+        if let Some(boyut) = terminal {
+            boyut.dogrula()?;
+        }
+        match &istek.alan {
+            Some(alan) => {
+                let ace = self.ace();
+                match self.yalitilmis_etkilesimli_baslat(istek, alan, &ace, terminal) {
+                    Ok(s) => Ok(s),
+                    Err(e) => {
+                        drop(ace);
+                        if !matches!(&e, BaslatmaHatasi::ProgramYok { .. }) {
+                            let _ = self.yeniden_algila();
+                        }
+                        Err(e)
+                    }
+                }
+            }
+            None => Surec::baslat_kabuk_etkilesimli(istek, terminal),
+        }
+    }
+
     fn baslat_etkilesimli(
         &self,
         istek: &crate::EtkilesimliIstek,
@@ -803,6 +830,121 @@ impl WindowsYalitici {
             let kap = kap::baslat(&kap_istegi, &is).map_err(yalitim_hatasi)?;
             Ok(Surec::kaptan(kap, is))
         }
+    }
+
+    fn yalitilmis_etkilesimli_baslat(
+        &self,
+        istek: &CalistirmaIstegi,
+        alan: &AlanBilgisi,
+        ace: &AceKaydi,
+        terminal: Option<crate::TerminalBoyutu>,
+    ) -> Result<crate::EtkilesimliSurec, BaslatmaHatasi> {
+        if let Some(neden) = self
+            .okunur_izin_hatasi
+            .read()
+            .unwrap_or_else(|z| z.into_inner())
+            .as_ref()
+        {
+            return Err(BaslatmaHatasi::Yalitim(neden.clone()));
+        }
+        if ace.bozuk_mu() {
+            return Err(BaslatmaHatasi::Yalitim(
+                "ACE kaydı bozuk; yalıtımlı komut başlatılmadı".into(),
+            ));
+        }
+        if !ace.hazir_mi(&alan_kimligi(&alan.kok)) {
+            return Err(BaslatmaHatasi::Yalitim(
+                "çalışma alanı yalıtım için hazırlanmadı".into(),
+            ));
+        }
+        let ayar = self.ayar();
+        let kimlik = alan_kimligi(&alan.kok);
+        let ad = profil_adi(&kimlik);
+        let paket = guvenlik::profil_olustur(&ad, "Kalfa çalışma alanı yalıtımı")
+            .map_err(yalitim_hatasi)?;
+        let yetenek = guvenlik::arac_zinciri_sidi().map_err(yalitim_hatasi)?;
+        let yetenekler = vec![yetenek];
+        let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, &kimlik);
+        std::fs::create_dir_all(&ayar.yalitim_dizini).map_err(yalitim_hatasi)?;
+        profil::guvenli_dizin(&ayar.yalitim_dizini, Path::new(&kimlik)).map_err(yalitim_hatasi)?;
+        ozel.hazirla(&ayar.git).map_err(yalitim_hatasi)?;
+        let _ = profil::guvenli_dizin(
+            &ozel.kok,
+            Path::new("ev/Packages")
+                .join(&ad)
+                .join("AC")
+                .join("Temp")
+                .as_path(),
+        )
+        .map_err(yalitim_hatasi)?;
+        let _ =
+            profil::guvenli_dizin(&ozel.kok, Path::new("ev/Roaming")).map_err(yalitim_hatasi)?;
+        let alan_kok =
+            guvenlik::sade(&std::fs::canonicalize(&alan.kok).map_err(BaslatmaHatasi::GirisCikis)?);
+        let (araclar, uygun) =
+            arac_yollarini_siniflandir(ace, &ayar, Some(&alan_kok)).map_err(yalitim_hatasi)?;
+        if !uygun {
+            return Err(BaslatmaHatasi::Yalitim(
+                "araç zinciri dizini çalışma alanı ya da Kalfa'nın özel verisiyle çakışıyor".into(),
+            ));
+        }
+        let mut ortam = yalitim_ortami(&istek.ortam, &ozel, &ayar, &araclar, istek.ag);
+        if terminal.is_some() {
+            crate::surec::terminal_ortami_ekle(&mut ortam);
+        }
+        let kokler = izinli_kokler(&ayar, alan, &ozel, &araclar);
+        let (program, argumanlar) = program::coz(&istek.komut, &ortam)?;
+        let program = gorunen_program(&program, &kokler, alan, &ortam)?;
+        let cmd = kap::sistem_dizini().join("cmd.exe");
+        let komut = komut_satiri::uret(&program, &argumanlar, &cmd).map_err(yalitim_hatasi)?;
+        let calisma_dizini = guvenlik::sade(
+            &std::fs::canonicalize(&istek.dizin).map_err(BaslatmaHatasi::GirisCikis)?,
+        );
+        let alan_koku =
+            guvenlik::sade(&std::fs::canonicalize(&alan.kok).map_err(BaslatmaHatasi::GirisCikis)?);
+        if !altinda(&calisma_dizini, &alan_koku) {
+            return Err(BaslatmaHatasi::Yalitim(
+                "çalışma dizini çalışma alanının dışında".into(),
+            ));
+        }
+
+        let is = crate::agac::Is::yeni(true).map_err(yalitim_hatasi)?;
+        let (hedef_komut, hedef_ortam, ag_kapatici) = if istek.ag {
+            let (k, o, a) = ag_hazirla(
+                &ayar,
+                &ozel,
+                &paket,
+                &is,
+                istek.ag_listesi.clone(),
+                &komut,
+                ortam,
+            )?;
+            (k, o, Some(a))
+        } else {
+            (komut, ortam, None)
+        };
+        let kap_istegi = KapIstegi {
+            komut: &hedef_komut,
+            dizin: &calisma_dizini,
+            ortam: &hedef_ortam,
+            paket: &paket,
+            yetenekler: &yetenekler,
+        };
+        let mut surec = match terminal {
+            Some(boyut) => {
+                let (kap, denetim) =
+                    kap::baslat_terminal(&kap_istegi, &is, boyut).map_err(yalitim_hatasi)?;
+                crate::EtkilesimliSurec::kaptan_terminalli(kap, is, Some(denetim))?
+            }
+            None => {
+                let kap = kap::baslat_etkilesimli(&kap_istegi, &is).map_err(yalitim_hatasi)?;
+                crate::EtkilesimliSurec::kaptan(kap, is)?
+            }
+        };
+        if let Some(k) = ag_kapatici {
+            surec.ag_kapat_ekle(k);
+        }
+        Ok(surec)
     }
 
     /// Sunucuyu yalıtımda başlatır (1.1a §4.1, §5.6). ACE kilidi tutulurken

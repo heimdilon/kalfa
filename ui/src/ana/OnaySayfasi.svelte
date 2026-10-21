@@ -43,6 +43,10 @@
         return m('onay.veri.YalnizcaYazildi');
       case 'EklentiCiktisi':
         return m('onay.veri.EklentiCiktisi');
+      case 'UzakMcpCagrisi':
+        return m('onay.veri.UzakMcpCagrisi');
+      case 'WebSayfasi':
+        return m('onay.veri.WebSayfasi');
       default:
         return m('onay.veri.Bilinmiyor');
     }
@@ -202,7 +206,9 @@
                 ? 'puzzle'
                 : aktifOge.mcp
                   ? 'box'
-                  : 'file-text'}
+                  : aktifOge.web
+                    ? 'external-link'
+                    : 'file-text'}
             size={16}
           />
           <div class="yol-blogu">
@@ -266,6 +272,30 @@
           </dl>
         {:else if ilkGonderim}
           <IlkGonderimKarti oge={aktifOge} />
+        {:else if aktifOge.web}
+          {@const w = aktifOge.web}
+          <dl class="kabuk">
+            <dt>{m('onay.web.hedef')}</dt>
+            <dd class="mono">
+              <GorunurMetin metin={`${w.sema}://${w.host}:${w.port}`} />
+            </dd>
+            <dt>{m('onay.web.yontem')}</dt>
+            <dd class="mono"><GorunurMetin metin={w.yontem} /></dd>
+            <dt>{m('onay.web.adres')}</dt>
+            <dd><pre class="komut"><GorunurMetin metin={w.maskeli_url} /></pre></dd>
+            <dt>{m('onay.web.yonlendirme')}</dt>
+            <dd class={{ uyari: w.yonlendirme_izni.tip === 'IzinliHostlar' && w.yonlendirme_izni.hostlar.length > 0 }}>
+              {#if w.yonlendirme_izni.tip === 'AyniHost' || w.yonlendirme_izni.hostlar.length === 0}
+                <GorunurMetin metin={m('onay.web.yonlendirme_ayni_host', { host: w.host })} />
+              {:else}
+                <GorunurMetin
+                  metin={m('onay.web.yonlendirme_izinli', {
+                    hostlar: w.yonlendirme_izni.hostlar.join(', '),
+                  })}
+                />
+              {/if}
+            </dd>
+          </dl>
         {:else}
           <div class="diff">
             {#each parcalar as p, i (i)}
@@ -297,20 +327,34 @@
       {#if aktifOge.mcp}
         {@const k = aktifOge.mcp}
         {@const tam = k.erisim === 'TamErisim'}
+        {@const uzak = k.erisim === 'UzakStreamableHttp'}
         <div class="bilgi">
           <dt><Icon name="box" size={16} />{m('onay.sayfa.kaynak')}</dt>
           <dd class="mcp-kaynak">
             <GorunurMetin metin={m('mcp.onay.kaynak', { sunucu: k.sunucu, arac: k.arac })} />
-            <Badge tone={tam ? 'danger' : 'accent'}>
-              {m(tam ? 'mcp.rozet.tam_erisim' : 'mcp.rozet.yalitimli')}
+            <Badge tone={tam ? 'danger' : uzak ? 'warn' : 'accent'}>
+              {m(
+                tam
+                  ? 'mcp.rozet.tam_erisim'
+                  : uzak
+                    ? 'uzak_mcp.rozet.uzak_streamable_http'
+                    : 'mcp.rozet.yalitimli',
+              )}
             </Badge>
           </dd>
         </div>
-        <div class={['bilgi', { uyari: tam }]}>
+        <div class={['bilgi', { uyari: tam || uzak }]}>
           <dt><Icon name="shield" size={16} />{m('mcp.onay.erisim')}</dt>
           <dd>
             {#if tam}
               {m('mcp.onay.tam_erisim')}
+            {:else if uzak}
+              <GorunurMetin
+                metin={m('uzak_mcp.onay.ozet', {
+                  origin: k.uzak_origin ?? k.ag_hostlari.join(', '),
+                  kimlik: k.kimlik_kapsami ?? m('uzak_mcp.yetki.yetkisiz'),
+                })}
+              />
             {:else if k.ag_hostlari.length === 0}
               {m('mcp.onay.yalitimli_ag_yok')}
             {:else}
@@ -369,11 +413,14 @@
     {/if}
 
     <!-- Eklentinin yerel onayını ilk gönderim kartı anlatır. -->
-    {#if ogeler.some((o) => o.yerel_onay && !o.eklenti && !o.mcp)}
+    {#if ogeler.some((o) => o.yerel_onay && !o.eklenti && !o.mcp && !o.web)}
       <p class="yerel"><Icon name="shield-alert" size={16} />{m('onay.kabuk.yerel')}</p>
     {/if}
     {#if ogeler.some((o) => o.yerel_onay && o.mcp)}
       <p class="yerel"><Icon name="shield-alert" size={16} />{m('mcp.onay.yerel')}</p>
+    {/if}
+    {#if ogeler.some((o) => o.yerel_onay && o.web)}
+      <p class="yerel"><Icon name="shield-alert" size={16} />{m('onay.web.yerel')}</p>
     {/if}
 
     <div class="alt">

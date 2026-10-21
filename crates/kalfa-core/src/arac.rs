@@ -93,10 +93,130 @@ pub struct Hazirlik {
     /// MCP aracının güvenli kart özeti ve R/D mühür girdileri. Ham komut,
     /// ortam değişkeni, sır ve dosya yolu bu alana konmaz.
     pub mcp: Option<McpAracHazirligi>,
+    /// Web getirme aracının (`web_getir`) hedef, yöntem ve yönlendirme tarifi.
+    /// Mühre girer: onaydan sonra hedef URL, host, port veya yönlendirme kapsamı
+    /// değişirse çağrı çalışmaz.
+    pub web: Option<WebTarifi>,
     /// Araç çağrı boyunca kilit tutmaz; dosyaya kendisi dokunurken o yolun
     /// kilidini kısa süre alır (aşama 4 tasarımı §8.3, karar 5). Uzun bir
     /// eklenti çağrısı aynı çalışma alanındaki komutları bekletmez.
     pub kilitsiz: bool,
+}
+
+/// Yönlendirme sırasında hangi hedef hostlara geçiş yapılabileceğini belirler.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "tip", content = "hostlar")]
+pub enum YonlendirmeIzni {
+    /// Yalnızca ilk istekteki aynı hosta yönlendirmeye izin verilir (varsayılan).
+    #[default]
+    AyniHost,
+    /// İlk hosta ek olarak açıkça onaylanmış hedef host listesine izin verilir.
+    IzinliHostlar(Vec<String>),
+}
+
+impl YonlendirmeIzni {
+    /// Verilen `hedef_host`, `baslangic_host` veya onaylı listede mi?
+    pub fn host_izinli_mi(&self, baslangic_host: &str, hedef_host: &str) -> bool {
+        let baslangic = baslangic_host.trim().to_ascii_lowercase();
+        let hedef = hedef_host.trim().to_ascii_lowercase();
+        if baslangic == hedef {
+            return true;
+        }
+        match self {
+            Self::AyniHost => false,
+            Self::IzinliHostlar(liste) => liste
+                .iter()
+                .any(|izinli| izinli.trim().eq_ignore_ascii_case(&hedef)),
+        }
+    }
+}
+
+/// Bir `web_getir` çağrısının onay ve mühürlemeye esas tarifi.
+/// Ham sorgu parametrelerini veya sırları serileştirmez; yalnız maskelenmiş URL
+/// sunumunu ve doğrulanmış hedef bilgilerini taşır.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebTarifi {
+    /// Günlük ve onay penceresi için hassas sorgu parametreleri maskelenmiş URL.
+    pub maskeli_url: String,
+    /// Küçük harfe normalize edilmiş hedef host adı.
+    pub host: String,
+    /// Etkin hedef port (ör. HTTPS için 443, HTTP için 80).
+    pub port: u16,
+    /// URL şeması (`"https"` veya `"http"`).
+    pub sema: String,
+    /// HTTP yöntemi (`"GET"`).
+    pub yontem: String,
+    /// Yönlendirme kapsamı.
+    pub yonlendirme_izni: YonlendirmeIzni,
+    /// Bu `(host, port)` çiftine mevcut oturumda ilk kez mi çıkılıyor?
+    #[serde(default)]
+    pub oturumda_ilk_host: bool,
+    /// Ham kanonik URL'nin tek yönlü SHA-256 özeti.
+    /// Ham sorgu sırrını taşımadan mührü tam hedefe bağlar; onay DTO'sunda
+    /// serileştirilmez.
+    #[serde(skip)]
+    pub hedef_ozeti: [u8; 32],
+}
+
+impl WebTarifi {
+    /// Onay kartı / IPC DTO'su için iç mühür özetini sıfırlayarak güvenli kopya üretir.
+    pub fn onay_karti_icin(&self) -> Self {
+        Self {
+            hedef_ozeti: [0; 32],
+            ..self.clone()
+        }
+    }
+}
+
+/// Ham kanonik URL için alan sınırları ayrılmış SHA-256 hedef özeti üretir.
+pub fn web_hedef_ozeti(kanonik_url: &str) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+
+    let mut ozetleyici = Sha256::new();
+    let etiket = b"kalfa-web-hedef-url-v1";
+    ozetleyici.update((etiket.len() as u64).to_le_bytes());
+    ozetleyici.update(etiket);
+    ozetleyici.update((kanonik_url.len() as u64).to_le_bytes());
+    ozetleyici.update(kanonik_url.as_bytes());
+    ozetleyici.finalize().into()
+}
+
+/// [`WebTarifi`] için tek yönlü, alan sınırları ayrılmış SHA-256 mühür özeti üretir.
+pub fn web_muhur_ozeti(tarif: &WebTarifi) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+
+    fn uzunluklu_yaz(ozetleyici: &mut Sha256, alan: &[u8]) {
+        ozetleyici.update((alan.len() as u64).to_le_bytes());
+        ozetleyici.update(alan);
+    }
+
+    let mut ozetleyici = Sha256::new();
+    uzunluklu_yaz(&mut ozetleyici, b"kalfa-web-muhur-v1");
+    uzunluklu_yaz(&mut ozetleyici, tarif.yontem.as_bytes());
+    uzunluklu_yaz(&mut ozetleyici, tarif.sema.as_bytes());
+    uzunluklu_yaz(&mut ozetleyici, tarif.host.as_bytes());
+    ozetleyici.update(tarif.port.to_le_bytes());
+    uzunluklu_yaz(&mut ozetleyici, tarif.maskeli_url.as_bytes());
+    uzunluklu_yaz(&mut ozetleyici, &tarif.hedef_ozeti);
+    match &tarif.yonlendirme_izni {
+        YonlendirmeIzni::AyniHost => {
+            uzunluklu_yaz(&mut ozetleyici, b"ayni-host");
+        }
+        YonlendirmeIzni::IzinliHostlar(hostlar) => {
+            uzunluklu_yaz(&mut ozetleyici, b"izinli-hostlar");
+            let mut sirali: Vec<String> = hostlar
+                .iter()
+                .map(|h| h.trim().to_ascii_lowercase())
+                .collect();
+            sirali.sort();
+            sirali.dedup();
+            ozetleyici.update((sirali.len() as u64).to_le_bytes());
+            for h in &sirali {
+                uzunluklu_yaz(&mut ozetleyici, h.as_bytes());
+            }
+        }
+    }
+    ozetleyici.finalize().into()
 }
 
 /// Eklenti aracının kimliği ve yetenekleri (aşama 4 tasarımı §8.1, §8.3).
@@ -439,6 +559,20 @@ pub enum OrtamIstegi {
         butce_islem: Option<ButceIslemId>,
         kullanim: Option<GunlukToken>,
     },
+    /// Oturumun çalışma planını günceller (`plan_guncelle`).
+    PlanGuncelle {
+        cagri: CagriId,
+        adimlar: Vec<crate::plan::PlanAdimi>,
+        yanit: oneshot::Sender<Result<crate::plan::OturumPlani, String>>,
+    },
+    /// Kullanıcıya çoktan seçmeli soru sorar ve yanıtını bekler (`kullaniciya_sor`).
+    KullaniciSorusu {
+        cagri: CagriId,
+        baslik: String,
+        secenekler: Vec<crate::soru::SoruSecenegi>,
+        serbest_yanit_izni: bool,
+        yanit: oneshot::Sender<Result<crate::soru::SoruSonucu, String>>,
+    },
 }
 
 /// Aracın oturumla konuştuğu kanal (aşama 4 tasarımı §8.7): canlı çıktı,
@@ -539,6 +673,68 @@ impl AracOrtami {
                 kullanim,
             })
             .await;
+    }
+
+    /// Oturumun çalışma planını günceller ve doğrulanan planı döner.
+    pub async fn plan_guncelle(
+        &self,
+        adimlar: Vec<crate::plan::PlanAdimi>,
+        iptal: CancellationToken,
+    ) -> Result<crate::plan::OturumPlani, AracHatasi> {
+        let Some((cagri, tx, _)) = &self.ic else {
+            return Err(AracHatasi::Gecersiz(
+                "plan_guncelle yalnız oturum ortamında çalıştırılabilir.".to_string(),
+            ));
+        };
+        let (yanit, alici) = oneshot::channel();
+        tx.send(OrtamIstegi::PlanGuncelle {
+            cagri: *cagri,
+            adimlar,
+            yanit,
+        })
+        .await
+        .map_err(|_| AracHatasi::Iptal)?;
+        tokio::select! {
+            _ = iptal.cancelled() => Err(AracHatasi::Iptal),
+            gelen = alici => {
+                gelen
+                    .map_err(|_| AracHatasi::Iptal)?
+                    .map_err(AracHatasi::Gecersiz)
+            }
+        }
+    }
+
+    /// Kullanıcıya soru sorar ve yanıt gelene (ya da iptal/yönlendirme olana) kadar bekler.
+    pub async fn kullaniciya_sor(
+        &self,
+        baslik: String,
+        secenekler: Vec<crate::soru::SoruSecenegi>,
+        serbest_yanit_izni: bool,
+        iptal: CancellationToken,
+    ) -> Result<crate::soru::SoruSonucu, AracHatasi> {
+        let Some((cagri, tx, _)) = &self.ic else {
+            return Err(AracHatasi::Gecersiz(
+                "kullaniciya_sor yalnız oturum ortamında çalıştırılabilir.".to_string(),
+            ));
+        };
+        let (yanit, alici) = oneshot::channel();
+        tx.send(OrtamIstegi::KullaniciSorusu {
+            cagri: *cagri,
+            baslik,
+            secenekler,
+            serbest_yanit_izni,
+            yanit,
+        })
+        .await
+        .map_err(|_| AracHatasi::Iptal)?;
+        tokio::select! {
+            _ = iptal.cancelled() => Err(AracHatasi::Iptal),
+            gelen = alici => {
+                gelen
+                    .map_err(|_| AracHatasi::Iptal)?
+                    .map_err(AracHatasi::Gecersiz)
+            }
+        }
     }
 }
 
@@ -643,6 +839,14 @@ pub trait Arac: Send + Sync {
     async fn sonuc_isleme_iptal_ve_bekle(&self, cagri: CagriId) -> Result<(), AracHatasi> {
         self.sonuc_isleme_iptal(cagri);
         Err(AracHatasi::SonucIsleme)
+    }
+
+    /// Günlük (JSONL), geçmiş görünümü, bağlam kaydı ve şema doğrulama hataları
+    /// için ham JSON argüman metnindeki hassas alanları (ör. `web_getir` URL
+    /// sorgu parametreleri) maskeler. İç hazırlık, mühür ve yürütme ham
+    /// argümanları kullanmaya devam eder.
+    fn kayit_argumanlarini_maskele(&self, argumanlar: &str) -> String {
+        argumanlar.to_string()
     }
 }
 
@@ -768,7 +972,24 @@ impl AracKayitDefteri {
     /// Argüman metnini JSON olarak çözer ve aracın şemasına karşı doğrular.
     /// Hata metni modele gider; model argümanı düzeltip yeniden deneyebilir.
     pub fn dogrula(&self, ad: &str, argumanlar: &str) -> Result<Value, String> {
-        semaya_gore_dogrula(ad, self.semalar.get(ad).map(Arc::as_ref), argumanlar)
+        match semaya_gore_dogrula(ad, self.semalar.get(ad).map(Arc::as_ref), argumanlar) {
+            Ok(deger) => Ok(deger),
+            Err(hata) => {
+                if let Some(arac) = self.bul(ad) {
+                    let maskeli = arac.kayit_argumanlarini_maskele(argumanlar);
+                    if maskeli != argumanlar {
+                        return Err(semaya_gore_dogrula(
+                            ad,
+                            self.semalar.get(ad).map(Arc::as_ref),
+                            &maskeli,
+                        )
+                        .err()
+                        .unwrap_or(hata));
+                    }
+                }
+                Err(hata)
+            }
+        }
     }
 
     /// Bir model turunun tek araç görüntüsü. Kaynak yalnız bir kez ve
@@ -846,11 +1067,40 @@ impl AracAnlikGoruntusu {
     }
 
     pub fn dogrula(&self, ad: &str, argumanlar: &str) -> Result<Value, String> {
-        semaya_gore_dogrula(
-            ad,
-            self.araclar.get(ad).map(|(_, sema)| sema.as_ref()),
-            argumanlar,
-        )
+        let sema = self.araclar.get(ad).map(|(_, sema)| sema.as_ref());
+        match semaya_gore_dogrula(ad, sema, argumanlar) {
+            Ok(deger) => Ok(deger),
+            Err(hata) => {
+                if let Some(arac) = self.bul(ad) {
+                    let maskeli = arac.kayit_argumanlarini_maskele(argumanlar);
+                    if maskeli != argumanlar {
+                        return Err(semaya_gore_dogrula(ad, sema, &maskeli)
+                            .err()
+                            .unwrap_or(hata));
+                    }
+                }
+                Err(hata)
+            }
+        }
+    }
+
+    /// Modelin ürettiği araç çağrılarının kayıt/geçmiş kopyasında hassas
+    /// argümanları maskeler; yürütmeye giden ham `ToolCall` listesini değiştirmez.
+    pub fn kayit_cagrilarini_maskele(
+        &self,
+        cagrilar: &[kalfa_evren::tipler::ToolCall],
+    ) -> Vec<kalfa_evren::tipler::ToolCall> {
+        cagrilar
+            .iter()
+            .map(|tc| {
+                let mut kopya = tc.clone();
+                if let Some(arac) = self.bul(&tc.function.name) {
+                    kopya.function.arguments =
+                        arac.kayit_argumanlarini_maskele(&tc.function.arguments);
+                }
+                kopya
+            })
+            .collect()
     }
 }
 
@@ -1064,11 +1314,13 @@ impl McpProfilOzeti {
 }
 
 /// Yalıtım kipinin MCP sunucusu için özeti. Tam erişim her çağrıda yerel
-/// onay gerektirir; bu değer kullanıcı kartında açıkça gösterilir.
+/// onay gerektirir; uzak Streamable HTTP ise yerel süreç yalıtımı (AppContainer/bwrap)
+/// olmadığını ve çağrının uzak sunucuya ağ üzerinden çıktığını açıkça belirtir.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum McpErisim {
     Yalitimli,
     TamErisim,
+    UzakStreamableHttp,
 }
 
 /// Kartta gösterilecek sunucu veya araç etiketi. Yalnız görünür ad alır;
@@ -1214,8 +1466,16 @@ impl Serialize for McpAgHostu {
 #[serde(tag = "kip")]
 pub enum McpAgKarti {
     Kapali,
-    Sinirli { hostlar: Vec<McpAgHostu> },
+    Sinirli {
+        hostlar: Vec<McpAgHostu>,
+    },
     Sinirsiz,
+    /// Uzak Streamable HTTP MCP hedefi: kanonik origin ve sır içermeyen kimlik kapsamı.
+    UzakHedef {
+        host: McpAgHostu,
+        origin: String,
+        kimlik_kapsami: String,
+    },
 }
 
 impl McpAgKarti {
@@ -1223,7 +1483,21 @@ impl McpAgKarti {
         match self {
             Self::Kapali => false,
             Self::Sinirli { hostlar } => !hostlar.is_empty(),
-            Self::Sinirsiz => true,
+            Self::Sinirsiz | Self::UzakHedef { .. } => true,
+        }
+    }
+
+    pub fn uzak_origin(&self) -> Option<&str> {
+        match self {
+            Self::UzakHedef { origin, .. } => Some(origin.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn kimlik_kapsami(&self) -> Option<&str> {
+        match self {
+            Self::UzakHedef { kimlik_kapsami, .. } => Some(kimlik_kapsami.as_str()),
+            _ => None,
         }
     }
 }

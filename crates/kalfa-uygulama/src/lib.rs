@@ -14,7 +14,10 @@ pub mod eklentiler;
 pub mod evren;
 pub mod guvenlik;
 pub mod hata;
+pub mod isler;
+pub mod mcp;
 pub mod modeller;
+pub mod proje_talimatlari;
 pub mod sozlesme;
 pub mod yalitim;
 pub mod yukseltici;
@@ -31,5 +34,3 @@ pub mod e2e;
 pub mod test_destek;
 
 pub use uygulama::{Bilesenler, Uygulama};
-
-pub mod mcp;

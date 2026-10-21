@@ -162,7 +162,7 @@ impl Oturum {
     /// Bağlamın bayt ölçüsü: sistem mesajı, araç tanımları ve mesajlar (§5).
     pub(super) fn baglam_bayti(&self, goruntu: &AracAnlikGoruntusu) -> u64 {
         let tanimlar = serde_json::to_vec(goruntu.tanimlar()).map_or(0, |v| v.len() as u64);
-        self.ayarlar.sistem_mesaji.len() as u64
+        self.etkin_sistem_mesaji().len() as u64
             + tanimlar
             + self.mesajlar.iter().map(mesaj_bayti).sum::<u64>()
     }

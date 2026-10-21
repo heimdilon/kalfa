@@ -12,6 +12,7 @@
   import Checkbox from '../bilesenler/Checkbox.svelte';
   import Composer from '../bilesenler/Composer.svelte';
   import Icon from '../bilesenler/Icon.svelte';
+  import PlanListesi from '../bilesenler/PlanListesi.svelte';
   import IconButton from '../bilesenler/IconButton.svelte';
   import IconTile from '../bilesenler/IconTile.svelte';
   import { KIP_ADI, MODEL_PROFILI_ADI, kisayolCumlesi, m } from '../dil/tr';
@@ -349,6 +350,9 @@
     </div>
 
     <div class="alt">
+      {#if ekran.plan && ekran.plan.adimlar.length > 0}
+        <PlanListesi plan={ekran.plan} />
+      {/if}
       {#if bekleyenOnay && durum.onay?.islem !== bekleyenOnay.islem}
         {@const { islem } = bekleyenOnay}
         {#key islem}
@@ -373,7 +377,7 @@
         mode={ekran.ozet.kip ?? 'Siki'}
         efor={seciliEfor}
         eforlar={seciliModelBilgisi?.eforlar}
-        running={ekran.anlik !== 'Bos'}
+        running={ekran.anlik !== 'Bos' && ekran.anlik !== 'SoruBekliyor'}
         disabled={kapaliNedeni !== null}
         placeholder={kapaliNedeni ?? undefined}
         onsend={(t) => durum.gonder(t)}

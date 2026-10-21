@@ -44,7 +44,16 @@ function gorunmezVar(metin: string | null | undefined): boolean {
 export function riskliMi(o: OnayOgesi): boolean {
   if (o.kabuk?.ag) return true;
   if ((o.onaysiz_degisiklikler?.derleme_dosyalari.length ?? 0) > 0) return true;
-  return [o.kabuk?.komut, o.kabuk?.dizin, o.diff, ...o.hedefler].some(gorunmezVar);
+  return [
+    o.kabuk?.komut,
+    o.kabuk?.dizin,
+    o.web?.maskeli_url,
+    o.web?.host,
+    o.diff,
+    o.mcp?.uzak_origin,
+    o.mcp?.kimlik_kapsami,
+    ...o.hedefler,
+  ].some(gorunmezVar);
 }
 
 /**
@@ -81,6 +90,7 @@ export function kartKarariUret(ogeler: OnayOgesi[], karar: KartKarari): OnayGird
 export function kisaAd(oge: OnayOgesi): string {
   if (oge.kabuk) return oge.kabuk.komut.split(/\s+/)[0] || oge.arac;
   if (oge.mcp) return `${oge.mcp.sunucu} · ${oge.mcp.arac}`;
+  if (oge.web) return `${oge.web.host}:${oge.web.port}`;
   const hedef = oge.hedefler[0];
   if (!hedef) return oge.arac;
   return hedef.split(/[\\/]/).filter(Boolean).at(-1) ?? hedef;

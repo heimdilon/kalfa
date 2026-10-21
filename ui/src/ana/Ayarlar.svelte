@@ -18,11 +18,17 @@
   import { YALITIM_NEDENI, YALITIM_SADE, m } from '../dil/tr';
   import { komutHatasi } from '../ipc/hata';
   import * as ipc from '../ipc/ana';
-  import type { YalitimCalismaAlani } from '../ipc/tipler';
+  import type {
+    UzakMcpSunucuAyrintisi,
+    UzakMcpSunucuFormu,
+    UzakMcpSunucuSatiri,
+    YalitimCalismaAlani,
+  } from '../ipc/tipler';
   import type { AnaDurum } from './anaDurum.svelte';
   import { etkinPencereDogrula } from './butce';
   import GuvenlikAyarlari from './GuvenlikAyarlari.svelte';
   import McpSunuculari from './McpSunuculari.svelte';
+  import UzakMcpSunuculari from '../bilesenler/UzakMcpSunuculari.svelte';
   import { boyutMetni } from './geriAlma';
 
   let { durum }: { durum: AnaDurum } = $props();
@@ -98,6 +104,97 @@
 
   $effect(() => {
     if (windows) void alanlariYukle();
+  });
+
+  let uzakSunucular = $state<UzakMcpSunucuSatiri[]>([]);
+  let uzakAyrintilar = $state<Record<string, UzakMcpSunucuAyrintisi>>({});
+
+  async function uzakMcpYenile(): Promise<void> {
+    try {
+      uzakSunucular = await ipc.uzakMcpSunuculari();
+    } catch (hata) {
+      durum.hata = komutHatasi(hata).mesaj;
+    }
+  }
+
+  async function uzakMcpAyrintiYukle(ad: string): Promise<void> {
+    try {
+      const a = await ipc.uzakMcpSunucuAyrintisi(ad);
+      uzakAyrintilar = { ...uzakAyrintilar, [ad]: a };
+    } catch (hata) {
+      durum.hata = komutHatasi(hata).mesaj;
+    }
+  }
+
+  async function uzakMcpKaydet(eskiAd: string | null, form: UzakMcpSunucuFormu): Promise<boolean> {
+    try {
+      const tamam = await ipc.uzakMcpKaydet(eskiAd, form);
+      if (tamam) await uzakMcpYenile();
+      return tamam;
+    } catch (hata) {
+      durum.hata = komutHatasi(hata).mesaj;
+      return false;
+    }
+  }
+
+  async function uzakMcpSil(ad: string): Promise<boolean> {
+    try {
+      const tamam = await ipc.uzakMcpSil(ad);
+      if (tamam) {
+        const kalan = { ...uzakAyrintilar };
+        delete kalan[ad];
+        uzakAyrintilar = kalan;
+        await uzakMcpYenile();
+      }
+      return tamam;
+    } catch (hata) {
+      durum.hata = komutHatasi(hata).mesaj;
+      return false;
+    }
+  }
+
+  async function uzakMcpEtkinDegistir(ad: string, etkin: boolean): Promise<void> {
+    try {
+      await ipc.uzakMcpEtkinAyarla(ad, etkin);
+      await uzakMcpYenile();
+    } catch (hata) {
+      durum.hata = komutHatasi(hata).mesaj;
+    }
+  }
+
+  async function uzakMcpBaglan(ad: string): Promise<void> {
+    try {
+      await ipc.uzakMcpBaglan(ad);
+      await uzakMcpYenile();
+    } catch (hata) {
+      durum.hata = komutHatasi(hata).mesaj;
+      await uzakMcpYenile();
+    }
+  }
+
+  async function uzakMcpOauthBagla(ad: string): Promise<void> {
+    try {
+      await ipc.uzakMcpOauthBagla(ad);
+      await uzakMcpYenile();
+    } catch (hata) {
+      durum.hata = komutHatasi(hata).mesaj;
+      await uzakMcpYenile();
+    }
+  }
+
+  async function uzakMcpKimlikKaldir(ad: string): Promise<boolean> {
+    try {
+      const tamam = await ipc.uzakMcpKimlikKaldir(ad);
+      if (tamam) await uzakMcpYenile();
+      return tamam;
+    } catch (hata) {
+      durum.hata = komutHatasi(hata).mesaj;
+      return false;
+    }
+  }
+
+  $effect(() => {
+    void uzakMcpYenile();
   });
 </script>
 
@@ -257,6 +354,18 @@
     {/if}
 
     <McpSunuculari {durum} />
+
+    <UzakMcpSunuculari
+      sunucular={uzakSunucular}
+      ayrintilar={uzakAyrintilar}
+      onKaydet={uzakMcpKaydet}
+      onSil={uzakMcpSil}
+      onEtkinDegistir={uzakMcpEtkinDegistir}
+      onBaglan={uzakMcpBaglan}
+      onOAuthBagla={uzakMcpOauthBagla}
+      onKimlikKaldir={uzakMcpKimlikKaldir}
+      onAyrintiYukle={uzakMcpAyrintiYukle}
+    />
 
     <GuvenlikAyarlari {durum} />
 

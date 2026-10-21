@@ -86,6 +86,8 @@ export function satirDurumu(
       return { status: 'waiting', etiket: m('oturum.durum.onay') };
     case 'SartBekliyor':
       return { status: 'waiting', etiket: m('oturum.durum.sart') };
+    case 'SoruBekliyor':
+      return { status: 'waiting', etiket: m('oturum.durum.soru') };
   }
   switch (durum.tip) {
     case 'Tamamlandi':
@@ -152,6 +154,25 @@ const ARAC_BASLIGI: Record<string, [MetinAnahtari, MetinAnahtari, MetinAnahtari]
     'arac.dosya_duzenle.ad',
   ],
   kabuk: ['arac.kabuk.suruyor', 'arac.kabuk.bitti', 'arac.kabuk.ad'],
+  komut_oku: ['arac.komut_oku.suruyor', 'arac.komut_oku.bitti', 'arac.komut_oku.ad'],
+  komut_girdi: ['arac.komut_girdi.suruyor', 'arac.komut_girdi.bitti', 'arac.komut_girdi.ad'],
+  komut_durdur: ['arac.komut_durdur.suruyor', 'arac.komut_durdur.bitti', 'arac.komut_durdur.ad'],
+  komut_boyutlandir: [
+    'arac.komut_boyutlandir.suruyor',
+    'arac.komut_boyutlandir.bitti',
+    'arac.komut_boyutlandir.ad',
+  ],
+  plan_guncelle: [
+    'arac.plan_guncelle.suruyor',
+    'arac.plan_guncelle.bitti',
+    'arac.plan_guncelle.ad',
+  ],
+  kullaniciya_sor: [
+    'arac.kullaniciya_sor.suruyor',
+    'arac.kullaniciya_sor.bitti',
+    'arac.kullaniciya_sor.ad',
+  ],
+  web_getir: ['arac.web_getir.suruyor', 'arac.web_getir.bitti', 'arac.web_getir.ad'],
 };
 
 /**
@@ -177,7 +198,7 @@ export function aracHedefi(oge: AracOgesi): string | undefined {
       const argumanlar = Array.isArray(a.argumanlar) ? a.argumanlar : [];
       return [a.program, ...argumanlar].join(' ');
     }
-    for (const alan of ['yol', 'desen', 'dizin']) {
+    for (const alan of ['yol', 'desen', 'dizin', 'baslik', 'url', 'is_id']) {
       if (typeof a[alan] === 'string') return a[alan];
     }
   } catch {
@@ -236,6 +257,82 @@ export function kabukOzeti(oge: AracOgesi): string | undefined {
   return sonucGovdesi(oge.sonuc)
     .split('\n')
     .find((s) => s);
+}
+
+export interface WebKaynakGorunumu {
+  istenenUrl: string;
+  sonUrl: string;
+  baslik: string | null;
+  icerikTuru: string;
+  acilmisBayt: number;
+  ciktiBayt: number;
+  kirpildi: boolean;
+  devamImleci: string | null;
+  govdeOnizleme: string;
+}
+
+const WEB_ICERIK_BASLANGICI = '\n--- İÇERİK BAŞLANGICI ---\n';
+const WEB_ICERIK_SONU = '\n--- İÇERİK SONU ---';
+
+/**
+ * `web_getir` aracının ürettiği `[DIŞ WEB İÇERİĞİ — GÜVENİLMEZ KAYNAK: …]`
+ * zarfını ayrıştırarak `WebKaynakKarti` bileşeni için kaynak verisini çıkarır.
+ */
+export function webKaynagiCozumle(sonuc: string): WebKaynakGorunumu | null {
+  const govde = sonucGovdesi(sonuc);
+  if (!govde.startsWith('[DIŞ WEB İÇERİĞİ — GÜVENİLMEZ KAYNAK:')) return null;
+  const ayiriciIndeksi = govde.indexOf(WEB_ICERIK_BASLANGICI);
+  if (ayiriciIndeksi < 0) return null;
+
+  const ustbilgi = govde.slice(0, ayiriciIndeksi);
+  let icerik = govde.slice(ayiriciIndeksi + WEB_ICERIK_BASLANGICI.length);
+  const sonIndeksi = icerik.lastIndexOf(WEB_ICERIK_SONU);
+  if (sonIndeksi >= 0) {
+    icerik = icerik.slice(0, sonIndeksi);
+  }
+
+  let istenenUrl = '';
+  let sonUrl = '';
+  let baslik: string | null = null;
+  let icerikTuru = 'text/html';
+  let ciktiBayt = new TextEncoder().encode(icerik).length;
+  let kirpildi = false;
+  let devamImleci: string | null = null;
+
+  for (const satir of ustbilgi.split('\n').slice(1)) {
+    if (satir.startsWith('İstenen URL: ')) {
+      istenenUrl = satir.slice('İstenen URL: '.length).trim();
+    } else if (satir.startsWith('Son URL: ')) {
+      sonUrl = satir.slice('Son URL: '.length).trim();
+    } else if (satir.startsWith('İçerik Türü: ')) {
+      const deger = satir.slice('İçerik Türü: '.length).trim();
+      icerikTuru = deger.split(' (')[0]?.trim() || deger;
+    } else if (satir.startsWith('Başlık: ')) {
+      baslik = satir.slice('Başlık: '.length).trim() || null;
+    } else if (satir.startsWith('Okunan Bayt: ')) {
+      const eslesme = /^Okunan Bayt:\s*(\d+)\s*\(kırpıldı:\s*(evet|hayır)\)/.exec(satir);
+      if (eslesme) {
+        ciktiBayt = Number(eslesme[1]);
+        kirpildi = eslesme[2] === 'evet';
+      }
+    } else if (satir.startsWith('Devam İmleci: ')) {
+      devamImleci = satir.slice('Devam İmleci: '.length).trim() || null;
+    }
+  }
+
+  if (!istenenUrl || !sonUrl) return null;
+  const onizleme = ciktiOnizlemesi(icerik, 24);
+  return {
+    istenenUrl,
+    sonUrl,
+    baslik,
+    icerikTuru,
+    acilmisBayt: ciktiBayt,
+    ciktiBayt,
+    kirpildi,
+    devamImleci,
+    govdeOnizleme: onizleme.kod,
+  };
 }
 
 /** Araç çıktısının kartta gösterilen kısmı. */

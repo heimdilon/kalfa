@@ -102,18 +102,57 @@
         {:else if o.mcp}
           <!-- Erişim ve ağ kapsamı sayfadakiyle aynı metinlerle. -->
           {@const tam = o.mcp.erisim === 'TamErisim'}
+          {@const uzak = o.mcp.erisim === 'UzakStreamableHttp'}
           <div class="rozetler">
-            <Badge tone={tam ? 'danger' : 'accent'}>
-              {m(tam ? 'mcp.rozet.tam_erisim' : 'mcp.rozet.yalitimli')}
+            <Badge tone={tam ? 'danger' : uzak ? 'warn' : 'accent'}>
+              {m(
+                tam
+                  ? 'mcp.rozet.tam_erisim'
+                  : uzak
+                    ? 'uzak_mcp.rozet.uzak_streamable_http'
+                    : 'mcp.rozet.yalitimli',
+              )}
             </Badge>
             <span class="kapsam">
               {#if tam}
                 {m('mcp.onay.tam_erisim')}
+              {:else if uzak}
+                <GorunurMetin
+                  metin={m('uzak_mcp.onay.ozet', {
+                    origin: o.mcp.uzak_origin ?? o.mcp.ag_hostlari.join(', '),
+                    kimlik: o.mcp.kimlik_kapsami ?? m('uzak_mcp.yetki.yetkisiz'),
+                  })}
+                />
               {:else if o.mcp.ag_hostlari.length === 0}
                 {m('mcp.onay.yalitimli_ag_yok')}
               {:else}
                 <GorunurMetin
                   metin={m('mcp.onay.yalitimli_ag', { hostlar: o.mcp.ag_hostlari.join(', ') })}
+                />
+              {/if}
+            </span>
+          </div>
+          {#if uzak || o.veri_cikisi === 'UzakMcpCagrisi'}
+            <p class="geri">
+              <Icon name="send" size={13} />
+              {m('onay.sayfa.veri_cikisi')}: {m('onay.veri.UzakMcpCagrisi')}
+            </p>
+          {/if}
+        {:else if o.web}
+          <code class="komut"><GorunurMetin metin={o.web.maskeli_url} /></code>
+          <div class="rozetler">
+            <Badge tone="accent">{o.web.yontem} {o.web.sema}://{o.web.host}:{o.web.port}</Badge>
+            {#if o.web.oturumda_ilk_host}
+              <Badge tone="warn">{m('onay.web.ilk_host')}</Badge>
+            {/if}
+            <span class="kapsam">
+              {#if o.web.yonlendirme_izni.tip === 'AyniHost' || o.web.yonlendirme_izni.hostlar.length === 0}
+                <GorunurMetin metin={m('onay.web.yonlendirme_ayni_host', { host: o.web.host })} />
+              {:else}
+                <GorunurMetin
+                  metin={m('onay.web.yonlendirme_izinli', {
+                    hostlar: o.web.yonlendirme_izni.hostlar.join(', '),
+                  })}
                 />
               {/if}
             </span>

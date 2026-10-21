@@ -7,7 +7,7 @@ use kalfa_core::protokol::VeriCikisi;
 use kalfa_sandbox::Yalitimsiz;
 use kalfa_tools::{
     CalismaAlani, DosyaDuzenle, DosyaListele, DosyaOku, DosyaYaz, IcerikAra, KabukAraci,
-    KabukGuveni,
+    KabukGuveni, varsayilan_araclar,
 };
 use serde_json::json;
 use tempfile::TempDir;
@@ -65,4 +65,25 @@ async fn her_arac_veri_cikisini_hazirlikta_verir() {
         .await
         .unwrap();
     assert_eq!(h_kabuk.veri_cikisi, Some(VeriCikisi::KomutCiktisi));
+}
+
+#[tokio::test]
+async fn sp08_varsayilan_araclar_web_getir_aracini_ve_web_sayfasi_veri_cikisini_icerir() {
+    let d = TempDir::new().unwrap();
+    let s = Arc::new(Siniflandirici::yeni(d.path(), &[]).unwrap());
+    let alan = CalismaAlani::ac(s).unwrap();
+    let araclar = varsayilan_araclar(alan);
+
+    let web_getir = araclar
+        .iter()
+        .find(|a| a.ad() == "web_getir")
+        .expect("SP-08: varsayilan_araclar içinde web_getir aracı kayıtlı olmalı");
+
+    let h_web = web_getir
+        .hazirla(&json!({"url": "https://docs.rs/tokio"}))
+        .await
+        .unwrap();
+    assert_eq!(h_web.veri_cikisi, Some(VeriCikisi::WebSayfasi));
+    assert!(h_web.web.is_some());
+    assert!(h_web.eklenti.is_none());
 }

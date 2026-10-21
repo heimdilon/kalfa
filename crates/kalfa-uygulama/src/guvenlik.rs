@@ -1,5 +1,6 @@
 //! Pencere sınırlarının Tauri'siz kuralları (1c tasarımı §6).
 
+use kalfa_core::arac::YonlendirmeIzni;
 use kalfa_core::gorunum::gorunur_yap;
 use kalfa_core::izin::Kip;
 use kalfa_core::kabuk::YalitimOzeti;
@@ -96,14 +97,21 @@ fn eklenti_ogesi_mi(o: &OnayOgesi) -> bool {
     o.yerel_onay && o.eklenti.as_ref().is_some_and(|t| t.ilk_gonderim)
 }
 
+/// Dış web adresine (`web_getir`) yerel onay gerektiren erişim (Yetenek-05 SP-05).
+fn web_ogesi_mi(o: &OnayOgesi) -> bool {
+    o.yerel_onay && o.web.is_some()
+}
+
 /// Yerel onay penceresinin başlığı: yalıtımsız komut varsa onu, yalnızca
-/// eklentinin ilk gönderimi varsa onu, yoksa çalışma alanının hazırlığını
-/// (Windows, aşama 2 tasarımı §9.4) söyler.
+/// eklentinin ilk gönderimi varsa onu, dış web erişimi varsa onu, yoksa
+/// çalışma alanının hazırlığını (Windows, aşama 2 tasarımı §9.4) söyler.
 pub fn yerel_onay_basligi(ogeler: &[OnayOgesi]) -> &'static str {
     if yalitimsiz_var(ogeler) {
         "Komutu yalıtımsız çalıştır"
     } else if ogeler.iter().any(eklenti_ogesi_mi) && ogeler.iter().all(|o| o.kabuk.is_none()) {
         "Eklenti EVREN'e veri gönderecek"
+    } else if ogeler.iter().any(web_ogesi_mi) && ogeler.iter().all(|o| o.kabuk.is_none()) {
+        "Dış web adresine bağlan"
     } else {
         "Çalışma alanını yalıtım için hazırla"
     }
@@ -179,6 +187,30 @@ pub fn yerel_onay_metni(ogeler: &[OnayOgesi]) -> String {
         metin.push_str(&yerel_gosterim(&vurgusuz(&o.aciklama)));
         metin.push('\n');
     }
+    for o in ogeler.iter().filter(|o| web_ogesi_mi(o)) {
+        let Some(w) = &o.web else { continue };
+        let yonlendirme = match &w.yonlendirme_izni {
+            YonlendirmeIzni::AyniHost => {
+                format!("Yalnızca aynı host ({})", yerel_gosterim(&w.host))
+            }
+            YonlendirmeIzni::IzinliHostlar(hostlar) if hostlar.is_empty() => {
+                format!("Yalnızca aynı host ({})", yerel_gosterim(&w.host))
+            }
+            YonlendirmeIzni::IzinliHostlar(hostlar) => format!(
+                "Aynı host ve izinli hostlar: {}",
+                yerel_gosterim(&hostlar.join(", "))
+            ),
+        };
+        metin.push_str(&format!(
+            "Hedef: {}://{}:{} ({})\nAdres: {}\nYönlendirme kapsamı: {}\nVeri çıkışı: Dış web sayfasından okunan metin modele gidecek.\n",
+            yerel_gosterim(&w.sema),
+            yerel_gosterim(&w.host),
+            w.port,
+            yerel_gosterim(&w.yontem),
+            yerel_gosterim(&w.maskeli_url),
+            yonlendirme,
+        ));
+    }
     let mut talimat = None;
     for o in ogeler {
         let Some(k) = &o.kabuk else { continue };
@@ -235,6 +267,7 @@ mod tests {
             kisayol: None,
             eklenti: None,
             mcp: None,
+            web: None,
         }
     }
 
@@ -326,6 +359,7 @@ mod tests {
                 ..Default::default()
             }),
             mcp: None,
+            web: None,
         }
     }
 
@@ -411,5 +445,66 @@ mod tests {
             "{metin}"
         );
         assert!(metin.ends_with("Yalıtımı kurun."), "{metin}");
+    }
+
+    #[test]
+    fn web_onay_penceresi_hedef_yontem_veri_cikisi_ve_yonlendirme_kapsamini_gosterir() {
+        let web_oge = OnayOgesi {
+            cagri: CagriId::yeni(),
+            arac: "web_getir".into(),
+            aciklama: "`https://belge.ornek.test:8443/kullanim?token=[MASKELENDI]` (belge.ornek.test:8443) web adresini GET ile okumak istiyor.".into(),
+            hedefler: Vec::new(),
+            diff: None,
+            uyarilar: vec![
+                kalfa_core::izin::WEB_AG_UYARISI.into(),
+                kalfa_core::izin::WEB_ILK_HOST_UYARISI.into(),
+                kalfa_core::izin::WEB_YONLENDIRME_UYARISI.into(),
+            ],
+            muhur: OnayMuhru("m-web".into()),
+            kabuk: None,
+            yerel_onay: true,
+            onaysiz_degisiklikler: None,
+            geri_alinabilir: None,
+            veri_cikisi: Some(kalfa_core::protokol::VeriCikisi::WebSayfasi),
+            kisayol: None,
+            eklenti: None,
+            mcp: None,
+            web: Some(kalfa_core::arac::WebTarifi {
+                maskeli_url: "https://belge.ornek.test:8443/kullanim?token=[MASKELENDI]".into(),
+                host: "belge.ornek.test".into(),
+                port: 8443,
+                sema: "https".into(),
+                yontem: "GET".into(),
+                yonlendirme_izni: YonlendirmeIzni::IzinliHostlar(vec!["cdn.ornek.test".into()]),
+                oturumda_ilk_host: true,
+                hedef_ozeti: [0; 32],
+            }),
+        };
+
+        assert_eq!(
+            yerel_onay_basligi(std::slice::from_ref(&web_oge)),
+            "Dış web adresine bağlan"
+        );
+        let metin = yerel_onay_metni(std::slice::from_ref(&web_oge));
+        assert!(
+            metin.contains("Hedef: https://belge.ornek.test:8443 (GET)"),
+            "{metin}"
+        );
+        assert!(
+            metin.contains("Adres: https://belge.ornek.test:8443/kullanim?token=[MASKELENDI]"),
+            "{metin}"
+        );
+        assert!(
+            metin.contains("Yönlendirme kapsamı: Aynı host ve izinli hostlar: cdn.ornek.test"),
+            "{metin}"
+        );
+        assert!(
+            metin.contains("Veri çıkışı: Dış web sayfasından okunan metin modele gidecek."),
+            "{metin}"
+        );
+        assert!(
+            !metin.contains("EVREN'e veri gönderecek") && !metin.contains("Eklenti"),
+            "Web onayı eklenti gönderimi gibi sunulmamalı: {metin}"
+        );
     }
 }

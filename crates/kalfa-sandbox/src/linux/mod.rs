@@ -35,6 +35,10 @@ const BWRAP_YOLLARI: &[&str] = &[
 /// Süreç sayısı sınırını yalıtımın içinde koyar (§6.3): sınır bwrap'a
 /// dışarıda verilseydi kullanıcının bütün süreçleri sayılırdı.
 const PRLIMIT: &str = "/usr/bin/prlimit";
+/// PTY kipinde `bwrap --new-session` içinde hedef komutu kendi oturumunda ve
+/// denetleyici terminal (`TIOCSCTTY`) olarak başlatır; böylece `Ctrl+C`
+/// (`SIGINT`) `bwrap` PID 1 yerine yalnız hedef komutun ön plan grubuna gider.
+const SETSID: &str = "/usr/bin/setsid";
 const SISTEM: &[&str] = &[
     "/usr", "/etc", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32",
 ];
@@ -264,6 +268,7 @@ fn deneme(bwrap: &Path, ayar: &LinuxAyari) -> Result<(), String> {
             ag: false,
             alan: &alan,
             ozel: &ozel,
+            pty_oturumu: false,
         },
     )
     .map_err(|e| e.to_string())?;
@@ -324,10 +329,50 @@ impl LinuxYalitici {
                 ag: istek.ag,
                 alan,
                 ozel: &ozel,
+                pty_oturumu: false,
             },
         )?;
         let mut surec = Surec::komutla(komut.into())?;
         // Bellek dosyaları ve çocuğun kanalı çocuğa geçti; buradaki kopyalar kapanabilir.
+        drop(fdler);
+        if let Some(kapat) = vekili_bagla(&ayar, vekil_kanali, istek.ag_listesi.clone()) {
+            surec.ag_kapat_ekle(kapat);
+        }
+        Ok(surec)
+    }
+
+    fn yalitimli_etkilesimli(
+        &self,
+        istek: &CalistirmaIstegi,
+        terminal: Option<crate::TerminalBoyutu>,
+    ) -> Result<crate::EtkilesimliSurec, BaslatmaHatasi> {
+        let bwrap = bwrap_yolu()
+            .ok_or_else(|| BaslatmaHatasi::Yalitim("bwrap artık sistem yollarında yok".into()))?;
+        let ayar = self.ayar();
+        let alan = istek
+            .alan
+            .as_ref()
+            .ok_or_else(|| BaslatmaHatasi::Yalitim("çalışma alanı bilgisi yok".into()))?;
+        let ozel = OzelDizinler::yol(&ayar.yalitim_dizini, &alan_kimligi(&alan.kok));
+        ozel.hazirla(&ayar.git)?;
+        korumalilari_hazirla(&alan.korumali)?;
+        let (komut, fdler, vekil_kanali) = komut_kur(
+            bwrap,
+            &ayar,
+            &KurIstegi {
+                komut: &istek.komut,
+                dizin: &istek.dizin,
+                ortam: &istek.ortam,
+                ag: istek.ag,
+                alan,
+                ozel: &ozel,
+                pty_oturumu: terminal.is_some(),
+            },
+        )?;
+        let mut surec = match terminal {
+            Some(boyut) => Surec::komutla_pty(komut.into(), boyut, false)?,
+            None => Surec::komutla_etkilesimli(komut.into())?,
+        };
         drop(fdler);
         if let Some(kapat) = vekili_bagla(&ayar, vekil_kanali, istek.ag_listesi.clone()) {
             surec.ag_kapat_ekle(kapat);
@@ -367,6 +412,7 @@ impl LinuxYalitici {
                 ag: istek.ag_listesi.is_some(),
                 alan: &istek.alan,
                 ozel: &ozel,
+                pty_oturumu: false,
             },
         )?;
         let mut surec = Surec::komutla_etkilesimli(komut.into())?;
@@ -465,6 +511,21 @@ impl Yalitici for LinuxYalitici {
         match &istek.alan {
             Some(_) => self.yalitimli(istek),
             None => Surec::baslat(istek),
+        }
+    }
+
+    fn baslat_kabuk_etkilesimli(
+        &self,
+        istek: &CalistirmaIstegi,
+        terminal: Option<crate::TerminalBoyutu>,
+    ) -> Result<crate::EtkilesimliSurec, BaslatmaHatasi> {
+        crate::kip_uyusmasi(istek.alan.is_some(), self.durum().hazir_mi())?;
+        if let Some(boyut) = terminal {
+            boyut.dogrula()?;
+        }
+        match &istek.alan {
+            Some(_) => self.yalitimli_etkilesimli(istek, terminal),
+            None => Surec::baslat_kabuk_etkilesimli(istek, terminal),
         }
     }
 
@@ -664,6 +725,7 @@ struct KurIstegi<'a> {
     ag: bool,
     alan: &'a AlanBilgisi,
     ozel: &'a OzelDizinler,
+    pty_oturumu: bool,
 }
 
 /// bwrap komutunu kurar. Dönen tanımlayıcılar komut başlayana kadar açık
@@ -678,7 +740,10 @@ fn komut_kur(
     let sistem = sistem_dizinleri();
     let okunur = ayar.okunur();
     let registry = registry_secimi(istek.ag, ozel, ayar);
-    let ortam = yalitim_ortami(istek.ortam, ozel, ayar);
+    let mut ortam = yalitim_ortami(istek.ortam, ozel, ayar);
+    if istek.pty_oturumu {
+        crate::surec::terminal_ortami_ekle(&mut ortam);
+    }
 
     let (vekil_kanali, cocuk_kanali) = if istek.ag {
         let (v, c) = crate::vekil::kanal::kanal_cifti()
@@ -754,6 +819,9 @@ fn komut_kur(
             .arg("--kanal")
             .arg(cocuk.as_raw_fd().to_string())
             .arg("--");
+    }
+    if istek.pty_oturumu && program::calistirilabilir(Path::new(SETSID)) {
+        komut.arg(SETSID).arg("-c").arg("--");
     }
     if program::calistirilabilir(Path::new(PRLIMIT)) {
         komut

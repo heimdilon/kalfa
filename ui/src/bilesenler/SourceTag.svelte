@@ -60,6 +60,9 @@
     if (kaynak.startsWith('listeleme:')) {
       return { icon: 'folder', tur: 'listeleme', ayrinti: kaynak.slice(10) };
     }
+    if (kaynak.startsWith('web:')) {
+      return { icon: 'external-link', tur: 'web', ayrinti: kaynak.slice(4) };
+    }
     const ikiNokta = kaynak.indexOf(':');
     if (ikiNokta > 0) {
       return {

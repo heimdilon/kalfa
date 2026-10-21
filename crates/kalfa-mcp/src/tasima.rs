@@ -36,6 +36,9 @@ pub enum TasimaHatasi {
     UzakKapandi,
     BeklenmeyenAbonelikAck,
     YinelenenAbonelikAck,
+    AgPolitikasiReddi,
+    YetkiGerekli,
+    BelirsizCagriSonucu,
 }
 
 impl std::fmt::Display for TasimaHatasi {
@@ -51,6 +54,11 @@ impl std::fmt::Display for TasimaHatasi {
             Self::UzakKapandi => "MCP sunucusu stdout akışını kapattı",
             Self::BeklenmeyenAbonelikAck => "MCP abonelik onayı beklenen kimlikle eşleşmiyor",
             Self::YinelenenAbonelikAck => "MCP abonelik onayı yinelendi",
+            Self::AgPolitikasiReddi => "Uzak MCP hedefi ağ politikası tarafından reddedildi",
+            Self::YetkiGerekli => "Uzak MCP sunucusu yetkilendirme gerektiriyor",
+            Self::BelirsizCagriSonucu => {
+                "Uzak MCP araç çağrısı yanıt alınmadan kesildi; sonuç bilinmiyor"
+            }
         };
         f.write_str(metin)
     }
@@ -58,7 +66,7 @@ impl std::fmt::Display for TasimaHatasi {
 
 impl std::error::Error for TasimaHatasi {}
 
-struct AbonelikKimlikleri {
+pub(crate) struct AbonelikKimlikleri {
     giden: HashSet<RequestId>,
     arac_cagrilari: HashSet<RequestId>,
     beklenen_onaylar: HashSet<RequestId>,
@@ -77,7 +85,10 @@ impl AbonelikKimlikleri {
         }
     }
 
-    fn giden_istegi_ekle(&mut self, item: &ClientJsonRpcMessage) -> Result<(), TasimaHatasi> {
+    pub(crate) fn giden_istegi_ekle(
+        &mut self,
+        item: &ClientJsonRpcMessage,
+    ) -> Result<(), TasimaHatasi> {
         if let ClientJsonRpcMessage::Request(istek) = item {
             if self.giden.contains(&istek.id) {
                 return Err(TasimaHatasi::YinelenenIstekKimligi);
@@ -100,7 +111,7 @@ impl AbonelikKimlikleri {
         Ok(())
     }
 
-    fn yanit_alindi(&mut self, id: &RequestId) -> bool {
+    pub(crate) fn yanit_alindi(&mut self, id: &RequestId) -> bool {
         let bulundu = self.giden.remove(id);
         self.arac_cagrilari.remove(id);
         self.beklenen_onaylar.remove(id);
@@ -108,7 +119,7 @@ impl AbonelikKimlikleri {
         bulundu
     }
 
-    fn giden_iptali(&mut self, id: Option<&RequestId>) {
+    pub(crate) fn giden_iptali(&mut self, id: Option<&RequestId>) {
         if let Some(id) = id {
             self.giden.remove(id);
             self.arac_cagrilari.remove(id);
@@ -117,11 +128,14 @@ impl AbonelikKimlikleri {
         }
     }
 
-    fn abonelik_iptalini_dogrula(&mut self, id: Option<&RequestId>) -> bool {
+    pub(crate) fn abonelik_iptalini_dogrula(&mut self, id: Option<&RequestId>) -> bool {
         id.is_some_and(|id| self.aktif_abonelikler.remove(id))
     }
 
-    fn abonelik_onayini_dogrula(&mut self, id: Option<RequestId>) -> Result<(), TasimaHatasi> {
+    pub(crate) fn abonelik_onayini_dogrula(
+        &mut self,
+        id: Option<RequestId>,
+    ) -> Result<(), TasimaHatasi> {
         let Some(id) = id else {
             return Err(TasimaHatasi::BeklenmeyenAbonelikAck);
         };
@@ -140,12 +154,15 @@ impl AbonelikKimlikleri {
         }
     }
 
-    fn arac_cagrisi_mi(&self, id: &RequestId) -> bool {
+    pub(crate) fn arac_cagrisi_mi(&self, id: &RequestId) -> bool {
         self.arac_cagrilari.contains(id)
     }
 }
 
-fn arac_cagrisi_yanitina_isaret_ekle(ileti: &mut Value, kimlikler: &AbonelikKimlikleri) -> bool {
+pub(crate) fn arac_cagrisi_yanitina_isaret_ekle(
+    ileti: &mut Value,
+    kimlikler: &AbonelikKimlikleri,
+) -> bool {
     let Some(rpc) = ileti.as_object_mut() else {
         return false;
     };
@@ -211,7 +228,7 @@ pub struct YenilemeDurumu {
 }
 
 impl YenilemeDurumu {
-    fn yeni() -> Self {
+    pub(crate) fn yeni() -> Self {
         Self {
             degisim: AtomicU64::new(0),
             gorulen_degisim: AtomicU64::new(0),
@@ -283,6 +300,10 @@ impl Drop for GorevKorumasi {
 pub struct TasimaKontrol(Arc<TasimaKapatmaDurumu>);
 
 impl TasimaKontrol {
+    pub(crate) fn yeni(kapat: watch::Sender<bool>) -> Self {
+        Self(Arc::new(TasimaKapatmaDurumu { kapat }))
+    }
+
     pub fn kapat(&self) {
         self.0.kapat.send_replace(true);
     }

@@ -267,6 +267,42 @@ impl McpAracKaynaklari {
     }
 }
 
+/// Yerel MCP alan kaynağı ile oturumun ertelenmiş uzak MCP araç kaynağını birleştiren adaptör.
+pub struct BirlesikMcpAracKaynagi {
+    yerel: Arc<McpAlanAracKaynagi>,
+    uzak: Arc<kalfa_mcp::uzak::UzakAracKaynagi>,
+}
+
+impl BirlesikMcpAracKaynagi {
+    pub fn yeni(
+        yerel: Arc<McpAlanAracKaynagi>,
+        uzak: Arc<kalfa_mcp::uzak::UzakAracKaynagi>,
+    ) -> Arc<Self> {
+        Arc::new(Self { yerel, uzak })
+    }
+}
+
+impl AracKaynagi for BirlesikMcpAracKaynagi {
+    fn hazir_araclar(&self) -> Arc<[KaynakAraci]> {
+        let yerel = self.yerel.hazir_araclar();
+        let uzak = self.uzak.hazir_araclar();
+        if uzak.is_empty() {
+            return yerel;
+        }
+        if yerel.is_empty() {
+            return uzak;
+        }
+        let mut birlesik = Vec::with_capacity(yerel.len() + uzak.len());
+        birlesik.extend_from_slice(&yerel);
+        birlesik.extend_from_slice(&uzak);
+        birlesik.into()
+    }
+
+    fn denetim_islerini_al(&self, sahip: AracDenetimSahibi) -> Vec<AracDenetimIsi> {
+        self.yerel.denetim_islerini_al(sahip)
+    }
+}
+
 #[cfg(test)]
 mod testler {
     use super::*;

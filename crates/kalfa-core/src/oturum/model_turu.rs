@@ -25,7 +25,7 @@ pub(super) struct ModelCevabi {
 
 impl Oturum {
     fn istek_olustur(&self, goruntu: &AracAnlikGoruntusu) -> ChatRequest {
-        let mut mesajlar = vec![ChatMessage::system(self.ayarlar.sistem_mesaji.clone())];
+        let mut mesajlar = vec![ChatMessage::system(self.etkin_sistem_mesaji())];
         mesajlar.extend(self.mesajlar.iter().cloned());
         let mut istek = ChatRequest::new(self.ayarlar.model.clone(), mesajlar);
         istek.tools = goruntu.tanimlar().to_vec();
@@ -147,8 +147,9 @@ impl Oturum {
 
         match sonuc {
             Ok(()) => {
+                let kayit_cagrilari = goruntu.kayit_cagrilarini_maskele(&cagrilar);
                 let mut mesaj =
-                    ChatMessage::assistant((!metin.is_empty()).then_some(metin), cagrilar.clone());
+                    ChatMessage::assistant((!metin.is_empty()).then_some(metin), kayit_cagrilari);
                 mesaj.reasoning = (!dusunce.is_empty()).then_some(dusunce);
                 self.mesaj_ekle(mesaj, Some("model".to_string())).await;
                 Ok(ModelCevabi { cagrilar, goruntu })
@@ -366,9 +367,9 @@ impl Oturum {
 
         // 1. Sistem istemi
         if self.son_sistem_istemi.as_ref().map(|(_, m)| m.as_str())
-            != Some(&self.ayarlar.sistem_mesaji)
+            != Some(&self.etkin_sistem_mesaji())
         {
-            let metin = self.ayarlar.sistem_mesaji.clone();
+            let metin = self.etkin_sistem_mesaji();
             let bayt = metin.len() as u64;
             self.kaydet(KayitOgesi::SistemIstemi {
                 metin: metin.clone(),

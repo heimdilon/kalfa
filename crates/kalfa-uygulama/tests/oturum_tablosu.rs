@@ -927,3 +927,636 @@ async fn efor_degistir_kaydedilir_ve_kurtarilir() {
         Some("low")
     );
 }
+
+#[tokio::test]
+async fn uygulamada_proje_talimatlari_plan_ve_kullanici_sorusu_calisir() {
+    use kalfa_core::soru::KullaniciSorusuYaniti;
+
+    let o = ortam(vec![
+        SahteYanit::arac(
+            "plan_guncelle",
+            serde_json::json!({
+                "adimlar": [
+                    {"kimlik": "a1", "baslik": "Yaklaşımı netleştir", "durum": "Suruyor"},
+                    {"kimlik": "a2", "baslik": "Uygula", "durum": "Bekliyor"}
+                ]
+            }),
+        ),
+        SahteYanit::arac(
+            "kullaniciya_sor",
+            serde_json::json!({
+                "baslik": "Hangi seçeneği uygulayalım?",
+                "secenekler": [
+                    {"kimlik": "s1", "etiket": "Seçenek 1"},
+                    {"kimlik": "s2", "etiket": "Seçenek 2"}
+                ],
+                "serbest_yanit_izni": true
+            }),
+        ),
+        SahteYanit::metin("Seçenek 1 ile tamamlandı."),
+    ])
+    .await;
+
+    std::fs::write(
+        o.alan.path().join("AGENTS.md"),
+        "# Proje Kuralları\nTestlerde Türkçe adlar kullanın.\n",
+    )
+    .unwrap();
+
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .mesaj_gonder(oturum, "başla".into())
+        .await
+        .unwrap();
+
+    // KullaniciSorusuGerekiyor olayını bekle:
+    let mut bekleyen_soru = None;
+    while bekleyen_soru.is_none() {
+        let msg = rx.recv().await.unwrap();
+        if let KanalMesaji::Olaylar { no, zarflar } = msg {
+            o.t.uygulama.paketi_isledim(oturum, no).unwrap();
+            for z in zarflar {
+                if let Olay::KullaniciSorusuGerekiyor { soru } = z.yuk {
+                    bekleyen_soru = Some(soru);
+                }
+            }
+        }
+    }
+    let soru = bekleyen_soru.unwrap();
+    assert_eq!(soru.baslik, "Hangi seçeneği uygulayalım?");
+
+    o.t.uygulama
+        .kullanici_sorusu_yaniti(
+            oturum,
+            soru.tur,
+            soru.soru_kimligi.clone(),
+            KullaniciSorusuYaniti::Secenek {
+                secenek_kimligi: "s1".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+    olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+
+    o.t.uygulama.oturumu_kapat(oturum).await.unwrap();
+    let acilan = o.t.uygulama.oturum_ac(oturum).await.unwrap();
+    assert_eq!(acilan.ozet.plan.as_ref().map(|p| p.adimlar.len()), Some(2));
+    assert_eq!(
+        acilan
+            .ozet
+            .proje_talimatlari
+            .as_ref()
+            .map(|t| t.kaynaklar.len()),
+        Some(1)
+    );
+}
+
+#[tokio::test]
+async fn uygulama_oturumu_web_getir_aracini_varsayilan_kayitta_sunar_ve_yerel_onay_penceresini_baglar()
+ {
+    use kalfa_core::protokol::{OnayKarari, VeriCikisi, YonlendirmeIzni};
+    use kalfa_uygulama::sozlesme::OnayGirdisi;
+
+    let o = ortam(vec![
+        SahteYanit::arac(
+            "web_getir",
+            serde_json::json!({
+                "url": "https://docs.rs/tokio?api_key=gizli-anahtar-1",
+                "izinli_yonlendirme_hostlari": ["cdn.docs.rs"]
+            }),
+        ),
+        SahteYanit::metin("Web isteği yerel onayda reddedildi."),
+    ])
+    .await;
+
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .izin_kipi_degistir(oturum, Kip::Serbest)
+        .await
+        .unwrap();
+    o.t.uygulama
+        .mesaj_gonder(oturum, "docs.rs sayfasını getir".into())
+        .await
+        .unwrap();
+
+    let olaylar = olay_bekle(&o.t, oturum, &mut rx, |x| {
+        matches!(x, Olay::OnayGerekiyor { .. })
+    })
+    .await;
+
+    // 1. Model isteğinde `varsayilan_araclar` üzerinden `web_getir` aracı sunulmuş olmalı.
+    let ilk_istek = &o.t.saglayici.istekler()[0];
+    let arac_adlari: Vec<&str> = ilk_istek
+        .tools
+        .iter()
+        .map(|t| t.function.name.as_str())
+        .collect();
+    assert!(
+        arac_adlari.contains(&"web_getir"),
+        "Uygulama oturumunda web_getir varsayılan araç olarak sunulmalı"
+    );
+
+    // 2. OnayGerekiyor olayı açık WebTarifi ve VeriCikisi::WebSayfasi taşımalı, EklentiTarifi taşımamalı.
+    let ogeler = olaylar
+        .into_iter()
+        .find_map(|x| match x {
+            Olay::OnayGerekiyor { ogeler, .. } => Some(ogeler),
+            _ => None,
+        })
+        .expect("OnayGerekiyor olayı gelmeli");
+    assert_eq!(ogeler.len(), 1);
+    let oge = &ogeler[0];
+    assert_eq!(oge.arac, "web_getir");
+    assert!(oge.yerel_onay);
+    assert_eq!(oge.veri_cikisi, Some(VeriCikisi::WebSayfasi));
+    assert!(oge.eklenti.is_none());
+    let web = oge.web.as_ref().expect("OnayOgesi.web dolu olmalı");
+    assert_eq!(web.host, "docs.rs");
+    assert_eq!(web.port, 443);
+    assert_eq!(web.sema, "https");
+    assert_eq!(web.yontem, "GET");
+    assert_eq!(
+        web.maskeli_url,
+        "https://docs.rs/tokio?api_key=[MASKELENDI]"
+    );
+    assert_eq!(
+        web.yonlendirme_izni,
+        YonlendirmeIzni::IzinliHostlar(vec!["cdn.docs.rs".into()])
+    );
+    let oge_json = serde_json::to_string(oge).unwrap();
+    assert!(
+        !oge_json.contains("gizli-anahtar-1") && !oge_json.contains("kanonik_url"),
+        "R2-SP-01: OnayOgesi JSON serileştirmesi hassas parametreyi veya ham kanonik_url alanını taşımamalı: {oge_json}"
+    );
+
+    // 3. Uygulama üzerinden onay gönderildiğinde yerel iletişim kutusu (`yerel_onay_sorusu`)
+    //    hedef/yöntem/veri çıkışı/yönlendirme kapsamıyla açılır; kullanıcı yerel pencerede
+    //    vazgeçerse ağa çıkılmadan çağrı reddedilir.
+    o.t.iletisim.onay_ver(false);
+    o.t.uygulama
+        .arac_onayi(
+            oturum,
+            vec![OnayGirdisi {
+                cagri: oge.cagri,
+                karar: OnayKarari::Onayla,
+                muhur: oge.muhur.clone(),
+                kisayol: false,
+            }],
+        )
+        .await
+        .unwrap();
+
+    let bitis_olaylari = olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+    assert!(bitis_olaylari.iter().any(|x| matches!(
+        x,
+        Olay::AracSonucu {
+            arac,
+            durum: kalfa_core::protokol::AracDurumu::Reddedildi,
+            ..
+        } if arac == "web_getir"
+    )));
+    for olay in &bitis_olaylari {
+        let olay_json = serde_json::to_string(olay).unwrap();
+        assert!(
+            !olay_json.contains("gizli-anahtar-1"),
+            "R2-SP-01: Olay akışı hassas parametreyi sızdırmamalı: {olay_json}"
+        );
+    }
+    let kayit_dosyasi = oturum_dizini(o.veri.path()).join(format!("{oturum}.jsonl"));
+    let kayit_metni = std::fs::read_to_string(&kayit_dosyasi).unwrap();
+    for (satir_no, satir) in kayit_metni.lines().enumerate() {
+        assert!(
+            !satir.contains("gizli-anahtar-1"),
+            "R2-SP-01: Uygulama oturum JSONL satırı #{} hassas parametreyi sızdırdı: {satir}",
+            satir_no + 1
+        );
+    }
+}
+
+#[tokio::test]
+async fn hat04_uzak_mcp_arac_ara_ve_web_getir_kaynakli_yanit_sozlesmesi() {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
+
+    use kalfa_core::arac::{
+        Arac, AracKayitDefteri, McpAracTanimOzeti, McpBaslatmaSayaci, McpErisim, McpTarifi,
+        async_trait,
+    };
+    use kalfa_core::izin::GizliAyarlari;
+    use kalfa_core::protokol::VeriCikisi;
+    use kalfa_mcp::maske::GizliDeger;
+    use kalfa_mcp::tanim::{UzakMcpTanim, UzakYetkiTuru};
+    use kalfa_mcp::uzak::{
+        AracAraAraci, AracAraSonucu, UzakAracKatalogu, UzakAracKaynagi, UzakCagriHatasi,
+        UzakMcpCagriYurutucusu, UzakSunucuKatalogGirdisi,
+    };
+    use kalfa_mcp::{CallToolResult, Tool};
+    use kalfa_sandbox::tarama::CancellationToken;
+    use kalfa_tools::web::{
+        AramaSaglayiciYaniti, Cozucu, TestFixtureIzni, WebGetirAraci, WebIstemci, WebIzinDefteri,
+        arama_sonuclarini_dogrula, mcp_arac_sonucunu_coz,
+    };
+    use serde_json::{Map, Value, json};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    // 1. Yerel HTTP fixture sayfası (MCP aramasından dönen URL'i `web_getir` ile açmak için):
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let web_port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        if let Ok((mut stream, _)) = listener.accept().await {
+            let mut buf = [0u8; 2048];
+            let _ = stream.read(&mut buf).await;
+            let body = "<html><head><title>Tokio MPSC Kanal Kılavuzu</title></head><body><h1>Tokio MPSC</h1><p>Sınırlı kanal geri basınç sağlar.</p></body></html>";
+            let yanit = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(yanit.as_bytes()).await;
+        }
+    });
+
+    struct AramaUzakYurutucu {
+        katalog: Arc<UzakAracKatalogu>,
+        web_port: u16,
+    }
+
+    #[async_trait]
+    impl UzakMcpCagriYurutucusu for AramaUzakYurutucu {
+        async fn uzak_arac_cagir(
+            &self,
+            sunucu_adi: &str,
+            uzak_arac_adi: &str,
+            _argumanlar: Map<String, Value>,
+            onayli_tarif: McpTarifi,
+            _onayli_d: McpAracTanimOzeti,
+            _iptal: CancellationToken,
+        ) -> Result<(CallToolResult, bool), UzakCagriHatasi> {
+            let Some(guncel_tarif) = self.katalog.sunucu_tarifi(sunucu_adi) else {
+                return Err(UzakCagriHatasi::OnayEskidi);
+            };
+            if guncel_tarif != onayli_tarif {
+                return Err(UzakCagriHatasi::OnayEskidi);
+            }
+
+            let hedef_url = format!(
+                "http://belge.ornek.test:{}/tokio-mpsc?api_key=gizli-arama-anahtari",
+                self.web_port
+            );
+            let metin = match uzak_arac_adi {
+                "brave_web_search" => json!({
+                    "web": {
+                        "results": [{
+                            "title": "Tokio MPSC Kanal Kılavuzu (Brave)",
+                            "url": hedef_url,
+                            "description": "Sınırlı kanal geri basınç sağlar."
+                        }]
+                    }
+                })
+                .to_string(),
+                "tavily_search" => json!({
+                    "results": [{
+                        "title": "Tokio MPSC Kanal Kılavuzu (Tavily)",
+                        "url": hedef_url,
+                        "content": "Tavily içerik özeti: sınırlı mpsc kanalı."
+                    }]
+                })
+                .to_string(),
+                "web_search_exa" => format!(
+                    "Title: Tokio MPSC Kanal Kılavuzu (Exa)\nURL: {hedef_url}\nText: Exa düz metin arama çıktısı.\n"
+                ),
+                _ => return Err(UzakCagriHatasi::Iletisim("bilinmeyen arama aracı".into())),
+            };
+
+            let sonuc: CallToolResult = serde_json::from_value(json!({
+                "content": [{ "type": "text", "text": metin }]
+            }))
+            .unwrap();
+            Ok((sonuc, true))
+        }
+    }
+
+    let katalog = Arc::new(UzakAracKatalogu::default());
+    let yurutucu = Arc::new(AramaUzakYurutucu {
+        katalog: Arc::clone(&katalog),
+        web_port,
+    });
+    let kaynak = UzakAracKaynagi::yeni(Arc::clone(&katalog), yurutucu);
+    let arac_ara = AracAraAraci::yeni(Arc::clone(&katalog), Arc::clone(&kaynak));
+
+    let sema = json!({
+        "type": "object",
+        "properties": { "query": { "type": "string" } },
+        "required": ["query"]
+    })
+    .as_object()
+    .cloned()
+    .unwrap();
+
+    for (sunucu, port, arac_adi, aciklama) in [
+        (
+            "brave",
+            19201u16,
+            "brave_web_search",
+            "Brave web arama sağlayıcısı",
+        ),
+        (
+            "tavily",
+            19202u16,
+            "tavily_search",
+            "Tavily web arama sağlayıcısı",
+        ),
+        (
+            "exa",
+            19203u16,
+            "web_search_exa",
+            "Exa web arama sağlayıcısı",
+        ),
+    ] {
+        let tanim = UzakMcpTanim::varsayilan_sinirlarla(
+            sunucu.to_owned(),
+            &format!("http://127.0.0.1:{port}/mcp"),
+            true,
+            UzakYetkiTuru::Yetkisiz,
+        )
+        .unwrap();
+        let kabul = katalog.sunucu_katalogunu_guncelle(UzakSunucuKatalogGirdisi {
+            tanim,
+            alan_kimligi: "alan-web-mcp".to_owned(),
+            gizli_ayarlari: GizliAyarlari::default(),
+            tanim_revizyonu: 1,
+            kimlik_revizyonu: 1,
+            arac_revizyonu: 1,
+            protokol_surumu: "2025-06-18".to_owned(),
+            baglanti_sayaci: McpBaslatmaSayaci::yeni(1),
+            ham_araclar: vec![Tool::new(
+                arac_adi.to_owned(),
+                aciklama.to_owned(),
+                Arc::new(sema.clone()),
+            )],
+            sirlar: Vec::<GizliDeger>::new(),
+        });
+        assert!(kabul.is_empty());
+    }
+
+    let defter = AracKayitDefteri::yeni_kaynakli(vec![arac_ara.clone()], kaynak.clone()).unwrap();
+
+    // İlk tur anlık görüntüsünde yalnız `arac_ara` vardır; uzak arama araçları henüz yüklenmemiştir.
+    let tur1 = defter.anlik_goruntu(Kip::Proje);
+    assert!(tur1.bul("arac_ara").is_some());
+    assert!(tur1.bul("mcp__brave__brave_web_search").is_none());
+
+    // `arac_ara` ile 3 sağlayıcı aracını keşfet ve yükle:
+    let ara_arg = json!({
+        "sorgu": "web arama",
+        "yukle": [
+            "mcp__brave__brave_web_search",
+            "mcp__tavily__tavily_search",
+            "mcp__exa__web_search_exa"
+        ]
+    });
+    let ara_hazirlik = arac_ara.hazirla(&ara_arg).await.unwrap();
+    let ara_cikti = arac_ara
+        .calistir(&ara_arg, &ara_hazirlik, CancellationToken::new())
+        .await
+        .unwrap();
+    let ara_sonuc: AracAraSonucu = serde_json::from_str(&ara_cikti.icerik).unwrap();
+    assert_eq!(ara_sonuc.adaylar.len(), 3);
+    assert_eq!(ara_sonuc.yuklenenler.len(), 3);
+
+    // İkinci tur anlık görüntüsünde Hat04 `UzakAracKaynagi` üzerinden 3 arama aracı etkinleşir:
+    let tur2 = defter.anlik_goruntu(Kip::Proje);
+    for birlesik_ad in [
+        "mcp__brave__brave_web_search",
+        "mcp__tavily__tavily_search",
+        "mcp__exa__web_search_exa",
+    ] {
+        let uzak_arac = tur2
+            .bul(birlesik_ad)
+            .expect("yüklenen uzak arama aracı sonraki turda bulunmalı");
+        let cagri_arg = json!({ "query": "tokio mpsc" });
+        let hazirlik = uzak_arac.hazirla(&cagri_arg).await.unwrap();
+        assert_eq!(hazirlik.veri_cikisi, Some(VeriCikisi::UzakMcpCagrisi));
+        assert_eq!(
+            hazirlik.mcp.as_ref().map(|m| m.erisim),
+            Some(McpErisim::UzakStreamableHttp)
+        );
+
+        let ham_sonuc = uzak_arac
+            .calistir(&cagri_arg, &hazirlik, CancellationToken::new())
+            .await;
+        let cozulmus = mcp_arac_sonucunu_coz(&ham_sonuc)
+            .expect("Hat04 uzak MCP çıktısı sağlayıcıya özgü ayrıştırıcıyla çözülmeli");
+        assert!(matches!(cozulmus, AramaSaglayiciYaniti::Basarili(_)));
+        let dogrulanmis =
+            arama_sonuclarini_dogrula("tokio mpsc", cozulmus, &CancellationToken::new())
+                .expect("arama sonuç URL'i doğrulanıp maskelenmeli");
+        assert_eq!(dogrulanmis.len(), 1);
+        assert_eq!(
+            dogrulanmis[0].maskeli_url,
+            format!("http://belge.ornek.test:{web_port}/tokio-mpsc?api_key=[MASKELENDI]")
+        );
+    }
+
+    // 2. Keşfedilen URL'i `WebGetirAraci` ile aç ve kaynaklı yanıtı doğrula:
+    struct TestCozucu {
+        adres: SocketAddr,
+    }
+    impl Cozucu for TestCozucu {
+        fn coz<'a>(
+            &'a self,
+            _host: &'a str,
+            _port: u16,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<Vec<SocketAddr>, std::io::Error>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            let adres = self.adres;
+            Box::pin(async move { Ok(vec![adres]) })
+        }
+    }
+
+    let yerel_adres = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), web_port);
+    let mut fixture_izni = TestFixtureIzni::yeni();
+    fixture_izni.hedef_ekle("belge.ornek.test", yerel_adres);
+    fixture_izni.http_etkinlestir();
+    let istemci = Arc::new(WebIstemci::ozel_cozuculu(
+        Arc::new(TestCozucu { adres: yerel_adres }),
+        Some(fixture_izni),
+    ));
+    let web_araci = WebGetirAraci::ozel(istemci, Arc::new(WebIzinDefteri::yeni()));
+    let web_arg = json!({
+        "url": format!("http://belge.ornek.test:{web_port}/tokio-mpsc?api_key=gizli-arama-anahtari")
+    });
+    let web_hazirlik = web_araci.hazirla(&web_arg).await.unwrap();
+    assert_eq!(web_hazirlik.veri_cikisi, Some(VeriCikisi::WebSayfasi));
+    assert!(web_hazirlik.eklenti.is_none());
+    let web_ham = web_araci
+        .calistir(&web_arg, &web_hazirlik, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        web_ham.kaynak,
+        format!("web:http://belge.ornek.test:{web_port}/tokio-mpsc?api_key=[MASKELENDI]")
+    );
+    assert!(
+        web_ham
+            .icerik
+            .contains("[DIŞ WEB İÇERİĞİ — GÜVENİLMEZ KAYNAK:")
+    );
+    assert!(web_ham.icerik.contains("Başlık: Tokio MPSC Kanal Kılavuzu"));
+    assert!(web_ham.icerik.contains("Sınırlı kanal geri basınç sağlar."));
+}
+
+#[tokio::test]
+async fn uygulamada_arka_plan_isi_baslar_okunur_girdi_alir_durdurulur_ve_kurtarilir() {
+    use kalfa_core::protokol::OnayKarari;
+    use kalfa_uygulama::isler::{IsDurumu, IsId, IsKayitOlayi, IsKipi};
+    use kalfa_uygulama::sozlesme::OnayGirdisi;
+
+    #[cfg(windows)]
+    let kabuk_arg = serde_json::json!({
+        "program": "powershell.exe",
+        "argumanlar": [
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            "[Console]::Out.WriteLine('HAZIR'); [Console]::Out.Flush(); $satir = [Console]::In.ReadLine(); [Console]::Out.WriteLine(\"GIRDI:$satir\"); [Console]::Out.Flush(); Start-Sleep -Seconds 30"
+        ],
+        "arka_plan": true
+    });
+    #[cfg(unix)]
+    let kabuk_arg = serde_json::json!({
+        "program": "sh",
+        "argumanlar": [
+            "-c",
+            "echo HAZIR; IFS= read -r satir; echo \"GIRDI:$satir\"; sleep 30"
+        ],
+        "arka_plan": true
+    });
+
+    let o = ortam(vec![
+        SahteYanit::arac("kabuk", kabuk_arg),
+        SahteYanit::metin("Arka plan işi başlatıldı."),
+    ])
+    .await;
+
+    let oturum = o.yeni_oturum().await;
+    let mut rx = o.dinle(oturum);
+    o.t.uygulama
+        .mesaj_gonder(oturum, "arka planda başlat".into())
+        .await
+        .unwrap();
+
+    // OnayGerekiyor olayını bekle ve onayla:
+    let mut bekleyen_onay = None;
+    while bekleyen_onay.is_none() {
+        let msg = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("onay olayı 5 saniyede gelmedi")
+            .expect("kanal kapandı");
+        if let KanalMesaji::Olaylar { no, zarflar } = msg {
+            o.t.uygulama.paketi_isledim(oturum, no).unwrap();
+            for z in zarflar {
+                if let Olay::OnayGerekiyor { ogeler, .. } = z.yuk {
+                    bekleyen_onay = Some(ogeler);
+                }
+            }
+        }
+    }
+    let ogeler = bekleyen_onay.unwrap();
+    o.t.iletisim.onay_ver(true);
+    let kararlar: Vec<OnayGirdisi> = ogeler
+        .iter()
+        .map(|oge| OnayGirdisi {
+            cagri: oge.cagri,
+            karar: OnayKarari::Onayla,
+            muhur: oge.muhur.clone(),
+            kisayol: false,
+        })
+        .collect();
+    o.t.uygulama.arac_onayi(oturum, kararlar).await.unwrap();
+
+    olay_bekle(&o.t, oturum, &mut rx, tamamlandi).await;
+
+    let isler = o.t.uygulama.oturum_isleri(oturum).unwrap();
+    assert_eq!(isler.len(), 1);
+    let is_id = isler[0].is_id.as_str().to_string();
+    assert!(matches!(isler[0].durum, IsDurumu::Calisiyor));
+
+    // HAZIR çıktısını bekle:
+    let mut cikti = String::new();
+    let mut imlec = 0;
+    for _ in 0..50 {
+        let okuma = o.t.uygulama.is_oku(oturum, is_id.clone(), imlec).unwrap();
+        cikti.push_str(&okuma.cikti);
+        imlec = okuma.yeni_imlec;
+        if cikti.contains("HAZIR") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(cikti.contains("HAZIR"), "çıktı: {cikti}");
+
+    // Kullanıcı girdisi gönder ve GIRDI:merhaba çıktısını doğrula:
+    o.t.uygulama
+        .is_girdi(oturum, is_id.clone(), "merhaba\n".into(), false)
+        .await
+        .unwrap();
+
+    for _ in 0..50 {
+        let okuma = o.t.uygulama.is_oku(oturum, is_id.clone(), imlec).unwrap();
+        cikti.push_str(&okuma.cikti);
+        imlec = okuma.yeni_imlec;
+        if cikti.contains("GIRDI:merhaba") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(cikti.contains("GIRDI:merhaba"), "çıktı: {cikti}");
+
+    // İşi durdur ve Bitti durumuna geçtiğini doğrula:
+    let durdurulan = o.t.uygulama.is_durdur(oturum, is_id.clone()).await.unwrap();
+    assert!(matches!(durdurulan.durum, IsDurumu::Bitti { .. }));
+
+    // Çökme sonrası yarım kalan bir iş kaydını (.isler.jsonl) simüle et,
+    // yeni Uygulama örneğiyle oturumu yeniden aç ve SonucuBilinmiyor olarak kurtarıldığını doğrula:
+    o.t.uygulama.oturumu_kapat(oturum).await.unwrap();
+    let yarim_id = IsId::yeni();
+    let yarim_olay = serde_json::to_string(&IsKayitOlayi::IsBasladi {
+        is_id: yarim_id.clone(),
+        oturum,
+        komut: "sleep 99".into(),
+        dizin: ".".into(),
+        ag: false,
+        ag_hostlari: Vec::new(),
+        yalitimli: false,
+        kip: IsKipi::Borulu,
+    })
+    .unwrap();
+    let is_kayit_dosyasi = oturum_dizini(o.veri.path()).join(format!("{oturum}.isler.jsonl"));
+    let mut mevcut = std::fs::read_to_string(&is_kayit_dosyasi).unwrap_or_default();
+    mevcut.push_str(&yarim_olay);
+    mevcut.push('\n');
+    std::fs::write(&is_kayit_dosyasi, mevcut).unwrap();
+
+    let yeni_saglayici = SahteSaglayici::yeni(Vec::new());
+    yeni_saglayici.sart_kabul(1).await.unwrap();
+    let yeni_t = test_uygulamasi(o.veri.path(), yeni_saglayici, Some("evren_llm_a"));
+    yeni_t.uygulama.baslat().await;
+    yeni_t.uygulama.oturum_ac(oturum).await.unwrap();
+
+    let kurtarilan_isler = yeni_t.uygulama.oturum_isleri(oturum).unwrap();
+    let yarim = kurtarilan_isler
+        .iter()
+        .find(|i| i.is_id == yarim_id)
+        .expect("yarım kalan iş kurtarılmalı");
+    assert!(matches!(yarim.durum, IsDurumu::SonucuBilinmiyor { .. }));
+}

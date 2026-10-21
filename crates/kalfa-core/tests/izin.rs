@@ -1176,6 +1176,7 @@ fn hakeme_uygun_izin_listesi_ve_yerel_onay() {
         YALITIMSIZ_UYARISI,
         ALAN_HAZIRLIGI_UYARISI,
         MCP_TAM_ERISIM_UYARISI,
+        MCP_UZAK_VERI_CIKISI_UYARISI,
         YAPILANDIRMA_UYARISI,
         GORUNMEZ_UYARISI,
         "bilinmeyen bir uyarı dizgesi",
@@ -1207,5 +1208,83 @@ fn hakeme_uygun_izin_listesi_ve_yerel_onay() {
     assert_eq!(
         otomatik_riskli_uyarisi("veri sızdırma riski"),
         "Otomatik kip bu işlemi riskli buldu: veri sızdırma riski. Karar sizin."
+    );
+}
+
+#[test]
+fn uzak_mcp_her_kipte_onay_ister_ve_yerel_yalitim_iddia_etmez() {
+    use kalfa_core::arac::{
+        Hazirlik, McpAgHostu, McpAgKarti, McpAracHazirligi, McpAracTanimOzeti, McpBaslatmaSayaci,
+        McpErisim, McpKartEtiketi, McpKorumaOzeti, McpPolitikaOzeti, McpTanimOzeti, McpTarifi,
+        McpYalitimProfiliOzeti,
+    };
+    use kalfa_core::kimlik::CagriId;
+    use kalfa_core::muhur::muhur_hesapla;
+    use kalfa_core::protokol::{McpOnayKarti, VeriCikisi};
+
+    let uzak = McpAracHazirligi {
+        sunucu: McpKartEtiketi::yeni("uzak-ornek").unwrap(),
+        arac: McpKartEtiketi::yeni("sorgula").unwrap(),
+        kip: Kip::Serbest,
+        erisim: McpErisim::UzakStreamableHttp,
+        ag: McpAgKarti::UzakHedef {
+            host: McpAgHostu::yeni("mcp.ornek.tr:443").unwrap(),
+            origin: "https://mcp.ornek.tr".into(),
+            kimlik_kapsami: "OAuth 2.0 (PKCE) · kapsamlar: mcp:tools".into(),
+        },
+        ilk_cagri: false,
+        tarif: McpTarifi::yeni(
+            McpTanimOzeti::ozetten([1u8; 32]),
+            McpPolitikaOzeti::ozetten([2u8; 32]),
+            McpKorumaOzeti::ozetten([3u8; 32]),
+            McpYalitimProfiliOzeti::ozetten([4u8; 32]),
+            McpBaslatmaSayaci::yeni(1),
+        ),
+        arac_tanimi: McpAracTanimOzeti::ozetten([5u8; 32]),
+    };
+
+    assert!(matches!(
+        mcp_karari(Kip::Inceleme, uzak.erisim, uzak.ilk_cagri, &uzak.ag),
+        Karar::Yasak { .. }
+    ));
+    for kip in [Kip::Siki, Kip::Proje, Kip::Serbest] {
+        assert_eq!(
+            mcp_karari(kip, uzak.erisim, uzak.ilk_cagri, &uzak.ag),
+            onayli(&[MCP_UZAK_VERI_CIKISI_UYARISI]),
+            "{kip:?}: uzak MCP çağrısı ilk çağrı olmasa bile veri çıkışı onayı ister"
+        );
+    }
+
+    let kart = McpOnayKarti::yeni(&uzak);
+    assert_eq!(kart.erisim, McpErisim::UzakStreamableHttp);
+    assert_eq!(kart.ag_hostlari, vec!["mcp.ornek.tr:443".to_string()]);
+    assert_eq!(kart.uzak_origin.as_deref(), Some("https://mcp.ornek.tr"));
+    assert_eq!(
+        kart.kimlik_kapsami.as_deref(),
+        Some("OAuth 2.0 (PKCE) · kapsamlar: mcp:tools")
+    );
+
+    let hazirlik1 = Hazirlik {
+        aciklama: "uzak-ornek · sorgula".into(),
+        mcp: Some(uzak.clone()),
+        veri_cikisi: Some(VeriCikisi::UzakMcpCagrisi),
+        ..Hazirlik::default()
+    };
+    let mut uzak_farkli_origin = uzak.clone();
+    uzak_farkli_origin.ag = McpAgKarti::UzakHedef {
+        host: McpAgHostu::yeni("mcp.ornek.tr:443").unwrap(),
+        origin: "https://baska.ornek.tr".into(),
+        kimlik_kapsami: "OAuth 2.0 (PKCE) · kapsamlar: mcp:tools".into(),
+    };
+    let hazirlik2 = Hazirlik {
+        mcp: Some(uzak_farkli_origin),
+        ..hazirlik1.clone()
+    };
+    let cagri = CagriId::yeni();
+    let arg = serde_json::json!({"q": "deneme"});
+    assert_ne!(
+        muhur_hesapla(cagri, "mcp__uzak-ornek__sorgula", &arg, &hazirlik1),
+        muhur_hesapla(cagri, "mcp__uzak-ornek__sorgula", &arg, &hazirlik2),
+        "uzak origin değiştiğinde mühür değişmelidir"
     );
 }

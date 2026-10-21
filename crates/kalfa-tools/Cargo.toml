@@ -13,18 +13,27 @@ yalitim-testleri = []
 
 [dependencies]
 async-trait.workspace = true
+bytes.workspace = true
 cap-std.workspace = true
 cap-fs-ext.workspace = true
+futures-util.workspace = true
 globset.workspace = true
+hex.workspace = true
 ignore.workspace = true
 kalfa-core = { path = "../kalfa-core" }
 kalfa-sandbox = { path = "../kalfa-sandbox" }
 regex.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
 same-file.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 similar.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+url.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
@@ -33,3 +42,4 @@ windows-sys.workspace = true
 kalfa-core = { path = "../kalfa-core", features = ["test-destek"] }
 kalfa-evren = { path = "../kalfa-evren" }
 tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }

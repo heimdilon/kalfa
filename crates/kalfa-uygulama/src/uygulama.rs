@@ -88,6 +88,10 @@ pub struct Uygulama {
     /// Yerel onaylı MCP kayıt defteri ve ana pencerenin MCP kanalı (Görev 10).
     pub(crate) mcp_kayit: crate::mcp::tanimlar::McpKayitDefteri,
     pub(crate) mcp_kanali: Arc<crate::mcp::komutlar::McpArayuzKanali>,
+    /// Uzak MCP sunucu, OAuth ve araç keşfi yöneticisi (Yetenek-04, SP-08).
+    pub uzak_mcp: Arc<crate::mcp::uzak_yonetici::UzakMcpYoneticisi>,
+    /// Oturum bazlı arka plan süreç ve terminal yöneticisi (Hat 03).
+    pub(crate) isler: Arc<crate::isler::IsYoneticisi>,
     ic: Mutex<IcDurum>,
 }
 
@@ -138,8 +142,12 @@ impl Uygulama {
             yalitim_dinleyici.clone(),
             mcp_dinleyici.clone(),
         );
+        #[cfg(not(any(test, feature = "test-destek")))]
         let mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa> =
             Arc::new(crate::mcp::kasa::SistemGizliKasasi::yeni());
+        #[cfg(any(test, feature = "test-destek"))]
+        let mcp_kasa: Arc<dyn crate::mcp::kasa::GizliKasa> =
+            Arc::new(crate::mcp::kasa::test_destek::SahteGizliKasa::yeni());
         let mcp = crate::mcp::yonetici::McpYoneticisi::yeni(
             crate::mcp::yonetici::McpYoneticiBilesenleri {
                 veri_dizini: b.veri_dizini.clone(),
@@ -172,8 +180,18 @@ impl Uygulama {
             mcp_denetleyici.clone(),
             ayarlar.clone(),
         );
+        let uzak_mcp = crate::mcp::uzak_yonetici::UzakMcpYoneticisi::yeni(
+            ayarlar.clone(),
+            mcp_kasa.clone(),
+            b.iletisim.clone(),
+            b.acici.clone(),
+        );
+        let oturum_dizini = dizin::oturum_dizini(&b.veri_dizini);
+        let isler = Arc::new(crate::isler::IsYoneticisi::yeni_kayitli(
+            oturum_dizini.clone(),
+        ));
         Arc::new(Self {
-            oturum_dizini: dizin::oturum_dizini(&b.veri_dizini),
+            oturum_dizini,
             kasa: b.kasa,
             uretici: b.uretici,
             evren,
@@ -197,6 +215,8 @@ impl Uygulama {
             mcp_denetleyici,
             mcp_kayit,
             mcp_kanali,
+            uzak_mcp,
+            isler,
             veri_dizini: b.veri_dizini,
             ev_dizini: b.ev_dizini,
             geri_alma_dizini: b.geri_alma_dizini,
@@ -234,6 +254,11 @@ impl Uygulama {
     /// Uygulama genelindeki MCP sır kasası.
     pub fn mcp_kasasi(&self) -> &Arc<dyn crate::mcp::kasa::GizliKasa> {
         &self.mcp_kasa
+    }
+
+    /// Uygulama genelindeki arka plan iş ve terminal yöneticisi.
+    pub fn is_yoneticisi(&self) -> &Arc<crate::isler::IsYoneticisi> {
+        &self.isler
     }
 
     /// Açık oturum sayısı (testler ve tanılama için).

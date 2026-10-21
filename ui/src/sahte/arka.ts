@@ -22,6 +22,8 @@ import type {
   GunlukSayfasi,
   GunlukSinirDurumu,
   IslemId,
+  IsOkumaSonucu,
+  IsOzeti,
   KanalMesaji,
   Kip,
   KomutHatasi,
@@ -42,6 +44,9 @@ import type {
   SartPenceresiDurumu,
   TurId,
   UygulamaDurumu,
+  UzakMcpSunucuAyrintisi,
+  UzakMcpSunucuFormu,
+  UzakMcpSunucuSatiri,
   YalitimCalismaAlani,
   YalitimDurumu,
 } from '../ipc/tipler';
@@ -243,6 +248,9 @@ export class SahteArka {
     ciktilar: [],
     ozetlenen: 0,
   };
+  /** Arka plan işleri ve çıktıları (Hat 03). */
+  isler: IsOzeti[] = [];
+  isCiktilari = new Map<string, string>();
   /** Gönderim günlüğü sayfaları; yoksa boş döner. */
   gonderimGunlukleri = new Map<OturumId, GunlukSayfasi>();
   /** `gonderim_ogesi` metinleri; anahtar: `${oturum}:${sira}`. */
@@ -279,6 +287,11 @@ export class SahteArka {
   mcpIceAktarma: McpIceAktarmaOnizlemesi | null = null;
   #mcpKanali: Channel<McpDurumu> | null = null;
   #mcpTaslaklari = new Map<string, { eskiAd: string | null; form: McpSunucuFormu }>();
+
+  /** Uzak MCP sunucuları (Yetenek-04 Görev 6, SP-08). */
+  uzakMcpSunuculari: UzakMcpSunucuSatiri[] = [];
+  uzakMcpAyrintilari = new Map<string, UzakMcpSunucuAyrintisi>();
+  uzakMcpOnayi = true;
 
   #oturumlar = new Map<OturumId, SahteOturum>();
   #kanallar = new Map<OturumId, Channel<KanalMesaji>>();
@@ -791,6 +804,82 @@ export class SahteArka {
         this.mcpDurumuYaz();
         return null;
       }
+      case 'uzak_mcp_sunuculari':
+        return structuredClone(this.uzakMcpSunuculari);
+      case 'uzak_mcp_sunucu_ayrintisi': {
+        const ayrinti = this.uzakMcpAyrintilari.get(a.ad as string);
+        if (!ayrinti) throw { kod: 'GecersizGirdi', mesaj: 'Uzak MCP sunucusu bulunamadı.' };
+        return structuredClone(ayrinti);
+      }
+      case 'uzak_mcp_kaydet': {
+        if (!this.uzakMcpOnayi) return false;
+        const eskiAd = (a.eski_ad as string | null) ?? null;
+        const form = a.form as UzakMcpSunucuFormu;
+        const hamTur = form.yetki?.tur ?? 'yetkisiz';
+        const yetkiTuru =
+          hamTur === 'yeni_sabit_baslik' || hamTur === 'korunan_sabit_baslik'
+            ? 'sabit_baslik'
+            : hamTur;
+        const satir: UzakMcpSunucuSatiri = {
+          ozet: {
+            ad: form.ad,
+            etkin: form.etkin ?? true,
+            uc_url: form.uc_url,
+            yetki_turu: yetkiTuru,
+            kimlik_bagli: yetkiTuru === 'sabit_baslik',
+          },
+          rozet: 'uzak_streamable_http',
+          durum: 'bagli_degil',
+          protokol_surumu: null,
+          arac_sayisi: 0,
+          reddedilen_arac_sayisi: 0,
+          son_hata: null,
+          belirsiz_yazma_uyarisi: null,
+        };
+        const digerleri = this.uzakMcpSunuculari.filter(
+          (s) => s.ozet.ad !== eskiAd && s.ozet.ad !== form.ad,
+        );
+        this.uzakMcpSunuculari = [...digerleri, satir];
+        return true;
+      }
+      case 'uzak_mcp_sil': {
+        if (!this.uzakMcpOnayi) return false;
+        this.uzakMcpSunuculari = this.uzakMcpSunuculari.filter((s) => s.ozet.ad !== a.ad);
+        this.uzakMcpAyrintilari.delete(a.ad as string);
+        return true;
+      }
+      case 'uzak_mcp_etkin_ayarla': {
+        const s = this.uzakMcpSunuculari.find((x) => x.ozet.ad === a.ad);
+        if (s) s.ozet.etkin = Boolean(a.etkin);
+        return null;
+      }
+      case 'uzak_mcp_baglan': {
+        const s = this.uzakMcpSunuculari.find((x) => x.ozet.ad === a.ad);
+        if (!s) throw { kod: 'GecersizGirdi', mesaj: 'Uzak MCP sunucusu bulunamadı.' };
+        s.durum = 'bagli';
+        s.protokol_surumu = '2025-11-25';
+        s.arac_sayisi = 2;
+        return structuredClone(s);
+      }
+      case 'uzak_mcp_oauth_bagla': {
+        const s = this.uzakMcpSunuculari.find((x) => x.ozet.ad === a.ad);
+        if (!s) throw { kod: 'GecersizGirdi', mesaj: 'Uzak MCP sunucusu bulunamadı.' };
+        s.ozet.kimlik_bagli = true;
+        s.durum = 'bagli';
+        s.protokol_surumu = '2025-11-25';
+        s.arac_sayisi = 2;
+        return structuredClone(s);
+      }
+      case 'uzak_mcp_kimlik_kaldir': {
+        if (!this.uzakMcpOnayi) return false;
+        const s = this.uzakMcpSunuculari.find((x) => x.ozet.ad === a.ad);
+        if (s) {
+          s.ozet.kimlik_bagli = false;
+          s.durum = 'bagli_degil';
+          s.arac_sayisi = 0;
+        }
+        return true;
+      }
       case 'calisma_alani_ozeti':
         return this.alanOzeti;
       case 'calisma_alani_dizini':
@@ -800,6 +889,57 @@ export class SahteArka {
         if (!icerik) throw { kod: 'GecersizGirdi', mesaj: 'Bu dosya bu oturumda bilinmiyor.' };
         const gecikme = this.dosyaGecikmeleri.get(a.kimlik as number);
         return gecikme ? gecikme.then(() => icerik) : icerik;
+      }
+      case 'oturum_isleri':
+        return structuredClone(this.isler.filter((i) => i.oturum === oturum));
+      case 'is_oku': {
+        const isId = a.is_id as string;
+        const imlec = (a.imlec as number) ?? 0;
+        const is = this.isler.find((i) => i.oturum === oturum && i.is_id === isId);
+        if (!is) throw { kod: 'GecersizGirdi', mesaj: 'İş bulunamadı.' };
+        const tam = this.isCiktilari.get(isId) ?? '';
+        const parca = tam.slice(imlec);
+        const sonuc: IsOkumaSonucu = {
+          is_id: is.is_id,
+          gosterim: is.gosterim,
+          kip: is.kip,
+          durum: is.durum,
+          cikti: parca,
+          yeni_imlec: tam.length,
+          toplam_bayt: is.toplam_bayt,
+          tasti: is.tasti,
+          uyarilar: is.uyarilar,
+        };
+        return structuredClone(sonuc);
+      }
+      case 'is_girdi': {
+        const isId = a.is_id as string;
+        const veri = (a.veri as string) ?? '';
+        const is = this.isler.find((i) => i.oturum === oturum && i.is_id === isId);
+        if (!is) throw { kod: 'GecersizGirdi', mesaj: 'İş bulunamadı.' };
+        if (veri) {
+          const mevcut = this.isCiktilari.get(isId) ?? '';
+          const yeni = `${mevcut}${veri}`;
+          this.isCiktilari.set(isId, yeni);
+          is.toplam_bayt = yeni.length;
+        }
+        return structuredClone(is);
+      }
+      case 'is_durdur': {
+        const isId = a.is_id as string;
+        const is = this.isler.find((i) => i.oturum === oturum && i.is_id === isId);
+        if (!is) throw { kod: 'GecersizGirdi', mesaj: 'İş bulunamadı.' };
+        is.durum = { durum: 'bitti', cikis_kodu: null, sure_ms: 120, zaman_asimi: false };
+        return structuredClone(is);
+      }
+      case 'is_boyutlandir': {
+        const isId = a.is_id as string;
+        const satir = a.satir as number;
+        const sutun = a.sutun as number;
+        const is = this.isler.find((i) => i.oturum === oturum && i.is_id === isId);
+        if (!is) throw { kod: 'GecersizGirdi', mesaj: 'İş bulunamadı.' };
+        is.kip = { tur: 'terminal', boyut: { satir, sutun } };
+        return structuredClone(is);
       }
       case 'pencere_buyut_degistir':
         this.pencereBuyuk = !this.pencereBuyuk;

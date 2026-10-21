@@ -295,6 +295,25 @@ pub enum KayitOgesi {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         olasilik: Option<f64>,
     },
+    /// Bir turda yüklenen proje talimatı (`AGENTS.md`) kaynak üstverisi ve uyarıları.
+    ProjeTalimatlari {
+        goruntu: crate::proje_talimatlari::ProjeTalimatAnlikGoruntusu,
+    },
+    /// Oturum çalışma planı güncellendi (`plan_guncelle`).
+    PlanGuncellendi {
+        cagri: CagriId,
+        plan: crate::plan::OturumPlani,
+    },
+    /// Kullanıcıya yapılandırılmış soru soruldu (`kullaniciya_sor`).
+    KullaniciSorusuSoruldu {
+        soru: crate::soru::KullaniciSorusu,
+    },
+    /// Bekleyen kullanıcı sorusu yanıtlandı, yönlendirildi veya iptal edildi.
+    KullaniciSorusuCozuldu {
+        soru_kimligi: String,
+        cagri: CagriId,
+        sonuc: crate::soru::SoruSonucu,
+    },
 }
 
 /// Eski kayıtlardaki `ButceAyarlandi` ve `ButceDevamKarari` satırlarını

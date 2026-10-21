@@ -78,11 +78,13 @@ impl Cocuk {
             #[cfg(windows)]
             Cocuk::Kap(k) => {
                 let cikti = Box::new(tokio::fs::File::from_std(k.cikti)) as Okuyucu;
-                let hata = Box::new(tokio::fs::File::from_std(k.hata)) as Okuyucu;
+                let hata = k
+                    .hata
+                    .map(|h| Box::new(tokio::fs::File::from_std(h)) as Okuyucu);
                 let surec = k.surec;
                 (
                     Some(cikti),
-                    Some(hata),
+                    hata,
                     Box::pin(async move {
                         // Ağaç her durumda sonunda öldürülür; bekleme döner.
                         tokio::task::spawn_blocking(move || crate::windows::kap::bekle(&surec))
@@ -231,8 +233,227 @@ const OLUM_BEKLEMESI: Duration = Duration::from_secs(5);
 const GIRDI_TAMPONU: usize = 64 * 1024;
 const YOKLAMA: Duration = Duration::from_millis(10);
 
-/// Uzun yaşayan, borulu süreç (1.1a §4.1). Bırakılırsa (örneğin panik
-/// sırasında) ağaç yine öldürülür; bitişi ise yalnız `kapat` doğrular.
+/// Açık bir sözde terminalin (Linux PTY / Windows ConPTY) boyutlandırma ve
+/// kapatma denetimi.
+#[derive(Clone)]
+pub struct TerminalDenetimi {
+    ic: std::sync::Arc<std::sync::Mutex<Option<TerminalTutamaci>>>,
+}
+
+#[cfg(unix)]
+struct TerminalTutamaci(std::os::fd::OwnedFd);
+
+#[cfg(windows)]
+struct TerminalTutamaci(windows_sys::Win32::System::Console::HPCON);
+
+#[cfg(windows)]
+// SAFETY: `HPCON` konsol oturumu tutamacıdır; `Mutex` altında senkronize erişilir.
+unsafe impl Send for TerminalTutamaci {}
+
+#[cfg(windows)]
+impl Drop for TerminalTutamaci {
+    fn drop(&mut self) {
+        // SAFETY: `self.0` `CreatePseudoConsole` ile oluşturuldu ve yalnız bir kez kapatılır.
+        unsafe {
+            windows_sys::Win32::System::Console::ClosePseudoConsole(self.0);
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+struct TerminalTutamaci;
+
+impl TerminalDenetimi {
+    #[cfg(unix)]
+    pub(crate) fn unix_yeni(master: std::os::fd::OwnedFd) -> Self {
+        Self {
+            ic: std::sync::Arc::new(std::sync::Mutex::new(Some(TerminalTutamaci(master)))),
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn win_yeni(
+        hpcon: windows_sys::Win32::System::Console::HPCON,
+    ) -> (Self, windows_sys::Win32::System::Console::HPCON) {
+        (
+            Self {
+                ic: std::sync::Arc::new(std::sync::Mutex::new(Some(TerminalTutamaci(hpcon)))),
+            },
+            hpcon,
+        )
+    }
+
+    pub fn boyut_degistir(&self, boyut: crate::TerminalBoyutu) -> std::io::Result<()> {
+        boyut
+            .dogrula()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))?;
+        let kilit = self.ic.lock().unwrap_or_else(|z| z.into_inner());
+        let Some(tutamac) = kilit.as_ref() else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "terminal kapandı",
+            ));
+        };
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            let ws = libc::winsize {
+                ws_row: boyut.satir,
+                ws_col: boyut.sutun,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
+            // SAFETY: `tutamac.0` açık PTY master tanımlayıcısıdır; `ws` geçerli `winsize` yapısıdır.
+            if unsafe { libc::ioctl(tutamac.0.as_raw_fd(), libc::TIOCSWINSZ, &ws) } == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        }
+        #[cfg(windows)]
+        {
+            let coord = windows_sys::Win32::System::Console::COORD {
+                X: i16::try_from(boyut.sutun).unwrap_or(i16::MAX),
+                Y: i16::try_from(boyut.satir).unwrap_or(i16::MAX),
+            };
+            // SAFETY: `tutamac.0` açık ConPTY tutamacıdır; `coord` doğrulanmış boyuttur.
+            let hr = unsafe {
+                windows_sys::Win32::System::Console::ResizePseudoConsole(tutamac.0, coord)
+            };
+            if hr != 0 {
+                return Err(std::io::Error::from_raw_os_error(hr));
+            }
+            Ok(())
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = tutamac;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "bu platformda terminal boyutlandırma desteklenmiyor",
+            ))
+        }
+    }
+
+    pub fn kapat(&self) {
+        let mut kilit = self.ic.lock().unwrap_or_else(|z| z.into_inner());
+        let _ = kilit.take();
+    }
+
+    /// Sözde terminalin kanonik satır disiplini üzerinden tek seferlik `EOF`
+    /// işaretini (`VEOF` / `Ctrl+Z`) destekleyip desteklemediğini döndürür.
+    /// Unix'te `ICANON` kapalıysa (ham/raw kip) veya `VEOF` devre dışıysa `false` döner.
+    pub fn kanonik_eof_destekleniyor_mu(&self) -> bool {
+        let kilit = self.ic.lock().unwrap_or_else(|z| z.into_inner());
+        let Some(tutamac) = kilit.as_ref() else {
+            return false;
+        };
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            // SAFETY: `termios` yalnız sayısal alanlardan oluşur; sıfırlanması geçerlidir.
+            let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+            // SAFETY: `tutamac.0` açık PTY master tanımlayıcısıdır.
+            if unsafe { libc::tcgetattr(tutamac.0.as_raw_fd(), &mut termios) } != 0 {
+                return false;
+            }
+            let veof = termios.c_cc[libc::VEOF];
+            (termios.c_lflag & libc::ICANON) != 0 && veof != 0 && veof != libc::_POSIX_VDISABLE
+        }
+        #[cfg(windows)]
+        {
+            let _ = tutamac;
+            true
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = tutamac;
+            false
+        }
+    }
+
+    fn eof_baytlari(&self, satir_basi: bool) -> Vec<u8> {
+        let kilit = self.ic.lock().unwrap_or_else(|z| z.into_inner());
+        let Some(tutamac) = kilit.as_ref() else {
+            return Vec::new();
+        };
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            // SAFETY: `termios` yalnız sayısal alanlardan oluşur; sıfırlanması geçerlidir.
+            let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+            // SAFETY: `tutamac.0` açık PTY master tanımlayıcısıdır.
+            if unsafe { libc::tcgetattr(tutamac.0.as_raw_fd(), &mut termios) } != 0 {
+                return Vec::new();
+            }
+            let veof = termios.c_cc[libc::VEOF];
+            if (termios.c_lflag & libc::ICANON) == 0 || veof == 0 || veof == libc::_POSIX_VDISABLE {
+                return Vec::new();
+            }
+            if satir_basi {
+                vec![veof]
+            } else {
+                vec![veof, veof]
+            }
+        }
+        #[cfg(windows)]
+        {
+            let _ = tutamac;
+            if satir_basi {
+                b"\x1a\r\n".to_vec()
+            } else {
+                b"\r\n\x1a\r\n".to_vec()
+            }
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (tutamac, satir_basi);
+            Vec::new()
+        }
+    }
+}
+
+type KokBitisi = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+async fn girdi_aktar(
+    mut ic: tokio::io::DuplexStream,
+    mut boru: Yazici,
+    terminal: Option<TerminalDenetimi>,
+) {
+    let mut tampon = [0u8; 8192];
+    let mut son_bayt: Option<u8> = None;
+    loop {
+        match tokio::io::AsyncReadExt::read(&mut ic, &mut tampon).await {
+            Ok(0) => break,
+            Ok(n) => {
+                son_bayt = Some(tampon[n - 1]);
+                if tokio::io::AsyncWriteExt::write_all(&mut boru, &tampon[..n])
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                let _ = tokio::io::AsyncWriteExt::flush(&mut boru).await;
+            }
+            Err(_) => return,
+        }
+    }
+    if let Some(term) = terminal {
+        let satir_basi = matches!(son_bayt, None | Some(b'\n') | Some(b'\r'));
+        let eof_dizisi = term.eof_baytlari(satir_basi);
+        if !eof_dizisi.is_empty() {
+            let _ = tokio::io::AsyncWriteExt::write_all(&mut boru, &eof_dizisi).await;
+            let _ = tokio::io::AsyncWriteExt::flush(&mut boru).await;
+        }
+        #[cfg(windows)]
+        std::future::pending::<()>().await;
+    } else {
+        let _ = tokio::io::AsyncWriteExt::shutdown(&mut boru).await;
+    }
+}
+
+/// Uzun yaşayan, borulu ya da terminalli süreç (1.1a §4.1, G2b/G2c). Bırakılırsa
+/// (örneğin panik sırasında) ağaç yine öldürülür; bitişi ise yalnız `kapat`
+/// doğrular.
 pub struct EtkilesimliSurec {
     girdi: Option<Yazici>,
     /// stdin borusuna aktaran görev. Borunun yazma ucu yalnız bu görevdedir:
@@ -243,6 +464,11 @@ pub struct EtkilesimliSurec {
     hata: Option<Okuyucu>,
     bitisi: Option<Bitisi>,
     cikis: Option<Option<i32>>,
+    /// Linux'ta çapa alt süreç toplayıcısının (`R`) toplanmasını bekleyen gelecek.
+    /// Kök komut (`C`) kendiliğinden çıktığında `bitisi` hemen tamamlanır, ancak
+    /// `R` ancak `agaci_bitir` içinde torunlar öldürüldükten sonra toplanır.
+    kok_bitisi: Option<KokBitisi>,
+    terminal: Option<TerminalDenetimi>,
     /// `agac`'tan önce bırakılır: Windows'ta boru sunucusu işin tutamacını
     /// kullanır.
     ag_kapat: Option<AgKapatici>,
@@ -265,21 +491,48 @@ fn zaman_asimi(ne: &str) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::TimedOut, ne.to_string())
 }
 
+#[cfg(target_os = "linux")]
+fn durum_borusundan_bitis(
+    durum_okuma: std::os::fd::OwnedFd,
+    mut cocuk: Child,
+) -> std::io::Result<(Bitisi, Option<KokBitisi>)> {
+    let mut alici = tokio::net::unix::pipe::Receiver::from_owned_fd(durum_okuma)?;
+    let bitisi: Bitisi = Box::pin(async move {
+        let mut baytlar = [0u8; 4];
+        match alici.read_exact(&mut baytlar).await {
+            Ok(_) => {
+                let kod = i32::from_ne_bytes(baytlar);
+                if kod == i32::MIN { None } else { Some(kod) }
+            }
+            Err(_) => None,
+        }
+    });
+    let kok_bitisi: KokBitisi = Box::pin(async move {
+        let _ = cocuk.wait().await;
+    });
+    Ok((bitisi, Some(kok_bitisi)))
+}
+
 impl EtkilesimliSurec {
-    fn yeni(girdi: Option<Yazici>, cocuk: Cocuk, agac: Agac) -> Result<Self, BaslatmaHatasi> {
-        let (cikti, hata, bitisi) = cocuk.ayir();
+    fn yeni_ic(
+        girdi: Option<Yazici>,
+        cikti: Option<Okuyucu>,
+        hata: Option<Okuyucu>,
+        bitisi: Bitisi,
+        kok_bitisi: Option<KokBitisi>,
+        agac: Agac,
+        terminal: Option<TerminalDenetimi>,
+    ) -> Result<Self, BaslatmaHatasi> {
+        let terminal_kopya = terminal.clone();
         let (girdi, girdi_gorevi) = match girdi {
-            Some(mut boru) => {
+            Some(boru) => {
                 let calisma = tokio::runtime::Handle::try_current().map_err(|_| {
                     BaslatmaHatasi::Yalitim(
                         "etkileşimli süreç tokio çalışma zamanının dışında başlatılamaz".into(),
                     )
                 })?;
-                let (dis, mut ic) = tokio::io::duplex(GIRDI_TAMPONU);
-                let gorev = calisma.spawn(async move {
-                    let _ = tokio::io::copy(&mut ic, &mut boru).await;
-                    let _ = tokio::io::AsyncWriteExt::shutdown(&mut boru).await;
-                });
+                let (dis, ic) = tokio::io::duplex(GIRDI_TAMPONU);
+                let gorev = calisma.spawn(girdi_aktar(ic, boru, terminal_kopya));
                 (Some(Box::new(dis) as Yazici), Some(gorev))
             }
             None => (None, None),
@@ -291,6 +544,8 @@ impl EtkilesimliSurec {
             hata,
             bitisi: Some(bitisi),
             cikis: None,
+            kok_bitisi,
+            terminal,
             ag_kapat: None,
             agac,
             dogrulandi: false,
@@ -311,8 +566,39 @@ impl EtkilesimliSurec {
         self.hata.take()
     }
 
+    pub fn terminal_denetimi(&self) -> Option<TerminalDenetimi> {
+        self.terminal.clone()
+    }
+
+    pub fn boyut_degistir(&self, boyut: crate::TerminalBoyutu) -> std::io::Result<()> {
+        match &self.terminal {
+            Some(t) => t.boyut_degistir(boyut),
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "bu süreç sözde terminalle başlatılmadı",
+            )),
+        }
+    }
+
     pub fn ag_kapat_ekle(&mut self, kapat: AgKapatici) {
         self.ag_kapat = Some(kapat);
+    }
+
+    /// Kök süreç kendiliğinden bitmiş mi diye beklemeden yoklar.
+    pub fn bitisi_yokla(&mut self) -> Option<Option<i32>> {
+        if let Some(kod) = self.cikis {
+            return Some(kod);
+        }
+        let bitisi = self.bitisi.as_mut()?;
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        match bitisi.as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(kod) => {
+                self.bitisi = None;
+                self.cikis = Some(kod);
+                Some(kod)
+            }
+            std::task::Poll::Pending => None,
+        }
     }
 
     /// Kök süreç kendiliğinden bitene kadar bekler. İptal güvenlidir: gelecek
@@ -376,10 +662,27 @@ impl EtkilesimliSurec {
         }
     }
 
+    fn terminali_kapat(&mut self) {
+        if let Some(t) = self.terminal.take() {
+            t.kapat();
+        }
+    }
+
     async fn agaci_bitir(&mut self) -> std::io::Result<()> {
         let son = Instant::now() + OLUM_BEKLEMESI;
-        // Kök toplanmadıysa numarası ona aittir; torunlar köke bağlıdır.
-        agaci_oldur(&self.agac, self.cikis.is_none(), son).await?;
+        // Linux'ta çapa süreç (R) henüz toplanmadığı için (`kok_bitisi.is_some()`),
+        // kök komut (C) erken çıkmış olsa bile torunlar R'ye bağlıdır ve taranır.
+        let kok_toplanmadi = self.kok_bitisi.is_some() || self.cikis.is_none();
+        let oldurme = agaci_oldur(&self.agac, kok_toplanmadi, son).await;
+        // G2a (G2.5): ağaç öldürüldükten hemen sonra sözde terminal kapatılır;
+        // böylece ConPTY tam çıktı altında bloklanmaz ve çıktı borusu EOF alır.
+        self.terminali_kapat();
+        oldurme?;
+        if let Some(kok) = self.kok_bitisi.take() {
+            tokio::time::timeout_at(son, kok)
+                .await
+                .map_err(|_| zaman_asimi("süreç ağacı çapası öldürüldükten sonra bitmedi"))?;
+        }
         tokio::time::timeout_at(son, self.bitisi_bekle())
             .await
             .map_err(|_| zaman_asimi("kök süreç öldürüldükten sonra bitmedi"))?;
@@ -422,9 +725,10 @@ impl Drop for EtkilesimliSurec {
         // bekleyemeyiz, ama kök toplanmadıysa torunlar da öldürülür.
         self.girdiyi_kes();
         if self.dogrulandi {
+            self.terminali_kapat();
             return;
         }
-        if self.cikis.is_none() {
+        if self.kok_bitisi.is_some() || self.cikis.is_none() {
             let son = std::time::Instant::now() + Duration::from_millis(500);
             while matches!(self.agac.torunlari_oldur(), Ok(true)) && std::time::Instant::now() < son
             {
@@ -432,10 +736,151 @@ impl Drop for EtkilesimliSurec {
             }
         }
         let _ = self.agac.oldur_denetimli();
+        self.terminali_kapat();
     }
 }
 
+#[cfg(unix)]
+fn pty_ac(
+    boyut: crate::TerminalBoyutu,
+) -> std::io::Result<(std::os::fd::OwnedFd, std::os::fd::OwnedFd)> {
+    use std::os::fd::FromRawFd;
+    boyut
+        .dogrula()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))?;
+    let mut master: libc::c_int = -1;
+    let mut slave: libc::c_int = -1;
+    let ws = libc::winsize {
+        ws_row: boyut.satir,
+        ws_col: boyut.sutun,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    // SAFETY: `openpty` geçerli yerel tam sayı ve `winsize` göstericileri alır;
+    // dönen tanımlayıcılar hemen `OwnedFd` ile sahiplenilir.
+    if unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &ws,
+        )
+    } == -1
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: `master` ve `slave` `openpty` tarafından yeni açıldı.
+    let master = unsafe { std::os::fd::OwnedFd::from_raw_fd(master) };
+    let slave = unsafe { std::os::fd::OwnedFd::from_raw_fd(slave) };
+    // Master tarafı çocuğa sızmasın.
+    // SAFETY: `master` geçerli tanımlayıcıdır.
+    unsafe {
+        use std::os::fd::AsRawFd;
+        let bayrak = libc::fcntl(master.as_raw_fd(), libc::F_GETFD);
+        if bayrak >= 0 {
+            let _ = libc::fcntl(master.as_raw_fd(), libc::F_SETFD, bayrak | libc::FD_CLOEXEC);
+        }
+    }
+    Ok((master, slave))
+}
+
+pub(crate) fn terminal_ortami_ekle(ortam: &mut Vec<(String, String)>) {
+    if let Some((_, deger)) = ortam
+        .iter_mut()
+        .find(|(a, _)| a.eq_ignore_ascii_case("TERM"))
+    {
+        if deger.is_empty() || deger.eq_ignore_ascii_case("dumb") {
+            *deger = "xterm-256color".to_string();
+        }
+    } else {
+        ortam.push(("TERM".to_string(), "xterm-256color".to_string()));
+    }
+}
+
+#[cfg(unix)]
+type KokAyrimi = (
+    Option<Yazici>,
+    Option<Okuyucu>,
+    Option<Okuyucu>,
+    Bitisi,
+    Option<KokBitisi>,
+    Agac,
+);
+
+#[cfg(unix)]
+fn kokten_ayir(kok: agac::EtkilesimliKok) -> std::io::Result<KokAyrimi> {
+    let mut cocuk = kok.cocuk;
+    let girdi = cocuk.stdin.take().map(|g| Box::new(g) as Yazici);
+    #[cfg(target_os = "linux")]
+    if let Some(durum_okuma) = kok.durum_okuma {
+        let cikti = cocuk.stdout.take().map(|o| Box::new(o) as Okuyucu);
+        let hata = cocuk.stderr.take().map(|o| Box::new(o) as Okuyucu);
+        let (bitisi, kok_bitisi) = durum_borusundan_bitis(durum_okuma, cocuk)?;
+        return Ok((girdi, cikti, hata, bitisi, kok_bitisi, kok.agac));
+    }
+    let (cikti, hata, bitisi) = Cocuk::Tokio(Box::new(cocuk)).ayir();
+    Ok((girdi, cikti, hata, bitisi, None, kok.agac))
+}
+
 impl Surec {
+    /// İsteği yalıtımsız etkileşimli kabuk süreci (borulu ya da PTY/ConPTY)
+    /// olarak başlatır.
+    pub(crate) fn baslat_kabuk_etkilesimli(
+        istek: &CalistirmaIstegi,
+        terminal: Option<crate::TerminalBoyutu>,
+    ) -> Result<EtkilesimliSurec, BaslatmaHatasi> {
+        let mut ortam = istek.ortam.clone();
+        if let Some(boyut) = terminal {
+            boyut.dogrula()?;
+            terminal_ortami_ekle(&mut ortam);
+            let (yol, argumanlar) = program::coz(&istek.komut, &ortam)?;
+            #[cfg(unix)]
+            {
+                let mut komut = Command::new(yol);
+                komut
+                    .args(argumanlar)
+                    .env_clear()
+                    .envs(ortam.iter().map(|(a, d)| (a, d)))
+                    .current_dir(&istek.dizin);
+                return Self::komutla_pty(komut, boyut, true);
+            }
+            #[cfg(windows)]
+            {
+                let cmd = crate::windows::kap::sistem_dizini().join("cmd.exe");
+                let komut = crate::windows::komut_satiri::uret(&yol, &argumanlar, &cmd)?;
+                let is = agac::Is::yeni(false)?;
+                let (kap, terminal_denetimi) = crate::windows::kap::baslat_yalitimsiz_terminal(
+                    &komut,
+                    &istek.dizin,
+                    &ortam,
+                    &is,
+                    boyut,
+                )?;
+                let mut surec =
+                    EtkilesimliSurec::kaptan_terminalli(kap, is, Some(terminal_denetimi))?;
+                // İlk yoklama bekleme görevini başlatır.
+                let _ = surec.bitisi_yokla();
+                return Ok(surec);
+            }
+            #[cfg(not(any(unix, windows)))]
+            {
+                let _ = (yol, argumanlar);
+                return Err(BaslatmaHatasi::Yalitim(
+                    "bu platformda sözde terminal desteklenmiyor".into(),
+                ));
+            }
+        }
+        let (yol, argumanlar) = program::coz(&istek.komut, &ortam)?;
+        let mut komut = Command::new(yol);
+        komut
+            .args(argumanlar)
+            .env_clear()
+            .envs(ortam.iter().map(|(a, d)| (a, d)))
+            .current_dir(&istek.dizin);
+        Self::komutla_etkilesimli(komut)
+    }
+
     /// Kurulmuş bir komutu (örneğin bwrap) borulu stdin'le ağacın kökü olarak
     /// başlatır.
     pub(crate) fn komutla_etkilesimli(
@@ -446,9 +891,64 @@ impl Surec {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let (mut cocuk, agac) = agac::baslat_etkilesimli(&mut komut)?;
-        let girdi = cocuk.stdin.take().map(|g| Box::new(g) as Yazici);
-        EtkilesimliSurec::yeni(girdi, Cocuk::Tokio(Box::new(cocuk)), agac)
+        let kok = agac::baslat_etkilesimli(&mut komut)?;
+        #[cfg(unix)]
+        let (girdi, cikti, hata, bitisi, kok_bitisi, agac) = kokten_ayir(kok)?;
+        #[cfg(not(unix))]
+        let (girdi, cikti, hata, bitisi, kok_bitisi, agac) = {
+            let mut cocuk = kok.cocuk;
+            let girdi = cocuk.stdin.take().map(|g| Box::new(g) as Yazici);
+            let (cikti, hata, bitisi) = Cocuk::Tokio(Box::new(cocuk)).ayir();
+            (girdi, cikti, hata, bitisi, None, kok.agac)
+        };
+        let mut surec =
+            EtkilesimliSurec::yeni_ic(girdi, cikti, hata, bitisi, kok_bitisi, agac, None)?;
+        let _ = surec.bitisi_yokla();
+        Ok(surec)
+    }
+
+    /// Kurulmuş bir komutu Unix PTY ile başlatır. `dogrudan_oturum` `true` ise
+    /// `setsid()` + `ioctl(TIOCSCTTY)` `pre_exec`'te çalışır; `false` ise
+    /// (örneğin `bwrap --new-session`) oturum ve `TIOCSCTTY` kap içindeki
+    /// `/usr/bin/setsid -c` sarmalayıcısına bırakılır.
+    #[cfg(unix)]
+    pub(crate) fn komutla_pty(
+        mut komut: Command,
+        boyut: crate::TerminalBoyutu,
+        dogrudan_oturum: bool,
+    ) -> Result<EtkilesimliSurec, BaslatmaHatasi> {
+        let (master, slave) = pty_ac(boyut)?;
+        let slave_out = slave.try_clone()?;
+        let slave_err = slave.try_clone()?;
+        let master_yazma = master.try_clone()?;
+        let master_okuma = master.try_clone()?;
+        let terminal = TerminalDenetimi::unix_yeni(master);
+        komut
+            .stdin(Stdio::from(slave))
+            .stdout(Stdio::from(slave_out))
+            .stderr(Stdio::from(slave_err))
+            .kill_on_drop(true);
+        let kok = if dogrudan_oturum {
+            agac::baslat_etkilesimli_pty(&mut komut)?
+        } else {
+            agac::baslat_etkilesimli(&mut komut)?
+        };
+        let (_, _, _, bitisi, kok_bitisi, agac) = kokten_ayir(kok)?;
+        let girdi =
+            Box::new(tokio::fs::File::from_std(std::fs::File::from(master_yazma))) as Yazici;
+        let cikti =
+            Box::new(tokio::fs::File::from_std(std::fs::File::from(master_okuma))) as Okuyucu;
+        let mut surec = EtkilesimliSurec::yeni_ic(
+            Some(girdi),
+            Some(cikti),
+            None,
+            bitisi,
+            kok_bitisi,
+            agac,
+            Some(terminal),
+        )?;
+        let _ = surec.bitisi_yokla();
+        Ok(surec)
     }
 }
 
@@ -456,14 +956,26 @@ impl Surec {
 impl EtkilesimliSurec {
     /// Kapta başlamış ve işe atanmış etkileşimli süreç.
     pub(crate) fn kaptan(
+        kap: crate::windows::kap::Kap,
+        is: agac::Is,
+    ) -> Result<Self, BaslatmaHatasi> {
+        Self::kaptan_terminalli(kap, is, None)
+    }
+
+    /// Kapta başlamış ve (varsa) ConPTY denetimine bağlı etkileşimli süreç.
+    pub(crate) fn kaptan_terminalli(
         mut kap: crate::windows::kap::Kap,
         is: agac::Is,
+        terminal: Option<TerminalDenetimi>,
     ) -> Result<Self, BaslatmaHatasi> {
         let girdi = kap
             .girdi
             .take()
             .map(|g| Box::new(tokio::fs::File::from_std(g)) as Yazici);
-        Self::yeni(girdi, Cocuk::Kap(kap), Agac::isten(is))
+        let (cikti, hata, bitisi) = Cocuk::Kap(kap).ayir();
+        let mut surec = Self::yeni_ic(girdi, cikti, hata, bitisi, None, Agac::isten(is), terminal)?;
+        let _ = surec.bitisi_yokla();
+        Ok(surec)
     }
 }
 
@@ -1035,5 +1547,285 @@ mod tests {
             .borrow_mut()
             .push_back(Err(std::io::Error::other("taranmamalı")));
         super::agaci_oldur(&a, false, uzak()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn kabuk_etkilesimli_terminal_boyut_degistirme_ve_kapanis() {
+        let d = tempfile::tempdir().unwrap();
+        let istek = crate::CalistirmaIstegi {
+            komut: crate::KomutBicimi::Betik {
+                metin: if cfg!(windows) {
+                    "$w = [Console]::WindowWidth; $h = [Console]::WindowHeight; [Console]::Out.WriteLine(\"BOYUT:${w}x${h}\"); [Console]::Out.Flush(); $satir = [Console]::In.ReadLine(); $w2 = [Console]::WindowWidth; $h2 = [Console]::WindowHeight; [Console]::Out.WriteLine(\"YENI:${satir}:${w2}x${h2}\"); [Console]::Out.Flush()".into()
+                } else {
+                    "stty size | tr ' ' 'x' | sed 's/^/BOYUT:/'; read satir; stty size | tr ' ' 'x' | sed \"s/^/YENI:${satir}:/\"".into()
+                },
+            },
+            dizin: d.path().to_path_buf(),
+            ortam: crate::ortam::uret(std::env::vars()),
+            ag: false,
+            ag_listesi: None,
+            alan: None,
+        };
+        let boyut = crate::TerminalBoyutu::yeni(90, 30).unwrap();
+        let mut surec = super::Surec::baslat_kabuk_etkilesimli(&istek, Some(boyut)).unwrap();
+        assert!(surec.terminal_denetimi().is_some());
+        let mut girdi = surec.girdi_al().unwrap();
+        let mut cikti = surec.cikti_al().unwrap();
+        let mut biriken = Vec::new();
+        let mut tampon = [0u8; 1024];
+        let son = Instant::now() + Duration::from_secs(5);
+        while !String::from_utf8_lossy(&biriken).contains("BOYUT:") && Instant::now() < son {
+            if let Ok(Ok(n)) =
+                tokio::time::timeout(Duration::from_millis(200), cikti.read(&mut tampon)).await
+            {
+                if n == 0 {
+                    break;
+                }
+                biriken.extend_from_slice(&tampon[..n]);
+            }
+        }
+        let ilk = String::from_utf8_lossy(&biriken).into_owned();
+        if cfg!(windows) {
+            assert!(ilk.contains("BOYUT:90x30"), "ilk çıktı: {ilk:?}");
+        } else {
+            assert!(ilk.contains("BOYUT:30x90"), "ilk çıktı: {ilk:?}");
+        }
+
+        let yeni_boyut = crate::TerminalBoyutu::yeni(110, 36).unwrap();
+        surec.boyut_degistir(yeni_boyut).unwrap();
+        assert!(
+            surec
+                .boyut_degistir(crate::TerminalBoyutu {
+                    sutun: 0,
+                    satir: 24
+                })
+                .is_err()
+        );
+        girdi.write_all(b"devam\r\n").await.unwrap();
+        girdi.flush().await.unwrap();
+
+        while !String::from_utf8_lossy(&biriken).contains("YENI:devam:") && Instant::now() < son {
+            if let Ok(Ok(n)) =
+                tokio::time::timeout(Duration::from_millis(200), cikti.read(&mut tampon)).await
+            {
+                if n == 0 {
+                    break;
+                }
+                biriken.extend_from_slice(&tampon[..n]);
+            }
+        }
+        let son_metin = String::from_utf8_lossy(&biriken).into_owned();
+        if cfg!(windows) {
+            assert!(
+                son_metin.contains("YENI:devam:110x36"),
+                "son çıktı: {son_metin:?}"
+            );
+        } else {
+            assert!(
+                son_metin.contains("YENI:devam:36x110"),
+                "son çıktı: {son_metin:?}"
+            );
+        }
+
+        let denetim = surec.terminal_denetimi().unwrap();
+        assert_eq!(surec.bitisi_bekle().await, Some(0));
+        let kapanis = surec.kapat().await.unwrap();
+        assert!(kapanis.kendiliginden);
+        assert_eq!(kapanis.cikis, Some(0));
+        // Kapanıştan sonra boyut değiştirme reddedilir.
+        assert!(denetim.boyut_degistir(boyut).is_err());
+    }
+
+    /// ST-01: Kök kabuk doğal olarak çıktığında arkada bıraktığı `setsid`
+    /// torunu `kapat` `Ok` döndüğünde yaşamamalıdır.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn kendiliginden_cikan_kokun_setsid_torunu_kapanista_yasamaz() {
+        use crate::Yalitici;
+        let d = tempfile::tempdir().unwrap();
+        let istek = crate::CalistirmaIstegi {
+            komut: crate::KomutBicimi::Betik {
+                metin: "setsid sleep 30 </dev/null >/dev/null 2>&1 & echo $!; sleep 0.2".into(),
+            },
+            dizin: d.path().to_path_buf(),
+            ortam: crate::ortam::uret(std::env::vars()),
+            ag: false,
+            ag_listesi: None,
+            alan: None,
+        };
+
+        let mut surec = crate::Yalitimsiz
+            .baslat_kabuk_etkilesimli(&istek, None)
+            .unwrap();
+        let torun_pid: u32 = ilk_satir(&mut surec).await.parse().unwrap();
+        let _temizlik = Temizlik(vec![torun_pid]);
+
+        assert_eq!(surec.bitisi_bekle().await, Some(0));
+        let kapanis = surec.kapat().await.unwrap();
+        assert!(kapanis.kendiliginden);
+
+        let durum = std::fs::read_to_string(format!("/proc/{torun_pid}/stat")).unwrap_or_default();
+        assert!(
+            durum.is_empty() || durum.contains(") Z ") || durum.contains(") X "),
+            "kapat Ok döndüğü halde setsid torunu yaşıyor: pid={torun_pid}, stat={durum:?}"
+        );
+    }
+
+    /// ST-02: PTY/ConPTY girdi yazıcısı bırakılınca (`eof=true` / `drop`)
+    /// standart girdiden EOF bekleyen program sınırlı sürede çıkmalıdır.
+    #[tokio::test]
+    async fn pty_girdi_kapatilinca_eof_bekleyen_program_biter() {
+        use crate::Yalitici;
+        let d = tempfile::tempdir().unwrap();
+        let istek = crate::CalistirmaIstegi {
+            komut: crate::KomutBicimi::Betik {
+                metin: if cfg!(windows) {
+                    "[Console]::In.ReadToEnd() > $null".into()
+                } else {
+                    "cat >/dev/null".into()
+                },
+            },
+            dizin: d.path().to_path_buf(),
+            ortam: crate::ortam::uret(std::env::vars()),
+            ag: false,
+            ag_listesi: None,
+            alan: None,
+        };
+
+        let mut surec = crate::Yalitimsiz
+            .baslat_kabuk_etkilesimli(&istek, Some(crate::TerminalBoyutu::default()))
+            .unwrap();
+        drop(surec.girdi_al());
+
+        let cikis = tokio::time::timeout(Duration::from_secs(2), surec.bitisi_bekle()).await;
+        let _ = surec.kapat().await;
+        assert_eq!(
+            cikis.expect("PTY girdi kapatılınca program EOF alıp çıkmalı"),
+            Some(0)
+        );
+    }
+
+    /// ST-02 (r2): `tty.setraw` kullanan ham terminal sürecinde girdi yazıcısı
+    /// kapatılınca (`eof=true` / `drop`) sahte `VEOF` (`0x04`) verisi enjekte
+    /// edilmemeli; boyutlandırma ve kapanış sözleşmesi korunmalıdır.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn raw_terminal_eof_istegi_tekrarlanan_veri_uretemez() {
+        use crate::Yalitici;
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let dizin = tempfile::tempdir().unwrap();
+        let betik = "import os, tty\ntty.setraw(0)\nprint('HAZIR', flush=True)\nb=b''\nwhile len(b)<3:\n b += os.read(0, 3-len(b))\nprint('ALINAN:'+b.hex(), flush=True)\n";
+        let istek = crate::CalistirmaIstegi {
+            komut: crate::KomutBicimi::Program {
+                program: "python3".into(),
+                argumanlar: vec!["-c".into(), betik.into()],
+            },
+            dizin: dizin.path().to_path_buf(),
+            ortam: crate::ortam::uret(std::env::vars()),
+            ag: false,
+            ag_listesi: None,
+            alan: None,
+        };
+        let mut surec = crate::Yalitimsiz
+            .baslat_kabuk_etkilesimli(&istek, Some(crate::TerminalBoyutu::default()))
+            .unwrap();
+        let denetim = surec.terminal_denetimi().unwrap();
+        let mut cikti = BufReader::new(surec.cikti_al().unwrap());
+        let mut satir = String::new();
+        tokio::time::timeout(Duration::from_secs(2), cikti.read_line(&mut satir))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(satir.contains("HAZIR"), "{satir:?}");
+        surec
+            .boyut_degistir(crate::TerminalBoyutu::yeni(100, 32).unwrap())
+            .unwrap();
+        // Üst katmanın eof=true işlemiyle aynı girdi kapatması.
+        drop(surec.girdi_al());
+        satir.clear();
+        let sonuc =
+            tokio::time::timeout(Duration::from_millis(400), cikti.read_line(&mut satir)).await;
+        let ham_kip_desteksiz = !denetim.kanonik_eof_destekleniyor_mu();
+        let kapanis = surec.kapat().await.unwrap();
+        assert!(
+            denetim
+                .boyut_degistir(crate::TerminalBoyutu::default())
+                .is_err()
+        );
+        assert!(
+            !satir.contains("ALINAN:040404") && !satir.contains("ALINAN:"),
+            "EOF isteği raw terminale gerçek veri enjekte etti: {satir:?}; sonuc={sonuc:?}"
+        );
+        assert!(
+            ham_kip_desteksiz,
+            "tty.setraw sonrası ICANON kapalı olduğundan kanonik EOF desteklenmemeli"
+        );
+        assert!(!kapanis.kendiliginden);
+    }
+
+    /// ST-02 (r2): Kanonik kipte satır sonu olmadan bekleyen veri (`satir_basi == false`)
+    /// arkasından girdi kapatıldığında hem bekleyen veri okunmalı hem de süreç EOF ile
+    /// doğal olarak çıkmalıdır.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn pty_kanonik_bekleyen_satirda_eof_veriyi_korur_ve_bitirir() {
+        use crate::Yalitici;
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let dizin = tempfile::tempdir().unwrap();
+        let betik = "import sys\nveri = sys.stdin.read()\nprint('OKUNAN:' + veri, flush=True)\n";
+        let istek = crate::CalistirmaIstegi {
+            komut: crate::KomutBicimi::Program {
+                program: "python3".into(),
+                argumanlar: vec!["-c".into(), betik.into()],
+            },
+            dizin: dizin.path().to_path_buf(),
+            ortam: crate::ortam::uret(std::env::vars()),
+            ag: false,
+            ag_listesi: None,
+            alan: None,
+        };
+        let mut surec = crate::Yalitimsiz
+            .baslat_kabuk_etkilesimli(&istek, Some(crate::TerminalBoyutu::default()))
+            .unwrap();
+        let denetim = surec.terminal_denetimi().unwrap();
+        assert!(denetim.kanonik_eof_destekleniyor_mu());
+        let mut girdi = surec.girdi_al().unwrap();
+        let mut cikti = BufReader::new(surec.cikti_al().unwrap());
+
+        // Satır sonu (\n) olmadan veri yazıp girdiyi kapatıyoruz.
+        girdi.write_all(b"merhaba-kanonik").await.unwrap();
+        girdi.flush().await.unwrap();
+        drop(girdi);
+
+        let mut biriken = String::new();
+        let son = Instant::now() + Duration::from_secs(3);
+        while !biriken.contains("OKUNAN:merhaba-kanonik") && Instant::now() < son {
+            let mut satir = String::new();
+            if let Ok(Ok(n)) =
+                tokio::time::timeout(Duration::from_millis(200), cikti.read_line(&mut satir)).await
+            {
+                if n == 0 {
+                    break;
+                }
+                biriken.push_str(&satir);
+            }
+        }
+        assert!(
+            biriken.contains("OKUNAN:merhaba-kanonik"),
+            "bekleyen satır verisi kayboldu: {biriken:?}"
+        );
+        let cikis = tokio::time::timeout(Duration::from_secs(2), surec.bitisi_bekle())
+            .await
+            .expect("kanonik bekleyen satırdan sonra EOF süreci bitirmeli");
+        assert_eq!(cikis, Some(0));
+        let kapanis = surec.kapat().await.unwrap();
+        assert!(kapanis.kendiliginden);
+        assert!(
+            denetim
+                .boyut_degistir(crate::TerminalBoyutu::default())
+                .is_err()
+        );
     }
 }

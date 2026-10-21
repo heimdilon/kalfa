@@ -8,4 +8,6 @@ pub mod komutlar;
 pub mod koruma;
 pub mod surec;
 pub mod tanimlar;
+pub mod uzak_oauth;
+pub mod uzak_yonetici;
 pub mod yonetici;

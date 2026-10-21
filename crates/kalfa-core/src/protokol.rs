@@ -6,6 +6,7 @@ use kalfa_evren::tipler::DusunceEforu;
 use serde::{Deserialize, Serialize};
 
 use crate::arac::{McpAgKarti, McpAracHazirligi, McpErisim};
+pub use crate::arac::{WebTarifi, YonlendirmeIzni};
 use crate::butce::ButceGorunumu;
 use crate::denetci::DenetimSonucu;
 use crate::geri_alma::{GeriAlmaPlani, GeriAlmaSonucu};
@@ -94,6 +95,13 @@ pub enum Komut {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         talimat: Option<String>,
     },
+    /// Bekleyen yapılandırılmış kullanıcı sorusuna verilen yanıt.
+    /// Araç onayından tamamen ayrıdır; yalnız eşleşen `(tur, soru_kimligi)` için geçerlidir.
+    KullaniciSorusuYaniti {
+        tur: TurId,
+        soru_kimligi: String,
+        yanit: crate::soru::KullaniciSorusuYaniti,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,6 +159,9 @@ pub struct OnayOgesi {
     /// §9). Mühre girmez; mühür hazırlıktan gelir.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp: Option<McpOnayKarti>,
+    /// Web getirme (`web_getir`) aracında hedef origin, yöntem ve yönlendirme kapsamı.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web: Option<crate::arac::WebTarifi>,
 }
 
 /// MCP onay kartının özeti. Yalnız doğrulanmış görünen adlar ve hostlar;
@@ -164,17 +175,35 @@ pub struct McpOnayKarti {
     pub ag_hostlari: Vec<String>,
     /// Tam erişimde ağ sınırsızdır.
     pub ag_sinirsiz: bool,
+    /// Uzak Streamable HTTP sunucusunda hedef origin (`https://...`); yerel sunucuda `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uzak_origin: Option<String>,
+    /// Uzak Streamable HTTP sunucusunda sır içermeyen kimlik/yetki kapsamı özeti; yerel sunucuda `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kimlik_kapsami: Option<String>,
 }
 
 impl McpOnayKarti {
     pub fn yeni(h: &McpAracHazirligi) -> Self {
-        let (ag_hostlari, ag_sinirsiz) = match &h.ag {
-            McpAgKarti::Kapali => (Vec::new(), false),
+        let (ag_hostlari, ag_sinirsiz, uzak_origin, kimlik_kapsami) = match &h.ag {
+            McpAgKarti::Kapali => (Vec::new(), false, None, None),
             McpAgKarti::Sinirli { hostlar } => (
                 hostlar.iter().map(|x| x.gorunen().to_owned()).collect(),
                 false,
+                None,
+                None,
             ),
-            McpAgKarti::Sinirsiz => (Vec::new(), true),
+            McpAgKarti::Sinirsiz => (Vec::new(), true, None, None),
+            McpAgKarti::UzakHedef {
+                host,
+                origin,
+                kimlik_kapsami,
+            } => (
+                vec![host.gorunen().to_owned()],
+                false,
+                Some(origin.clone()),
+                Some(kimlik_kapsami.clone()),
+            ),
         };
         Self {
             sunucu: h.sunucu.gorunen().to_owned(),
@@ -182,6 +211,8 @@ impl McpOnayKarti {
             erisim: h.erisim,
             ag_hostlari,
             ag_sinirsiz,
+            uzak_origin,
+            kimlik_kapsami,
         }
     }
 }
@@ -196,6 +227,10 @@ pub enum VeriCikisi {
     YalnizcaYazildi,
     /// Eklentinin ürettiği metin (aşama 4 tasarımı §8.1).
     EklentiCiktisi,
+    /// Uzak MCP sunucusuna gönderilen argümanlar ve dönen yanıt (1.1b).
+    UzakMcpCagrisi,
+    /// Dış web sayfasından okunan düzleştirilmiş metin.
+    WebSayfasi,
 }
 
 /// Kabuk onayında gösterilen bağlam: komut, modelin onaysız yazdığı kodu
@@ -403,6 +438,24 @@ pub enum Olay {
         risk: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         olasilik: Option<f64>,
+    },
+    /// Bu turda etkin olan proje talimatı (`AGENTS.md`) kaynakları ve uyarıları.
+    ProjeTalimatlari {
+        goruntu: crate::proje_talimatlari::ProjeTalimatAnlikGoruntusu,
+    },
+    /// Oturum çalışma planı güncellendi (`plan_guncelle`).
+    PlanGuncellendi {
+        plan: crate::plan::OturumPlani,
+    },
+    /// Kullanıcıya yapılandırılmış soru soruldu (`kullaniciya_sor`).
+    KullaniciSorusuGerekiyor {
+        soru: crate::soru::KullaniciSorusu,
+    },
+    /// Bekleyen kullanıcı sorusu yanıtlandı, yönlendirildi veya iptal edildi.
+    KullaniciSorusuCozuldu {
+        soru_kimligi: String,
+        cagri: CagriId,
+        sonuc: crate::soru::SoruSonucu,
     },
 }
 
