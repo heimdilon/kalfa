@@ -10,11 +10,11 @@ $env:PATH = (Join-Path $env:GITHUB_WORKSPACE 'kabul') + ';' + $env:PATH
 $gunluk = Join-Path $env:TEMP 'g5-masaustu.log'
 Push-Location (Join-Path $env:GITHUB_WORKSPACE 'e2e')
 try {
-    node --test --test-concurrency=1 --test-reporter=tap yetenekler/g5-proje-akisi.test.mjs yetenekler/g5-surec.test.mjs yetenekler/g5-web-guvenligi.test.mjs testler/13-mcp.test.mjs *> $gunluk
+    node --test --test-concurrency=1 --test-reporter=tap yetenekler/g5-proje-akisi.test.mjs yetenekler/g5-surec.test.mjs yetenekler/g5-web-guvenligi.test.mjs yetenekler/g5-uzak-mcp.test.mjs testler/13-mcp.test.mjs *> $gunluk
     $kod = $LASTEXITCODE
     $metin = Get-Content -LiteralPath $gunluk -Raw
     Write-Output $metin
-    foreach ($satir in '# tests 6', '# pass 6', '# fail 0', '# skipped 0') {
+    foreach ($satir in '# tests 7', '# pass 7', '# fail 0', '# skipped 0') {
         if ($metin -notmatch ('(?m)^' + [regex]::Escape($satir) + '\r?$')) {
             throw "Gerçek masaüstü kabul sayımı eksik: $satir"
         }

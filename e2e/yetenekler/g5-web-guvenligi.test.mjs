@@ -9,7 +9,7 @@ describe('G5 gerçek web aracı masaüstü güvenliği', () => {
   before(async () => {
     sunucu = createServer(s => { baglanti++; s.destroy(); });
     await new Promise((coz, red) => { sunucu.once('error', red); sunucu.listen(0, '127.0.0.1', coz); });
-    const url = `http://127.0.0.1:${sunucu.address().port}/gizli`;
+    const url = `https://127.0.0.1:${sunucu.address().port}/gizli`;
     k = await Kalfa.ac({ sart: 'kabul', anahtar: GECERLI_ANAHTAR,
       senaryolar: { web: { yanitlar: [
         [{ tur: 'arac', ad: 'web_getir', argumanlar: { url } }],

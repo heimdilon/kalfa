@@ -1,5 +1,7 @@
 // Gerçek Tauri + PTY/ConPTY: kullanıcı girdisi UI denetiminden geçer.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { GECERLI_ANAHTAR, Kalfa, kalfaProfilSayisi, sureyleBekle } from '../yardimci/kalfa.mjs';
 
@@ -39,6 +41,13 @@ describe('G5 gerçek terminal kartı', () => {
     const oturum = await k.seciliOturum();
     const isler = await k.invoke('oturum_isleri', { oturum });
     assert.equal(isler.length, 1);
+    assert.equal(isler[0].kip.tur, 'terminal', 'Gerçek PTY/ConPTY kipi zorunludur');
+    const olaylar = readFileSync(join(k.veri, 'oturumlar', `${oturum}.isler.jsonl`), 'utf8')
+      .trim().split('\n').map(s => JSON.parse(s));
+    const baslama = olaylar.find(o => o.is_olayi === 'is_basladi' && o.is_id === isler[0].is_id);
+    assert.ok(baslama, 'Gerçek iş başlangıç kaydı bulunmalı');
+    assert.equal(baslama.yalitimli, true, 'Kurulu platform yalıtımı zorunludur');
+    assert.equal(baslama.kip.tur, 'terminal');
     const is_id = isler[0].is_id;
     await sureyleBekle(async () => {
       const o = await k.invoke('is_oku', { oturum, is_id, imlec: 0 });

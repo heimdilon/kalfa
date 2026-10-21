@@ -45,6 +45,9 @@ pub struct E2eAyarlari {
     /// yalıtımsız komut).
     #[serde(default)]
     pub onay: bool,
+    /// Yalnız e2e derlemesinde dış yerel HTTP MCP test servisine erişim.
+    #[serde(default)]
+    pub uzak_mcp_test_loopback: bool,
     /// Kullanıcı mesajının metniyle seçilen senaryolar. Eşleşmeyen mesaja
     /// "Yanıt: <mesaj>" döner.
     #[serde(default)]
