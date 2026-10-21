@@ -363,15 +363,21 @@ impl CiktiTamponu {
         }
     }
 
+    #[cfg(test)]
     fn oku(&self, imlec: usize) -> (String, usize, u64, bool) {
+        self.oku_sinirli(imlec, usize::MAX)
+    }
+
+    fn oku_sinirli(&self, imlec: usize, azami: usize) -> (String, usize, u64, bool) {
         let mut bas = imlec.min(self.veri.len());
         // Çağıran çok baytlı bir UTF-8 dizisinin ortasında bir ofset verdiyse
         // en yakın geçerli karakter sınırına geri çek.
         while bas > 0 && bas < self.veri.len() && (self.veri[bas] & 0b1100_0000) == 0b1000_0000 {
             bas -= 1;
         }
-        let dilim = &self.veri[bas..];
-        let okunabilir = utf8_okunabilir_uzunluk(dilim, self.akis_bitti);
+        let son = bas.saturating_add(azami).min(self.veri.len());
+        let dilim = &self.veri[bas..son];
+        let okunabilir = utf8_okunabilir_uzunluk(dilim, self.akis_bitti && son == self.veri.len());
         let yeni_imlec = bas + okunabilir;
         let metin = String::from_utf8_lossy(&dilim[..okunabilir]).into_owned();
         (metin, yeni_imlec, self.toplam_bayt, self.tasti)
@@ -448,14 +454,14 @@ impl IsKaydi {
         }
     }
 
-    fn oku(&self, imlec: usize) -> IsOkumaSonucu {
+    fn oku(&self, imlec: usize, azami: usize) -> IsOkumaSonucu {
         let (durum, kip, uyarilar) = {
             let d = self.durum_verisi.lock().unwrap_or_else(|z| z.into_inner());
             (d.durum.clone(), d.kip, d.uyarilar.clone())
         };
         let (cikti, yeni_imlec, toplam_bayt, tasti) = {
             let c = self.cikti.lock().unwrap_or_else(|z| z.into_inner());
-            c.oku(imlec)
+            c.oku_sinirli(imlec, azami)
         };
         IsOkumaSonucu {
             is_id: self.is_id.clone(),
@@ -938,6 +944,16 @@ impl IsYoneticisi {
         is_id_metin: &str,
         imlec: usize,
     ) -> Result<IsOkumaSonucu, IsHatasi> {
+        self.oku_sinirli(oturum, is_id_metin, imlec, usize::MAX)
+    }
+
+    fn oku_sinirli(
+        &self,
+        oturum: OturumId,
+        is_id_metin: &str,
+        imlec: usize,
+        azami: usize,
+    ) -> Result<IsOkumaSonucu, IsHatasi> {
         let is_id = IsId::coz(is_id_metin)?;
         if let Some(kayit) = self
             .kayitlar
@@ -949,7 +965,7 @@ impl IsYoneticisi {
             if kayit.oturum != oturum {
                 return Err(IsHatasi::YetkisizOturum);
             }
-            return Ok(kayit.oku(imlec));
+            return Ok(kayit.oku(imlec, azami));
         }
         if let Some(ozet) = self
             .kurtarilanlar
@@ -1504,9 +1520,11 @@ impl kalfa_tools::kabuk::isler::ArkaPlanIsBaglantisi for OturumIsBaglantisi {
         is_id: &str,
         imlec: usize,
     ) -> Result<kalfa_tools::kabuk::isler::ArkaPlanOkumaSonucu, kalfa_core::arac::AracHatasi> {
+        // Ham baytları sınırla: geçersiz UTF-8 genişlese de 64 KiB model
+        // bütçesine sığar. İmleç yalnız gerçekten dönen baytları geçer.
         let sonuc = self
             .yonetici
-            .oku(self.oturum, is_id, imlec)
+            .oku_sinirli(self.oturum, is_id, imlec, 16 * 1024)
             .map_err(is_hatasini_arac_hatasina_cevir)?;
         Ok(kalfa_tools::kabuk::isler::ArkaPlanOkumaSonucu {
             is_id: sonuc.is_id.as_str().to_string(),
@@ -1895,6 +1913,33 @@ mod tests {
         assert!(son_okuma.tasti, "sınır aşılınca tasti=true olmalı");
         assert_eq!(son_okuma.yeni_imlec, 4096);
         assert!(son_okuma.toplam_bayt >= 65_536);
+    }
+
+    #[test]
+    fn sinirli_okuma_utf8_ve_gecersiz_baytlarda_imleci_atlatmaz() {
+        let metin = "Çalışma 🦀 tamam\n".repeat(3000);
+        let mut tampon = CiktiTamponu::yeni(1024 * 1024);
+        tampon.ekle(metin.as_bytes());
+        tampon.akis_bitti = true;
+        let mut imlec = 0;
+        let mut biriken = String::new();
+        while imlec < metin.len() {
+            let (parca, yeni, _, _) = tampon.oku_sinirli(imlec, 16 * 1024);
+            assert!(yeni > imlec && yeni - imlec <= 16 * 1024);
+            assert!(!parca.contains('\u{FFFD}'));
+            biriken.push_str(&parca);
+            imlec = yeni;
+        }
+        assert_eq!(biriken, metin);
+
+        let mut bozuk = CiktiTamponu::yeni(1024 * 1024);
+        bozuk.ekle(&vec![0xff; 32 * 1024]);
+        bozuk.akis_bitti = true;
+        let (parca, yeni, _, _) = bozuk.oku_sinirli(0, 16 * 1024);
+        assert_eq!(yeni, 16 * 1024);
+        assert_eq!(parca.len(), 48 * 1024);
+        let (_, son, _, _) = bozuk.oku_sinirli(yeni, 16 * 1024);
+        assert_eq!(son, 32 * 1024);
     }
 
     #[test]

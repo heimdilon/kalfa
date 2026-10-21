@@ -974,7 +974,7 @@ describe('tur özeti ve geri alma (aşama 3 tasarımı §5.11)', () => {
       expect(arka.komutlar('is_girdi')).toContainEqual({
         oturum: 'o1',
         is_id: 'is-11111111-1111-1111-1111-111111111111',
-        veri: 'selam\n',
+        veri: 'selam\r',
         eof: false,
       }),
     );

@@ -111,7 +111,9 @@
 
   function kullaniciGirdiGonder() {
     if (!calisiyor || !onKullaniciGirdi || !kullaniciGirdisi) return;
-    const veri = kullaniciGirdisi.endsWith('\n') ? kullaniciGirdisi : `${kullaniciGirdisi}\n`;
+    // PTY/ConPTY'de Enter CR'dır; borulu süreçler LF satır sonu alır.
+    const son = kip.kip === 'terminal' ? '\r' : '\n';
+    const veri = /[\r\n]$/.test(kullaniciGirdisi) ? kullaniciGirdisi : `${kullaniciGirdisi}${son}`;
     kullaniciGirdisi = '';
     onKullaniciGirdi(isId, veri);
   }

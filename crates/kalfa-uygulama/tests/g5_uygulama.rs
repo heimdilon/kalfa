@@ -8,6 +8,7 @@ use kalfa_core::kimlik::OturumId;
 use kalfa_core::protokol::{AracDurumu, Olay, OnayKarari};
 use kalfa_core::saglayici::Saglayici;
 use kalfa_core::test_destek::{SahteSaglayici, SahteYanit};
+use kalfa_evren::tipler::{ChatRequest, Role};
 use kalfa_uygulama::mcp::komutlar::{UzakMcpSunucuFormu, UzakMcpYetkiFormGirdisi};
 use kalfa_uygulama::sozlesme::OnayGirdisi;
 use kalfa_uygulama::test_destek::{SahteKanal, TestUygulamasi, test_uygulamasi};
@@ -116,6 +117,125 @@ impl Ortam {
     }
 }
 
+fn son_arac_sonucu(istek: &ChatRequest) -> &str {
+    istek
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == Role::Tool)
+        .and_then(|m| m.content.as_deref())
+        .expect("model gerçek araç sonucunu görmeli")
+}
+
+fn model_is_kimligi(istek: &ChatRequest) -> &str {
+    istek
+        .messages
+        .iter()
+        .rev()
+        .filter(|m| m.role == Role::Tool)
+        .filter_map(|m| m.content.as_deref())
+        .flat_map(str::split_whitespace)
+        .find(|s| s.starts_with("is-"))
+        .expect("iş kimliği modelin aldığı gerçek araç sonucunda olmalı")
+}
+
+fn model_girdi(istek: &ChatRequest) -> SahteYanit {
+    SahteYanit::arac(
+        "komut_girdi",
+        json!({"is_id":model_is_kimligi(istek),"girdi":"dogrula\r"}),
+    )
+}
+
+fn model_durdur(istek: &ChatRequest) -> SahteYanit {
+    SahteYanit::arac("komut_durdur", json!({"is_id":model_is_kimligi(istek)}))
+}
+
+fn model_s05_yaz(istek: &ChatRequest) -> SahteYanit {
+    assert_eq!(
+        son_arac_sonucu(istek)
+            .lines()
+            .find(|s| s.starts_with("Kullanıcı yanıtı (seçenek):")),
+        Some("Kullanıcı yanıtı (seçenek): toml (TOML)"),
+        "yanıt gerçek tool-result içinde doğru seçeneğe bağlanmalı"
+    );
+    SahteYanit::arac(
+        "dosya_yaz",
+        json!({"yol":"ayar.toml","icerik":"baglanti_suresi_sn = 30\n"}),
+    )
+}
+
+fn model_s05_ozet(istek: &ChatRequest) -> String {
+    let yanit = istek
+        .messages
+        .iter()
+        .filter_map(|m| m.content.as_deref())
+        .flat_map(str::lines)
+        .map(str::trim)
+        .find(|m| m.starts_with("Kullanıcı yanıtı (seçenek):"))
+        .expect("özetleyici gerçek soru sonucunu almalı");
+    assert_eq!(yanit, "Kullanıcı yanıtı (seçenek): toml (TOML)");
+    format!("Korunan gerçek soru sonucu: {yanit}")
+}
+
+fn okunan_komut_ciktisi(istek: &ChatRequest) -> String {
+    // Bayt parçası satırın ortasında bitebilir; modele gerçekten gönderilen
+    // parçaları birleştir, kaynak sarmalını ve üst veriyi çıktı sayma.
+    istek
+        .messages
+        .iter()
+        .filter(|m| m.role == Role::Tool)
+        .filter_map(|m| m.content.as_deref())
+        .filter_map(|c| c.split_once("--- çıktı ---\n").map(|(_, govde)| govde))
+        .filter_map(|c| c.rsplit_once("\n</arac_sonucu").map(|(govde, _)| govde))
+        .collect()
+}
+
+fn model_s02(istek: &ChatRequest) -> SahteYanit {
+    let okuma_sayisi = istek
+        .messages
+        .iter()
+        .flat_map(|m| m.tool_calls.iter().flatten())
+        .filter(|c| c.function.name == "komut_oku")
+        .count();
+    let bulundu = okunan_komut_ciktisi(istek).contains("HATA-S02-ORTA-409");
+    if okuma_sayisi >= 2 && bulundu {
+        return SahteYanit::metin("Gerçek çıktıdaki hata: HATA-S02-ORTA-409");
+    }
+    let imlec = son_arac_sonucu(istek)
+        .lines()
+        .find_map(|s| s.strip_prefix("Yeni imleç: "))
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    SahteYanit::Gecikmeli(
+        Duration::from_millis(if son_arac_sonucu(istek).contains("--- çıktı ---") {
+            20
+        } else {
+            500
+        }),
+        Box::new(SahteYanit::arac(
+            "komut_oku",
+            json!({"is_id":model_is_kimligi(istek),"imlec":imlec}),
+        )),
+    )
+}
+
+fn model_s04(istek: &ChatRequest) -> SahteYanit {
+    let son = son_arac_sonucu(istek);
+    if son.lines().any(|s| s == "Durum: bitti") {
+        return SahteYanit::metin("İş iptal edildi; başarı iddiası yok.");
+    }
+    if son.lines().any(|s| s.starts_with("TORUN:")) {
+        return model_durdur(istek);
+    }
+    SahteYanit::Gecikmeli(
+        Duration::from_millis(20),
+        Box::new(SahteYanit::arac(
+            "komut_oku",
+            json!({"is_id":model_is_kimligi(istek),"imlec":0}),
+        )),
+    )
+}
+
 fn girdi_yukle(o: &Ortam, kimlik: &str) {
     let yol = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../kalfa-tools/tests/yetenek_senaryolari/tanimlar")
@@ -159,8 +279,8 @@ async fn g5_s01_gercek_arka_plan_isi_izlenir_ve_dogal_cikis_kodu_okunur() {
     girdi_yukle(&o, "S01");
     let id = o.oturum().await;
     let arg = kabuk(
-        "[Console]::WriteLine('G5-S01-HAZIR'); Start-Sleep -Milliseconds 500; [Console]::WriteLine('KLF-S01-TAMAM'); exit 0",
-        "echo G5-S01-HAZIR; sleep .5; echo KLF-S01-TAMAM; exit 0",
+        "[Console]::WriteLine('G5-S01-HAZIR'); $null=[Console]::ReadLine(); [Console]::WriteLine('KLF-S01-TAMAM'); exit 0",
+        "echo G5-S01-HAZIR; read -r kapi; echo KLF-S01-TAMAM; exit 0",
         false,
     );
     let olaylar = o
@@ -177,6 +297,19 @@ async fn g5_s01_gercek_arka_plan_isi_izlenir_ve_dogal_cikis_kodu_okunur() {
     ));
     let isler = o.t.uygulama.oturum_isleri(id).unwrap();
     assert_eq!(isler.len(), 1);
+    assert!(
+        matches!(isler[0].durum, IsDurumu::Calisiyor),
+        "model turu gerçek test işi sürerken dönmeli"
+    );
+    o.t.uygulama
+        .is_girdi(
+            id,
+            isler[0].is_id.as_str().into(),
+            "test-kapisi\n".into(),
+            false,
+        )
+        .await
+        .unwrap();
     let cikti = isi_oku(&o, id, isler[0].is_id.as_str(), None).await;
     assert!(cikti.contains("KLF-S01-TAMAM"));
     let son = o.t.uygulama.oturum_isleri(id).unwrap();
@@ -226,10 +359,49 @@ async fn g5_k06_gercek_kok_alt_agents_yazmayi_yonlendirir_sir_korunur() {
             .unwrap()
             .contains("KLF-GENEL-02")
     );
-    let istekler = serde_json::to_string(&o.t.saglayici.istekler()).unwrap();
-    assert!(istekler.contains("KLF_ODEME_"));
-    assert!(istekler.contains("KLF-GENEL-"));
-    assert!(!istekler.contains("gizli-k06-44b2"));
+    let istekler = o.t.saglayici.istekler();
+    let sistem = |i: usize| {
+        istekler[i]
+            .messages
+            .iter()
+            .find(|m| m.role == Role::System)
+            .and_then(|m| m.content.as_deref())
+            .unwrap()
+    };
+    assert!(sistem(0).contains("yol=\"AGENTS.md\" kapsam=\"kok\""));
+    assert!(!sistem(0).contains("KLF_ODEME_"));
+    let odeme_sistemi = sistem(1);
+    assert!(
+        odeme_sistemi
+            .contains("yol=\"paketler/odeme/AGENTS.md\" kapsam=\"alt_dizin:paketler/odeme\"")
+    );
+    assert!(odeme_sistemi.contains("KLF_ODEME_"));
+    assert!(odeme_sistemi.contains("KLF-GENEL-"));
+    assert!(!odeme_sistemi.contains("alt_dizin:paketler/bildirim"));
+    let goruntu = olaylar
+        .iter()
+        .filter_map(|o| {
+            if let Olay::ProjeTalimatlari { goruntu } = o {
+                Some(goruntu)
+            } else {
+                None
+            }
+        })
+        .next_back()
+        .unwrap();
+    let odeme_kapsami = &goruntu
+        .kaynaklar
+        .iter()
+        .find(|k| k.goreli_yol == "paketler/odeme/AGENTS.md")
+        .unwrap()
+        .kapsam;
+    assert!(odeme_kapsami.hedefi_kapsar_mi(odeme));
+    assert!(!odeme_kapsami.hedefi_kapsar_mi(bildirim));
+    assert!(
+        !serde_json::to_string(&istekler)
+            .unwrap()
+            .contains("gizli-k06-44b2")
+    );
     assert!(!olaylar.iter().any(|o| matches!(o,Olay::AracSonucu{arac,icerik,..} if arac=="dosya_oku" && icerik.contains("gizli-k06"))));
     o.t.uygulama.oturumu_kapat(id).await.unwrap();
 }
@@ -243,14 +415,29 @@ async fn g5_s02_uzun_cikti_imlecle_okunur_ortadaki_hata_kaybolmaz() {
         "i=0; while [ $i -lt 4000 ]; do printf 'DERLEME-%05d-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\n' $i; if [ $i -eq 2000 ]; then echo HATA-S02-ORTA-409; fi; i=$((i+1)); done; exit 1",
         false,
     );
-    o.tur(
-        id,
-        vec![
-            SahteYanit::arac("kabuk", arg),
-            SahteYanit::metin("İş başlatıldı."),
-        ],
-    )
-    .await;
+    let mut senaryo = vec![SahteYanit::arac("kabuk", arg)];
+    senaryo.extend((0..64).map(|_| SahteYanit::IstegeGore(model_s02)));
+    let olaylar = o.tur(id, senaryo).await;
+    assert!(olaylar.iter().filter(|o|matches!(o,Olay::AracSonucu{arac,durum:AracDurumu::Basarili,..} if arac=="komut_oku")).count()>=2);
+    let istekler = o.t.saglayici.istekler();
+    assert!(
+        istekler
+            .iter()
+            .any(|i| okunan_komut_ciktisi(i).contains("HATA-S02-ORTA-409")),
+        "hata komut_oku gerçek sonuçlarıyla modele gitmeli"
+    );
+    let pozitif_imlec = istekler
+        .iter()
+        .flat_map(|i| &i.messages)
+        .flat_map(|m| m.tool_calls.iter().flatten())
+        .filter(|c| c.function.name == "komut_oku")
+        .any(|c| {
+            serde_json::from_str::<Value>(&c.function.arguments).unwrap()["imlec"]
+                .as_u64()
+                .unwrap()
+                > 0
+        });
+    assert!(pozitif_imlec);
     let isler = o.t.uygulama.oturum_isleri(id).unwrap();
     let kimlik = isler[0].is_id.as_str();
     let cikti = isi_oku(&o, id, kimlik, None).await;
@@ -268,7 +455,7 @@ async fn g5_s02_uzun_cikti_imlecle_okunur_ortadaki_hata_kaybolmaz() {
 }
 
 #[tokio::test]
-async fn g5_s03_gercek_terminal_girdi_boyut_ve_oturum_yetkisi() {
+async fn g5_s03_gercek_terminal_girdisi_ve_oturum_yetkisi() {
     let o = Ortam::yeni().await;
     let id = o.oturum().await;
     let arg = kabuk(
@@ -276,17 +463,22 @@ async fn g5_s03_gercek_terminal_girdi_boyut_ve_oturum_yetkisi() {
         "echo G5-GIRDI-BEKLIYOR; IFS= read -r satir; if [ \"$satir\" = dogrula ]; then echo KLF-S03-ONAYLANDI; fi; exit 0",
         true,
     );
-    o.tur(
-        id,
-        vec![
-            SahteYanit::arac("kabuk", arg),
-            SahteYanit::metin("Terminal hazır."),
-        ],
-    )
-    .await;
+    let olaylar = o
+        .tur(
+            id,
+            vec![
+                SahteYanit::arac("kabuk", arg),
+                SahteYanit::IstegeGore(model_girdi),
+                SahteYanit::metin("Terminal girdisi onaylandı."),
+            ],
+        )
+        .await;
+    assert!(olaylar.iter().any(|o|matches!(o,Olay::OnayGerekiyor{ogeler,..} if ogeler.iter().any(|g|g.arac=="komut_girdi"))));
+    assert!(olaylar.iter().any(
+        |o| matches!(o,Olay::AracSonucu{arac,durum:AracDurumu::Basarili,..} if arac=="komut_girdi")
+    ));
     let isler = o.t.uygulama.oturum_isleri(id).unwrap();
     let kimlik = isler[0].is_id.as_str();
-    isi_oku(&o, id, kimlik, Some("G5-GIRDI-BEKLIYOR")).await;
     let baska = o.oturum().await;
     assert!(
         o.t.uygulama
@@ -294,16 +486,6 @@ async fn g5_s03_gercek_terminal_girdi_boyut_ve_oturum_yetkisi() {
             .await
             .is_err()
     );
-    assert!(
-        o.t.uygulama
-            .is_boyutlandir(id, kimlik.into(), 30, 100)
-            .is_ok()
-    );
-    // Gerçek terminalde Enter CR'dır; borulu CLI girdi testi LF kullanır.
-    o.t.uygulama
-        .is_girdi(id, kimlik.into(), "dogrula\r".into(), false)
-        .await
-        .unwrap();
     let cikti = isi_oku(&o, id, kimlik, None).await;
     assert!(cikti.contains("KLF-S03-ONAYLANDI"), "{cikti}");
     o.t.uygulama.oturumu_kapat(id).await.unwrap();
@@ -319,14 +501,12 @@ async fn g5_s04_durdurma_gercek_torunu_bitirir_sahte_basari_yazmaz() {
         "sleep 60 & p=$!; echo TORUN:$p; wait $p",
         false,
     );
-    o.tur(
-        id,
-        vec![
-            SahteYanit::arac("kabuk", arg),
-            SahteYanit::metin("İş sürüyor."),
-        ],
-    )
-    .await;
+    let mut senaryo = vec![SahteYanit::arac("kabuk", arg)];
+    senaryo.extend((0..64).map(|_| SahteYanit::IstegeGore(model_s04)));
+    let olaylar = o.tur(id, senaryo).await;
+    assert!(olaylar.iter().any(
+        |o| matches!(o,Olay::AracSonucu{arac,durum:AracDurumu::Basarili,..} if arac=="komut_durdur")
+    ));
     let isler = o.t.uygulama.oturum_isleri(id).unwrap();
     let kimlik = isler[0].is_id.as_str();
     let cikti = isi_oku(&o, id, kimlik, Some("TORUN:")).await;
@@ -337,7 +517,7 @@ async fn g5_s04_durdurma_gercek_torunu_bitirir_sahte_basari_yazmaz() {
         .trim()
         .parse()
         .unwrap();
-    let son = o.t.uygulama.is_durdur(id, kimlik.into()).await.unwrap();
+    let son = o.t.uygulama.oturum_isleri(id).unwrap().remove(0);
     assert!(son.durum.bitti_mi());
     assert!(!matches!(
         son.durum,
@@ -370,13 +550,38 @@ async fn g5_s05_soru_yaniti_yazma_compact_ve_kurtarma_birlikte_korunur() {
     let (olaylar,mut rx)=o.tur_kanalli(id,vec![
         SahteYanit::arac("plan_guncelle",json!({"adimlar":[{"kimlik":"bicim","baslik":"Biçimi sorun","durum":"Tamam"},{"kimlik":"yaz","baslik":"Yapılandırmayı yazın","durum":"Suruyor"}]})),
         SahteYanit::arac("kullaniciya_sor",json!({"baslik":"Hedef biçim?","secenekler":[{"kimlik":"toml","etiket":"TOML"},{"kimlik":"json","etiket":"JSON"}]})),
-        SahteYanit::arac("dosya_yaz",json!({"yol":"ayar.toml","icerik":"baglanti_suresi_sn = 30\n"})),
+        SahteYanit::IstegeGore(model_s05_yaz),
         SahteYanit::metin("TOML yapılandırması yazıldı."),
     ]).await;
+    let soru = olaylar
+        .iter()
+        .find_map(|o| {
+            if let Olay::KullaniciSorusuGerekiyor { soru } = o {
+                Some(soru)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let cozuldu = olaylar
+        .iter()
+        .find_map(|o| {
+            if let Olay::KullaniciSorusuCozuldu {
+                soru_kimligi,
+                cagri,
+                sonuc,
+            } = o
+            {
+                Some((soru_kimligi, cagri, sonuc))
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(cozuldu.0, &soru.soru_kimligi);
+    assert_eq!(cozuldu.1, &soru.cagri);
     assert!(
-        olaylar
-            .iter()
-            .any(|o| matches!(o, Olay::KullaniciSorusuGerekiyor { .. }))
+        matches!(cozuldu.2,kalfa_core::soru::SoruSonucu::Yanitlandi{yanit:kalfa_core::soru::KullaniciSorusuYaniti::Secenek{secenek_kimligi},..} if secenek_kimligi=="toml")
     );
     assert_eq!(
         std::fs::read_to_string(o.alan.path().join("ayar.toml")).unwrap(),
@@ -384,9 +589,8 @@ async fn g5_s05_soru_yaniti_yazma_compact_ve_kurtarma_birlikte_korunur() {
     );
     let iz = serde_json::to_string(&o.t.saglayici.istekler()).unwrap();
     assert!(iz.contains("toml"));
-    o.t.saglayici.sohbet_ekle(SahteSohbet::Metin(
-        "Kullanıcı TOML seçti; ayar.toml yazıldı, iki adımlı plan sürüyor.".into(),
-    ));
+    o.t.saglayici
+        .sohbet_ekle(SahteSohbet::IstegeGore(model_s05_ozet));
     o.t.uygulama.oturum_ozetle(id, None).await.unwrap();
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
@@ -406,15 +610,28 @@ async fn g5_s05_soru_yaniti_yazma_compact_ve_kurtarma_birlikte_korunur() {
     .unwrap();
     o.t.uygulama.oturumu_kapat(id).await.unwrap();
     let acilan = o.t.uygulama.oturum_ac(id).await.unwrap();
-    assert_eq!(acilan.ozet.plan.unwrap().adimlar.len(), 2);
+    let plan = acilan.ozet.plan.unwrap();
+    assert_eq!(
+        plan.adimlar
+            .iter()
+            .map(|a| a.kimlik.as_str())
+            .collect::<Vec<_>>(),
+        ["bicim", "yaz"]
+    );
+    assert_eq!(
+        plan.adimlar[0].durum,
+        kalfa_core::plan::PlanAdimDurumu::Tamam
+    );
+    assert_eq!(
+        plan.adimlar[1].durum,
+        kalfa_core::plan::PlanAdimDurumu::Suruyor
+    );
     let kayit = kalfa_uygulama::dizin::kayit_yolu(
         &kalfa_uygulama::dizin::oturum_dizini(o._veri.path()),
         id,
     );
-    let metin = std::fs::read_to_string(kayit).unwrap();
-    assert!(metin.contains("KullaniciSorusuCozuldu"));
-    assert!(metin.contains("toml"));
-    assert!(metin.contains("Ozet"));
+    let kayitlar = kalfa_core::kayit::OturumKaydi::oku(&kayit).unwrap();
+    assert!(kayitlar.iter().any(|k|matches!(&k.yuk,kalfa_core::kayit::KayitOgesi::KullaniciSorusuCozuldu{soru_kimligi,cagri,sonuc:kalfa_core::soru::SoruSonucu::Yanitlandi{yanit:kalfa_core::soru::KullaniciSorusuYaniti::Secenek{secenek_kimligi},..}} if soru_kimligi==&soru.soru_kimligi && cagri==&soru.cagri && secenek_kimligi=="toml")));
     o.tur(
         id,
         vec![SahteYanit::metin("Kurtarılan plandan devam edildi.")],

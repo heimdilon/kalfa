@@ -66,7 +66,7 @@ describe('IsKarti (G2b / G2c arka plan işi ve terminal kartı)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Girdi gönder' }));
     expect(onKullaniciGirdi).toHaveBeenCalledWith(
       'is-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-      'print(42)\n',
+      'print(42)\r',
     );
 
     await fireEvent.click(screen.getByRole('button', { name: 'EOF gönder' }));
@@ -105,4 +105,18 @@ describe('IsKarti (G2b / G2c arka plan işi ve terminal kartı)', () => {
     expect(screen.queryByRole('button', { name: 'İşi durdur' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Girdi gönder' })).toBeNull();
   });
+  it.each([
+    { kip: { kip: 'terminal' as const, boyut: { sutun: 80, satir: 24 } }, beklenen: 'dogrula\r' },
+    { kip: { kip: 'borulu' as const }, beklenen: 'dogrula\n' },
+  ])('yerel Enter baytını terminal ve borulu kipte doğru gönderir: $kip.kip', async ({ kip, beklenen }) => {
+    const onKullaniciGirdi = vi.fn();
+    render(IsKarti, { props: {
+      isId: 'is-g5-girdi', gosterim: 'geçiş aracı', kip,
+      durum: { durum: 'calisiyor' }, onKullaniciGirdi,
+    } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Standart girdi metni' }), { target: { value: 'dogrula' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Girdi gönder' }));
+    expect(onKullaniciGirdi).toHaveBeenCalledWith('is-g5-girdi', beklenen);
+  });
+
 });

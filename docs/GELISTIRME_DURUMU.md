@@ -1,5 +1,7 @@
 # Kalfa geliştirme durumu
 
+**21 Ekim G5 v2 düzeltmesi (PR #44):** Modelin uzun komut çıktısında imleç atlaması ve terminal Enter baytı düzeltildi. [Kırmızı/yeşil kanıt, gerçek kabul kapsamı ve açık kapılar](superpowers/bulgular/2026-10-21-g5-v2-cikti-terminal-duzeltme.md). Tam24 görev/20 kabulü ve bağımsız tekrar incelemesi henüz kapanmadı; ücretli deneme kullanıcı kararıyla kapsam dışı.
+
 **21 Ekim Codex düzeltmesi — Hat 05:** Bozuk JSON URL maskelemesi uygulandı. [Davranış ve doğrulama](superpowers/bulgular/2026-10-21-codex-yetenek-05-duzeltme.md); G5/CI ve merge ayrı kapılardır.
 **21 Ekim G5 kabul kaydı:** İlk gerçek Tauri plan/soru testleri iki platformda geçti; 18 görev adaptörü ve 20/24 eşiği açık. [Sonuç, engel ve devam koşulu](superpowers/bulgular/2026-10-21-kalfa-g5-cevrimdisi-kabul.md).
 
