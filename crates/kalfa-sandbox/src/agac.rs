@@ -13,8 +13,23 @@ pub use windows::{Is, surdur};
 pub(crate) struct Agac {
     #[cfg(unix)]
     grup: i32,
+    #[cfg(target_os = "linux")]
+    alt_toplayici: bool,
+    #[cfg(target_os = "linux")]
+    izlenen_torunlar: std::sync::Mutex<Vec<(i32, u64)>>,
     #[cfg(windows)]
     is: windows::Is,
+}
+
+/// Etkileşimli sürecin başlatılmış kök bileşenleri.
+pub(crate) struct EtkilesimliKok {
+    pub cocuk: Child,
+    pub agac: Agac,
+    /// Linux'ta asıl komutun (C) çıkış kodunu bildiren boru; çapa alt süreç
+    /// toplayıcısı (R) `cocuk` içinde yaşayarak yetim ve `setsid` torunlarını
+    /// tutmaya devam eder.
+    #[cfg(target_os = "linux")]
+    pub durum_okuma: Option<std::os::fd::OwnedFd>,
 }
 
 /// Komutu ağacın kökü olarak başlatır.
@@ -27,7 +42,16 @@ pub(crate) fn baslat(komut: &mut Command) -> io::Result<(Child, Agac)> {
             .id()
             .and_then(|p| i32::try_from(p).ok())
             .ok_or_else(|| io::Error::other("sürecin kimliği okunamadı"))?;
-        Ok((cocuk, Agac { grup }))
+        Ok((
+            cocuk,
+            Agac {
+                grup,
+                #[cfg(target_os = "linux")]
+                alt_toplayici: false,
+                #[cfg(target_os = "linux")]
+                izlenen_torunlar: std::sync::Mutex::new(Vec::new()),
+            },
+        ))
     }
     #[cfg(windows)]
     {
@@ -54,23 +78,256 @@ pub(crate) fn baslat(komut: &mut Command) -> io::Result<(Child, Agac)> {
     }
 }
 
-/// Etkileşimli sürecin kökü (1.1a §4.1). Linux'ta kök, kendi torunlarının
-/// alt süreç toplayıcısı olur: aradaki bir süreç ölünce yetimler init'e değil
-/// köke bağlanır ve kök yaşarken alt ağaç taramasında görünür. Kendi
-/// oturumunu açan (`setsid`) torun da böylece kapsanır.
-pub(crate) fn baslat_etkilesimli(komut: &mut Command) -> io::Result<(Child, Agac)> {
-    // SAFETY: Kapanış `fork` ile `exec` arasında çocukta çalışır ve yalnızca
-    // async-signal-safe `prctl`'ı çağırır. Ayar `exec`'ten sonra korunur.
+/// Etkileşimli sürecin kökü (1.1a §4.1, ST-01). Linux'ta `komut.spawn()`
+/// doğrudan hedef komutu değil, `PR_SET_CHILD_SUBREAPER` bayraklı hafif bir
+/// çapa süreci (R) başlatır; R hedef komutu (C) çatallar. C kendiliğinden
+/// çıksa bile R yaşadığı için `setsid` ile oturum ayırmış bütün torunlar
+/// init'e kaçmaz, R'ye yeniden ebeveynlenir ve kapanışta R altında taranıp
+/// sonlandırılır.
+pub(crate) fn baslat_etkilesimli(komut: &mut Command) -> io::Result<EtkilesimliKok> {
     #[cfg(target_os = "linux")]
+    {
+        baslat_etkilesimli_linux(komut, false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let (cocuk, agac) = baslat(komut)?;
+        Ok(EtkilesimliKok { cocuk, agac })
+    }
+}
+
+/// Yalıtımsız PTY kök süreci: `setsid()` ile yeni oturum ve süreç grubu
+/// (`pgid = pid`) açar, standart girdideki PTY slave tanımlayıcısını
+/// denetleyici terminal (`TIOCSCTTY`) yapar. `process_group(0)` ayrıca
+/// çağrılmaz: `setpgid(0, 0)` önce çalışırsa `setsid()` `EPERM` verir.
+#[cfg(unix)]
+pub(crate) fn baslat_etkilesimli_pty(komut: &mut Command) -> io::Result<EtkilesimliKok> {
+    #[cfg(target_os = "linux")]
+    {
+        baslat_etkilesimli_linux(komut, true)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // SAFETY: `fork` ile `exec` arasında çocukta yalnızca async-signal-safe
+        // `setsid` ve `ioctl` çağrılır.
+        unsafe {
+            komut.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let cocuk = komut.spawn()?;
+        let grup = cocuk
+            .id()
+            .and_then(|p| i32::try_from(p).ok())
+            .ok_or_else(|| io::Error::other("sürecin kimliği okunamadı"))?;
+        Ok(EtkilesimliKok {
+            cocuk,
+            agac: Agac { grup },
+        })
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn baslat_etkilesimli_linux(komut: &mut Command, pty_oturumu: bool) -> io::Result<EtkilesimliKok> {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+
+    if !pty_oturumu {
+        komut.process_group(0);
+    }
+    let mut durum_fds = [0 as libc::c_int; 2];
+    // SAFETY: `pipe2` iki elemanlı geçerli dizi göstericisi alır; dönen
+    // tanımlayıcılar hemen `OwnedFd` ile sahiplenilir.
+    if unsafe { libc::pipe2(durum_fds.as_mut_ptr(), libc::O_CLOEXEC) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `durum_fds` az önce `pipe2` ile açıldı.
+    let durum_okuma = unsafe { OwnedFd::from_raw_fd(durum_fds[0]) };
+    let durum_yazma = unsafe { OwnedFd::from_raw_fd(durum_fds[1]) };
+    let durum_w_fd = durum_yazma.as_raw_fd();
+
+    // SAFETY: Kapanış `fork` sonrasında yalnızca async-signal-safe `libc`
+    // çağrılarını (`setsid`, `ioctl`, `prctl`, `pipe2`, `fork`, `close`,
+    // `signal`, `read`, `write`, `waitpid`, `syscall`, `_exit`) kullanır.
     unsafe {
-        komut.pre_exec(|| {
+        komut.pre_exec(move || {
+            if pty_oturumu {
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) == -1 {
+                return Err(io::Error::last_os_error());
+            }
             if libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == -1 {
                 return Err(io::Error::last_os_error());
             }
-            Ok(())
+            let mut sync_fds = [0 as libc::c_int; 2];
+            if libc::pipe2(sync_fds.as_mut_ptr(), libc::O_CLOEXEC) == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            let c_pid = libc::fork();
+            if c_pid == -1 {
+                let err = io::Error::last_os_error();
+                libc::close(sync_fds[0]);
+                libc::close(sync_fds[1]);
+                return Err(err);
+            }
+            if c_pid == 0 {
+                // Asıl komut süreci (C): çapa (R) ölürse C de ölsün.
+                let _ = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0);
+                libc::close(sync_fds[0]);
+                libc::close(durum_w_fd);
+                return Ok(());
+            }
+            alt_toplayici_calistir(c_pid, sync_fds[0], sync_fds[1], durum_w_fd);
         });
     }
-    baslat(komut)
+
+    let cocuk = komut.spawn()?;
+    drop(durum_yazma);
+    let grup = cocuk
+        .id()
+        .and_then(|p| i32::try_from(p).ok())
+        .ok_or_else(|| io::Error::other("sürecin kimliği okunamadı"))?;
+    Ok(EtkilesimliKok {
+        cocuk,
+        agac: Agac {
+            grup,
+            alt_toplayici: true,
+            izlenen_torunlar: std::sync::Mutex::new(Vec::new()),
+        },
+        durum_okuma: Some(durum_okuma),
+    })
+}
+
+/// Çapa alt süreç toplayıcısı (R): C'nin `execvp` yapmasını bekler, kendi
+/// standart/ekstra tanımlayıcılarını kapatır, C bittiğinde çıkış kodunu
+/// `durum_w_fd`'ye yazar ve C'den kalan bütün torunlar (`setsid` dahil)
+/// sonlanana kadar `waitpid(-1)` döngüsünde yaşar.
+#[cfg(target_os = "linux")]
+unsafe fn alt_toplayici_calistir(
+    c_pid: libc::pid_t,
+    sync_r: libc::c_int,
+    sync_w: libc::c_int,
+    durum_w_fd: libc::c_int,
+) -> ! {
+    // SAFETY: Yalnız async-signal-safe sistem çağrıları kullanılır; bu işlev
+    // yalnız çatallanmış R sürecinde çalışır ve `_exit(0)` ile sonlanır.
+    unsafe {
+        for sig in [
+            libc::SIGINT,
+            libc::SIGTERM,
+            libc::SIGHUP,
+            libc::SIGQUIT,
+            libc::SIGTSTP,
+            libc::SIGTTIN,
+            libc::SIGTTOU,
+        ] {
+            libc::signal(sig, libc::SIG_IGN);
+        }
+        libc::close(sync_w);
+        let mut b = [0u8; 1];
+        loop {
+            let n = libc::read(sync_r, b.as_mut_ptr().cast(), 1);
+            if n == -1 && *libc::__errno_location() == libc::EINTR {
+                continue;
+            }
+            break;
+        }
+        libc::close(sync_r);
+        diger_fdleri_kapat(durum_w_fd);
+
+        let mut c_status: libc::c_int = 0;
+        loop {
+            let r = libc::waitpid(c_pid, &mut c_status, 0);
+            if r == c_pid {
+                break;
+            }
+            if r == -1 && *libc::__errno_location() == libc::EINTR {
+                continue;
+            }
+            c_status = -1;
+            break;
+        }
+
+        let kod: i32 = if c_status != -1 && libc::WIFEXITED(c_status) {
+            libc::WEXITSTATUS(c_status)
+        } else {
+            i32::MIN
+        };
+        let baytlar = kod.to_ne_bytes();
+        let mut yazilan = 0usize;
+        while yazilan < baytlar.len() {
+            let n = libc::write(
+                durum_w_fd,
+                baytlar[yazilan..].as_ptr().cast(),
+                baytlar.len() - yazilan,
+            );
+            if n > 0 {
+                yazilan += n as usize;
+            } else if n == -1 && *libc::__errno_location() == libc::EINTR {
+                continue;
+            } else {
+                break;
+            }
+        }
+        libc::close(durum_w_fd);
+
+        loop {
+            let mut alt_status: libc::c_int = 0;
+            let r = libc::waitpid(-1, &mut alt_status, 0);
+            if r == -1 {
+                if *libc::__errno_location() == libc::EINTR {
+                    continue;
+                }
+                break;
+            }
+        }
+        libc::_exit(0);
+    }
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn diger_fdleri_kapat(korunan_fd: libc::c_int) {
+    // SAFETY: R sürecinde `korunan_fd` dışındaki tüm tanımlayıcıları kapatır.
+    unsafe {
+        for fd in 0..3 {
+            if fd != korunan_fd {
+                libc::close(fd);
+            }
+        }
+        let korunan = korunan_fd as libc::c_uint;
+        let mut tamam = true;
+        if korunan > 3 && libc::syscall(libc::SYS_close_range, 3u32, korunan - 1, 0u32) == -1 {
+            tamam = false;
+        }
+        if korunan < libc::c_uint::MAX
+            && libc::syscall(
+                libc::SYS_close_range,
+                korunan.saturating_add(1),
+                libc::c_uint::MAX,
+                0u32,
+            ) == -1
+        {
+            tamam = false;
+        }
+        if !tamam {
+            for fd in 3..1024 {
+                if fd != korunan_fd {
+                    libc::close(fd);
+                }
+            }
+        }
+    }
 }
 
 impl Agac {
@@ -125,16 +382,23 @@ impl AgacDenetimi for Agac {
     fn torunlari_oldur(&self) -> io::Result<bool> {
         #[cfg(target_os = "linux")]
         {
-            // SAFETY: `kill` yalnızca sayı ve sinyal alır. Kök toplanmamış
-            // bir çocuktur; numarası ona aittir.
-            unsafe {
-                libc::kill(self.grup, libc::SIGSTOP);
+            if !self.alt_toplayici {
+                // SAFETY: `kill` yalnızca sayı ve sinyal alır. Kök toplanmamış
+                // bir çocuktur; numarası ona aittir.
+                unsafe {
+                    libc::kill(self.grup, libc::SIGSTOP);
+                }
             }
-            torunlari_oldur_ile(
+            let mut izlenen = self
+                .izlenen_torunlar
+                .lock()
+                .unwrap_or_else(|z| z.into_inner());
+            torunlari_oldur_ve_kaydet_ile(
                 &ProcFs {
                     kok: std::path::PathBuf::from("/proc"),
                 },
                 self.grup,
+                &mut izlenen,
             )
         }
         #[cfg(not(target_os = "linux"))]
@@ -166,11 +430,23 @@ impl AgacDenetimi for Agac {
             }
             let e = io::Error::last_os_error();
             match e.raw_os_error() {
-                Some(libc::ESRCH) => Ok(true),
+                Some(libc::ESRCH) => {}
                 // Başka kullanıcının süreci gruptaysa (EPERM) grup boş değil.
-                Some(libc::EPERM) => Ok(false),
-                _ => Err(e),
+                Some(libc::EPERM) => return Ok(false),
+                _ => return Err(e),
             }
+            #[cfg(target_os = "linux")]
+            {
+                let izlenen = self
+                    .izlenen_torunlar
+                    .lock()
+                    .unwrap_or_else(|z| z.into_inner())
+                    .clone();
+                if !izlenen_torunlar_bos_mu(std::path::Path::new("/proc"), &izlenen)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
         }
         #[cfg(windows)]
         Ok(self.is.etkin_surec_sayisi()? == 0)
@@ -209,8 +485,17 @@ pub(crate) trait SurecKaynagi {
 /// bu taramayla sinyallenmez; sonraki tarama güncel ebeveynliği görür.
 /// Kök toplanmadığı ve Linux'ta alt süreç toplayıcısı olduğu için doğrulama
 /// sonrasında ara süreç çıkarsa yetimleri yine bu kökün altına bağlanır.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", test))]
 pub(crate) fn torunlari_oldur_ile<K: SurecKaynagi>(k: &K, kok: i32) -> io::Result<bool> {
+    torunlari_oldur_ve_kaydet_ile(k, kok, &mut Vec::new())
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn torunlari_oldur_ve_kaydet_ile<K: SurecKaynagi>(
+    k: &K,
+    kok: i32,
+    izlenen: &mut Vec<(i32, u64)>,
+) -> io::Result<bool> {
     use std::collections::HashMap;
 
     let surecler = k.tara()?;
@@ -245,6 +530,9 @@ pub(crate) fn torunlari_oldur_ile<K: SurecKaynagi>(k: &K, kok: i32) -> io::Resul
                 break;
             }
             if halka.ppid == kok {
+                if !izlenen.contains(&(s.pid, s.baslangic)) {
+                    izlenen.push((s.pid, s.baslangic));
+                }
                 acik.push(t);
                 break;
             }
@@ -260,6 +548,24 @@ pub(crate) fn torunlari_oldur_ile<K: SurecKaynagi>(k: &K, kok: i32) -> io::Resul
         }
     }
     Ok(!torunlar.is_empty())
+}
+
+/// Süreç grubu boşalmış olsa bile ayrılmış (`setsid`) herhangi bir izlenen
+/// torunun aynı `(pid, baslangic)` kimliğiyle hâlâ yaşayıp yaşamadığını sınar.
+#[cfg(target_os = "linux")]
+pub(crate) fn izlenen_torunlar_bos_mu(
+    kok: &std::path::Path,
+    izlenen: &[(i32, u64)],
+) -> io::Result<bool> {
+    for &(pid, baslangic) in izlenen {
+        if let Some(bilgi) = stat_oku(kok, pid)?
+            && bilgi.baslangic == baslangic
+            && !bilgi.zombi
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 /// Gerçek `/proc` ve `pidfd` (Linux 5.3+).
 #[cfg(target_os = "linux")]
@@ -772,5 +1078,26 @@ mod tests {
             kok: d.path().join("yok"),
         };
         assert!(yok.tara().is_err());
+    }
+
+    #[test]
+    fn bos_grup_ayrilmis_torun_yasarken_bos_sayilmaz() {
+        let d = tempfile::tempdir().unwrap();
+        let mut izlenen = Vec::new();
+        let k = agac();
+        assert!(torunlari_oldur_ve_kaydet_ile(&k, 10, &mut izlenen).unwrap());
+        assert_eq!(izlenen, vec![(11, 100), (12, 101)]);
+
+        // Ayrılmış torun 12 aynı `baslangic` (101) ile hâlâ `S` durumundaysa
+        // süreç grubu boşalmış olsa bile ağaç boş sayılmaz.
+        stat_yaz(d.path(), 12, &stat_metni(12, "sleep", "S", 1, 101));
+        assert!(!izlenen_torunlar_bos_mu(d.path(), &izlenen).unwrap());
+
+        // Torun zombiye (`Z`) geçtiğinde ya da numara başka sürece (`baslangic=999`)
+        // verildiğinde boş kabul edilir.
+        stat_yaz(d.path(), 12, &stat_metni(12, "sleep", "Z", 1, 101));
+        assert!(izlenen_torunlar_bos_mu(d.path(), &izlenen).unwrap());
+        stat_yaz(d.path(), 12, &stat_metni(12, "baska", "S", 1, 999));
+        assert!(izlenen_torunlar_bos_mu(d.path(), &izlenen).unwrap());
     }
 }

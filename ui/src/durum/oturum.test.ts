@@ -846,3 +846,139 @@ describe('deneme defteri sayaçları', () => {
   });
 });
 
+
+describe('proje akışı: plan, proje talimatları ve kullanıcı sorusu', () => {
+  it('PlanGuncellendi ve ProjeTalimatlari olayları ekran durumunu günceller ve açılışta korunur', () => {
+    const plan = {
+      guncellendigi_tur: TUR,
+      adimlar: [
+        { kimlik: 'a1', baslik: 'AGENTS.md oku', durum: 'Tamam' as const },
+        { kimlik: 'a2', baslik: 'Planı uygula', durum: 'Suruyor' as const },
+        { kimlik: 'a3', baslik: 'Testleri koş', durum: 'Bekliyor' as const },
+      ],
+    };
+    const goruntu = {
+      tur: 1,
+      kaynaklar: [
+        {
+          goreli_yol: 'AGENTS.md',
+          kapsam: { tur: 'kok' as const },
+          bayt: 120,
+          ozet: 'abc123',
+        },
+      ],
+      uyarilar: [],
+      degisen_kaynaklar: [],
+      eksik_baglam: false,
+    };
+
+    const d = uygula(acilis(), {
+      tip: 'Kanal',
+      mesaj: paket(
+        1,
+        { tip: 'TurBasladi' },
+        { tip: 'ProjeTalimatlari', goruntu },
+        { tip: 'PlanGuncellendi', plan },
+      ),
+    });
+
+    expect(d.plan).toEqual(plan);
+    expect(d.proje_talimatlari).toEqual(goruntu);
+    expect(d.ozet.plan).toEqual(plan);
+    expect(d.ozet.proje_talimatlari).toEqual(goruntu);
+
+    const kurtarilan = acilistanEkran({
+      oturum: OTURUM,
+      calisma_alani: 'C:\\proje',
+      calisma_alani_kimligi: null,
+      gecmis: { ogeler: [], daha_eski_var: false },
+      ozet: {
+        model: 'glm-5.3',
+        kip: 'Siki',
+        yonlendirilen_model: null,
+        son_kredi: null,
+        istem: 0,
+        tamamlama: 0,
+        dusunce: 0,
+        plan,
+        proje_talimatlari: goruntu,
+      },
+      salt_okunur: null,
+      butce: null,
+    });
+    expect(kurtarilan.plan).toEqual(plan);
+    expect(kurtarilan.proje_talimatlari).toEqual(goruntu);
+  });
+
+  it('kullanıcı sorusu SoruBekliyor durumuna geçer, yanıtlanınca veya yeni mesajla çözülür', () => {
+    const soru = {
+      soru_kimligi: 'soru-t-1-c-1',
+      tur: TUR,
+      cagri: 'c-1',
+      baslik: 'Hangi yaklaşımı kullanalım?',
+      secenekler: [
+        { kimlik: 's1', etiket: 'Kısa yol', aciklama: 'Hızlı çözüm' },
+        { kimlik: 's2', etiket: 'Kapsamlı yol', aciklama: null },
+      ],
+      serbest_yanit_izni: true,
+    };
+
+    let d = uygula(acilis(), {
+      tip: 'Kanal',
+      mesaj: paket(1, { tip: 'TurBasladi' }, { tip: 'KullaniciSorusuGerekiyor', soru }),
+    });
+    expect(d.anlik).toBe('SoruBekliyor');
+    expect(d.ogeler.at(-1)).toMatchObject({
+      tip: 'KullaniciSorusu',
+      durum: 'Bekliyor',
+      soru,
+    });
+
+    // IPC hatasında SoruGonderilemedi geri alır:
+    d = uygula(d, {
+      tip: 'SoruYanitlandi',
+      soru_kimligi: soru.soru_kimligi,
+      sonuc: {
+        durum: 'Yanitlandi',
+        yanit: { tur: 'Secenek', secenek_kimligi: 's1' },
+      },
+    });
+    expect(d.anlik).toBe('Calisiyor');
+    d = uygula(d, { tip: 'SoruGonderilemedi', soru_kimligi: soru.soru_kimligi });
+    expect(d.anlik).toBe('SoruBekliyor');
+
+    // Kullanıcı normal mesaj gönderirse bekleyen soru KullaniciMesajiylaIptal olur:
+    d = uygula(d, { tip: 'MesajGonderildi', metin: 'Bunun yerine şunu yap' });
+    expect(d.anlik).toBe('Calisiyor');
+    expect(d.ogeler[0]).toMatchObject({
+      tip: 'KullaniciSorusu',
+      durum: 'KullaniciMesajiylaIptal',
+      sonuc: { durum: 'KullaniciMesajiylaIptal', yeni_mesaj: 'Bunun yerine şunu yap' },
+    });
+  });
+
+  it('geçmişteki yanıtlanmamış soru KesintiyeUgradi olarak yüklenir', () => {
+    const soru = {
+      soru_kimligi: 'soru-t-0-c-0',
+      tur: 't-0',
+      cagri: 'c-0',
+      baslik: 'Devam edilsin mi?',
+      secenekler: [
+        { kimlik: 'evet', etiket: 'Evet' },
+        { kimlik: 'hayir', etiket: 'Hayır' },
+      ],
+      serbest_yanit_izni: false,
+    };
+    const d = acilis({
+      ogeler: [{ tip: 'KullaniciSorusu', sira: 4, tur: 't-0', soru, sonuc: null }],
+      daha_eski_var: false,
+    });
+    expect(d.ogeler).toMatchObject([
+      {
+        tip: 'KullaniciSorusu',
+        durum: 'KesintiyeUgradi',
+        sonuc: null,
+      },
+    ]);
+  });
+});

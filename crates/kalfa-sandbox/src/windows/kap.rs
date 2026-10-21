@@ -24,6 +24,7 @@ use windows_sys::Win32::Security::{
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
+use windows_sys::Win32::System::Console::{COORD, CreatePseudoConsole, HPCON};
 use windows_sys::Win32::System::Diagnostics::Debug::{
     SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SEM_NOOPENFILEERRORBOX, SetErrorMode,
 };
@@ -34,9 +35,10 @@ use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
     DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, INFINITE,
     InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-    PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
-    UpdateProcThreadAttribute, WaitForSingleObject,
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_INFORMATION, ResumeThread,
+    STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
+    WaitForSingleObject,
 };
 
 use super::guvenlik::{Sid, genis};
@@ -51,11 +53,12 @@ pub(crate) struct KapIstegi<'a> {
     pub yetenekler: &'a [Sid],
 }
 
-/// Başlamış kap: süreç tutamacı ve iki çıktı borusunun okuma uçları.
+/// Başlamış kap: süreç tutamacı ve çıktı borusunun okuma uçları.
 pub(crate) struct Kap {
     pub surec: OwnedHandle,
     pub cikti: File,
-    pub hata: File,
+    /// Borulu süreçte stderr okuma ucu; ConPTY'de stdout/stderr birleştiği için `None`.
+    pub hata: Option<File>,
     /// Etkileşimli süreçte stdin'in yazma ucu; kabukta `None` (stdin `NUL`).
     pub girdi: Option<File>,
 }
@@ -344,9 +347,172 @@ fn baslat_ortak(istek: &KapIstegi, is: &Is, borulu: bool) -> io::Result<Kap> {
     Ok(Kap {
         surec,
         cikti: File::from(cikti_o),
-        hata: File::from(hata_o),
+        hata: Some(File::from(hata_o)),
         girdi: girdi_yazma.map(File::from),
     })
+}
+
+/// Komutu ConPTY (sözde konsol) ile AppContainer ve Job Object içinde başlatır.
+pub(crate) fn baslat_terminal(
+    istek: &KapIstegi,
+    is: &Is,
+    boyut: crate::TerminalBoyutu,
+) -> io::Result<(Kap, crate::TerminalDenetimi)> {
+    baslat_terminal_ortak(
+        istek.komut,
+        istek.dizin,
+        istek.ortam,
+        Some((istek.paket, istek.yetenekler)),
+        is,
+        boyut,
+    )
+}
+
+/// Komutu ConPTY ile yalıtımsız ama Job Object içinde başlatır.
+pub(crate) fn baslat_yalitimsiz_terminal(
+    komut: &KomutSatiri,
+    dizin: &Path,
+    ortam: &[(String, String)],
+    is: &Is,
+    boyut: crate::TerminalBoyutu,
+) -> io::Result<(Kap, crate::TerminalDenetimi)> {
+    baslat_terminal_ortak(komut, dizin, ortam, None, is, boyut)
+}
+
+fn baslat_terminal_ortak(
+    komut: &KomutSatiri,
+    dizin: &Path,
+    ortam: &[(String, String)],
+    guvenlik_bilgisi: Option<(&Sid, &[Sid])>,
+    is: &Is,
+    boyut: crate::TerminalBoyutu,
+) -> io::Result<(Kap, crate::TerminalDenetimi)> {
+    boyut
+        .dogrula()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+    let (pty_girdi_o, girdi_y) = girdi_borusu()?;
+    let (cikti_o, pty_cikti_y) = boru()?;
+    let coord = COORD {
+        X: i16::try_from(boyut.sutun).unwrap_or(i16::MAX),
+        Y: i16::try_from(boyut.satir).unwrap_or(i16::MAX),
+    };
+    let mut hpcon: HPCON = 0;
+    // SAFETY: boru uçları geçerlidir; hpcon çıktı parametresidir.
+    let hr = unsafe {
+        CreatePseudoConsole(
+            coord,
+            pty_girdi_o.as_raw_handle() as HANDLE,
+            pty_cikti_y.as_raw_handle() as HANDLE,
+            0,
+            &mut hpcon,
+        )
+    };
+    if hr != 0 {
+        return Err(io::Error::from_raw_os_error(hr));
+    }
+    let (terminal, hpcon_deger) = crate::TerminalDenetimi::win_yeni(hpcon);
+    // conhost kendi kopyalarını aldığı için çocuk tarafındaki boru uçları kapatılır.
+    drop((pty_girdi_o, pty_cikti_y));
+
+    let mut yetenekler: Vec<SID_AND_ATTRIBUTES> = Vec::new();
+    let guvenlik = guvenlik_bilgisi.map(|(paket, yet)| {
+        yetenekler = yet
+            .iter()
+            .map(|s| SID_AND_ATTRIBUTES {
+                Sid: s.ptr(),
+                Attributes: SE_GROUP_ENABLED as u32,
+            })
+            .collect();
+        SECURITY_CAPABILITIES {
+            AppContainerSid: paket.ptr(),
+            Capabilities: if yetenekler.is_empty() {
+                null_mut()
+            } else {
+                yetenekler.as_mut_ptr()
+            },
+            CapabilityCount: yetenekler.len() as u32,
+            Reserved: 0,
+        }
+    });
+
+    let oznitelik_sayisi = if guvenlik.is_some() { 2 } else { 1 };
+    let mut liste = Oznitelikler::yeni(oznitelik_sayisi)?;
+    // SAFETY: `guvenlik` ve `hpcon_deger` `CreateProcessW` bitene kadar yaşar.
+    unsafe {
+        if let Some(ref g) = guvenlik {
+            liste.ekle(
+                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
+                (&raw const *g).cast(),
+                size_of::<SECURITY_CAPABILITIES>(),
+            )?;
+        }
+        liste.ekle(
+            PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE as usize,
+            hpcon_deger as *const c_void,
+            size_of::<HPCON>(),
+        )?;
+    }
+
+    // SAFETY: sıfırla başlatılan yapı; boş standart tutamaçlar üst sürecin
+    // yönlendirilmiş borularının çocuğa sızmasını önler ve ConPTY bağlamasını zorlar.
+    let mut si: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
+    si.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    si.StartupInfo.hStdInput = null_mut();
+    si.StartupInfo.hStdOutput = null_mut();
+    si.StartupInfo.hStdError = null_mut();
+    si.lpAttributeList = liste.ptr();
+
+    // SAFETY: sıfırla başlatılan çıktı yapısı.
+    let mut pi: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
+    let uygulama = genis(&komut.uygulama);
+    let mut satir = komut.satir.clone();
+    satir.push(0);
+    let ortam_b = ortam_blogu(ortam);
+    let dizin_w = genis(dizin);
+    // SAFETY: bütün dizeler NUL ile biter ve çağrı boyunca yaşar.
+    let tamam = unsafe {
+        CreateProcessW(
+            uygulama.as_ptr(),
+            satir.as_mut_ptr(),
+            null(),
+            null(),
+            0,
+            EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
+            ortam_b.as_ptr().cast(),
+            dizin_w.as_ptr(),
+            &si.StartupInfo,
+            &mut pi,
+        )
+    };
+    if tamam == 0 {
+        // SAFETY: yalnızca son hatayı okur.
+        let kod = unsafe { GetLastError() };
+        let e = io::Error::from_raw_os_error(kod as i32);
+        return Err(io::Error::new(
+            e.kind(),
+            format!("terminal kabı başlatılamadı: {e}"),
+        ));
+    }
+    let surec = sahiplen(pi.hProcess);
+    let is_parcacigi = sahiplen(pi.hThread);
+    if let Err(e) = is.ata(surec.as_raw_handle()) {
+        // SAFETY: süreç askıda başladı ve bu işleve aittir.
+        unsafe { TerminateProcess(surec.as_raw_handle() as HANDLE, 1) };
+        return Err(e);
+    }
+    // SAFETY: iş parçacığı askıda başladı ve bu işleve aittir.
+    unsafe { ResumeThread(is_parcacigi.as_raw_handle() as HANDLE) };
+    drop((liste, is_parcacigi));
+    Ok((
+        Kap {
+            surec,
+            cikti: File::from(cikti_o),
+            hata: None,
+            girdi: Some(File::from(girdi_y)),
+        },
+        terminal,
+    ))
 }
 
 /// Süreç bitene kadar bekler ve çıkış kodunu döner.

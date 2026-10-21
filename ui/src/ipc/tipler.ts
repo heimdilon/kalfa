@@ -258,6 +258,86 @@ export interface GeriAlmaSonucu {
   hata?: string;
 }
 
+export type PlanAdimDurumu = 'Bekliyor' | 'Suruyor' | 'Tamam';
+
+export interface PlanAdimi {
+  kimlik: string;
+  baslik: string;
+  durum: PlanAdimDurumu;
+}
+
+export interface OturumPlani {
+  guncellendigi_tur?: TurId | null;
+  adimlar: PlanAdimi[];
+}
+
+export type ProjeTalimatKapsami =
+  | { tur: 'kok' }
+  | { tur: 'alt_dizin'; deger: { dizin: string } };
+
+export interface ProjeTalimatKaynagi {
+  goreli_yol: string;
+  kapsam: ProjeTalimatKapsami;
+  bayt: number;
+  ozet: string;
+}
+
+export type ProjeTalimatUyariTuru =
+  | { tur: 'dosya_boyutu_asildi'; sinir: number; gercek: number }
+  | { tur: 'toplam_boyut_asildi'; sinir: number; gercek: number }
+  | { tur: 'kaynak_sayisi_asildi'; sinir: number }
+  | { tur: 'gecersiz_utf8' }
+  | { tur: 'sembolik_baglanti_reddedildi' }
+  | { tur: 'gizli_veya_korumali_reddedildi' }
+  | { tur: 'okunamadi'; neden: string };
+
+export interface ProjeTalimatUyarisi {
+  goreli_yol: string;
+  uyari: ProjeTalimatUyariTuru;
+}
+
+export interface ProjeTalimatDegisimi {
+  goreli_yol: string;
+  onceki_ozet?: string | null;
+  yeni_ozet?: string | null;
+}
+
+export interface ProjeTalimatAnlikGoruntusu {
+  tur: number;
+  kaynaklar: ProjeTalimatKaynagi[];
+  uyarilar?: ProjeTalimatUyarisi[];
+  degisen_kaynaklar?: ProjeTalimatDegisimi[];
+  eksik_baglam?: boolean;
+}
+
+export interface SoruSecenegi {
+  kimlik: string;
+  etiket: string;
+  aciklama?: string | null;
+}
+
+export interface KullaniciSorusu {
+  soru_kimligi: string;
+  tur: TurId;
+  cagri: CagriId;
+  baslik: string;
+  secenekler: SoruSecenegi[];
+  serbest_yanit_izni: boolean;
+}
+
+export type KullaniciSorusuYaniti =
+  | { tur: 'Secenek'; secenek_kimligi: string }
+  | { tur: 'SerbestMetin'; metin: string };
+
+export type SoruSonucu =
+  | {
+      durum: 'Yanitlandi';
+      yanit: KullaniciSorusuYaniti;
+      secilen_etiket?: string | null;
+    }
+  | { durum: 'KullaniciMesajiylaIptal'; yeni_mesaj: string }
+  | { durum: 'IptalEdildi' };
+
 export type OnayKarari = { tip: 'Onayla' } | { tip: 'Reddet'; gerekce: string | null };
 
 export type Olay =
@@ -329,6 +409,15 @@ export type Olay =
       sonuc: OtomatikSonuc;
       risk?: string | null;
       olasilik?: number | null;
+    }
+  | { tip: 'ProjeTalimatlari'; goruntu: ProjeTalimatAnlikGoruntusu }
+  | { tip: 'PlanGuncellendi'; plan: OturumPlani }
+  | { tip: 'KullaniciSorusuGerekiyor'; soru: KullaniciSorusu }
+  | {
+      tip: 'KullaniciSorusuCozuldu';
+      soru_kimligi: string;
+      cagri: CagriId;
+      sonuc: SoruSonucu;
     };
 
 export type OzetTetigi = 'Otomatik' | 'Zorunlu' | 'Elle';
@@ -452,6 +541,13 @@ export type GorunumOgesi =
       sonuc: OtomatikSonuc;
       risk?: string | null;
       olasilik?: number | null;
+    }
+  | {
+      tip: 'KullaniciSorusu';
+      sira: number;
+      tur: TurId | null;
+      soru: KullaniciSorusu;
+      sonuc?: SoruSonucu | null;
     };
 
 export interface GecmisSayfasi {
@@ -474,6 +570,8 @@ export interface DurumOzeti {
   dusunce: number;
   onizleme_acik?: boolean;
   denetci_kipi?: DenetimKipi;
+  plan?: OturumPlani | null;
+  proje_talimatlari?: ProjeTalimatAnlikGoruntusu | null;
 }
 
 export type OturumDurumu =
@@ -921,4 +1019,39 @@ export interface McpIceAktarmaOnizlemesi {
   kusak: number;
   sunucular: McpIceAktarmaSunucusu[];
   atlanan_url_sunuculari: { ad: string; neden: string }[];
+}
+
+// ── Arka plan süreçleri ve terminaller (Hat 03) ───────────────────────────
+
+export type IsKipi =
+  | { tur: 'borulu' }
+  | { tur: 'terminal'; boyut: { satir: number; sutun: number } };
+
+export type IsDurumu =
+  | { durum: 'calisiyor' }
+  | { durum: 'durduruluyor' }
+  | { durum: 'bitti'; cikis_kodu: number | null; sure_ms: number; zaman_asimi: boolean }
+  | { durum: 'sonucu_bilinmiyor'; neden: string };
+
+export interface IsOzeti {
+  is_id: string;
+  oturum: OturumId;
+  gosterim: string;
+  kip: IsKipi;
+  durum: IsDurumu;
+  toplam_bayt: number;
+  tasti: boolean;
+  uyarilar: string[];
+}
+
+export interface IsOkumaSonucu {
+  is_id: string;
+  gosterim: string;
+  kip: IsKipi;
+  durum: IsDurumu;
+  cikti: string;
+  yeni_imlec: number;
+  toplam_bayt: number;
+  tasti: boolean;
+  uyarilar: string[];
 }

@@ -20,7 +20,11 @@ import type {
   KanalMesaji,
   Kip,
   Kisayol,
+  KullaniciSorusu,
   Olay,
+  OturumPlani,
+  ProjeTalimatAnlikGoruntusu,
+  SoruSonucu,
   OnayGirdisi,
   OnayOgesi,
   OnizlemeNedeni,
@@ -36,7 +40,7 @@ import type {
 import { BOS_TERMINAL, terminalEkle, type Terminal } from './terminal';
 
 /** Oturumun o anki hâli; oturum listesindeki nokta ve Composer buna bakar. */
-export type Anlik = 'Bos' | 'Calisiyor' | 'OnayBekliyor' | 'SartBekliyor';
+export type Anlik = 'Bos' | 'Calisiyor' | 'OnayBekliyor' | 'SartBekliyor' | 'SoruBekliyor';
 
 interface Ortak {
   /** Svelte `each` bloğunun anahtarı; öğe var oldukça değişmez. */
@@ -111,6 +115,18 @@ export type EkranOgesi =
       ogeler: OnizlemeOgesi[];
       neden: OnizlemeNedeni;
       durum: 'Bekliyor' | 'Yanitlandi' | 'Gecersiz';
+    })
+  /** Kullanıcıya sorulan yapılandırılmış soru (kullaniciya_sor). */
+  | (Ortak & {
+      tip: 'KullaniciSorusu';
+      soru: KullaniciSorusu;
+      durum:
+        | 'Bekliyor'
+        | 'Yanitlandi'
+        | 'KullaniciMesajiylaIptal'
+        | 'IptalEdildi'
+        | 'KesintiyeUgradi';
+      sonuc: SoruSonucu | null;
     });
 
 /** Açık geri alma sayfası: son gelen plan ve mührü (aşama 3 tasarımı §5.6). */
@@ -155,6 +171,10 @@ export interface OturumEkrani {
   butce: ButceGorunumu | null;
   /** İstek öncesi tahmini bağlam ve eşik; BaglamDurumu olayıyla gelir. */
   baglam: { tahmin: number; esik: number } | null;
+  /** Oturumun güncel çalışma planı (plan_guncelle). */
+  plan: OturumPlani | null;
+  /** Son turun proje talimatı (AGENTS.md) anlık görüntüsü. */
+  proje_talimatlari: ProjeTalimatAnlikGoruntusu | null;
 }
 
 /** Bir onay isteğine verilen kararların özeti. */
@@ -182,7 +202,9 @@ export type Girdi =
   | { tip: 'OnizlemeGonderilemedi'; islem: IslemId }
   | { tip: 'OnizlemeDegisti'; acik: boolean }
   /** Geri alma sayfası karar verilmeden kapandı. */
-  | { tip: 'GeriAlmaKapandi' };
+  | { tip: 'GeriAlmaKapandi' }
+  | { tip: 'SoruYanitlandi'; soru_kimligi: string; sonuc: SoruSonucu }
+  | { tip: 'SoruGonderilemedi'; soru_kimligi: string };
 
 /** Kayıttan gelen bir geçmiş öğesini ekran öğesine çevirir. */
 export function gecmisOgesi(o: GorunumOgesi): EkranOgesi {
@@ -239,6 +261,26 @@ export function gecmisOgesi(o: GorunumOgesi): EkranOgesi {
         talimat: o.talimat ?? null,
         ozet: o.ozet,
       };
+    case 'KullaniciSorusu': {
+      const sonuc = o.sonuc ?? null;
+      const durum =
+        sonuc === null
+          ? 'KesintiyeUgradi'
+          : sonuc.durum === 'Yanitlandi'
+            ? 'Yanitlandi'
+            : sonuc.durum === 'KullaniciMesajiylaIptal'
+              ? 'KullaniciMesajiylaIptal'
+              : 'IptalEdildi';
+      return {
+        tip: 'KullaniciSorusu',
+        anahtar: `g-${o.sira}-q-${o.soru.soru_kimligi}`,
+        sira: o.sira,
+        tur: o.tur,
+        soru: o.soru,
+        durum,
+        sonuc,
+      };
+    }
   }
 }
 
@@ -277,6 +319,8 @@ export function acilistanEkran(acilis: OturumAcilisi): OturumEkrani {
     kisayollar: [],
     butce: acilis.butce,
     baglam: null,
+    plan: acilis.ozet.plan ?? null,
+    proje_talimatlari: acilis.ozet.proje_talimatlari ?? null,
   };
 }
 
@@ -295,6 +339,15 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
     }
     case 'MesajGonderildi': {
       const d = kopya(durum);
+      d.ogeler = d.ogeler.map((o) =>
+        o.tip === 'KullaniciSorusu' && o.durum === 'Bekliyor'
+          ? {
+              ...o,
+              durum: 'KullaniciMesajiylaIptal',
+              sonuc: { durum: 'KullaniciMesajiylaIptal', yeni_mesaj: girdi.metin },
+            }
+          : o,
+      );
       d.ogeler.push({
         tip: 'KullaniciMesaji',
         anahtar: `y-${d.yerel_sayac}`,
@@ -361,6 +414,51 @@ export function uygula(durum: OturumEkrani, girdi: Girdi): OturumEkrani {
       return { ...durum, ozet: { ...durum.ozet, kip: girdi.kip } };
     case 'GeriAlmaKapandi':
       return { ...durum, geri_alma: null };
+    case 'SoruYanitlandi': {
+      const d = kopya(durum);
+      let eslesenGuncellendi = false;
+      d.ogeler = d.ogeler.map((o) => {
+        if (
+          o.tip === 'KullaniciSorusu' &&
+          o.soru.soru_kimligi === girdi.soru_kimligi &&
+          o.durum === 'Bekliyor'
+        ) {
+          eslesenGuncellendi = true;
+          return {
+            ...o,
+            durum:
+              girdi.sonuc.durum === 'Yanitlandi'
+                ? 'Yanitlandi'
+                : girdi.sonuc.durum === 'KullaniciMesajiylaIptal'
+                  ? 'KullaniciMesajiylaIptal'
+                  : 'IptalEdildi',
+            sonuc: girdi.sonuc,
+          };
+        }
+        return o;
+      });
+      if (eslesenGuncellendi && d.anlik === 'SoruBekliyor' && !bekleyenSoruVar(d)) {
+        d.anlik = bekleyenKararVar(d) ? 'OnayBekliyor' : 'Calisiyor';
+      }
+      return d;
+    }
+    case 'SoruGonderilemedi': {
+      const d = kopya(durum);
+      let geriAlindi = false;
+      d.ogeler = d.ogeler.map((o) => {
+        if (
+          o.tip === 'KullaniciSorusu' &&
+          o.soru.soru_kimligi === girdi.soru_kimligi &&
+          o.durum === 'Yanitlandi'
+        ) {
+          geriAlindi = true;
+          return { ...o, durum: 'Bekliyor', sonuc: null };
+        }
+        return o;
+      });
+      if (geriAlindi) d.anlik = 'SoruBekliyor';
+      return d;
+    }
   }
 }
 
@@ -559,6 +657,49 @@ function olayUygula(d: OturumEkrani, z: Zarf<Olay>): void {
         olasilik: yuk.olasilik,
       });
       return;
+    case 'ProjeTalimatlari':
+      d.proje_talimatlari = yuk.goruntu;
+      d.ozet = { ...d.ozet, proje_talimatlari: yuk.goruntu };
+      return;
+    case 'PlanGuncellendi':
+      d.plan = yuk.plan;
+      d.ozet = { ...d.ozet, plan: yuk.plan };
+      return;
+    case 'KullaniciSorusuGerekiyor':
+      akisiKapat(d);
+      d.ogeler.push({
+        tip: 'KullaniciSorusu',
+        anahtar: `c-${z.sira}-${yuk.soru.soru_kimligi}`,
+        sira: z.sira,
+        tur: z.tur ?? yuk.soru.tur,
+        soru: yuk.soru,
+        durum: 'Bekliyor',
+        sonuc: null,
+      });
+      d.anlik = 'SoruBekliyor';
+      return;
+    case 'KullaniciSorusuCozuldu': {
+      const i = d.ogeler.findLastIndex(
+        (o) => o.tip === 'KullaniciSorusu' && o.soru.soru_kimligi === yuk.soru_kimligi,
+      );
+      const o = d.ogeler[i];
+      if (o?.tip === 'KullaniciSorusu') {
+        d.ogeler[i] = {
+          ...o,
+          durum:
+            yuk.sonuc.durum === 'Yanitlandi'
+              ? 'Yanitlandi'
+              : yuk.sonuc.durum === 'KullaniciMesajiylaIptal'
+                ? 'KullaniciMesajiylaIptal'
+                : 'IptalEdildi',
+          sonuc: yuk.sonuc,
+        };
+      }
+      if (d.anlik === 'SoruBekliyor' && !bekleyenSoruVar(d)) {
+        d.anlik = bekleyenKararVar(d) ? 'OnayBekliyor' : 'Calisiyor';
+      }
+      return;
+    }
     case 'Hata':
       akisiKapat(d);
       d.ogeler.push({
@@ -686,12 +827,20 @@ function bekleyenKararVar(d: OturumEkrani): boolean {
   );
 }
 
+/** Yanıt bekleyen kullanıcı sorusu var mı. */
+function bekleyenSoruVar(d: OturumEkrani): boolean {
+  return d.ogeler.some((o) => o.tip === 'KullaniciSorusu' && o.durum === 'Bekliyor');
+}
+
 /** Tur bittiğinde karar bekleyen kartlar artık karar almaz. */
 function bekleyenleriKapat(d: OturumEkrani) {
   d.ogeler = d.ogeler.map((o) => {
     if (o.tip === 'OnayIstegi' && o.durum === 'Bekliyor') return { ...o, durum: 'Gecersiz' };
     if (o.tip === 'GonderimOnizlemesi' && o.durum === 'Bekliyor') return { ...o, durum: 'Gecersiz' };
     if (o.tip === 'SartIstegi' && o.durum === 'Bekliyor') return { ...o, durum: 'Cozuldu' };
+    if (o.tip === 'KullaniciSorusu' && o.durum === 'Bekliyor') {
+      return { ...o, durum: 'IptalEdildi', sonuc: { durum: 'IptalEdildi' } };
+    }
     return o;
   });
 }

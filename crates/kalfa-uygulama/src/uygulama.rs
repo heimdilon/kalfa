@@ -88,6 +88,8 @@ pub struct Uygulama {
     /// Yerel onaylı MCP kayıt defteri ve ana pencerenin MCP kanalı (Görev 10).
     pub(crate) mcp_kayit: crate::mcp::tanimlar::McpKayitDefteri,
     pub(crate) mcp_kanali: Arc<crate::mcp::komutlar::McpArayuzKanali>,
+    /// Oturum bazlı arka plan süreç ve terminal yöneticisi (Hat 03).
+    pub(crate) isler: Arc<crate::isler::IsYoneticisi>,
     ic: Mutex<IcDurum>,
 }
 
@@ -172,8 +174,12 @@ impl Uygulama {
             mcp_denetleyici.clone(),
             ayarlar.clone(),
         );
+        let oturum_dizini = dizin::oturum_dizini(&b.veri_dizini);
+        let isler = Arc::new(crate::isler::IsYoneticisi::yeni_kayitli(
+            oturum_dizini.clone(),
+        ));
         Arc::new(Self {
-            oturum_dizini: dizin::oturum_dizini(&b.veri_dizini),
+            oturum_dizini,
             kasa: b.kasa,
             uretici: b.uretici,
             evren,
@@ -197,6 +203,7 @@ impl Uygulama {
             mcp_denetleyici,
             mcp_kayit,
             mcp_kanali,
+            isler,
             veri_dizini: b.veri_dizini,
             ev_dizini: b.ev_dizini,
             geri_alma_dizini: b.geri_alma_dizini,
@@ -234,6 +241,11 @@ impl Uygulama {
     /// Uygulama genelindeki MCP sır kasası.
     pub fn mcp_kasasi(&self) -> &Arc<dyn crate::mcp::kasa::GizliKasa> {
         &self.mcp_kasa
+    }
+
+    /// Uygulama genelindeki arka plan iş ve terminal yöneticisi.
+    pub fn is_yoneticisi(&self) -> &Arc<crate::isler::IsYoneticisi> {
+        &self.isler
     }
 
     /// Açık oturum sayısı (testler ve tanılama için).

@@ -22,9 +22,12 @@ pub mod kisayol;
 pub mod kurtarma;
 pub mod muhur;
 pub mod oturum;
+pub mod plan;
+pub mod proje_talimatlari;
 pub mod protokol;
 pub mod saglayici;
 pub mod sart_kapisi;
+pub mod soru;
 pub mod tur_ozeti;
 pub mod yol;
 

@@ -31,4 +31,17 @@ impl Yalitici for Yalitimsiz {
         }
         Surec::baslat(istek)
     }
+
+    fn baslat_kabuk_etkilesimli(
+        &self,
+        istek: &CalistirmaIstegi,
+        terminal: Option<crate::TerminalBoyutu>,
+    ) -> Result<crate::EtkilesimliSurec, BaslatmaHatasi> {
+        if istek.alan.is_some() {
+            return Err(BaslatmaHatasi::Yalitim(
+                "komut yalıtımlı çalışmak üzere onaylandı ama yalıtım kullanılamıyor".into(),
+            ));
+        }
+        Surec::baslat_kabuk_etkilesimli(istek, terminal)
+    }
 }
