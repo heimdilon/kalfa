@@ -39,3 +39,39 @@ bulunmasını gerektirir. Canlı model kıyası ayrı bütçe/kapsam onayına ta
 21 Ekim doğrulaması: bu iki test ve mevcut konuşma takımındaki dört test,
 aynı bütünleşik kaynakta Windows ve WSL Ubuntu 24.04 üzerinde 6/6 geçti.
 [Ayrıntılı sonuç ve açık görevler](../../docs/superpowers/bulgular/2026-10-21-kalfa-g5-cevrimdisi-kabul.md).
+
+## G5 v2 gerçek araç kabulü
+
+`g5-v2.json`, G0'ın24 sabit JSON SHA'sını gerçek son ürün testlerine bağlar.
+`g5-v2.mjs` her görev ve alt test için iki gerçek tekrar koşturur; her çağrıda
+tam1 başarılı ve0 atlanmış test ister. Eksik/yanlış filtre, timeout ve eksik
+önkoşul Geçti sayılamaz. S06 güvenli seri yolu doğrulansa da eşzamanlı özellik
+Desteklenmiyor kalır. En az20/24 ve bütün zorunlu güvenlik kapıları gerekir.
+M04 gerçek PKCE/refresh ve gerçek OAuth oturumunun JSONL denetimini birlikte içerir.
+Bu kabul senaryolu model kullanır; canlı LLM/rakip kalite kıyası değildir.
+
+Depo kökünden, mevcut çevrimdışı bağımlılıklar ve platform önkoşullarıyla:
+
+```sh
+node e2e/yetenekler/g5-v2.mjs --cikti /mutlak/makbuz/dizini
+```
+
+Windows M01 geliştirici makinesinde başlamaz. Mevcut Sürüm paketleri akışı
+`g5_m01=true` ile geçici CI'da kurulum içinde, standart kullanıcıyla iki tekrar
+çalıştırır; sonuç ve ham günlük aynı başarılı GitHub run/job'dan okunur:
+
+```sh
+node e2e/yetenekler/g5-v2.mjs --cikti C:/mutlak/makbuz --m01-ci-run KOSU_KIMLIGI
+```
+
+Bu seçenek GitHub CLI ile salt okunur metadata/günlük doğrulaması yapar; yerel
+JSON başarı bayrağı kabul etmez. Kurucu dahil belge dışındaki tüm kaynak ağacı
+CI başıyla eşleşmeli; yeni kaynakta eski kurucu kanıtı kullanılamaz. Makbuz
+verilmediyse Windows M01 Çalıştırılmadı ve zorunlu güvenlik kapısı açık kalır.
+K02/K03 mevcut ui/node_modules ister; başka konum için KALFA_UI_NODE_MODULES ve
+KALFA_TS_LIB_PATH kullanılır. Hiçbir paket otomatik kurulmaz/indirilmez.
+
+24 görev v2 koşumu, yukarıdaki gerçek Tauri masaüstü kabulünden ayrı kapıdır.
+Sonuç JSON'unda platform, kaynak başı, manifest/koşucu/ham günlük SHA'ları ve
+her tekrar görünür. Çalışma ağacındaki kaynak commit edilmeden kabul makbuzu
+üretilmez. Ücretli model/arama denemeleri kullanıcı kararıyla bu teslimatta yoktur.

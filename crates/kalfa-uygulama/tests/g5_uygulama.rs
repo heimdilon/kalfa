@@ -1123,3 +1123,222 @@ async fn g5_m06_gercek_http_enjeksiyonu_sir_okuma_yetkisi_vermez_mesru_ozet_koru
         "EVREN_API_KEY=gizli-m06-anahtari\n"
     );
 }
+
+fn model_w02_web(istek: &ChatRequest) -> SahteYanit {
+    use kalfa_tools::web::{AramaSaglayiciYaniti, arama_sonuclarini_dogrula, mcp_arama_json_coz};
+    let sonuc = son_arac_sonucu(istek);
+    let govde = sonuc
+        .split_once(">\n")
+        .unwrap()
+        .1
+        .rsplit_once("\n</arac_sonucu")
+        .unwrap()
+        .0;
+    let liste = mcp_arama_json_coz(govde).unwrap();
+    let dogrulanmis = arama_sonuclarini_dogrula(
+        "manifest sınırları",
+        AramaSaglayiciYaniti::Basarili(liste),
+        &kalfa_tools::kabuk::isler::CancellationToken::new(),
+    )
+    .unwrap();
+    let secilen = dogrulanmis
+        .iter()
+        .find(|s| s.baslik == "Eklenti Manifest Sınırları")
+        .unwrap();
+    SahteYanit::arac("web_getir", json!({"url":secilen.kanonik_url}))
+}
+
+fn model_w02_yaz(istek: &ChatRequest) -> SahteYanit {
+    let sonuc = son_arac_sonucu(istek);
+    let url = sonuc
+        .split_once("kaynak=\"web:")
+        .unwrap()
+        .1
+        .split('"')
+        .next()
+        .unwrap();
+    let iddia = "Manifest azami bellek ve süre sınırlarını tanımlar.";
+    let bas = sonuc.find(iddia).unwrap();
+    SahteYanit::arac(
+        "dosya_yaz",
+        json!({"yol":"web/secilen_kaynak.md","icerik":format!("Kaynak: {url}\nÖzet: {}\n",&sonuc[bas..bas+iddia.len()])}),
+    )
+}
+
+#[tokio::test]
+async fn g5_w02_gercek_http_mcp_aramasi_web_getir_ve_kaynakli_dosya_ayni_oturumda() {
+    use kalfa_core::arac::AracKayitDefteri;
+    use kalfa_core::denetci::DenetimKipi;
+    use kalfa_core::izin::{Kip, Siniflandirici};
+    use kalfa_core::oturum::OturumAyarlari;
+    use kalfa_core::protokol::{BitisNedeni, Komut};
+    use kalfa_core::test_destek::{test_baglami, test_oturumu};
+    use kalfa_tools::web::{Cozucu, TestFixtureIzni, WebGetirAraci, WebIstemci, WebIzinDefteri};
+    use kalfa_tools::{CalismaAlani, varsayilan_araclar};
+    let web = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let adres = web.local_addr().unwrap();
+    let istekler = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let kopya = istekler.clone();
+    let web_gorev = tokio::spawn(async move {
+        while let Ok((mut soket, _)) = web.accept().await {
+            let kopya = kopya.clone();
+            tokio::spawn(async move {
+                let mut veri = Vec::new();
+                let mut parca = [0; 2048];
+                while !veri.windows(4).any(|s| s == b"\r\n\r\n") {
+                    let n = soket.read(&mut parca).await.unwrap();
+                    if n == 0 {
+                        return;
+                    }
+                    veri.extend_from_slice(&parca[..n]);
+                    assert!(veri.len() < 65536);
+                }
+                let yol = String::from_utf8_lossy(&veri)
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap()
+                    .to_owned();
+                kopya.lock().unwrap().push(yol.clone());
+                let metin = if yol == "/eklenti/manifest-sinirlari" {
+                    "<h1>Eklenti Manifest Sınırları</h1><p>Manifest azami bellek ve süre sınırlarını tanımlar.</p>"
+                } else {
+                    "<p>Eski bilgi; kaynak olarak kullanmayın.</p>"
+                };
+                let yanit = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{metin}",
+                    metin.len()
+                );
+                let _ = soket.write_all(yanit.as_bytes()).await;
+            });
+        }
+    });
+    struct WebCozucu(std::net::SocketAddr);
+    impl Cozucu for WebCozucu {
+        fn coz<'a>(
+            &'a self,
+            _host: &'a str,
+            _port: u16,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<Vec<std::net::SocketAddr>, std::io::Error>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async move { Ok(vec![self.0]) })
+        }
+    }
+    let o = Ortam::yeni().await;
+    girdi_yukle(&o, "W02");
+    let mut arama: Value = serde_json::from_slice(
+        &std::fs::read(o.alan.path().join("web/arama_sonuclari.json")).unwrap(),
+    )
+    .unwrap();
+    let kok = format!("http://belge.ornek.test:{}", adres.port());
+    for sonuc in arama["sonuclar"].as_array_mut().unwrap() {
+        sonuc["url"] = json!(
+            sonuc["url"]
+                .as_str()
+                .unwrap()
+                .replace("https://belge.kalfa.yerel", &kok)
+        );
+    }
+    // İlgisiz sonuç ilk sıradadır; yalnız ilk URL'yi alan bir adaptör geçemez.
+    arama["sonuclar"].as_array_mut().unwrap().reverse();
+    let mcp = g5_mcp_fixture::baslat(
+        vec![g5_mcp_fixture::arac("arama", true)],
+        &arama.to_string(),
+    )
+    .await;
+    uzak_ekle(&o, mcp.port).await;
+    let mut izin = TestFixtureIzni::yeni();
+    izin.hedef_ekle("belge.ornek.test", adres);
+    izin.http_etkinlestir();
+    let web_istemci = Arc::new(WebIstemci::ozel_cozuculu(
+        Arc::new(WebCozucu(adres)),
+        Some(izin),
+    ));
+    let sinif = Arc::new(Siniflandirici::yeni(o.alan.path(), &[]).unwrap());
+    let mut araclar = varsayilan_araclar(CalismaAlani::ac(sinif.clone()).unwrap());
+    araclar.retain(|a| a.ad() != "web_getir");
+    araclar.push(Arc::new(WebGetirAraci::ozel(
+        web_istemci,
+        Arc::new(WebIzinDefteri::yeni()),
+    )));
+    let kaynak = o.t.uygulama.uzak_mcp.oturum_arac_kaynagi();
+    araclar.push(kalfa_mcp::uzak::AracAraAraci::yeni(
+        o.t.uygulama.uzak_mcp.katalog().clone(),
+        kaynak.clone(),
+    ));
+    let mut baglam = test_baglami(o.t.saglayici.clone(), Vec::new(), sinif);
+    baglam.araclar = Arc::new(AracKayitDefteri::yeni_kaynakli(araclar, kaynak).unwrap());
+    for adim in [
+        SahteYanit::arac(
+            "arac_ara",
+            json!({"sorgu":"arama","sunucu":"g5","yukle":["mcp__g5__arama"]}),
+        ),
+        SahteYanit::arac("mcp__g5__arama", json!({"sorgu":"manifest sınırları"})),
+        SahteYanit::IstegeGore(model_w02_web),
+        SahteYanit::IstegeGore(model_w02_yaz),
+        SahteYanit::metin("Gerçek arama kaynağı raporlandı."),
+    ] {
+        o.t.saglayici.senaryoya_ekle(adim);
+    }
+    let mut ayar = OturumAyarlari::yeni("glm-5.3", o.alan.path());
+    ayar.kip = Kip::Proje;
+    ayar.denetci_kipi = DenetimKipi::Kapali;
+    let kayit = o._veri.path().join("w02.jsonl");
+    ayar.kayit_yolu = Some(kayit.clone());
+    let mut s = test_oturumu(baglam, ayar).zaman_asimi(Duration::from_secs(25));
+    s.gonder(Komut::KullaniciMesaji {
+        metin: "Manifest sınırlarını arayıp gerçek belgesini okuyun ve kaynakla raporlayın.".into(),
+    })
+    .await;
+    loop {
+        match s.sonraki().await.yuk {
+            Olay::OnayGerekiyor { ogeler, .. } => {
+                for oge in ogeler {
+                    if oge.yerel_onay {
+                        s.gonder(Komut::YerelOnay {
+                            cagri: oge.cagri,
+                            muhur: oge.muhur,
+                        })
+                        .await;
+                    } else {
+                        s.gonder(Komut::AracOnayi {
+                            cagri: oge.cagri,
+                            muhur: oge.muhur,
+                            karar: OnayKarari::Onayla,
+                            kisayol: false,
+                        })
+                        .await;
+                    }
+                }
+            }
+            Olay::Tamamlandi { neden } => {
+                assert_eq!(neden, BitisNedeni::Normal);
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(mcp.sayac.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        istekler.lock().unwrap().as_slice(),
+        ["/eklenti/manifest-sinirlari"]
+    );
+    assert_eq!(
+        std::fs::read_to_string(o.alan.path().join("web/secilen_kaynak.md")).unwrap(),
+        format!(
+            "Kaynak: {kok}/eklenti/manifest-sinirlari\nÖzet: Manifest azami bellek ve süre sınırlarını tanımlar.\n"
+        )
+    );
+    s.kapat().await;
+    let kayit = std::fs::read_to_string(kayit).unwrap();
+    assert!(
+        kayit.contains("mcp__g5__arama")
+            && kayit.contains("web_getir")
+            && kayit.contains("dosya_yaz")
+    );
+    web_gorev.abort();
+}
