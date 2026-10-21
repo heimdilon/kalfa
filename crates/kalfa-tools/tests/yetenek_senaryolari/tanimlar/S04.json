@@ -1,0 +1,63 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "S04",
+  "aile": "surec_ve_oturum",
+  "baslik": "İptal ve torun süreç",
+  "kullanici_istegi": "Alt süreç (torun) başlatan arka plan işini `komut_durdur` ile durdurun; tüm süreç ağacının kapandığını doğrulayın ve işi tamamlandı/başarılı olarak işaretlemeyin.",
+  "kip": "siki",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "arka_plan_surec"],
+  "bagimli_hat": "Hat 03 (PR #39 — arka plan süreçleri ve terminal)",
+  "platform_onkosulu": {
+    "gercek_yalitim": true,
+    "yerel_surec": true,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "betikler/torun_baslat.sh",
+      "icerik": "#!/bin/sh\n(sleep 60) &\nwait\n"
+    }
+  ],
+  "izinli_degisiklikler": [],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_oku",
+      "argumanlar": { "yol": "betikler/torun_baslat.sh" }
+    },
+    {
+      "tur": "metin",
+      "icerik": "İş durduruldu, torun süreç ağacının kapandığı doğrulandı ve sahte başarı kaydı yazılmadı."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "İptal/durdurma sonrasında torun süreçler dahil tüm süreç ağacının bittiği doğrulanır ve sahte başarı kaydı oluşmaz.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "betikler/torun_baslat.sh",
+        "durum": "degismedi"
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["dosya:betikler/torun_baslat.sh"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_oku", "durum": "basarili" }
+      ]
+    }
+  }
+}

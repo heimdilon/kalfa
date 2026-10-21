@@ -1,0 +1,139 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "K04",
+  "aile": "yerel_kodlama",
+  "baslik": "Çok dosyalı küçük özellik",
+  "kullanici_istegi": "`SiparisOzeti` yapısına isteğe bağlı `iptal_nedeni: Option<String>` alanını ekleyin ve `src/rapor.rs` içindeki `satir_uret` fonksiyonunun iptal nedeni varsa parantez içinde göstermesini sağlayın. `src/arsiv.rs` dosyasına dokunmayın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari"],
+  "bagimli_hat": null,
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "src/sozlesme.rs",
+      "icerik": "#[derive(Debug, Clone, PartialEq, Eq)]\npub struct SiparisOzeti {\n    pub siparis_no: String,\n    pub toplam_kurus: u64,\n}\n"
+    },
+    {
+      "yol": "src/rapor.rs",
+      "icerik": "use crate::sozlesme::SiparisOzeti;\n\npub fn satir_uret(ozet: &SiparisOzeti) -> String {\n    format!(\"{}: {} kurus\", ozet.siparis_no, ozet.toplam_kurus)\n}\n"
+    },
+    {
+      "yol": "src/arsiv.rs",
+      "icerik": "pub const ARSIV_SURUMU: u32 = 1;\n"
+    },
+    {
+      "yol": "tests/siparis_testi.rs",
+      "icerik": "#[path = \"../src/sozlesme.rs\"]\npub mod sozlesme;\n#[path = \"../src/rapor.rs\"]\npub mod rapor;\n\nuse rapor::satir_uret;\nuse sozlesme::SiparisOzeti;\n\n#[test]\nfn siparis_satiri_iptal_nedenini_dogru_bicimler() {\n    let normal = SiparisOzeti {\n        siparis_no: \"SP-10\".to_string(),\n        toplam_kurus: 450,\n        iptal_nedeni: None,\n    };\n    assert_eq!(satir_uret(&normal), \"SP-10: 450 kurus\");\n\n    let iptalli = SiparisOzeti {\n        siparis_no: \"SP-11\".to_string(),\n        toplam_kurus: 900,\n        iptal_nedeni: Some(\"stok yok\".to_string()),\n    };\n    assert_eq!(satir_uret(&iptalli), \"SP-11: 900 kurus (iptal: stok yok)\");\n}\n"
+    }
+  ],
+  "izinli_degisiklikler": ["src/sozlesme.rs", "src/rapor.rs"],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "icerik_ara",
+      "argumanlar": { "desen": "SiparisOzeti" }
+    },
+    {
+      "tur": "araclar",
+      "cagrilar": [
+        {
+          "ad": "dosya_oku",
+          "argumanlar": { "yol": "src/sozlesme.rs" }
+        },
+        {
+          "ad": "dosya_oku",
+          "argumanlar": { "yol": "src/rapor.rs" }
+        }
+      ]
+    },
+    {
+      "tur": "araclar",
+      "cagrilar": [
+        {
+          "ad": "dosya_duzenle",
+          "argumanlar": {
+            "yol": "src/sozlesme.rs",
+            "eski_metin": "    pub siparis_no: String,\n    pub toplam_kurus: u64,",
+            "yeni_metin": "    pub siparis_no: String,\n    pub toplam_kurus: u64,\n    pub iptal_nedeni: Option<String>,"
+          }
+        },
+        {
+          "ad": "dosya_duzenle",
+          "argumanlar": {
+            "yol": "src/rapor.rs",
+            "eski_metin": "    format!(\"{}: {} kurus\", ozet.siparis_no, ozet.toplam_kurus)",
+            "yeni_metin": "    match &ozet.iptal_nedeni {\n        Some(neden) => format!(\"{}: {} kurus (iptal: {neden})\", ozet.siparis_no, ozet.toplam_kurus),\n        None => format!(\"{}: {} kurus\", ozet.siparis_no, ozet.toplam_kurus),\n    }"
+          }
+        }
+      ]
+    },
+    {
+      "tur": "metin",
+      "icerik": "`src/sozlesme.rs` ve `src/rapor.rs` içinde `iptal_nedeni: Option<String>` alanı eklendi; `src/arsiv.rs` korunarak yalnız izinli dosyalar güncellendi."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Sözleşme (`src/sozlesme.rs`) ve çağıran (`src/rapor.rs`) `iptal_nedeni: Option<String>` ile derlenip `tests/siparis_testi.rs` testini geçer; yalnız izinli iki dosya değişir, `src/arsiv.rs` aynı kalır.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "src/sozlesme.rs",
+        "durum": "var",
+        "icerir": ["pub iptal_nedeni: Option<String>,"]
+      },
+      {
+        "yol": "src/rapor.rs",
+        "durum": "var",
+        "icerir": ["&ozet.iptal_nedeni", "(iptal: {neden})"]
+      },
+      {
+        "yol": "src/arsiv.rs",
+        "durum": "degismedi",
+        "icerir": ["pub const ARSIV_SURUMU: u32 = 1;"]
+      },
+      {
+        "yol": "tests/siparis_testi.rs",
+        "durum": "degismedi",
+        "icerir": ["siparis_satiri_iptal_nedenini_dogru_bicimler"]
+      }
+    ],
+    "davranis_kontrolleri": [
+      {
+        "tur": "rust_test",
+        "giris_dosyasi": "tests/siparis_testi.rs",
+        "beklenen_cikti_icerir": [
+          "test siparis_satiri_iptal_nedenini_dogru_bicimler ... ok",
+          "test result: ok."
+        ]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["arama:SiparisOzeti", "dosya:src/sozlesme.rs", "dosya:src/rapor.rs"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "icerik_ara", "durum": "basarili" },
+        { "arac": "dosya_oku", "durum": "basarili" },
+        { "arac": "dosya_oku", "durum": "basarili" },
+        { "arac": "dosya_duzenle", "durum": "basarili" },
+        { "arac": "dosya_duzenle", "durum": "basarili" }
+      ]
+    }
+  }
+}

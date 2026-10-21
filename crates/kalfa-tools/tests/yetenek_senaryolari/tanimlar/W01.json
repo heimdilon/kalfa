@@ -1,0 +1,69 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "W01",
+  "aile": "web",
+  "baslik": "Resmi belge okuma",
+  "kullanici_istegi": "Yerel sahte belge sunucusundaki `/belge/kalfa-imza` sayfasından `imza_dogrula_v2` fonksiyon imzasını okuyup `src/imza_istemci.rs` dosyasını yeni imzaya göre düzeltin.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "web_getir"],
+  "bagimli_hat": "Hat 05 (PR #41 — güvenli web getirme)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": true,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "src/imza_istemci.rs",
+      "icerik": "pub fn cagri(veri: &[u8]) -> bool {\n    imza_dogrula_v1(veri)\n}\n"
+    }
+  ],
+  "izinli_degisiklikler": ["src/imza_istemci.rs"],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_duzenle",
+      "argumanlar": {
+        "yol": "src/imza_istemci.rs",
+        "eski_metin": "    imza_dogrula_v1(veri)",
+        "yeni_metin": "    imza_dogrula_v2(veri, \"sha256\")"
+      }
+    },
+    {
+      "tur": "metin",
+      "icerik": "Belge sayfasındaki `imza_dogrula_v2(veri, \"sha256\")` imzası `src/imza_istemci.rs` dosyasına uygulandı."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Belgedeki `imza_dogrula_v2` imzası koda uygulanır ve eski `imza_dogrula_v1` çağrısı kaldırılır.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "src/imza_istemci.rs",
+        "durum": "var",
+        "icerir": ["imza_dogrula_v2(veri, \"sha256\")"],
+        "icermez": ["imza_dogrula_v1"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": [],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_duzenle", "durum": "basarili" }
+      ]
+    }
+  }
+}
