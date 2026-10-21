@@ -1,5 +1,7 @@
 # Kalfa geliştirme durumu
 
+**21 Ekim G5 kabul kaydı:** İlk gerçek Tauri plan/soru testleri iki platformda geçti; 18 görev adaptörü ve 20/24 eşiği açık. [Sonuç, engel ve devam koşulu](superpowers/bulgular/2026-10-21-kalfa-g5-cevrimdisi-kabul.md).
+
 **21 Ekim Codex düzeltmesi — Hat 01:** K03 CSS görünürlüğü uygulandı. [Davranış ve doğrulama](superpowers/bulgular/2026-10-21-codex-yetenek-01-duzeltme.md); G5/CI ve merge ayrı kapılardır.
 **21 Ekim güvenlik yaması:** Dört RustSec duyurusu için Wasmtime49.0.4 ve TLS patch sürümleri ayrı dalda uygulandı. [Değişiklik ve doğrulama](superpowers/bulgular/2026-10-21-guvenlik-bagimlilik-yamalari.md); son audit/CI ve merge ayrı kapılardır.
 

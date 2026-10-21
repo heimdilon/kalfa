@@ -2,7 +2,7 @@
  * Kalfa Yetenek Programı — G5 Bütünleşik Kabul Sözleşmesi (`e2e/yetenekler/`).
  *
  * Not: Mevcut `e2e/calistir.mjs` yapılandırmasına dokunulmaz. Bu modül,
- * Hat 02 (#38), Hat 03 (#39), Hat 04 (#40) ve Hat 05 (#41) birleştikten sonra
+ * Hat 02 (#38), Hat 03 (#39), Hat 04 (#40) ve Hat 05 (#41) kaynakları birlikte doğrulandıktan sonra
  * G5 kabul kapısında koşulacak uçtan uca senaryo bildirimlerini sabitler.
  */
 
@@ -17,7 +17,7 @@ export const G5_KABUL_SENARYOLARI = Object.freeze([
     bagimliHat: "Hat 02 (PR #38)",
     durum: "calistirilmadi",
     devamKosulu:
-      "PR #38 birleşip `KALFA.md` kapsamı, `plan_guncelle` ve `kullaniciya_sor` arayüz olayları hazır olduğunda koşulur.",
+      "Doğrulanmış bütünleşik başta `AGENTS.md` kapsamı, `plan_guncelle` ve `kullaniciya_sor` arayüz olayları hazır olduğunda koşulur.",
   },
   {
     kimlik: "G5-E2E-02",
@@ -26,7 +26,7 @@ export const G5_KABUL_SENARYOLARI = Object.freeze([
     bagimliHat: "Hat 03 (PR #39)",
     durum: "calistirilmadi",
     devamKosulu:
-      "PR #39 birleşip arka plan süreç yönetimi, PTY terminal uçları ve çalışma alanı yazma kilidi hazır olduğunda koşulur.",
+      "Doğrulanmış bütünleşik başta arka plan süreç yönetimi, PTY terminal uçları ve çalışma alanı yazma kilidi hazır olduğunda koşulur.",
   },
   {
     kimlik: "G5-E2E-03",
@@ -35,7 +35,7 @@ export const G5_KABUL_SENARYOLARI = Object.freeze([
     bagimliHat: "Hat 04 (PR #40)",
     durum: "calistirilmadi",
     devamKosulu:
-      "PR #40 birleşip uzak Streamable HTTP MCP istemcisi, OAuth PKCE kasası ve dinamik araç keşfi hazır olduğunda koşulur.",
+      "Doğrulanmış bütünleşik başta uzak Streamable HTTP MCP istemcisi, OAuth PKCE kasası ve dinamik araç keşfi hazır olduğunda koşulur.",
   },
   {
     kimlik: "G5-E2E-04",
@@ -44,6 +44,6 @@ export const G5_KABUL_SENARYOLARI = Object.freeze([
     bagimliHat: "Hat 05 (PR #41)",
     durum: "calistirilmadi",
     devamKosulu:
-      "PR #41 birleşip `web_getir`, SSRF doğrulaması, akışkan boyut sınırı ve kaynak atıf kartları hazır olduğunda koşulur.",
+      "Doğrulanmış bütünleşik başta `web_getir`, SSRF doğrulaması, akışkan boyut sınırı ve kaynak atıf kartları hazır olduğunda koşulur.",
   },
 ]);
