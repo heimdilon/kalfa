@@ -13,6 +13,9 @@ import type {
   McpDurumEtiketi,
   McpKipi,
   ModelProfili,
+  UzakMcpDurumEtiketi,
+  UzakMcpRozeti,
+  UzakMcpYetkiEtiketi,
   YalitimYoklukNedeni,
 } from '../ipc/tipler';
 
@@ -127,6 +130,7 @@ export const tr = {
   'oturum.durum.calisiyor': 'Çalışıyor',
   'oturum.durum.onay': 'Onay bekliyor',
   'oturum.durum.sart': 'Şart onayı bekliyor',
+  'oturum.durum.soru': 'Yanıt bekliyor',
   'oturum.durum.tamamlandi': 'Tamamlandı',
   'oturum.durum.iptal': 'İptal edildi',
   'oturum.durum.hata': 'Hatayla bitti',
@@ -163,6 +167,8 @@ export const tr = {
   'sag.baglam_ozetleme': '{sayi} eski araç çıktısı özetlendi.',
   'sag.ciktilar': 'Çıktılar',
   'sag.ciktilar_bos': 'Bu oturumda henüz dosya değişmedi.',
+  'sag.isler': 'Arka plan işleri',
+  'sag.isler_bos': 'Bu oturumda arka plan işi yok.',
   'sag.okunamadi': 'Okunamadı: {neden}',
   'sag.dosya_sec': 'Önizlemek için bir dosya seçin.',
   'sag.dizin_kirpildi': 'Bu dizinde ilk 2000 girdi gösteriliyor.',
@@ -208,6 +214,59 @@ export const tr = {
   'arac.kabuk.suruyor': 'Komut çalışıyor',
   'arac.kabuk.bitti': 'Komut çalıştı',
   'arac.kabuk.ad': 'Komut',
+  'arac.komut_oku.suruyor': 'İş çıktısı okunuyor',
+  'arac.komut_oku.bitti': 'İş çıktısı okundu',
+  'arac.komut_oku.ad': 'İş çıktısı okuma',
+  'arac.komut_girdi.suruyor': 'İşe girdi gönderiliyor',
+  'arac.komut_girdi.bitti': 'İşe girdi gönderildi',
+  'arac.komut_girdi.ad': 'İşe girdi gönderme',
+  'arac.komut_durdur.suruyor': 'İş durduruluyor',
+  'arac.komut_durdur.bitti': 'İş durduruldu',
+  'arac.komut_durdur.ad': 'İşi durdurma',
+  'arac.komut_boyutlandir.suruyor': 'Terminal boyutlandırılıyor',
+  'arac.komut_boyutlandir.bitti': 'Terminal boyutlandırıldı',
+  'arac.komut_boyutlandir.ad': 'Terminal boyutlandırma',
+  'arac.plan_guncelle.suruyor': 'Plan güncelleniyor',
+  'arac.plan_guncelle.bitti': 'Plan güncellendi',
+  'arac.plan_guncelle.ad': 'Plan güncelleme',
+  'arac.kullaniciya_sor.suruyor': 'Yanıtınız bekleniyor',
+  'arac.kullaniciya_sor.bitti': 'Soru yanıtlandı',
+  'arac.kullaniciya_sor.ad': 'Kullanıcı sorusu',
+
+  'plan.baslik': 'Çalışma planı',
+  'plan.ilerleme': '{tamam} / {toplam} adım tamamlandı',
+  'plan.durum.Bekliyor': 'Bekliyor',
+  'plan.durum.Suruyor': 'Sürüyor',
+  'plan.durum.Tamam': 'Tamam',
+
+  'soru.kart.baslik': 'Kalfa yanıtınızı bekliyor',
+  'soru.kart.bekliyor': 'Yanıt bekliyor',
+  'soru.kart.yanitlandi': 'Yanıtlandı',
+  'soru.kart.yonlendirildi': 'Yeni mesajla yönlendirildi',
+  'soru.kart.iptal': 'İptal edildi',
+  'soru.kart.kesintiye_ugradi': 'Kesintiye uğradı',
+  'soru.serbest.ac': 'Kendi yanıtınızı yazın',
+  'soru.serbest.yer_tutucu': 'Yanıtınızı buraya yazın…',
+  'soru.serbest.gonder': 'Yanıtı gönder',
+  'soru.serbest.vazgec': 'Vazgeç',
+  'soru.yanit.secenek': 'Seçiminiz: {deger}',
+  'soru.yanit.serbest': 'Yanıtınız: {deger}',
+  'soru.yanit.yeni_mesaj': 'Yeni mesajla yönlendirildi: {deger}',
+
+  'proje_talimatlari.baslik': 'Proje talimatları',
+  'proje_talimatlari.yok': 'Etkin AGENTS.md kaynağı yok',
+  'proje_talimatlari.kaynak_sayisi': '{sayi} kaynak etkin',
+  'proje_talimatlari.kapsam.kok': 'Kök',
+  'proje_talimatlari.kapsam.alt_dizin': 'Alt dizin ({dizin})',
+  'proje_talimatlari.eksik_baglam': 'Eksik bağlam',
+  'proje_talimatlari.degisti': 'Bu turda değişti',
+  'proje_talimatlari.uyari.dosya_boyutu_asildi': 'Dosya boyutu sınırı aşıldı ({gercek} / {sinir} bayt)',
+  'proje_talimatlari.uyari.toplam_boyut_asildi': 'Toplam talimat bütçesi aşıldı ({gercek} / {sinir} bayt)',
+  'proje_talimatlari.uyari.kaynak_sayisi_asildi': 'Kaynak sayısı sınırı aşıldı ({sinir})',
+  'proje_talimatlari.uyari.gecersiz_utf8': 'Dosya geçerli UTF-8 metin değil',
+  'proje_talimatlari.uyari.sembolik_baglanti_reddedildi': 'Sembolik veya çoklu sabit bağlantı reddedildi',
+  'proje_talimatlari.uyari.gizli_veya_korumali_reddedildi': 'Gizli veya korumalı yol reddedildi',
+  'proje_talimatlari.uyari.okunamadi': 'Okunamadı: {neden}',
 
   'terminal.etiket': 'Komut çıktısı',
   'terminal.atilan': 'En eski {sayi} satır gösterilmiyor.',
@@ -251,6 +310,8 @@ export const tr = {
   'onay.veri.DosyaAdlari': 'Dosya adları',
   'onay.veri.YalnizcaYazildi': 'Yalnızca "yazıldı" bilgisi',
   'onay.veri.EklentiCiktisi': 'Eklentinin ürettiği metin modele gidecek.',
+  'onay.veri.UzakMcpCagrisi':
+    'Çağrı girdileri uzak MCP sunucusuna gönderilir; sunucunun döndürdüğü yanıt modele gidecek.',
   'onay.veri.Bilinmiyor': 'Araç sonucu',
   'onay.sayfa.uyarilar': 'Uyarılar',
   'onay.sayfa.geri_alinabilir': 'Geri alınabilir mi',
@@ -776,6 +837,54 @@ export const tr = {
   'ayar.etkin_pencere_kaydedildi': 'Kaydedildi. Yeni oturumlar bu pencereyle başlar.',
   'ayar.etkin_pencere_hata':
     'Etkin bağlam penceresi en az 32000 olan bir tam sayı olmalı.',
+  // Uzak MCP sunucuları (Yetenek-04 Görev 6). Yerel süreç veya yalıtım içermez.
+  'uzak_mcp.baslik': 'Uzak MCP sunucuları',
+  'uzak_mcp.aciklama':
+    'HTTPS üzerinden bağlanan uzak MCP sunucularıdır. Bilgisayarınızda süreç başlatmazlar ve yerel yalıtım kullanmazlar.',
+  'uzak_mcp.ekle': 'Uzak sunucu ekle',
+  'uzak_mcp.bos': 'Kayıtlı uzak MCP sunucusu yok.',
+  'uzak_mcp.liste': 'Kayıtlı uzak MCP sunucuları',
+  'uzak_mcp.rozet.uzak_streamable_http': 'Uzak HTTP sunucusu (yerel yalıtım yok)',
+  'uzak_mcp.rozet_aciklama.uzak_streamable_http':
+    'Bu sunucu ağ üzerinden uzak bir adreste çalışır; bilgisayarınızda yerel yalıtımlı süreç başlatılmaz. Çağrı verileri onayınızla uzak sunucuya gönderilir.',
+  'uzak_mcp.onay.ozet':
+    'Uzak uç (origin): {origin} · Kimlik kapsamı: {kimlik} · Bilgisayarınızda yerel yalıtım (AppContainer/bwrap) kullanılmaz.',
+  'uzak_mcp.durum.bagli_degil': 'Bağlı değil',
+  'uzak_mcp.durum.baglaniyor': 'Bağlanıyor',
+  'uzak_mcp.durum.bagli': 'Bağlı',
+  'uzak_mcp.durum.kimlik_gerekli': 'Hesap bağlantısı gerekli',
+  'uzak_mcp.durum.sonucu_belirsiz': 'Son işlem sonucu belirsiz',
+  'uzak_mcp.durum.hata': 'Bağlantı hatası',
+  'uzak_mcp.yetki.yetkisiz': 'Kimliksiz (açık uç)',
+  'uzak_mcp.yetki.sabit_baslik': 'Sabit gizli başlık (kasada)',
+  'uzak_mcp.yetki.oauth': 'OAuth 2.0 (PKCE)',
+  'uzak_mcp.kimlik_bagli': 'Hesap bağlı (kasada)',
+  'uzak_mcp.kimlik_bagli_degil': 'Hesap bağlı değil',
+  'uzak_mcp.baglan': 'Bağlan ve araçları keşfet',
+  'uzak_mcp.oauth_bagla': 'Hesabı bağla (OAuth)',
+  'uzak_mcp.kimlik_kaldir': 'Kimliği kaldır',
+  'uzak_mcp.protokol': 'Protokol {surum}',
+  'uzak_mcp.reddedilen_sayisi': '{sayi} araç güvenlik denetiminde kapatıldı',
+  'uzak_mcp.belirsiz_uyari_baslik': 'Belirsiz yazma uyarısı:',
+  'uzak_mcp.form.baslik_yeni': 'Yeni uzak MCP sunucusu',
+  'uzak_mcp.form.baslik_duzenle': '{ad} uzak sunucusunu düzenle',
+  'uzak_mcp.form.ad': 'Sunucu adı',
+  'uzak_mcp.form.uc_url': 'HTTPS uç adresi (URL)',
+  'uzak_mcp.form.uc_url_ipucu': 'Yalnızca https:// adresleri kabul edilir.',
+  'uzak_mcp.form.yetki': 'Yetkilendirme türü',
+  'uzak_mcp.form.baslik_adi': 'Gizli başlık adı',
+  'uzak_mcp.form.baslik_degeri': 'Gizli başlık değeri',
+  'uzak_mcp.form.korunan_baslik': 'Kayıtlı gizli başlık kasada korunuyor (değer gösterilmez)',
+  'uzak_mcp.form.baslik_degistir': 'Gizli değeri değiştir',
+  'uzak_mcp.form.oauth_istemci': 'OAuth istemci kimliği (isteğe bağlı)',
+  'uzak_mcp.form.oauth_kapsamlar': 'OAuth kapsamları (boşluk veya virgülle ayrılmış)',
+  'uzak_mcp.form.oauth_kaynak': 'OAuth kaynak adresi (resource URL, isteğe bağlı)',
+  'uzak_mcp.form.yerel_onay':
+    'Kaydet dediğinizde Kalfa uzak uç adresini ve yetkilendirme türünü yerel bir pencerede gösterir ve onayınızı ister.',
+  'uzak_mcp.form.hata.ad': 'Sunucu adı yalnız küçük harf, rakam ve tire içermeli.',
+  'uzak_mcp.form.hata.url': 'Geçerli bir https:// uç adresi yazın.',
+  'uzak_mcp.form.hata.baslik': 'Gizli başlık adı ve değeri boş bırakılamaz.',
+  'uzak_mcp.form.hata.zaman': 'Zaman aşımları sıfırdan büyük tam sayı olmalı.',
 } as const;
 
 export type MetinAnahtari = keyof typeof tr;
@@ -927,3 +1036,27 @@ export function kisayolCumlesi(t: KisayolTeklifi): string {
     ? m('kisayol.dosya_kok', { arac: t.arac })
     : m('kisayol.dosya', { dizin: t.dizin, arac: t.arac });
 }
+
+
+export const UZAK_MCP_DURUMU_ADI: Record<UzakMcpDurumEtiketi, MetinAnahtari> = {
+  bagli_degil: 'uzak_mcp.durum.bagli_degil',
+  baglaniyor: 'uzak_mcp.durum.baglaniyor',
+  bagli: 'uzak_mcp.durum.bagli',
+  kimlik_gerekli: 'uzak_mcp.durum.kimlik_gerekli',
+  sonucu_belirsiz: 'uzak_mcp.durum.sonucu_belirsiz',
+  hata: 'uzak_mcp.durum.hata',
+};
+
+export const UZAK_MCP_ROZETI: Record<UzakMcpRozeti, MetinAnahtari> = {
+  uzak_streamable_http: 'uzak_mcp.rozet.uzak_streamable_http',
+};
+
+export const UZAK_MCP_ROZET_ACIKLAMASI: Record<UzakMcpRozeti, MetinAnahtari> = {
+  uzak_streamable_http: 'uzak_mcp.rozet_aciklama.uzak_streamable_http',
+};
+
+export const UZAK_MCP_YETKI_ADI: Record<UzakMcpYetkiEtiketi, MetinAnahtari> = {
+  yetkisiz: 'uzak_mcp.yetki.yetkisiz',
+  sabit_baslik: 'uzak_mcp.yetki.sabit_baslik',
+  oauth: 'uzak_mcp.yetki.oauth',
+};

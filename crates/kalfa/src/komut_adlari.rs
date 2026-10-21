@@ -4,7 +4,7 @@
 // denetler).
 
 /// Ana pencerenin komutları.
-pub const ANA_PENCERE_KOMUTLARI: [&str; 84] = [
+pub const ANA_PENCERE_KOMUTLARI: [&str; 98] = [
     "uygulama_durumu",
     "modelleri_yenile",
     "oturumlari_listele",
@@ -18,6 +18,7 @@ pub const ANA_PENCERE_KOMUTLARI: [&str; 84] = [
     "oturum_ozetle",
     "turu_iptal_et",
     "arac_onayi",
+    "kullanici_sorusu_yaniti",
     "model_degistir",
     "efor_degistir",
     "izin_kipi_degistir",
@@ -82,6 +83,14 @@ pub const ANA_PENCERE_KOMUTLARI: [&str; 84] = [
     "mcp_yeniden_baslat",
     "mcp_baslatma_karti_yanitla",
     "mcp_baslatma_izni_geri_al",
+    "uzak_mcp_sunuculari",
+    "uzak_mcp_sunucu_ayrintisi",
+    "uzak_mcp_kaydet",
+    "uzak_mcp_sil",
+    "uzak_mcp_etkin_ayarla",
+    "uzak_mcp_baglan",
+    "uzak_mcp_oauth_bagla",
+    "uzak_mcp_kimlik_kaldir",
     "pencere_kucult",
     "pencere_buyut_degistir",
     "pencere_kapat",
@@ -89,6 +98,11 @@ pub const ANA_PENCERE_KOMUTLARI: [&str; 84] = [
     "calisma_alani_ozeti",
     "calisma_alani_dizini",
     "calisma_alani_dosyasi",
+    "oturum_isleri",
+    "is_oku",
+    "is_girdi",
+    "is_durdur",
+    "is_boyutlandir",
 ];
 
 /// Şart penceresinin komutları. Şart kabulüne giden tek yol buradaki

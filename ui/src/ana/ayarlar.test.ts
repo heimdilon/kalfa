@@ -386,3 +386,48 @@ describe('Ayarlar: etkin bağlam penceresi', () => {
   });
 });
 
+describe('Ayarlar: uzak MCP sunucuları (Yetenek-04 Görev 6, SP-08)', () => {
+  it('gerçek Ayarlar ekranında uzak MCP sunucularını listeler, ekler, OAuth bağlar, keşfeder ve kimliği kaldırır', async () => {
+    const { arka } = await ciz((a) => {
+      a.uzakMcpSunuculari = [
+        {
+          ozet: {
+            ad: 'bulut-mcp',
+            etkin: true,
+            uc_url: 'https://mcp.ornek.tr/v1',
+            yetki_turu: 'oauth',
+            kimlik_bagli: false,
+          },
+          rozet: 'uzak_streamable_http',
+          durum: 'kimlik_gerekli',
+          protokol_surumu: null,
+          arac_sayisi: 0,
+          reddedilen_arac_sayisi: 0,
+          son_hata: null,
+          belirsiz_yazma_uyarisi: null,
+        },
+      ];
+    });
+    const ayarlar = await ayarlariAc();
+    expect(await within(ayarlar).findByText('Uzak MCP sunucuları')).toBeTruthy();
+    expect(await within(ayarlar).findByText('bulut-mcp')).toBeTruthy();
+    expect(within(ayarlar).getByText('Uzak HTTP sunucusu (yerel yalıtım yok)')).toBeTruthy();
+
+    await fireEvent.click(within(ayarlar).getByRole('button', { name: 'Hesabı bağla (OAuth)' }));
+    await waitFor(() =>
+      expect(arka.komutlar('uzak_mcp_oauth_bagla')).toEqual([{ ad: 'bulut-mcp' }]),
+    );
+    expect(await within(ayarlar).findByText('Hesap bağlı (kasada)')).toBeTruthy();
+
+    await fireEvent.click(within(ayarlar).getByRole('button', { name: 'Bağlan ve araçları keşfet' }));
+    await waitFor(() => expect(arka.komutlar('uzak_mcp_baglan')).toEqual([{ ad: 'bulut-mcp' }]));
+
+    await fireEvent.click(within(ayarlar).getByRole('button', { name: 'Kimliği kaldır' }));
+    await waitFor(() =>
+      expect(arka.komutlar('uzak_mcp_kimlik_kaldir')).toEqual([{ ad: 'bulut-mcp' }]),
+    );
+    expect(await within(ayarlar).findByText('Hesap bağlı değil')).toBeTruthy();
+  });
+});
+
+

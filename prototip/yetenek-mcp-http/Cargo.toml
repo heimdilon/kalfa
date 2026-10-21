@@ -1,0 +1,23 @@
+[package]
+name = "kalfa-yetenek-mcp-http-on-dogrulama"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+license = "Apache-2.0"
+authors = ["Orkun Koray Güngör"]
+
+[workspace]
+
+[dependencies]
+base64 = "0.22"
+bytes = "1.12"
+futures-util = "0.3.34"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "json", "stream", "http2", "charset"] }
+rmcp = { version = "=3.5.1", default-features = false, features = ["client"] }
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.20"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "test-util"] }
+url = "2.5"

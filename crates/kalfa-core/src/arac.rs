@@ -439,6 +439,20 @@ pub enum OrtamIstegi {
         butce_islem: Option<ButceIslemId>,
         kullanim: Option<GunlukToken>,
     },
+    /// Oturumun çalışma planını günceller (`plan_guncelle`).
+    PlanGuncelle {
+        cagri: CagriId,
+        adimlar: Vec<crate::plan::PlanAdimi>,
+        yanit: oneshot::Sender<Result<crate::plan::OturumPlani, String>>,
+    },
+    /// Kullanıcıya çoktan seçmeli soru sorar ve yanıtını bekler (`kullaniciya_sor`).
+    KullaniciSorusu {
+        cagri: CagriId,
+        baslik: String,
+        secenekler: Vec<crate::soru::SoruSecenegi>,
+        serbest_yanit_izni: bool,
+        yanit: oneshot::Sender<Result<crate::soru::SoruSonucu, String>>,
+    },
 }
 
 /// Aracın oturumla konuştuğu kanal (aşama 4 tasarımı §8.7): canlı çıktı,
@@ -539,6 +553,68 @@ impl AracOrtami {
                 kullanim,
             })
             .await;
+    }
+
+    /// Oturumun çalışma planını günceller ve doğrulanan planı döner.
+    pub async fn plan_guncelle(
+        &self,
+        adimlar: Vec<crate::plan::PlanAdimi>,
+        iptal: CancellationToken,
+    ) -> Result<crate::plan::OturumPlani, AracHatasi> {
+        let Some((cagri, tx, _)) = &self.ic else {
+            return Err(AracHatasi::Gecersiz(
+                "plan_guncelle yalnız oturum ortamında çalıştırılabilir.".to_string(),
+            ));
+        };
+        let (yanit, alici) = oneshot::channel();
+        tx.send(OrtamIstegi::PlanGuncelle {
+            cagri: *cagri,
+            adimlar,
+            yanit,
+        })
+        .await
+        .map_err(|_| AracHatasi::Iptal)?;
+        tokio::select! {
+            _ = iptal.cancelled() => Err(AracHatasi::Iptal),
+            gelen = alici => {
+                gelen
+                    .map_err(|_| AracHatasi::Iptal)?
+                    .map_err(AracHatasi::Gecersiz)
+            }
+        }
+    }
+
+    /// Kullanıcıya soru sorar ve yanıt gelene (ya da iptal/yönlendirme olana) kadar bekler.
+    pub async fn kullaniciya_sor(
+        &self,
+        baslik: String,
+        secenekler: Vec<crate::soru::SoruSecenegi>,
+        serbest_yanit_izni: bool,
+        iptal: CancellationToken,
+    ) -> Result<crate::soru::SoruSonucu, AracHatasi> {
+        let Some((cagri, tx, _)) = &self.ic else {
+            return Err(AracHatasi::Gecersiz(
+                "kullaniciya_sor yalnız oturum ortamında çalıştırılabilir.".to_string(),
+            ));
+        };
+        let (yanit, alici) = oneshot::channel();
+        tx.send(OrtamIstegi::KullaniciSorusu {
+            cagri: *cagri,
+            baslik,
+            secenekler,
+            serbest_yanit_izni,
+            yanit,
+        })
+        .await
+        .map_err(|_| AracHatasi::Iptal)?;
+        tokio::select! {
+            _ = iptal.cancelled() => Err(AracHatasi::Iptal),
+            gelen = alici => {
+                gelen
+                    .map_err(|_| AracHatasi::Iptal)?
+                    .map_err(AracHatasi::Gecersiz)
+            }
+        }
     }
 }
 
@@ -1064,11 +1140,13 @@ impl McpProfilOzeti {
 }
 
 /// Yalıtım kipinin MCP sunucusu için özeti. Tam erişim her çağrıda yerel
-/// onay gerektirir; bu değer kullanıcı kartında açıkça gösterilir.
+/// onay gerektirir; uzak Streamable HTTP ise yerel süreç yalıtımı (AppContainer/bwrap)
+/// olmadığını ve çağrının uzak sunucuya ağ üzerinden çıktığını açıkça belirtir.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum McpErisim {
     Yalitimli,
     TamErisim,
+    UzakStreamableHttp,
 }
 
 /// Kartta gösterilecek sunucu veya araç etiketi. Yalnız görünür ad alır;
@@ -1214,8 +1292,16 @@ impl Serialize for McpAgHostu {
 #[serde(tag = "kip")]
 pub enum McpAgKarti {
     Kapali,
-    Sinirli { hostlar: Vec<McpAgHostu> },
+    Sinirli {
+        hostlar: Vec<McpAgHostu>,
+    },
     Sinirsiz,
+    /// Uzak Streamable HTTP MCP hedefi: kanonik origin ve sır içermeyen kimlik kapsamı.
+    UzakHedef {
+        host: McpAgHostu,
+        origin: String,
+        kimlik_kapsami: String,
+    },
 }
 
 impl McpAgKarti {
@@ -1223,7 +1309,21 @@ impl McpAgKarti {
         match self {
             Self::Kapali => false,
             Self::Sinirli { hostlar } => !hostlar.is_empty(),
-            Self::Sinirsiz => true,
+            Self::Sinirsiz | Self::UzakHedef { .. } => true,
+        }
+    }
+
+    pub fn uzak_origin(&self) -> Option<&str> {
+        match self {
+            Self::UzakHedef { origin, .. } => Some(origin.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn kimlik_kapsami(&self) -> Option<&str> {
+        match self {
+            Self::UzakHedef { kimlik_kapsami, .. } => Some(kimlik_kapsami.as_str()),
+            _ => None,
         }
     }
 }

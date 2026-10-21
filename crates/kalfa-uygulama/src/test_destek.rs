@@ -168,17 +168,26 @@ impl Yukseltici for SahteYukseltici {
 #[derive(Default)]
 pub struct SahteAcici {
     acilanlar: Mutex<Vec<String>>,
+    #[allow(clippy::type_complexity)]
+    kanca: Mutex<Option<Arc<dyn Fn(&Url) + Send + Sync>>>,
 }
 
 impl SahteAcici {
     pub fn acilanlar(&self) -> Vec<String> {
         self.acilanlar.lock().unwrap().clone()
     }
+
+    pub fn kanca_ayarla(&self, f: impl Fn(&Url) + Send + Sync + 'static) {
+        *self.kanca.lock().unwrap() = Some(Arc::new(f));
+    }
 }
 
 impl Acici for SahteAcici {
     fn ac(&self, adres: &Url) -> Result<(), String> {
         self.acilanlar.lock().unwrap().push(adres.to_string());
+        if let Some(kanca) = self.kanca.lock().unwrap().clone() {
+            kanca(adres);
+        }
         Ok(())
     }
 }

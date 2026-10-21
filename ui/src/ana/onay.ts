@@ -44,7 +44,14 @@ function gorunmezVar(metin: string | null | undefined): boolean {
 export function riskliMi(o: OnayOgesi): boolean {
   if (o.kabuk?.ag) return true;
   if ((o.onaysiz_degisiklikler?.derleme_dosyalari.length ?? 0) > 0) return true;
-  return [o.kabuk?.komut, o.kabuk?.dizin, o.diff, ...o.hedefler].some(gorunmezVar);
+  return [
+    o.kabuk?.komut,
+    o.kabuk?.dizin,
+    o.diff,
+    o.mcp?.uzak_origin,
+    o.mcp?.kimlik_kapsami,
+    ...o.hedefler,
+  ].some(gorunmezVar);
 }
 
 /**

@@ -943,6 +943,61 @@ describe('tur özeti ve geri alma (aşama 3 tasarımı §5.11)', () => {
     expect(within(liste).getByText('C:\\bir\\uygulama')).toBeTruthy();
     expect(within(liste).getByText('C:\\iki\\uygulama')).toBeTruthy();
   });
+
+  it('ortam bölmesi arka plan işini gösterir, girdi/EOF gönderir ve işi durdurur', async () => {
+    const { arka } = await ciz((a) => {
+      a.isler = [
+        {
+          is_id: 'is-11111111-1111-1111-1111-111111111111',
+          oturum: 'o1',
+          gosterim: 'cargo watch -x test',
+          kip: { tur: 'terminal', boyut: { satir: 24, sutun: 80 } },
+          durum: { durum: 'calisiyor' },
+          toplam_bayt: 11,
+          tasti: false,
+          uyarilar: [],
+        },
+      ];
+      a.isCiktilari.set('is-11111111-1111-1111-1111-111111111111', 'HAZIR\n');
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Ortam' }));
+    const bolme = await screen.findByRole('complementary', { name: 'Ortam' });
+
+    expect(await within(bolme).findByText('cargo watch -x test')).toBeTruthy();
+    expect(within(bolme).getByLabelText('is-11111111-1111-1111-1111-111111111111 çıktısı').textContent).toContain('HAZIR');
+
+    const girdiAlani = within(bolme).getByRole('textbox', { name: 'Standart girdi metni' });
+    await fireEvent.input(girdiAlani, { target: { value: 'selam' } });
+    await fireEvent.click(within(bolme).getByRole('button', { name: 'Girdi gönder' }));
+    await waitFor(() =>
+      expect(arka.komutlar('is_girdi')).toContainEqual({
+        oturum: 'o1',
+        is_id: 'is-11111111-1111-1111-1111-111111111111',
+        veri: 'selam\n',
+        eof: false,
+      }),
+    );
+
+    await fireEvent.click(within(bolme).getByRole('button', { name: 'EOF gönder' }));
+    await waitFor(() =>
+      expect(arka.komutlar('is_girdi')).toContainEqual({
+        oturum: 'o1',
+        is_id: 'is-11111111-1111-1111-1111-111111111111',
+        veri: '',
+        eof: true,
+      }),
+    );
+
+    await fireEvent.click(within(bolme).getByRole('button', { name: 'İşi durdur' }));
+    await waitFor(() =>
+      expect(arka.komutlar('is_durdur')).toContainEqual({
+        oturum: 'o1',
+        is_id: 'is-11111111-1111-1111-1111-111111111111',
+      }),
+    );
+    await waitFor(() => expect(within(bolme).getByText('Durduruldu')).toBeTruthy());
+  });
 });
 
 

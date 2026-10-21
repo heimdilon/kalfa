@@ -26,8 +26,11 @@ import type {
   GecmisSayfasi,
   GunlukSayfasi,
   IslemId,
+  IsOkumaSonucu,
+  IsOzeti,
   KanalMesaji,
   Kip,
+  KullaniciSorusuYaniti,
   ModelSecenegi,
   OnarimSonucu,
   OnayGirdisi,
@@ -36,6 +39,9 @@ import type {
   OturumSatiri,
   TurId,
   UygulamaDurumu,
+  UzakMcpSunucuAyrintisi,
+  UzakMcpSunucuFormu,
+  UzakMcpSunucuSatiri,
   YalitimCalismaAlani,
   YalitimDurumu,
 } from './tipler';
@@ -75,6 +81,13 @@ export const turuIptalEt = (oturum: OturumId) => invoke<void>('turu_iptal_et', {
 
 export const aracOnayi = (oturum: OturumId, kararlar: OnayGirdisi[]) =>
   invoke<void>('arac_onayi', { oturum, kararlar });
+
+export const kullaniciSorusuYaniti = (
+  oturum: OturumId,
+  tur: TurId,
+  soru_kimligi: string,
+  yanit: KullaniciSorusuYaniti,
+) => invoke<void>('kullanici_sorusu_yaniti', { oturum, tur, soru_kimligi, yanit });
 
 export const modelDegistir = (oturum: OturumId, model: string) =>
   invoke<void>('model_degistir', { oturum, model });
@@ -333,6 +346,32 @@ export const mcpBaslatmaKartiYanitla = (istekKimligi: string, kabul: boolean) =>
 export const mcpBaslatmaIzniGeriAl = (alanKimligi: string, ad: string) =>
   invoke<void>('mcp_baslatma_izni_geri_al', { alan_kimligi: alanKimligi, ad });
 
+// ── Uzak MCP sunucuları (Yetenek-04 Görev 6, SP-08) ─────────────────────────
+
+export const uzakMcpSunuculari = () => invoke<UzakMcpSunucuSatiri[]>('uzak_mcp_sunuculari');
+
+export const uzakMcpSunucuAyrintisi = (ad: string) =>
+  invoke<UzakMcpSunucuAyrintisi>('uzak_mcp_sunucu_ayrintisi', { ad });
+
+/** Yerel pencerede onaylanır; vazgeçilirse `false`. */
+export const uzakMcpKaydet = (eskiAd: string | null, form: UzakMcpSunucuFormu) =>
+  invoke<boolean>('uzak_mcp_kaydet', { eski_ad: eskiAd, form });
+
+/** Yerel pencerede onaylanır; vazgeçilirse `false`. */
+export const uzakMcpSil = (ad: string) => invoke<boolean>('uzak_mcp_sil', { ad });
+
+export const uzakMcpEtkinAyarla = (ad: string, etkin: boolean) =>
+  invoke<void>('uzak_mcp_etkin_ayarla', { ad, etkin });
+
+export const uzakMcpBaglan = (ad: string) =>
+  invoke<UzakMcpSunucuSatiri>('uzak_mcp_baglan', { ad });
+
+export const uzakMcpOauthBagla = (ad: string) =>
+  invoke<UzakMcpSunucuSatiri>('uzak_mcp_oauth_bagla', { ad });
+
+export const uzakMcpKimlikKaldir = (ad: string) =>
+  invoke<boolean>('uzak_mcp_kimlik_kaldir', { ad });
+
 // Başlık çubuğu (masaüstü arayüzü tasarımı §5.2): yalnız çağıran pencereye uygulanır.
 export const pencereKucult = () => invoke<void>('pencere_kucult');
 /** Pencerenin yeni hâli: büyük mü. */
@@ -347,3 +386,19 @@ export const calismaAlaniDizini = (oturum: OturumId, dizin: number | null) =>
   invoke<DizinIcerigi>('calisma_alani_dizini', { oturum, dizin });
 export const calismaAlaniDosyasi = (oturum: OturumId, kimlik: number) =>
   invoke<DosyaIcerigi>('calisma_alani_dosyasi', { oturum, kimlik });
+
+// Arka plan süreçleri ve terminaller (Hat 03):
+export const oturumIsleri = (oturum: OturumId) =>
+  invoke<IsOzeti[]>('oturum_isleri', { oturum });
+
+export const isOku = (oturum: OturumId, is_id: string, imlec: number) =>
+  invoke<IsOkumaSonucu>('is_oku', { oturum, is_id, imlec });
+
+export const isGirdi = (oturum: OturumId, is_id: string, veri: string, eof: boolean) =>
+  invoke<IsOzeti>('is_girdi', { oturum, is_id, veri, eof });
+
+export const isDurdur = (oturum: OturumId, is_id: string) =>
+  invoke<IsOzeti>('is_durdur', { oturum, is_id });
+
+export const isBoyutlandir = (oturum: OturumId, is_id: string, satir: number, sutun: number) =>
+  invoke<IsOzeti>('is_boyutlandir', { oturum, is_id, satir, sutun });

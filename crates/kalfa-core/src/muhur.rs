@@ -168,6 +168,19 @@ pub fn muhur_hesapla(
         alan(&mut h, b"mcp-v1");
         alan(&mut h, &calisma);
         alan(&mut h, &arac_tanimi);
+        if mcp.erisim == crate::arac::McpErisim::UzakStreamableHttp {
+            alan(&mut h, b"mcp-uzak-v1");
+            if let crate::arac::McpAgKarti::UzakHedef {
+                host,
+                origin,
+                kimlik_kapsami,
+            } = &mcp.ag
+            {
+                alan(&mut h, host.gorunen().as_bytes());
+                alan(&mut h, origin.as_bytes());
+                alan(&mut h, kimlik_kapsami.as_bytes());
+            }
+        }
     }
     if hazirlik.kilitsiz {
         alan(&mut h, b"kilitsiz");
