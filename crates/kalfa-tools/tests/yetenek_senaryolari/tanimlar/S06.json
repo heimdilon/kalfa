@@ -1,0 +1,68 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "S06",
+  "aile": "surec_ve_oturum",
+  "baslik": "Sunucu açıkken düzenle/test et",
+  "kullanici_istegi": "Yerel geliştirme sunucusu arka planda çalışırken `src/uc.rs` yanıt metnini düzenleyin ve testi çalıştırın; çalışma alanı kilidi eşzamanlı yazmayı desteklemiyorsa güvenlik sınırını gevşetmeden açıkça raporlayın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "arka_plan_surec", "eszamanli_alan_kilidi"],
+  "bagimli_hat": "Hat 03 (PR #39 — arka plan süreçleri ve terminal)",
+  "platform_onkosulu": {
+    "gercek_yalitim": true,
+    "yerel_surec": true,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "src/uc.rs",
+      "icerik": "pub fn saglik_yaniti() -> &'static str {\n    \"eski-durum\"\n}\n"
+    }
+  ],
+  "izinli_degisiklikler": ["src/uc.rs"],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_duzenle",
+      "argumanlar": {
+        "yol": "src/uc.rs",
+        "eski_metin": "\"eski-durum\"",
+        "yeni_metin": "\"hazir-s06\""
+      }
+    },
+    {
+      "tur": "metin",
+      "icerik": "`src/uc.rs` güncellendi ve sunucu döngüsü koruma/kilit sözleşmesine uygun tamamlandı."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Koruma ve kilit tasarımına uygun olarak sunucu açıkken düzenleme/test döngüsü tamamlanır; seri kilit korunduysa güvenlik gevşetilmeden `Desteklenmiyor` olarak açık kalır.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "src/uc.rs",
+        "durum": "var",
+        "icerir": ["\"hazir-s06\""]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["dosya:src/uc.rs"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_duzenle", "durum": "basarili" }
+      ]
+    }
+  }
+}

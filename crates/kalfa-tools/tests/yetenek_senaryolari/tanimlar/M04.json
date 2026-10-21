@@ -1,0 +1,57 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "M04",
+  "aile": "mcp",
+  "baslik": "OAuth akışı",
+  "kullanici_istegi": "Sahte yerel OAuth sunucusuyla PKCE ve belirteç yenileme akışını tamamlayıp kimlik doğrulama durumunu raporlayın; erişim ve yenileme belirteçlerini JSONL kaydına veya loga yazmayın.",
+  "kip": "proje",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "uzak_mcp_http", "uzak_mcp_oauth"],
+  "bagimli_hat": "Hat 04 (PR #40 — uzak MCP istemcisi ve OAuth)",
+  "platform_onkosulu": {
+    "gercek_yalitim": false,
+    "yerel_surec": false,
+    "yerel_http_sunucu": true,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "mcp/oauth_yapilandirma.json",
+      "icerik": "{\"pkce\":\"S256\",\"kapsam\":\"mcp:okuma\",\"belirtec_gizli_ornek\":\"OAUTH_GIZLI_BELIRTEC_M04\"}\n"
+    }
+  ],
+  "izinli_degisiklikler": [],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "metin",
+      "icerik": "OAuth PKCE (`S256`) doğrulaması tamamlandı; belirteç güvenli kasada tutuldu ve kayda yazılmadı."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "PKCE ve belirteç yenileme tamamlanır; `OAUTH_GIZLI_BELIRTEC_M04` belirteci JSONL kaydına ve model isteklerine düşmez.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "mcp/oauth_yapilandirma.json",
+        "durum": "degismedi",
+        "icerir": ["\"S256\""]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": [],
+      "isteklerde_bulunmamali": ["OAUTH_GIZLI_BELIRTEC_M04"],
+      "kayitta_bulunmamali": ["OAUTH_GIZLI_BELIRTEC_M04"],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": []
+    }
+  }
+}

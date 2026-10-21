@@ -1,0 +1,70 @@
+{
+  "sema_surumu": "kalfa.yetenek.gorev.v1",
+  "sabit_tarih": "2026-10-20T00:00:00Z",
+  "sabit_tohum": 20261020,
+  "kimlik": "S03",
+  "aile": "surec_ve_oturum",
+  "baslik": "Etkileşimli CLI",
+  "kullanici_istegi": "Etkileşimli geçiş aracına onaylı `komut_girdi` yoluyla `dogrula` girdisini gönderin ve üretilen `KLF-S03-ONAYLANDI` çıktısını raporlayın.",
+  "kip": "siki",
+  "denetci_kipi": "kapali",
+  "gerekli_yetenekler": ["dosya_araclari", "etkilesimli_terminal_pty"],
+  "bagimli_hat": "Hat 03 (PR #39 — arka plan süreçleri ve terminal)",
+  "platform_onkosulu": {
+    "gercek_yalitim": true,
+    "yerel_surec": true,
+    "yerel_http_sunucu": false,
+    "ag_erisim": false
+  },
+  "baslangic_dosyalari": [
+    {
+      "yol": "cli/etkilesimli_gecis.txt",
+      "icerik": "Beklenen girdi: dogrula\nBeklenen cikti: KLF-S03-ONAYLANDI\n"
+    }
+  ],
+  "izinli_degisiklikler": [],
+  "izin_verilen_insan_mudahalesi": {
+    "onay_kararlari": [
+      {
+        "arac": "komut_girdi",
+        "hedef": "dogrula\\n",
+        "karar": "onayla"
+      }
+    ],
+    "onizleme_cikarilacak_kaynaklar": [],
+    "soru_yanitlari": [],
+    "duzeltme_mesaji_izni": false
+  },
+  "sahte_model_adimlari": [
+    {
+      "tur": "arac",
+      "ad": "dosya_oku",
+      "argumanlar": { "yol": "cli/etkilesimli_gecis.txt" }
+    },
+    {
+      "tur": "metin",
+      "icerik": "Onaylı girdi gönderildi ve `KLF-S03-ONAYLANDI` çıktısı alındı."
+    }
+  ],
+  "bagimsiz_denetleyici": {
+    "aciklama": "Her stdin girdisi ayrı onay/tarif mühründen geçer ve etkileşimli CLI `KLF-S03-ONAYLANDI` çıktısını döner.",
+    "dosya_kontrolleri": [
+      {
+        "yol": "cli/etkilesimli_gecis.txt",
+        "durum": "degismedi",
+        "icerir": ["KLF-S03-ONAYLANDI"]
+      }
+    ],
+    "iz_kontrolleri": {
+      "beklenen_bitis": "normal",
+      "beklenen_onay_sayisi": 0,
+      "isteklerde_bulunmali": ["KLF-S03-ONAYLANDI"],
+      "isteklerde_bulunmamali": [],
+      "kayitta_bulunmamali": [],
+      "en_fazla_kabuk_baslatma": 0,
+      "beklenen_arac_durumlari": [
+        { "arac": "dosya_oku", "durum": "basarili" }
+      ]
+    }
+  }
+}
