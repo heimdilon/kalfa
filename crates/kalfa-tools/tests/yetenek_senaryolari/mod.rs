@@ -279,6 +279,8 @@ pub struct CalistirmaOrtami {
     pub ts_derleyici_acik: bool,
     pub svelte_ui_acik: bool,
     pub mcp_sinama_kipi: McpSinamaKipi,
+    /// G5: yalnız normal kullanıcı çalışma alanı hazırlığı; kök/sistem kurulumu yapmaz.
+    pub g5_windows_hazirligi: bool,
 }
 
 impl CalistirmaOrtami {
@@ -297,6 +299,7 @@ impl CalistirmaOrtami {
             ts_derleyici_acik: true,
             svelte_ui_acik: true,
             mcp_sinama_kipi: McpSinamaKipi::GercekYalitim,
+            g5_windows_hazirligi: false,
         }
     }
 }
@@ -1246,13 +1249,94 @@ fn hedef_ikili_bul(ad: &str) -> Option<PathBuf> {
 }
 
 struct GercekMcpKurulumu {
-    _gecici_arac: tempfile::TempDir,
+    _gecici_arac: std::sync::Mutex<Option<tempfile::TempDir>>,
+    #[cfg(windows)]
+    calisma_alani_koku: PathBuf,
     sunucu_ikilisi: PathBuf,
     yalitim_dizini: PathBuf,
     yalitici: Arc<dyn Yalitici>,
 }
 
-fn gercek_mcp_kurulumu_hazirla(calisma_alani_koku: &Path) -> Result<GercekMcpKurulumu, String> {
+impl GercekMcpKurulumu {
+    fn temizle(&self) -> Result<(), String> {
+        let mut gecici = self._gecici_arac.lock().unwrap_or_else(|z| z.into_inner());
+        let Some(veri) = gecici.as_ref() else {
+            return Ok(());
+        };
+        #[cfg(windows)]
+        {
+            use kalfa_sandbox::windows::ace_kaydi::{AceKaydi, Girdi, ORTAK};
+            use kalfa_sandbox::windows::yalitici::{WindowsAyari, WindowsYalitici};
+            let yol = self.yalitim_dizini.join("ace-kaydi.jsonl");
+            let ace = AceKaydi::oku(&yol);
+            if ace.bozuk_mu() {
+                return Err(format!(
+                    "M01 izin kaydı bozuk; makbuz korundu: {}",
+                    veri.path().display()
+                ));
+            }
+            let kimlik = alan_kimligi(&self.calisma_alani_koku);
+            if ace.girdiler().iter().any(|g| g.alan() == kimlik) {
+                self.yalitici.alani_kaldir_kimlikle(&kimlik)?;
+            }
+            if ace
+                .girdiler()
+                .iter()
+                .any(|g| matches!(g, Girdi::Izin { alan, .. } if alan == ORTAK))
+            {
+                drop(WindowsYalitici::yeni(
+                    WindowsAyari {
+                        ev: veri.path().join("bos-ev"),
+                        yalitim_dizini: self.yalitim_dizini.clone(),
+                        ek_okunur: Vec::new(),
+                        kalfa_araclari: Vec::new(),
+                        ..Default::default()
+                    },
+                    Box::new(|_| {}),
+                ));
+            }
+            let son = AceKaydi::oku(&yol);
+            if son.bozuk_mu() || !son.girdiler().is_empty() {
+                return Err(format!(
+                    "M01 izinleri temizlenemedi; makbuz korundu: {}",
+                    veri.path().display()
+                ));
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = veri;
+        drop(gecici.take());
+        Ok(())
+    }
+}
+
+impl Drop for GercekMcpKurulumu {
+    fn drop(&mut self) {
+        if let Err(hata) = self.temizle() {
+            eprintln!("{hata}");
+            if let Some(veri) = self
+                ._gecici_arac
+                .lock()
+                .unwrap_or_else(|z| z.into_inner())
+                .take()
+            {
+                let _ = veri.keep();
+            }
+        }
+    }
+}
+
+fn gercek_mcp_kurulumu_hazirla(
+    calisma_alani_koku: &Path,
+    g5_windows_hazirligi: bool,
+) -> Result<GercekMcpKurulumu, String> {
+    if cfg!(windows)
+        && (!g5_windows_hazirligi
+            || std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+            || std::env::var("KALFA_G5_M01_CI").as_deref() != Ok("1"))
+    {
+        return Err("G5 Windows hazırlığı yalnız geçici kurucu CI kabulündedir".into());
+    }
     let sunucu_kaynak = hedef_ikili_bul("kalfa-mcp-test-sunucusu").ok_or_else(|| {
         "`kalfa-mcp-test-sunucusu` ikilisi bulunamadı (`cargo build -p kalfa-mcp --bin kalfa-mcp-test-sunucusu` gerekli)".to_string()
     })?;
@@ -1305,26 +1389,32 @@ fn gercek_mcp_kurulumu_hazirla(calisma_alani_koku: &Path) -> Result<GercekMcpKur
             Box::new(|_| {}),
         ));
 
-    match yalitici.durum() {
+    let kurulum = GercekMcpKurulumu {
+        _gecici_arac: std::sync::Mutex::new(Some(gecici_arac)),
+        #[cfg(windows)]
+        calisma_alani_koku: calisma_alani_koku.to_path_buf(),
+        sunucu_ikilisi,
+        yalitim_dizini,
+        yalitici,
+    };
+
+    match kurulum.yalitici.durum() {
         YalitimDurumu::Hazir { .. } => {}
         durum => {
             return Err(format!("platform yalıtımı hazır değil: {durum:?}"));
         }
     }
 
-    if yalitici.hazirlik_gerekli(calisma_alani_koku) {
+    if kurulum.yalitici.hazirlik_gerekli(calisma_alani_koku)
+        && !(cfg!(windows) && g5_windows_hazirligi)
+    {
         return Err(
             "çalışma alanı yalıtım hazırlığı (Windows AppContainer ACL) bu oturumda kurulu değil"
                 .to_string(),
         );
     }
 
-    Ok(GercekMcpKurulumu {
-        _gecici_arac: gecici_arac,
-        sunucu_ikilisi,
-        yalitim_dizini,
-        yalitici,
-    })
+    Ok(kurulum)
 }
 
 struct YerelMcpSinamaAraci {
@@ -1629,10 +1719,24 @@ impl Arac for YerelMcpSinamaAraci {
                     Self::jsonrpc_el_sikis_ve_cagir(&mut okuyucu, &mut girdi, islem, &hedef_yol)
                         .await;
                 drop(girdi);
-                let _ = tokio::time::timeout(KAPANMA_PAYI, surec.kapat()).await;
-                let _ = kurulum
+                tokio::time::timeout(KAPANMA_PAYI + Duration::from_secs(1), surec.kapat())
+                    .await
+                    .map_err(|_| {
+                        AracHatasi::GirisCikis(
+                            "M01 süreç ağacı kapanışı zaman aşımına uğradı".into(),
+                        )
+                    })?
+                    .map_err(|h| {
+                        AracHatasi::GirisCikis(format!(
+                            "M01 süreç ağacı kapanışı doğrulanamadı: {h}"
+                        ))
+                    })?;
+                kurulum
                     .yalitici
-                    .sunucu_kokunu_kaldir(&alan_bilgisi.kok, "yerel-sinama");
+                    .sunucu_kokunu_kaldir(&alan_bilgisi.kok, "yerel-sinama")
+                    .map_err(|h| {
+                        AracHatasi::GirisCikis(format!("M01 sunucu kökü geri alınamadı: {h}"))
+                    })?;
                 sonuc?
             }
         };
@@ -1830,11 +1934,12 @@ pub async fn gorevi_kostur(gorev: &GorevTanimi, ortam: &CalistirmaOrtami) -> Gor
         .iter()
         .any(|y| y == "yerel_mcp_stdio");
     let mut dis_sir_temizlik: Option<PathBuf> = None;
+    let mut gercek_kurulum = None;
     let mut ek_araclar: Vec<Arc<dyn Arac>> = Vec::new();
 
     if mcp_gerekli {
         let kurulum = if ortam.mcp_sinama_kipi == McpSinamaKipi::GercekYalitim {
-            match gercek_mcp_kurulumu_hazirla(sc.alan.path()) {
+            match gercek_mcp_kurulumu_hazirla(sc.alan.path(), ortam.g5_windows_hazirligi) {
                 Ok(k) => Some(Arc::new(k)),
                 Err(hata) => {
                     let neden = format!("Gerçek MCP yalıtım önkoşulu hazır değil: {hata}");
@@ -1887,6 +1992,7 @@ pub async fn gorevi_kostur(gorev: &GorevTanimi, ortam: &CalistirmaOrtami) -> Gor
 
         let siniflandirici = Arc::new(Siniflandirici::yeni(sc.alan.path(), &[]).unwrap());
         let calisma_alani = CalismaAlani::ac(siniflandirici).unwrap();
+        gercek_kurulum = kurulum.clone();
         ek_araclar.push(Arc::new(YerelMcpSinamaAraci {
             kip: ortam.mcp_sinama_kipi,
             calisma_alani,
@@ -2163,6 +2269,13 @@ pub async fn gorevi_kostur(gorev: &GorevTanimi, ortam: &CalistirmaOrtami) -> Gor
         }
     }
     let calisma_izi_ozeti = ozet_hex(deterministik_durum.as_bytes());
+
+    surucu.kapat().await;
+    if let Some(kurulum) = gercek_kurulum
+        && let Err(hata) = kurulum.temizle()
+    {
+        hatalar.push(hata);
+    }
 
     let (sonuc, neden) = if hatalar.is_empty() {
         (

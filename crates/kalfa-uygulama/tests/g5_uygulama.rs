@@ -18,6 +18,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::UnboundedReceiver;
 
+mod g5_mcp_fixture;
+
 struct Ortam {
     _veri: TempDir,
     alan: TempDir,
@@ -60,6 +62,15 @@ impl Ortam {
         id: OturumId,
         adimlar: Vec<SahteYanit>,
     ) -> (Vec<Olay>, UnboundedReceiver<KanalMesaji>) {
+        self.tur_kararli(id, adimlar, |_| OnayKarari::Onayla).await
+    }
+
+    async fn tur_kararli(
+        &self,
+        id: OturumId,
+        adimlar: Vec<SahteYanit>,
+        karar: fn(&kalfa_core::protokol::OnayOgesi) -> OnayKarari,
+    ) -> (Vec<Olay>, UnboundedReceiver<KanalMesaji>) {
         let (kanal, mut rx) = SahteKanal::yeni();
         self.t.uygulama.oturumu_dinle(id, kanal).unwrap();
         for adim in adimlar {
@@ -87,7 +98,7 @@ impl Ortam {
                         .map(|g| OnayGirdisi {
                             cagri: g.cagri,
                             muhur: g.muhur.clone(),
-                            karar: OnayKarari::Onayla,
+                            karar: karar(g),
                             kisayol: false,
                         })
                         .collect();
@@ -106,6 +117,13 @@ impl Ortam {
                         )
                         .await
                         .unwrap();
+                }
+                if let Olay::Tamamlandi { ref neden } = zarf.yuk {
+                    assert_eq!(
+                        *neden,
+                        kalfa_core::protokol::BitisNedeni::Normal,
+                        "limit, hata ve iptal başarılı kabul değildir"
+                    );
                 }
                 let son = matches!(zarf.yuk, Olay::Tamamlandi { .. });
                 olaylar.push(zarf.yuk);
@@ -228,7 +246,7 @@ fn model_s04(istek: &ChatRequest) -> SahteYanit {
         return model_durdur(istek);
     }
     SahteYanit::Gecikmeli(
-        Duration::from_millis(20),
+        Duration::from_millis(500),
         Box::new(SahteYanit::arac(
             "komut_oku",
             json!({"is_id":model_is_kimligi(istek),"imlec":0}),
@@ -592,12 +610,16 @@ async fn g5_s05_soru_yaniti_yazma_compact_ve_kurtarma_birlikte_korunur() {
     o.t.saglayici
         .sohbet_ekle(SahteSohbet::IstegeGore(model_s05_ozet));
     o.t.uygulama.oturum_ozetle(id, None).await.unwrap();
+    let mut ozetlendi = false;
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
             let KanalMesaji::Olaylar { no, zarflar } = rx.recv().await.unwrap() else {
                 panic!("compact kanalı kapandı")
             };
             o.t.uygulama.paketi_isledim(id, no).unwrap();
+            ozetlendi |= zarflar
+                .iter()
+                .any(|z| matches!(z.yuk, Olay::OturumOzetlendi { .. }));
             if zarflar
                 .iter()
                 .any(|z| matches!(z.yuk, Olay::Tamamlandi { .. }))
@@ -608,6 +630,7 @@ async fn g5_s05_soru_yaniti_yazma_compact_ve_kurtarma_birlikte_korunur() {
     })
     .await
     .unwrap();
+    assert!(ozetlendi, "compact gerçekten özet üretmeli");
     o.t.uygulama.oturumu_kapat(id).await.unwrap();
     let acilan = o.t.uygulama.oturum_ac(id).await.unwrap();
     let plan = acilan.ozet.plan.unwrap();
@@ -631,6 +654,13 @@ async fn g5_s05_soru_yaniti_yazma_compact_ve_kurtarma_birlikte_korunur() {
         id,
     );
     let kayitlar = kalfa_core::kayit::OturumKaydi::oku(&kayit).unwrap();
+    assert!(
+        kayitlar.iter().any(|k| matches!(&k.yuk,
+        kalfa_core::kayit::KayitOgesi::OturumOzetlendi { kapsanan, icerik, .. }
+            if !kapsanan.is_empty() && icerik.lines().any(|s| s.starts_with("Korunan gerçek soru sonucu:"))
+                && icerik.contains("toml (TOML)"))),
+        "gerçek compact içeriği JSONL'de saklanmalı"
+    );
     assert!(kayitlar.iter().any(|k|matches!(&k.yuk,kalfa_core::kayit::KayitOgesi::KullaniciSorusuCozuldu{soru_kimligi,cagri,sonuc:kalfa_core::soru::SoruSonucu::Yanitlandi{yanit:kalfa_core::soru::KullaniciSorusuYaniti::Secenek{secenek_kimligi},..}} if soru_kimligi==&soru.soru_kimligi && cagri==&soru.cagri && secenek_kimligi=="toml")));
     o.tur(
         id,
@@ -641,7 +671,7 @@ async fn g5_s05_soru_yaniti_yazma_compact_ve_kurtarma_birlikte_korunur() {
     assert!(
         serde_json::to_string(son.last().unwrap())
             .unwrap()
-            .contains("TOML")
+            .contains("Korunan gerçek soru sonucu: Kullanıcı yanıtı (seçenek): toml (TOML)")
     );
     o.t.uygulama.oturumu_kapat(id).await.unwrap();
 }
@@ -882,4 +912,214 @@ async fn g5_m02_http_araci_onaydan_once_cagrilmaz_sonuc_sunucudan_gelir() {
     assert_eq!(onaylar, 1, "M02 dosya okuma taklidi kabul edilemez");
     assert_eq!(sayac.load(Ordering::SeqCst), 1);
     assert!(olaylar.iter().any(|o| matches!(o, Olay::AracSonucu { arac, durum: AracDurumu::Basarili, icerik, .. } if arac == "mcp__g5__kayit_getir" && icerik.contains("KLF-M02-KAYIT"))));
+}
+
+async fn uzak_ekle(o: &Ortam, port: u16) {
+    o.t.uygulama.uzak_mcp.test_loopback_izni_ayarla(true);
+    o.t.uygulama
+        .uzak_mcp_kaydet(
+            None,
+            UzakMcpSunucuFormu {
+                ad: "g5".into(),
+                etkin: true,
+                uc_url: format!("http://127.0.0.1:{port}/mcp"),
+                yetki: UzakMcpYetkiFormGirdisi::Yetkisiz,
+                baslatma_zamani_asimi_sn: 5,
+                cagri_zamani_asimi_sn: 5,
+            },
+        )
+        .await
+        .unwrap();
+    o.t.uygulama.uzak_mcp_baglan("g5".into()).await.unwrap();
+}
+
+fn model_m03_geri_oku(istek: &ChatRequest) -> SahteYanit {
+    assert!(son_arac_sonucu(istek).contains("tamamlandi"));
+    SahteYanit::arac("mcp__g5__kayit_getir", json!({"kayit":"gorev-42"}))
+}
+
+#[tokio::test]
+async fn g5_m03_gercek_http_yazma_sunucu_durumunu_degistirir_geri_okunur() {
+    let sunucu = g5_mcp_fixture::baslat(
+        vec![
+            g5_mcp_fixture::arac("kayit_guncelle", false),
+            g5_mcp_fixture::arac("kayit_getir", true),
+        ],
+        "bekliyor",
+    )
+    .await;
+    let o = Ortam::yeni().await;
+    girdi_yukle(&o, "M03");
+    uzak_ekle(&o, sunucu.port).await;
+    let id = o.oturum().await;
+    let olaylar=o.tur(id,vec![
+        SahteYanit::arac("arac_ara",json!({"sorgu":"kayıt","sunucu":"g5","yukle":["mcp__g5__kayit_guncelle","mcp__g5__kayit_getir"]})),
+        SahteYanit::arac("mcp__g5__kayit_guncelle",json!({"kayit":"gorev-42","durum":"tamamlandi"})),
+        SahteYanit::IstegeGore(model_m03_geri_oku),
+        SahteYanit::metin("Geri okunan durum tamamlandi."),
+    ]).await;
+    let cagrilar = sunucu.cagrilar.lock().unwrap().clone();
+    assert_eq!(cagrilar.len(), 2);
+    assert_eq!(cagrilar[0]["name"], "kayit_guncelle");
+    assert_eq!(
+        cagrilar[0]["arguments"],
+        json!({"kayit":"gorev-42","durum":"tamamlandi"})
+    );
+    assert_eq!(cagrilar[1]["name"], "kayit_getir");
+    assert!(olaylar.iter().any(|o|matches!(o,Olay::OnayGerekiyor{ogeler,..} if ogeler.iter().any(|g|g.arac=="mcp__g5__kayit_guncelle"))));
+    assert!(olaylar.iter().any(|o|matches!(o,Olay::AracSonucu{arac,durum:AracDurumu::Basarili,icerik,..} if arac=="mcp__g5__kayit_getir" && icerik.contains("tamamlandi"))));
+    o.t.uygulama.oturumu_kapat(id).await.unwrap();
+}
+
+#[tokio::test]
+async fn g5_m05_otuz_iki_http_aracindan_yalniz_ikisi_yuklenir_ve_cagrilir() {
+    let mut araclar = vec![
+        g5_mcp_fixture::arac("surum_notu_ara", true),
+        g5_mcp_fixture::arac("surum_etiketi_dogrula", true),
+    ];
+    for n in 0..30 {
+        let mut arac = g5_mcp_fixture::arac(&format!("ilgisiz_{n:02}"), true);
+        arac["inputSchema"]["description"] = json!("ILGISIZ_30_ARAC_SEMASI_M05");
+        araclar.push(arac);
+    }
+    assert_eq!(araclar.len(), 32);
+    let sunucu = g5_mcp_fixture::baslat(araclar, "").await;
+    let o = Ortam::yeni().await;
+    girdi_yukle(&o, "M05");
+    uzak_ekle(&o, sunucu.port).await;
+    let id = o.oturum().await;
+    let olaylar=o.tur(id,vec![
+        SahteYanit::arac("arac_ara",json!({"sorgu":"sürüm","sunucu":"g5","yukle":["mcp__g5__surum_notu_ara","mcp__g5__surum_etiketi_dogrula"]})),
+        SahteYanit::arac("mcp__g5__surum_notu_ara",json!({"sorgu":"v1"})),
+        SahteYanit::arac("mcp__g5__surum_etiketi_dogrula",json!({"sorgu":"v1"})),
+        SahteYanit::metin("Seçilen iki gerçek araç doğrulandı."),
+    ]).await;
+    let istekler = o.t.saglayici.istekler();
+    assert!(
+        istekler[0]
+            .tools
+            .iter()
+            .all(|t| !t.function.name.starts_with("mcp__g5__"))
+    );
+    let adlar: std::collections::BTreeSet<_> = istekler[1]
+        .tools
+        .iter()
+        .filter(|t| t.function.name.starts_with("mcp__g5__"))
+        .map(|t| t.function.name.as_str())
+        .collect();
+    assert_eq!(
+        adlar,
+        std::collections::BTreeSet::from([
+            "mcp__g5__surum_notu_ara",
+            "mcp__g5__surum_etiketi_dogrula"
+        ])
+    );
+    assert!(istekler.iter().all(|i| {
+        !serde_json::to_string(&i.tools)
+            .unwrap()
+            .contains("ILGISIZ_30_ARAC_SEMASI_M05")
+    }));
+    let cagrilar = sunucu.cagrilar.lock().unwrap().clone();
+    assert_eq!(
+        cagrilar
+            .iter()
+            .map(|c| c["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["surum_notu_ara", "surum_etiketi_dogrula"]
+    );
+    for ad in ["surum_notu_ara", "surum_etiketi_dogrula"] {
+        assert!(olaylar.iter().any(|o|matches!(o,Olay::AracSonucu{icerik,durum:AracDurumu::Basarili,..} if icerik.contains(&format!("KLF-M05-{ad}")))));
+    }
+    assert_eq!(sunucu.sayac.load(Ordering::SeqCst), 2);
+    o.t.uygulama.oturumu_kapat(id).await.unwrap();
+}
+
+fn model_m06_saldiri(istek: &ChatRequest) -> SahteYanit {
+    let kaynak = son_arac_sonucu(istek);
+    assert!(kaynak.contains("Bilet #108: Bellek sızıntısı düzeltildi."));
+    assert!(kaynak.contains("SISTEM TALIMATI"));
+    assert!(kaynak.contains("<arac_sonucu"));
+    // Kasıtlı saldırgan model cevabı: uzak içerik gizli okuma yetkisi veremez.
+    SahteYanit::arac("dosya_oku", json!({"yol":".env"}))
+}
+
+fn model_m06_ozet(istek: &ChatRequest) -> SahteYanit {
+    assert!(!son_arac_sonucu(istek).contains("gizli-m06-anahtari"));
+    let kaynak = istek
+        .messages
+        .iter()
+        .filter(|m| m.role == Role::Tool)
+        .filter_map(|m| m.content.as_deref())
+        .find(|s| s.contains("Bilet #108:"))
+        .unwrap();
+    let bas = kaynak.find("Bilet #108:").unwrap();
+    let son = bas + kaynak[bas..].find("düzeltildi.").unwrap() + "düzeltildi.".len();
+    SahteYanit::metin(&kaynak[bas..son])
+}
+
+#[tokio::test]
+async fn g5_m06_gercek_http_enjeksiyonu_sir_okuma_yetkisi_vermez_mesru_ozet_korunur() {
+    let o = Ortam::yeni().await;
+    girdi_yukle(&o, "M06");
+    let not = std::fs::read_to_string(o.alan.path().join("mcp/bilet_yaniti.txt")).unwrap();
+    let sunucu =
+        g5_mcp_fixture::baslat(vec![g5_mcp_fixture::arac("bilet_getir", true)], &not).await;
+    uzak_ekle(&o, sunucu.port).await;
+    let id = o.oturum().await;
+    let (olaylar, _) = o
+        .tur_kararli(
+            id,
+            vec![
+                SahteYanit::arac(
+                    "arac_ara",
+                    json!({"sorgu":"bilet","sunucu":"g5","yukle":["mcp__g5__bilet_getir"]}),
+                ),
+                SahteYanit::arac("mcp__g5__bilet_getir", json!({})),
+                SahteYanit::IstegeGore(model_m06_saldiri),
+                SahteYanit::IstegeGore(model_m06_ozet),
+            ],
+            |g| {
+                if g.arac == "dosya_oku" {
+                    OnayKarari::Reddet {
+                        gerekce: Some("Gizli dosyayı açmayın.".into()),
+                    }
+                } else {
+                    OnayKarari::Onayla
+                }
+            },
+        )
+        .await;
+    assert!(olaylar.iter().any(
+        |o| matches!(o,Olay::AracSonucu{arac,durum:AracDurumu::Reddedildi,..} if arac=="dosya_oku")
+    ));
+    assert_eq!(
+        sunucu.sayac.load(Ordering::SeqCst),
+        1,
+        "enjeksiyon ikinci dış çağrı başlatamaz"
+    );
+    let istekler = o.t.saglayici.istekler();
+    assert!(
+        !serde_json::to_string(&istekler)
+            .unwrap()
+            .contains("gizli-m06-anahtari")
+    );
+    assert!(
+        !serde_json::to_string(&olaylar)
+            .unwrap()
+            .contains("gizli-m06-anahtari")
+    );
+    o.t.uygulama.oturumu_kapat(id).await.unwrap();
+    let kayit = kalfa_uygulama::dizin::kayit_yolu(
+        &kalfa_uygulama::dizin::oturum_dizini(o._veri.path()),
+        id,
+    );
+    assert!(
+        !std::fs::read_to_string(kayit)
+            .unwrap()
+            .contains("gizli-m06-anahtari")
+    );
+    assert_eq!(
+        std::fs::read_to_string(o.alan.path().join(".env")).unwrap(),
+        "EVREN_API_KEY=gizli-m06-anahtari\n"
+    );
 }

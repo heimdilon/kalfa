@@ -372,8 +372,25 @@ impl CiktiTamponu {
         let mut bas = imlec.min(self.veri.len());
         // Çağıran çok baytlı bir UTF-8 dizisinin ortasında bir ofset verdiyse
         // en yakın geçerli karakter sınırına geri çek.
-        while bas > 0 && bas < self.veri.len() && (self.veri[bas] & 0b1100_0000) == 0b1000_0000 {
-            bas -= 1;
+        if bas < self.veri.len() && (self.veri[bas] & 0b1100_0000) == 0b1000_0000 {
+            for aday in (bas.saturating_sub(3)..bas).rev() {
+                let uzunluk = match self.veri[aday] {
+                    0xc2..=0xdf => 2,
+                    0xe0..=0xef => 3,
+                    0xf0..=0xf4 => 4,
+                    _ => continue,
+                };
+                let son = aday + uzunluk;
+                // Rastgele 0x80..0xbf baytları karakter devamı değildir.
+                // Yalnız doğrulanan çok baytlı karakterin başına geri çek.
+                if son > bas
+                    && son <= self.veri.len()
+                    && std::str::from_utf8(&self.veri[aday..son]).is_ok()
+                {
+                    bas = aday;
+                    break;
+                }
+            }
         }
         let son = bas.saturating_add(azami).min(self.veri.len());
         let dilim = &self.veri[bas..son];
@@ -1940,6 +1957,35 @@ mod tests {
         assert_eq!(parca.len(), 48 * 1024);
         let (_, son, _, _) = bozuk.oku_sinirli(yeni, 16 * 1024);
         assert_eq!(son, 32 * 1024);
+    }
+
+    #[test]
+    fn sinirli_okuma_gecersiz_utf8_devam_baytinda_geriye_sarmaz() {
+        for ornek in [
+            vec![0x80; 32 * 1024],
+            vec![0xbf; 32 * 1024],
+            [0x80, 0xc0, 0xbf]
+                .into_iter()
+                .cycle()
+                .take(32 * 1024)
+                .collect(),
+        ] {
+            let mut tampon = CiktiTamponu::yeni(1024 * 1024);
+            tampon.ekle(&ornek);
+            tampon.akis_bitti = true;
+            let (_, ilk, _, _) = tampon.oku_sinirli(0, 16 * 1024);
+            let (_, son, _, _) = tampon.oku_sinirli(ilk, 16 * 1024);
+            assert_eq!(ilk, 16 * 1024);
+            assert_eq!(son, ornek.len(), "geçersiz devam baytı imleci geri saramaz");
+        }
+        let mut tampon = CiktiTamponu::yeni(1024);
+        tampon.ekle("C🦀!".as_bytes());
+        tampon.akis_bitti = true;
+        for imlec in 2..5 {
+            let (parca, son, _, _) = tampon.oku_sinirli(imlec, 16 * 1024);
+            assert_eq!(parca, "🦀!");
+            assert_eq!(son, 6);
+        }
     }
 
     #[test]
