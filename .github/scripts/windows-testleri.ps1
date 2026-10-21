@@ -9,9 +9,9 @@
 # Yalnızca her işten sonra silinen CI makinesi içindir; geliştirici
 # makinesinde çalıştırmayın.
 
-param([switch]$G5M01)
+param([switch]$G5M01, [switch]$G5Masaustu)
 
-if ($G5M01 -and $env:GITHUB_ACTIONS -ne 'true') {
+if (($G5M01 -or $G5Masaustu) -and $env:GITHUB_ACTIONS -ne 'true') {
     throw 'G5 M01 yalnız geçici GitHub CI makinesinde çalıştırılır.'
 }
 
@@ -60,6 +60,12 @@ foreach ($yol in @($calisma, $cargoHome, $rustupHome, $klasor, $gecici)) {
     if ($LASTEXITCODE -ne 0) { throw "icacls failed: $yol" }
 }
 
+# Gerçek G5 yalıtımı üst test dizinine paket listeleme ACE'si yazar.
+# Yalnız bu geçici CI dizininde WRITE_DAC gerekir; sürücü/depo hakları genişlemez.
+if ($G5M01 -or $G5Masaustu) {
+    & icacls.exe $gecici /grant "${kullanici}:(OI)(CI)F" /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Geçici G5 test kökü DACL yetkisi verilemedi.' }
+}
 
 # Zamanlanmış görev etkileşimsiz bir masaüstünde koşar; oranın masaüstü
 # yığını küçüktür ve aynı anda açılan çok sayıda PowerShell (her biri bir
@@ -76,6 +82,10 @@ if ($G5M01) {
     $komut = '"' + $ikili + '" --exact g5_m01_gercek_yalitimli_stdio_mcp_sirlari_korur_izinleri_geri_alir --nocapture --test-threads=1'
     $komutlar = @($komut, $komut)
 }
+if ($G5Masaustu) {
+    if (-not $G5M01) { $komutlar = @() }
+    $komutlar += 'pwsh -NoProfile -File .github/scripts/windows-g5-masaustu.ps1'
+}
 # Görevin koşturduğu toplu dosya; yönetici oturumunun PATH'ini taşır.
 $satirlar = @(
     '@echo off',
@@ -89,16 +99,18 @@ $satirlar = @(
     "set `"TMP=$gecici`"",
     'set KOD=0'
 )
-if ($G5M01) {
+if ($G5M01 -or $G5Masaustu) {
     # Zamanlanmış görev ana CI sürecinin ortamını miras almaz.
     $satirlar += 'set GITHUB_ACTIONS=true'
-    $satirlar += 'set KALFA_G5_M01_CI=1'
+    if ($G5M01) { $satirlar += 'set KALFA_G5_M01_CI=1' }
+    if ($G5Masaustu) { $satirlar += 'set KALFA_G5_MASAUSTU_CI=1' }
+    $satirlar += "set `"GITHUB_WORKSPACE=$calisma`""
 }
 $tekrar = 0
 foreach ($komut in $komutlar) {
     $tekrar++
     $satirlar += "echo ^>^>^> $komut>> `"$gunluk`""
-    if ($G5M01) {
+    if ($G5M01 -and $tekrar -le 2) {
         $tekrarGunlugu = Join-Path $klasor "m01-$tekrar.log"
         $satirlar += "$komut > `"$tekrarGunlugu`" 2>&1"
         $satirlar += 'if %ERRORLEVEL% neq 0 set KOD=1'

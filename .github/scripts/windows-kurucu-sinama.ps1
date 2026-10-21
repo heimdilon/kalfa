@@ -5,11 +5,12 @@
 # çalıştırmayın (elle kabul için kurucu/kabul.ps1).
 param(
     [Parameter(Mandatory = $true)] [string]$KurucuYolu,
-    [switch]$G5M01
+    [switch]$G5M01,
+    [switch]$G5Masaustu
 )
 
 $ErrorActionPreference = 'Stop'
-if ($G5M01 -and $env:GITHUB_ACTIONS -ne 'true') {
+if (($G5M01 -or $G5Masaustu) -and $env:GITHUB_ACTIONS -ne 'true') {
     throw 'G5 M01 yalnız geçici GitHub CI makinesinde çalıştırılır.'
 }
 $kurucu = (Resolve-Path -LiteralPath $KurucuYolu).Path
@@ -68,9 +69,9 @@ Write-Host "Yalıtım kök izinleri tamam: $($kokler -join ', ')"
 
 # M01 başarısız olsa da kurucunun kaldırma ve izin geri alma denetimi koşar.
 $g5Hatasi = $null
-if ($G5M01) {
+if ($G5M01 -or $G5Masaustu) {
     try {
-        & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'windows-testleri.ps1') -G5M01
+        & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'windows-testleri.ps1') -G5M01:$G5M01 -G5Masaustu:$G5Masaustu
         if ($LASTEXITCODE -ne 0) { throw "G5 M01 başarısız: $LASTEXITCODE" }
     } catch { $g5Hatasi = $_ }
 }

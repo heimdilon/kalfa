@@ -237,7 +237,7 @@
         {
           "paket": "kalfa-uygulama",
           "hedef": null,
-          "ad": "mcp::uzak_oauth::tests::m03_oauth_tam_akis_yerel_onay_state_oturum_issuer_yenileme_yarisi_ve_canary_denetimi"
+          "ad": "mcp::uzak_oauth::testler::m03_oauth_tam_akis_yerel_onay_state_oturum_issuer_yenileme_yarisi_ve_canary_denetimi"
         },
         {
           "paket": "kalfa-uygulama",

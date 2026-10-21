@@ -22,3 +22,7 @@
 ## Kapanış
 
 Her24görevin gerçek giriş ve bağımsız kabulü, iki tekrar sonucu, platform önkoşulları ve zorunlu güvenlik kontrolleri tek raporda görünür. Kullanıcı 21 Ekim yanıtıyla ücretli canlı model/dış arama denemelerini bu teslimattan çıkardı; yalnız çevrimdışı ve geçici CI kabulü yürütülür. M02/M05/M06/W görevlerinin G0 içindeki eski onaysız adımları güncel açık onay sözleşmesine uyarlanır; G0 dosya özetleri korunur.
+
+## Gerçek masaüstü kabulü — 22 Ekim
+
+Terminalde UI girdisi ve doğal çıkış0; mevcut gerçek stdio MCP form/başlatma/onay/sonuç; üretim web aracının özel IP reddi, sıfır TCP bağlantısı ve JSONL; plan/soru akışı çalıştırılır. Web başarı/kaynak denetimi gerçek uygulama/HTTP/TLS G5 görevlerinde kalır; masaüstü web testi güvenlik reddini ölçer. Windows süreç/MCP kabulü yalnız kullanıcının onayladığı geçici kurucu CI makinesinde, kurulu ürünün gerçek yalıtım altyapısı ve standart kullanıcıyla koşar. g5_masaustu varsayılan kapalıdır. E2e derlemesi üretim NSIS paketinden sonra ayrı kimlikle üretilir ve kurucuya girmez. Mevcut test aracı tauri-driver2.0.6 ve WebView2 ile aynı, Microsoft imzalı EdgeDriver yalnız geçici CI test klasörüne alınır; geliştirici bilgisayarına kurulum/sistem değişikliği yapılmaz. Sıfır/atlanan test kabul edilmez.

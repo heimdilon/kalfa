@@ -1252,6 +1252,8 @@ struct GercekMcpKurulumu {
     _gecici_arac: std::sync::Mutex<Option<tempfile::TempDir>>,
     #[cfg(windows)]
     calisma_alani_koku: PathBuf,
+    #[cfg(windows)]
+    windows_yalitici: Arc<kalfa_sandbox::windows::yalitici::WindowsYalitici>,
     sunucu_ikilisi: PathBuf,
     yalitim_dizini: PathBuf,
     yalitici: Arc<dyn Yalitici>,
@@ -1277,7 +1279,16 @@ impl GercekMcpKurulumu {
             }
             let kimlik = alan_kimligi(&self.calisma_alani_koku);
             if ace.girdiler().iter().any(|g| g.alan() == kimlik) {
-                self.yalitici.alani_kaldir_kimlikle(&kimlik)?;
+                let alan = kalfa_sandbox::AlanBilgisi {
+                    kok: self.calisma_alani_koku.clone(),
+                    gizli: Default::default(),
+                    korumali: Vec::new(),
+                    git_dizinleri: Vec::new(),
+                };
+                // Yarım hazırlıkta Hazir kaydı yoktur; kökü taşıyan API geri alır.
+                self.windows_yalitici
+                    .alani_kaldir(&alan)
+                    .map_err(|h| h.to_string())?;
             }
             if ace
                 .girdiler()
@@ -1377,22 +1388,26 @@ fn gercek_mcp_kurulumu_hazirla(
     ));
 
     #[cfg(windows)]
-    let yalitici: Arc<dyn Yalitici> =
-        Arc::new(kalfa_sandbox::windows::yalitici::WindowsYalitici::yeni(
-            kalfa_sandbox::windows::yalitici::WindowsAyari {
-                ev: ev_dizini,
-                yalitim_dizini: yalitim_dizini.clone(),
-                ek_okunur: vec![arac_dizini],
-                kopru: Some(kopru_kaynak),
-                ..Default::default()
-            },
-            Box::new(|_| {}),
-        ));
+    let windows_yalitici = Arc::new(kalfa_sandbox::windows::yalitici::WindowsYalitici::yeni(
+        kalfa_sandbox::windows::yalitici::WindowsAyari {
+            ev: ev_dizini,
+            yalitim_dizini: yalitim_dizini.clone(),
+            ek_okunur: vec![arac_dizini],
+            kopru: Some(kopru_kaynak),
+            ..Default::default()
+        },
+        Box::new(|_| {}),
+    ));
+
+    #[cfg(windows)]
+    let yalitici: Arc<dyn Yalitici> = windows_yalitici.clone();
 
     let kurulum = GercekMcpKurulumu {
         _gecici_arac: std::sync::Mutex::new(Some(gecici_arac)),
         #[cfg(windows)]
         calisma_alani_koku: calisma_alani_koku.to_path_buf(),
+        #[cfg(windows)]
+        windows_yalitici,
         sunucu_ikilisi,
         yalitim_dizini,
         yalitici,
@@ -1685,7 +1700,10 @@ impl Arac for YerelMcpSinamaAraci {
                 kurulum
                     .yalitici
                     .alani_hazirla(&alan_bilgisi, true, &mut |_| {})
-                    .map_err(|e| AracHatasi::GirisCikis(e.to_string()))?;
+                    .map_err(|e| {
+                        eprintln!("M01 çalışma alanı hazırlığı başarısız: {e}");
+                        AracHatasi::GirisCikis(e.to_string())
+                    })?;
                 let kimlik = alan_kimligi(&alan_bilgisi.kok);
                 let ozel = sunucu_ozel(&kurulum.yalitim_dizini, &kimlik, "yerel-sinama");
                 let sistem_ortami = if cfg!(windows) {
