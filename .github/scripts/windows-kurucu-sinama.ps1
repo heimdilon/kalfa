@@ -4,10 +4,14 @@
 # değiştirir; bu betik yalnızca CI makinesi içindir, geliştirici makinesinde
 # çalıştırmayın (elle kabul için kurucu/kabul.ps1).
 param(
-    [Parameter(Mandatory = $true)] [string]$KurucuYolu
+    [Parameter(Mandatory = $true)] [string]$KurucuYolu,
+    [switch]$G5M01
 )
 
 $ErrorActionPreference = 'Stop'
+if ($G5M01 -and $env:GITHUB_ACTIONS -ne 'true') {
+    throw 'G5 M01 yalnız geçici GitHub CI makinesinde çalıştırılır.'
+}
 $kurucu = (Resolve-Path -LiteralPath $KurucuYolu).Path
 $kok = Join-Path $env:ProgramFiles 'Kalfa'
 $kayitYolu = Join-Path $env:ProgramData 'Kalfa\yalitim\kurulum.json'
@@ -62,6 +66,15 @@ foreach ($k in $kokler) {
 }
 Write-Host "Yalıtım kök izinleri tamam: $($kokler -join ', ')"
 
+# M01 başarısız olsa da kurucunun kaldırma ve izin geri alma denetimi koşar.
+$g5Hatasi = $null
+if ($G5M01) {
+    try {
+        & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'windows-testleri.ps1') -G5M01
+        if ($LASTEXITCODE -ne 0) { throw "G5 M01 başarısız: $LASTEXITCODE" }
+    } catch { $g5Hatasi = $_ }
+}
+
 Write-Host '== Sessiz kaldırma'
 # `_?=` kaldırıcının kendini geçici dizine kopyalayıp hemen dönmesini önler.
 $kaldirici = Join-Path $kok 'uninstall.exe'
@@ -79,3 +92,5 @@ foreach ($k in $kokler) {
     if ((Yetenek-Kurallari $k).Count -gt 0) { throw "Kök izni geri alınmadı: $k" }
 }
 Write-Host 'Kaldırma tamam: dosyalar, kurulum kaydı ve kök izinleri gitti.'
+
+if ($null -ne $g5Hatasi) { throw $g5Hatasi }

@@ -15,10 +15,10 @@
 1. kalfa-uygulama/tests/g5_uygulama.rs ve test yardımcıları: M02 gerçek HTTP+onay, K06 talimat kapsamı, süreç/oturum S01–S06, uygulama MCP akışları. Bilinen ortak yardımcılar mümkün olduğunda yeniden kullanılır.
 2. kalfa-tools/tests/g5_kodlama.rs ve g5_web.rs: K01–K05 gerçek bağımsız denetleyiciler; M01 gerçek yalıtımlı stdio; W01–W06 gerçek TLS/HTTP, araç ve kaynak/sır denetimi. G0 davranışı değiştirilmez.
 3. e2e/yetenekler/: sürümlü manifest, sonuç/kanıt doğrulayan iki-tekrar koşucu ve gerçek Tauri süreç/MCP/web kabulü. Başarı yalnız test/araç kanıtından üretilir; puan sabitlenmez.
-4. Windows M01'de mevcut normal-kullanıcı yalıtım test hazırlığı kullanılır; yönetici gerektiren kök ayarı yapılmaz. Yeni ortam engeli varsa test ve kullanıcının çalıştıracağı geri alınabilir betik hazır bırakılır.
+4. Windows M01 geliştirici makinesinde çalıştırılmaz: otomatik onay denetimi, testin AppContainer/ACL hazırlığını AGENTS sınırı nedeniyle reddetti. Kullanıcının açık geçici-CI izniyle Sürüm paketleri workflow'una yalnız workflow_dispatch için g5_m01 seçeneği eklenir. Önceden derlenmiş gerçek M01 test ikilisi, kurucu kurulduktan sonra mevcut CI kullanıcı betiğinin sabit M01 kipinde yönetici olmayan kalfatest ile iki kez çalışır; test ve kurucu izinleri geri alınır. Yeni paket/bağımlılık eklenmez. Linux doğrulaması normal kalfatest kullanıcısıyla devam eder.
 5. Paket kabulü mevcut sürüm workflow'u ve kurucu testleri üzerinden; gerçek kurulumu geliştirici makinesinde yönetici olarak otomatik yapma. CI'daki geçici makine kabulü veya kurulum gerektirmeyen inceleme kullanılabilir.
 6. AGENTS doğrulaması, iki eksenli bağımsız kod incelemesi, kaynak/baş/log makbuzu, PR ve ortak hafıza güncellemesi. Merge yok. Geçici worktree/target temizlenir.
 
 ## Kapanış
 
-Her24görevin gerçek giriş ve bağımsız kabulü, iki tekrar sonucu, platform önkoşulları ve zorunlu güvenlik kontrolleri tek raporda görünür. Eksik kalan canlı sağlayıcı/model karşılaştırmasının gereken hesap/model/bütçe seçenekleri somut koşu planı olarak hazırlanır; yetki olmadan ücretli çağrı yapılmaz.
+Her24görevin gerçek giriş ve bağımsız kabulü, iki tekrar sonucu, platform önkoşulları ve zorunlu güvenlik kontrolleri tek raporda görünür. Kullanıcı 21 Ekim yanıtıyla ücretli canlı model/dış arama denemelerini bu teslimattan çıkardı; yalnız çevrimdışı ve geçici CI kabulü yürütülür. M02/M05/M06/W görevlerinin G0 içindeki eski onaysız adımları güncel açık onay sözleşmesine uyarlanır; G0 dosya özetleri korunur.

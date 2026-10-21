@@ -20,6 +20,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      g5_m01:
+        description: "Kurulum içinde gerçek M01'i standart CI kullanıcısıyla iki kez doğrula"
+        type: boolean
+        default: false
 
 concurrency:
   group: surum-${{ github.ref }}
@@ -164,6 +169,25 @@ jobs:
       # özet tutmazsa derleme durur.
       - name: Kurucuyu derle
         run: node crates/kalfa/kurucu/derle.mjs
+      - name: Gerçek M01 kabul ikililerini derle
+        if: inputs.g5_m01 == true
+        shell: pwsh
+        run: |
+          cargo build -p kalfa-mcp --bin kalfa-mcp-test-sunucusu -p kalfa-sandbox --bin kalfa-kopru --release --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p kalfa-tools --features yalitim-testleri --test g5_kodlama --release --locked --no-run --message-format=json > target/g5-m01-derleme.jsonl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $ikili = @(Get-Content target/g5-m01-derleme.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'g5_kodlama' -and $_.profile.test -and $_.executable })
+          if ($ikili.Count -ne 1) { throw 'Tek G5 M01 test ikilisi bekleniyordu.' }
+          New-Item -ItemType Directory -Force kabul/deps | Out-Null
+          Copy-Item -LiteralPath $ikili[0].executable -Destination kabul/deps/g5-m01.exe
+          Copy-Item target/release/kalfa-mcp-test-sunucusu.exe, target/release/kalfa-kopru.exe kabul/
+      - uses: actions/upload-artifact@v4
+        if: inputs.g5_m01 == true
+        with:
+          name: windows-g5-m01
+          path: kabul/
+          if-no-files-found: error
       - name: Kurucuyu topla
         shell: pwsh
         run: |
@@ -187,11 +211,25 @@ jobs:
         with:
           name: windows-kurucusu
           path: kurucu
+      - uses: actions/download-artifact@v5
+        if: inputs.g5_m01 == true
+        with:
+          name: windows-g5-m01
+          path: kabul
       - name: Sessiz kur, denetle, kaldır
         shell: pwsh
         run: |
           $kurucu = (Get-ChildItem kurucu/*-setup.exe | Select-Object -First 1).FullName
-          .github/scripts/windows-kurucu-sinama.ps1 -KurucuYolu $kurucu
+          .github/scripts/windows-kurucu-sinama.ps1 -KurucuYolu $kurucu -G5M01:('${{ inputs.g5_m01 }}' -eq 'true')
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.g5_m01 == true
+        with:
+          name: windows-g5-m01-sonuc
+          path: |
+            ${{ runner.temp }}/kalfatest/testler.log
+            ${{ runner.temp }}/kalfatest/m01-*.log
+            ${{ runner.temp }}/kalfatest/sonuc.txt
+          if-no-files-found: error
 
   yayimla:
     name: Taslak sürüm
