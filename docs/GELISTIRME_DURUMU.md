@@ -1,6 +1,7 @@
 # Kalfa geliştirme durumu
 
 **21 Ekim Codex düzeltmesi — Hat 01:** K03 CSS görünürlüğü uygulandı. [Davranış ve doğrulama](superpowers/bulgular/2026-10-21-codex-yetenek-01-duzeltme.md); G5/CI ve merge ayrı kapılardır.
+**21 Ekim güvenlik yaması:** Dört RustSec duyurusu için Wasmtime49.0.4 ve TLS patch sürümleri ayrı dalda uygulandı. [Değişiklik ve doğrulama](superpowers/bulgular/2026-10-21-guvenlik-bagimlilik-yamalari.md); son audit/CI ve merge ayrı kapılardır.
 
 Güncelleme: 2026-10-14; Windows sürüm akışı ve PR #8 arayüzü birleşti, depo herkese açık. Bu dosya uygulamanın devam noktasıdır; tasarım
 belgelerindeki tarihsel inceleme kayıtlarının yerine geçmez.
@@ -12,21 +13,33 @@ ve EVREN'in `/v1/systemone` ucunda çalışır. Kullanıcı tasarımı onayladı
 iki PR'a bölündü:
 
 - **PR A, hakem ve ölçüm** ([#34](https://github.com/heimdilon/kalfa/pull/34)):
-  Uygulandı.
+  Birleşti (`4041a39`).
   - **Bileşenler:** `kalfa-evren` karar istemcisi, `Saglayici::karar`,
     ortak bütçeli yeniden deneme ve `kalfa-core/src/hakem.rs`.
   - **Ölçüm** (42 öğe): yanlış izin 0, güvenli öğelerde otomatik izin %95,
     p95 gecikme 0,70 sn.
   - **Eşikler:** izin 0,80, ret 0,40.
-- **PR B, kip ve arayüz:** Planlanacak. Kapsamı izin motoru, araç
-  aşamasının hakem kapısı, kayıt, kurtarma ve arayüzdür.
+- **PR B, kip ve arayüz** ([#35](https://github.com/heimdilon/kalfa/pull/35)):
+  `otomatik-kip/b-kip` dalında uygulandı (Görev 1–8).
+  - **Bileşenler:** `Kip::Otomatik` ve `hakeme_uygun` izin listesi (`izin.rs`),
+    araç aşaması hakem kapısı, bağlı grup ve geri düşme sayaçları
+    (`arac_asamasi.rs`), `KayitOgesi::OtomatikKarar` / `Olay::OtomatikKarar` /
+    `GorunumOgesi::OtomatikKarar`, kurtarmada Otomatik → Sıkı dönüşümü,
+    uygulama katmanı yükseltme sırası ve açıklaması (`guvenlik.rs`), arayüzde
+    beşli kip menüsü ve konuşmada tek satırlık karar notları.
+  - **Sınır testleri:** `crates/kalfa-core/tests/otomatik_kip.rs` içinde tasarım
+    §9'daki bütün sınırlar (mühür testi dahil 18 oturum testi) doğrulandı.
 
-**Sıradaki iş:** PR A'nın birleşmesi (kullanıcı onayı) ve PR B planı.
+**Sıradaki iş:** PR B (#35) incelemesi ve WSL doğrulaması.
+
+- **Dal:** `otomatik-kip/b-kip`.
+- **Uygulayıcı:** Claude (inceleme ve birleştirme).
 
 - [Tasarım](superpowers/specs/2026-10-19-kalfa-otomatik-kip-design.md)
 - [PR A planı](superpowers/plans/2026-10-19-kalfa-otomatik-kip-a-hakem.md)
 - [Yoklama](superpowers/bulgular/2026-10-19-kalfa-otomatik-kip-yoklama.md)
 - [Ölçüm](superpowers/bulgular/2026-10-19-kalfa-otomatik-kip-olcum.md)
+- [PR B planı](superpowers/plans/2026-10-20-kalfa-otomatik-kip-b-kip.md)
 
 **PR #8 — Codex ek düzeltmeleri (14 Ekim):** JSON boyutuna göre diff bütçesi,
 gerçek `--`/`++` içerik satırlarının korunması ve yeni oturumun katalog

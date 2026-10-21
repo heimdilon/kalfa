@@ -254,8 +254,8 @@ pub fn kurtar(kayitlar: &[Zarf<KayitOgesi>]) -> Result<KurtarilmisDurum, Kurtarm
         }
     }
 
-    // Serbest kip yalnızca oturum boyunca geçerlidir; kurtarılan oturum Sıkı açılır.
-    if kip == Kip::Serbest {
+    // Serbest ve Otomatik kip yalnızca oturum boyunca geçerlidir; kurtarılan oturum Sıkı açılır.
+    if matches!(kip, Kip::Serbest | Kip::Otomatik) {
         kip = Kip::Siki;
     }
 
