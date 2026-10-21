@@ -559,6 +559,7 @@ async fn canli_evren_ile_dosya_okuyup_yanitlar() {
         geri_yukleyici: None,
         denetci: Arc::new(kalfa_core::denetci::Yok),
         denetci_kipi: None,
+        talimat_okuyucu: None,
     };
     let mut ayar = OturumAyarlari::yeni("qwen3.8-flash-next", o.alan.path());
     ayar.kip = Kip::Proje;

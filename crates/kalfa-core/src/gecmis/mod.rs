@@ -111,6 +111,15 @@ pub enum GorunumOgesi {
         talimat: Option<String>,
         ozet: String,
     },
+    /// Kullanıcıya sorulan yapılandırılmış soru ve varsa sonucu.
+    /// `sonuc: None` ise oturum soru yanıtlanmadan kapanmıştır (`kesintiye_ugradi`).
+    KullaniciSorusu {
+        sira: u64,
+        tur: Option<TurId>,
+        soru: crate::soru::KullaniciSorusu,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sonuc: Option<crate::soru::SoruSonucu>,
+    },
 }
 
 impl GorunumOgesi {
@@ -125,7 +134,8 @@ impl GorunumOgesi {
             | Self::GeriAlma { sira, .. }
             | Self::KalfaNotu { sira, .. }
             | Self::TurOzeti { sira, .. }
-            | Self::OturumOzeti { sira, .. } => *sira,
+            | Self::OturumOzeti { sira, .. }
+            | Self::KullaniciSorusu { sira, .. } => *sira,
         }
     }
 
@@ -140,7 +150,8 @@ impl GorunumOgesi {
             | Self::GeriAlma { tur, .. }
             | Self::KalfaNotu { tur, .. }
             | Self::TurOzeti { tur, .. }
-            | Self::OturumOzeti { tur, .. } => *tur,
+            | Self::OturumOzeti { tur, .. }
+            | Self::KullaniciSorusu { tur, .. } => *tur,
         }
     }
 }
@@ -339,6 +350,31 @@ pub fn gorunum_uret(kayitlar: &[Zarf<KayitOgesi>]) -> Vec<GorunumOgesi> {
                 risk: risk.clone(),
                 olasilik: *olasilik,
             }),
+            KayitOgesi::KullaniciSorusuSoruldu { soru } => {
+                ogeler.push(GorunumOgesi::KullaniciSorusu {
+                    sira: z.sira,
+                    tur: z.tur,
+                    soru: soru.clone(),
+                    sonuc: None,
+                })
+            }
+            KayitOgesi::KullaniciSorusuCozuldu {
+                soru_kimligi,
+                sonuc: cozum,
+                ..
+            } => {
+                if let Some(GorunumOgesi::KullaniciSorusu { sonuc, .. }) =
+                    ogeler.iter_mut().rev().find(|o| {
+                        matches!(
+                            o,
+                            GorunumOgesi::KullaniciSorusu { soru, .. }
+                                if soru.soru_kimligi == *soru_kimligi
+                        )
+                    })
+                {
+                    *sonuc = Some(cozum.clone());
+                }
+            }
             _ => {}
         }
     }
@@ -389,6 +425,10 @@ pub struct DurumOzeti {
     pub dusunce: u64,
     #[serde(default)]
     pub onizleme_acik: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<crate::plan::OturumPlani>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proje_talimatlari: Option<crate::proje_talimatlari::ProjeTalimatAnlikGoruntusu>,
 }
 
 pub fn durum_ozeti(kayitlar: &[Zarf<KayitOgesi>]) -> DurumOzeti {
@@ -403,6 +443,8 @@ pub fn durum_ozeti(kayitlar: &[Zarf<KayitOgesi>]) -> DurumOzeti {
             KayitOgesi::EforDegisti { efor } => o.efor = Some(*efor),
             KayitOgesi::KipDegisti { kip } => o.kip = Some(*kip),
             KayitOgesi::OnizlemeDegisti { acik } => o.onizleme_acik = *acik,
+            KayitOgesi::PlanGuncellendi { plan, .. } => o.plan = Some(plan.clone()),
+            KayitOgesi::ProjeTalimatlari { goruntu } => o.proje_talimatlari = Some(goruntu.clone()),
             // Eklenti isteği de canlıda kredi ve yönlendirilen model gözlemi
             // üretir; kurtarılan durum çubuğu aynısını göstermeli.
             KayitOgesi::Istek {
