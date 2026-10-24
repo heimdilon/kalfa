@@ -206,6 +206,7 @@ testleri bunlara karşı koşar.
 - [Aşama tasarımları](docs/superpowers/specs/) ve [uygulama planları](docs/superpowers/plans/)
 - [Ölçüm ve prototip raporları](docs/superpowers/bulgular/)
 - [Geliştirme durumu](docs/GELISTIRME_DURUMU.md)
+- [EVREN modeller ve API başvurusu](docs/basvuru/evren-modeller-ve-api.md) — 23 Ekim 2026 tarihli resmî sayfa sözleşmeleri ve açık kalan alanlar.
 
 ## Katkı
 
