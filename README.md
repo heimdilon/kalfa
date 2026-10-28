@@ -12,7 +12,7 @@ Her adımı size gösterir; son söz her zaman sizindir.
 ![Platform: Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
 ![Rust 1.98](https://img.shields.io/badge/rust-1.98-orange)
 
-<img src="docs/ekranlar/sohbet.png" alt="Kalfa ana penceresi: oturumlar, konuşma, iki dosyalık onay isteği ve durum çubuğu" width="900">
+<img src="docs/ekranlar/sohbet.png" alt="Kalfa ana penceresi: projelere göre oturumlar, konuşmada iki dosyalık onay isteği, sağ panelde diff ve durum çubuğu" width="900">
 
 </div>
 
@@ -21,6 +21,7 @@ Her adımı size gösterir; son söz her zaman sizindir.
 ## İçindekiler
 
 - [Neden Kalfa?](#neden-kalfa)
+- [Kurulum](#kurulum)
 - [Öne çıkanlar](#öne-çıkanlar)
 - [Güvenlik modeli](#güvenlik-modeli)
 - [Durum](#durum)
@@ -45,23 +46,59 @@ ajanıdır.
 ustanın yönlendirmesiyle iş yapan yetkin zanaatkârdır. Ürünün izin modeli de
 budur: yetenekli, ama son söz sizin.
 
+## Kurulum
+
+Ön sürümler [GitHub Releases](https://github.com/heimdilon/kalfa/releases)
+sayfasındadır (son sürüm: **v0.1.1**):
+
+| Platform | Paket |
+|---|---|
+| Windows (x64) | `Kalfa_<sürüm>_x64-setup.exe` (NSIS kurucusu; yalıtım hazırlığı için bir kez UAC ister) |
+| Debian 12+, Ubuntu 24.04+ | `Kalfa_<sürüm>_amd64.deb` |
+| Fedora ve RPM tabanlı dağıtımlar | `Kalfa-<sürüm>-1.x86_64.rpm` |
+
+Paketleri indirdikten sonra `SHA256SUMS` ile doğrulayın. İlk açılışta EVREN
+anahtarınız istenir ve EVREN'in güncel kullanım şartları gösterilir. Kaynaktan
+derlemek için [aşağıya](#kaynaktan-derleme) bakın.
+
 ## Öne çıkanlar
 
 ### Her değişikliği önce siz görürsünüz
 
 Kalfa bir dosyayı değiştirmeden ya da komut çalıştırmadan önce ne yapacağını,
-nerede yapacağını ve hangi verinin dışarı çıkacağını gösterir. Onay, gösterilen
-işleme bağlıdır: dosya onaydan sonra değişirse işlem yapılmaz. Değişiklikleri
-tek tek seçebilir, gerekçe yazarak reddedebilirsiniz.
+nerede yapacağını ve hangi verinin dışarı çıkacağını gösterir. Onay kartı
+konuşmanın içinde, dosya başına diff'iyle gelir; isterseniz İncele ile ayrıntılı
+sayfayı açarsınız. Onay, gösterilen işleme bağlıdır: dosya onaydan sonra
+değişirse işlem yapılmaz. Değişiklikleri tek tek seçebilir, gerekçe yazarak
+reddedebilirsiniz.
 
-<img src="docs/ekranlar/onay.png" alt="Onay sayfası: dosya başına diff, Ne, Nerede, Veri çıkışı ve Kapsam satırları" width="900">
+<img src="docs/ekranlar/onay.png" alt="Konuşmadaki onay kartı: iki dosya, dosya başına diff, Tümünü reddet, İncele ve Tümünü onayla düğmeleri" width="900">
+
+### Beş izin kipi, Otomatik dahil
+
+İnceleme, Sıkı, Proje ve Serbest kiplerine ek olarak **Otomatik** kipte onay
+isteyen yalıtımlı komutları ve MCP çağrılarını bir hakem model (`clef`)
+değerlendirir. Güvenli bulduğunu çalıştırır, riskli bulduğunu reddeder, emin
+olamadığını size bırakır; her karar konuşmada tek satırla görünür. Gizli dosya,
+korumalı yol ya da geri alınamaz yazma gibi işlemler hakeme hiç gitmez, her
+zaman size sorulur. Hakeme ulaşılamazsa işlem çalışmaz, onay kartı açılır.
 
 ### Tur özeti ve geri alma
 
 Her turun sonunda hangi dosyaların değiştiği ve kaç EVREN isteği gönderildiği
-özetlenir. Bir turun dosya değişikliklerini geri alabilirsiniz.
+özetlenir; araç kartları değişikliğin diff'ini gösterir. Bir turun dosya
+değişikliklerini tek düğmeyle geri alabilirsiniz. Sağ panelden turun
+değişikliklerine ve çalışma alanının dosyalarına salt okunur göz atarsınız.
 
-<img src="docs/ekranlar/tur-ozeti.png" alt="Tur özeti: değişen dosyalar, EVREN istek sayısı ve Turu geri al düğmesi" width="900">
+<img src="docs/ekranlar/tur-ozeti.png" alt="Uygulanan değişikliklerin diff'leri ve tur özeti: değişen dosyalar, EVREN istek sayısı ve Turu geri al düğmesi" width="900">
+
+### Uzun oturumlar
+
+Oturumun kendi istek ya da token tavanı yoktur; dış sınır EVREN'in günlük ve
+dakikalık kotasıdır. Bağlam dolmaya yaklaşınca konuşmanın geçmişi tek bir
+özete dönüşür ve oturum o özetle sürer. `/compact [talimat]` ile özetlemeyi
+elle de başlatabilirsiniz. Özet veri olarak sarılır; araç çıktısından sızan bir
+talimat özette de talimat sayılmaz.
 
 ### Komutlar yalıtımda çalışır
 
@@ -71,7 +108,17 @@ görür; ev dizini ve diğer projeler görünmez, ağ varsayılan olarak kapalı
 Ağ isteyen komut yalnızca izin listesindeki adreslere, Kalfa'nın vekili
 üzerinden çıkar.
 
-<img src="docs/ekranlar/yalitim.png" alt="Ayarlar: yalıtım durumu, araç zinciri dizinleri ve gizli dosya kalıpları" width="900">
+<img src="docs/ekranlar/yalitim.png" alt="Ayarlar: Windows AppContainer yalıtımı hazır, hazırlanmış çalışma alanları ve MCP sunucuları" width="900">
+
+### Yerel MCP sunucuları
+
+Bilgisayarınızdaki MCP sunucularının araçları modele sunulur. Bir sunucu bir
+çalışma alanında ilk kez başlayacağında Kalfa erişim kipini, komutu ve ağ
+adreslerini gösterip sorar; bu kartı model açamaz ve yanıtlayamaz. Sunucular
+yalıtılmış süreçte ya da açık uyarıyla tam erişimle çalışır; izinleri
+Ayarlar'dan geri alabilirsiniz.
+
+<img src="docs/ekranlar/mcp.png" alt="Konuşmada MCP sunucusu başlatma kartı: erişim kipi, komut, ağ adresi ve uyarı" width="900">
 
 ### WebAssembly eklentileri ve Türkçe anlamsal arama
 
@@ -104,7 +151,7 @@ göndereceğinde Kalfa bunu ayrıca sorar.
 
 | | |
 |---|---|
-| **İzin kipleri** | İnceleme, Sıkı, Proje ve Serbest. Kipi yükseltmek yerel bir pencerede onay ister, düşürmek istemez. Kalıcı bir "her şeye izin ver" yoktur. |
+| **İzin kipleri** | İnceleme, Sıkı, Proje, Serbest ve Otomatik. Kipi yükseltmek yerel bir pencerede onay ister, düşürmek istemez. Kalıcı bir "her şeye izin ver" yoktur. Otomatik kipin hakemi kapalı düşer: hata ya da belirsizlikte işlem çalışmaz, size sorulur. |
 | **Bağlı onay** | Onay gösterilen işleme bağlıdır; dosya ya da bağlantı onaydan sonra değişirse işlem durur. |
 | **Çalışma alanı sınırı** | Dosya araçları çalışma alanından dışarı çıkamaz; sembolik bağlantılar ve Windows junction'ları izlenmez. |
 | **Gizli dosyalar** | `.env`, anahtar ve kimlik bilgisi dosyaları gibi kalıplara uyan bir dosyayı okumak her kipte onay ister ve kart içeriğin EVREN'e gideceğini açıkça söyler. Arama araçları bu dosyaların içeriğini döndürmez; yalıtımdaki komutlar onları okuyamaz. |
@@ -119,8 +166,8 @@ vulnerability**); ayrıntı [SECURITY.md](SECURITY.md)'de.
 
 ## Durum
 
-Kalfa etkin geliştirme altındadır; henüz hazır derlenmiş bir sürüm
-yayımlanmadı. v1 kapsamı aşamalar hâlinde teslim edilir:
+Kalfa etkin geliştirme altındadır; sürümler şimdilik ön sürüm olarak
+yayımlanır. v1 kapsamı aşamalar hâlinde teslim edilir:
 
 | Aşama | Kapsam | Durum |
 |---|---|---|
@@ -128,7 +175,9 @@ yayımlanmadı. v1 kapsamı aşamalar hâlinde teslim edilir:
 | 2 | Kabuk aracı; Linux (bubblewrap, seccomp) ve Windows (AppContainer) yalıtımı; Windows kurucusu | ✅ |
 | 3 | Tur özeti ve geri alma, gönderim günlüğü, güvenlik denetçisi, ağ çıkışı | ✅ |
 | 4 | WebAssembly eklenti çalışma zamanı, `kalfa-rag`, eklenti arayüzü | ✅ |
-| Sırada | Bağlam yönetimi, oturum bütçesi, Linux paketleri (`.deb`, `.rpm`) | ⏳ |
+| 5 | Bağlam yönetimi ve compact, bütçesiz oturum, Linux paketleri (`.deb`, `.rpm`), sürüm akışı | ✅ |
+| Sonrası | Yerel MCP, masaüstü arayüzü (sağ panel, konuşmada onay, özel başlık çubuğu), Otomatik izin kipi | ✅ |
+| Sırada | Uzak MCP ve OAuth, web getirme, arka plan süreçleri, proje talimatları | ⏳ |
 
 Güncel devam noktası: [docs/GELISTIRME_DURUMU.md](docs/GELISTIRME_DURUMU.md).
 
@@ -185,8 +234,9 @@ sınırı üzerinden ince bir Tauri kabuğuyla konuşur.
 | Crate | Görev |
 |---|---|
 | [`kalfa-evren`](crates/kalfa-evren) | EVREN istemcisi: istek/yanıt tipleri, katmanlı SSE ayrıştırıcı, şart uçları, kredi gözlemi |
-| [`kalfa-core`](crates/kalfa-core) | Oturum çekirdeği: ajan döngüsü, izin kipleri, bağlı onay, JSONL kayıt ve kurtarma |
+| [`kalfa-core`](crates/kalfa-core) | Oturum çekirdeği: ajan döngüsü, izin kipleri ve hakem, bağlı onay, compact, JSONL kayıt ve kurtarma |
 | [`kalfa-tools`](crates/kalfa-tools) | Dosya araçları (`cap-std` ile) ve kabuk aracı |
+| [`kalfa-mcp`](crates/kalfa-mcp) | Yerel MCP için sınırlı stdio taşıması ve istemci |
 | [`kalfa-sandbox`](crates/kalfa-sandbox) | Komut çalıştırma, süreç sınırları, Linux ve Windows yalıtımı, ağ vekili |
 | [`kalfa-yalitim`](crates/kalfa-yalitim) | Windows yalıtımını kuran yönetici yardımcısı |
 | [`kalfa-plugin`](crates/kalfa-plugin) | wasmtime tabanlı eklenti çalışma zamanı: manifest, sınırlar, depo |
